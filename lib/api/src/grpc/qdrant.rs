@@ -4730,10 +4730,10 @@ pub struct CountPoints {
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "1")]
-    pub positives: ::prost::alloc::vec::Vec<VectorInput>,
+    pub positive: ::prost::alloc::vec::Vec<VectorInput>,
     /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "2")]
-    pub negatives: ::prost::alloc::vec::Vec<VectorInput>,
+    pub negative: ::prost::alloc::vec::Vec<VectorInput>,
     /// How to use the provided vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "3")]
     pub strategy: ::core::option::Option<i32>,
@@ -4741,7 +4741,7 @@ pub struct RecommendInput {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ContextPairInput {
+pub struct ContextInputPair {
     /// A positive vector
     #[prost(message, optional, tag = "1")]
     pub positive: ::core::option::Option<VectorInput>,
@@ -4757,8 +4757,8 @@ pub struct DiscoverInput {
     #[prost(message, optional, tag = "1")]
     pub target: ::core::option::Option<VectorInput>,
     /// Search space will be constrained by these pairs of vectors
-    #[prost(message, repeated, tag = "2")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+    #[prost(message, optional, tag = "2")]
+    pub context: ::core::option::Option<ContextInput>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4766,7 +4766,7 @@ pub struct DiscoverInput {
 pub struct ContextInput {
     /// Search space will be constrained by these pairs of vectors
     #[prost(message, repeated, tag = "1")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+    pub pairs: ::prost::alloc::vec::Vec<ContextInputPair>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

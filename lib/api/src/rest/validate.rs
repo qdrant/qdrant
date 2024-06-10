@@ -2,7 +2,9 @@ use common::validation::validate_multi_vector;
 use validator::{Validate, ValidationError};
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
-use super::{Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, VectorInput};
+use super::{
+    ContextInput, Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, VectorInput,
+};
 use crate::rest::NamedVectorStruct;
 
 impl Validate for VectorStruct {
@@ -80,16 +82,8 @@ impl Validate for VectorInput {
 
 impl Validate for RecommendInput {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        let no_positives = self
-            .positives
-            .as_ref()
-            .map(|p| p.is_empty())
-            .unwrap_or(true);
-        let no_negatives = self
-            .positives
-            .as_ref()
-            .map(|n| n.is_empty())
-            .unwrap_or(true);
+        let no_positives = self.positive.as_ref().map(|p| p.is_empty()).unwrap_or(true);
+        let no_negatives = self.negative.as_ref().map(|n| n.is_empty()).unwrap_or(true);
 
         if no_positives && no_negatives {
             let mut errors = validator::ValidationErrors::new();
@@ -103,6 +97,16 @@ impl Validate for RecommendInput {
         }
 
         for item in self.iter() {
+            item.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for ContextInput {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        for item in self.0.iter().flatten().flat_map(|item| item.iter()) {
             item.validate()?;
         }
 

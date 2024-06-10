@@ -156,7 +156,7 @@ pub enum OrderByInterface {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum Fusion {
     /// Reciprocal rank fusion
     Rrf,
@@ -179,7 +179,7 @@ pub struct QueryRequestInternal {
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
-    /// Query to perform. If missing, returns points ordered by their IDs.
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
     #[validate]
     pub query: Option<QueryInterface>,
 
@@ -254,7 +254,7 @@ pub struct Prefetch {
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
-    /// Query to perform. If missing, returns points ordered by their IDs.
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
     #[validate]
     pub query: Option<QueryInterface>,
 
@@ -295,10 +295,10 @@ pub enum RecommendStrategy {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
-    pub positives: Option<Vec<VectorInput>>,
+    pub positive: Option<Vec<VectorInput>>,
 
     /// Try to avoid vectors like the vector from these points
-    pub negatives: Option<Vec<VectorInput>>,
+    pub negative: Option<Vec<VectorInput>>,
 
     /// How to use the provided vectors to find the results
     pub strategy: Option<RecommendStrategy>,
@@ -306,10 +306,10 @@ pub struct RecommendInput {
 
 impl RecommendInput {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
-        self.positives
+        self.positive
             .iter()
             .flatten()
-            .chain(self.negatives.iter().flatten())
+            .chain(self.negative.iter().flatten())
     }
 }
 
@@ -323,17 +323,16 @@ pub struct DiscoverInput {
     #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
-    pub context_pairs: Option<Vec<ContextPair>>,
+    pub context: Option<Vec<ContextPair>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-pub struct ContextInput {
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ContextInput(
     /// Search space will be constrained by these pairs of vectors
-    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
-    pub pairs: Option<Vec<ContextPair>>,
-}
+    pub Option<Vec<ContextPair>>,
+);
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ContextPair {
@@ -344,4 +343,10 @@ pub struct ContextPair {
     /// Repel from this vector
     #[validate]
     pub negative: VectorInput,
+}
+
+impl ContextPair {
+    pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
+        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
+    }
 }
