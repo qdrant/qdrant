@@ -31,7 +31,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 
 const BYTES_IN_KB: usize = 1024;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct OptimizerThresholds {
     pub max_segment_size_kb: usize,
     pub memmap_threshold_kb: usize,

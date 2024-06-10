@@ -161,7 +161,7 @@ pub fn build_optimizers(
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
             optimizers_config.get_number_segments(),
-            threshold_config.clone(),
+            threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
@@ -170,7 +170,7 @@ pub fn build_optimizers(
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
-            threshold_config.clone(),
+            threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
@@ -180,7 +180,7 @@ pub fn build_optimizers(
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
             optimizers_config.vacuum_min_vector_number,
-            threshold_config.clone(),
+            threshold_config,
             segments_path.clone(),
             temp_segments_path.clone(),
             collection_params.clone(),
