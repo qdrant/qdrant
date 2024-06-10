@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::BYTES_IN_KB;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -457,6 +458,10 @@ impl<'s> SegmentHolder {
     }
 
     /// Try to acquire write lock over random segment with increasing wait time.
+    ///
+    /// Attempts to select a segment that has capacity for new points. If no such segment is found,
+    /// `apply` is called on a random segment.
+    ///
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
     pub fn aloha_random_write<F>(
         &self,
@@ -472,28 +477,73 @@ impl<'s> SegmentHolder {
             ));
         }
 
-        let mut entries: Vec<_> = Vec::with_capacity(segment_ids.len());
+        // Make a list of potential big and small segments, in terms of whether it has capacity
+        let max_segment_size = self
+            .thresholds_config
+            .max_segment_size_kb
+            .saturating_mul(BYTES_IN_KB);
+        let (mut entries_big, mut entries_small) = (
+            Vec::with_capacity(segment_ids.len()),
+            Vec::with_capacity(segment_ids.len()),
+        );
 
         // Try to access each segment first without any timeout (fast)
-        for segment_id in segment_ids {
-            let segment_opt = self.get(*segment_id).map(|x| x.get());
-            match segment_opt {
-                None => {}
-                Some(segment_lock) => {
-                    match segment_lock.try_write() {
-                        None => {}
-                        Some(mut lock) => return apply(*segment_id, &mut lock),
-                    }
-                    // save segments for further lock attempts
-                    entries.push((*segment_id, segment_lock))
+        for segment_id in segment_ids.iter().cloned() {
+            let Some(segment_lock) = self.get(segment_id).map(|x| x.get()) else {
+                continue;
+            };
+
+            // Try to take a write lock right away (fast), otherwise assume small and try later
+            let Some(mut segment_write) = segment_lock.try_write() else {
+                entries_small.push((segment_id, segment_lock));
+                continue;
+            };
+
+            // If segment has capacity, apply operation and return, otherwise assume it is big and try again later
+            let segment_size = match segment_write.max_available_vectors_size_in_bytes() {
+                Ok(segment_size) => segment_size,
+                Err(err) => {
+                    log::error!("Failed to get segment size, ignoring: {err}");
+                    continue;
                 }
             };
+            if segment_size <= max_segment_size {
+                return apply(segment_id, &mut segment_write);
+            }
+            drop(segment_write);
+            entries_big.push((segment_id, segment_lock));
         }
 
         let mut rng = rand::thread_rng();
-        let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
+
+        // Lock each potentially small segment in random order and try again
+        entries_small.shuffle(&mut rng);
+        for (segment_id, segment_lock) in entries_small.iter() {
+            let mut segment_lock = segment_lock.write();
+            let segment_size = match segment_lock.max_available_vectors_size_in_bytes() {
+                Ok(segment_size) => segment_size,
+                Err(err) => {
+                    log::error!("Failed to get segment size, ignoring: {err}");
+                    continue;
+                }
+            };
+            if segment_size <= max_segment_size {
+                return apply(*segment_id, &mut segment_lock);
+            }
+        }
+
+        // Can't find a segment with capacity, just pick a random one
+        let Some((segment_id, segment_lock)) = entries_big
+            .into_iter()
+            .chain(entries_small)
+            .choose(&mut rng)
+        else {
+            return Err(OperationError::service_error(
+                "Failed to select segment for writing due to previous errors",
+            ));
+        };
         let mut segment_write = segment_lock.write();
-        apply(*segment_id, &mut segment_write)
+        apply(segment_id, &mut segment_write)
     }
 
     /// Apply an operation `point_operation` to a set of points `ids`, and, if necessary, move the
