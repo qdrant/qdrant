@@ -264,6 +264,10 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     }
 
     pub fn len(&self) -> usize {
+        self.flattened_vectors.len()
+    }
+
+    pub fn vector_count(&self) -> usize {
         self.flattened_vectors.len() / self.dim
     }
 }
@@ -311,7 +315,7 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
         self.flattened_vectors.is_empty()
     }
 
-    pub fn len(self) -> usize {
+    pub fn vector_count(self) -> usize {
         self.flattened_vectors.len() / self.dim
     }
 
