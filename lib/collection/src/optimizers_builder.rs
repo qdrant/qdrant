@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -104,7 +105,7 @@ impl OptimizersConfig {
         }
     }
 
-    pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
+    pub fn optimizer_thresholds(&self, num_indexing_threads: usize) -> OptimizerThresholds {
         let indexing_threshold_kb = match self.indexing_threshold {
             None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
             Some(0) => usize::MAX,                 // disable vector index
@@ -119,16 +120,15 @@ impl OptimizersConfig {
         OptimizerThresholds {
             memmap_threshold_kb,
             indexing_threshold_kb,
-            max_segment_size_kb: self.get_max_segment_size_in_kilobytes(),
+            max_segment_size_kb: self.get_max_segment_size_in_kilobytes(num_indexing_threads),
         }
     }
 
-    pub fn get_max_segment_size_in_kilobytes(&self) -> usize {
+    pub fn get_max_segment_size_in_kilobytes(&self, num_indexing_threads: usize) -> usize {
         if let Some(max_segment_size) = self.max_segment_size {
             max_segment_size
         } else {
-            let num_cpus = common::cpu::get_num_cpus();
-            num_cpus.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
+            num_indexing_threads.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
         }
     }
 }
@@ -154,9 +154,10 @@ pub fn build_optimizers(
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
+    let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
-    let threshold_config = optimizers_config.optimizer_thresholds();
+    let threshold_config = optimizers_config.optimizer_thresholds(num_indexing_threads);
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
