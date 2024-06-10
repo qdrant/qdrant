@@ -649,7 +649,7 @@ mod tests {
                 ),),
                 filter: dummy_filter,
                 params: dummy_params,
-                limit: 37,
+                limit: 37 + 49, // limit + offset
                 offset: 0,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: Some(WithVector::Bool(false)),
