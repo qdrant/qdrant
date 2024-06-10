@@ -72,14 +72,21 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             })
     }
 
-    pub fn get_many<TKey>(&self, key: TKey, count: usize) -> &[T]
+    pub fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
+        if self.chunks.is_empty() {
+            return None;
+        }
         let key: usize = key.as_();
-        let chunk_data = &self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        &chunk_data[idx..idx + count * self.dim]
+        self.chunks
+            .get(key / self.chunk_capacity)
+            .and_then(|chunk_data| {
+                let idx = (key % self.chunk_capacity) * self.dim;
+                let range = idx..idx + count * self.dim;
+                chunk_data.get(range)
+            })
     }
 
     pub fn push(&mut self, vector: &[T]) -> Result<PointOffsetType, TryReserveError> {
