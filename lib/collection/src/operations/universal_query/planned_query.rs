@@ -169,7 +169,10 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             with_payload = WithPayloadInterface::Bool(false);
 
             // Root-level query without prefetches is the only case where merge is `None`
-            MergePlan { sources, merge: None }
+            MergePlan {
+                sources,
+                merge: None,
+            }
         };
 
         Ok(Self {
