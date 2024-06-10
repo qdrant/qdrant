@@ -663,10 +663,14 @@ impl LocalShard {
         Ok(())
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        self.segments.write().thresholds_config = optimizer_config.optimizer_thresholds();
+
         let config = self.collection_config.read().await;
         let mut update_handler = self.update_handler.lock().await;
-
         let (update_sender, update_receiver) =
             mpsc::channel(self.shared_storage_config.update_queue_size);
         // makes sure that the Stop signal is the last one in this channel
@@ -678,13 +682,13 @@ impl LocalShard {
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
-            &config.optimizer_config,
+            &optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
         );
         update_handler.optimizers = new_optimizers;
-        update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
+        update_handler.flush_interval_sec = optimizer_config.flush_interval_sec;
+        update_handler.max_optimization_threads = optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 

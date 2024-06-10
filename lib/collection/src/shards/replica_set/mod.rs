@@ -680,10 +680,13 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub(crate) async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
+    pub(crate) async fn on_optimizer_config_update(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
-            shard.on_optimizer_config_update().await
+            shard.on_optimizer_config_update(optimizer_config).await
         } else {
             Ok(())
         }

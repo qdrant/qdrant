@@ -25,6 +25,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
+use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -77,8 +78,13 @@ impl ProxyShard {
             .await
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        self.wrapped_shard.on_optimizer_config_update().await
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        self.wrapped_shard
+            .on_optimizer_config_update(optimizer_config)
+            .await
     }
 
     pub async fn reinit_changelog(&self) -> CollectionResult<()> {

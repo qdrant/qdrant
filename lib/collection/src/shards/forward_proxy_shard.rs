@@ -23,6 +23,7 @@ use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQu
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
+use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -163,8 +164,13 @@ impl ForwardProxyShard {
             .await
     }
 
-    pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
-        self.wrapped_shard.on_optimizer_config_update().await
+    pub async fn on_optimizer_config_update(
+        &self,
+        optimizer_config: OptimizersConfig,
+    ) -> CollectionResult<()> {
+        self.wrapped_shard
+            .on_optimizer_config_update(optimizer_config)
+            .await
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {

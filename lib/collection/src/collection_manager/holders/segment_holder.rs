@@ -154,7 +154,7 @@ pub struct SegmentHolder {
     pub optimizer_errors: Option<CollectionError>,
 
     /// Thresholds config, needed for capacity based segment selection.
-    thresholds_config: OptimizerThresholds,
+    pub(crate) thresholds_config: OptimizerThresholds,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
