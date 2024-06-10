@@ -457,7 +457,7 @@ impl<'s> SegmentHolder {
             ));
         }
 
-        let mut entries: Vec<_> = Default::default();
+        let mut entries: Vec<_> = Vec::with_capacity(segment_ids.len());
 
         // Try to access each segment first without any timeout (fast)
         for segment_id in segment_ids {
