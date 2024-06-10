@@ -12,7 +12,9 @@ use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -125,6 +127,7 @@ fn sparse_index_discover_test() {
                 index: SparseIndexConfig {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
+                    datatype: SparseVectorIndexDatatype::Float32,
                 },
             },
         )]),
@@ -173,6 +176,7 @@ fn sparse_index_discover_test() {
             config: SparseIndexConfig {
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::ImmutableRam,
+                datatype: SparseVectorIndexDatatype::Float32,
             },
             id_tracker: sparse_segment.id_tracker.clone(),
             vector_storage: vector_storage.clone(),

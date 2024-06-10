@@ -192,6 +192,10 @@ message SparseIndexConfig {
   Store inverted index on disk. If set to false, the index will be stored in RAM.
    */
   optional bool on_disk = 2;
+  /*
+  Datatype used to store weights in the index.
+  */
+  optional Datatype datatype = 3;
 }
 
 message WalConfigDiff {

@@ -40,6 +40,10 @@ use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
 
+// TODO(compressed_sparse_index): remove this once feature is released
+/// Whether to use the new compressed format.
+pub const USE_COMPRESSED: bool = false;
+
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

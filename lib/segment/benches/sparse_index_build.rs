@@ -14,7 +14,9 @@ use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -67,7 +69,11 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     }
 
     // save index config to disk
-    let index_config = SparseIndexConfig::new(Some(10_000), SparseIndexType::ImmutableRam);
+    let index_config = SparseIndexConfig::new(
+        Some(10_000),
+        SparseIndexType::ImmutableRam,
+        SparseVectorIndexDatatype::Float32,
+    );
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));

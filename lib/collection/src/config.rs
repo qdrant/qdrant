@@ -375,10 +375,10 @@ impl CollectionParams {
         &self,
     ) -> CollectionResult<HashMap<String, SparseVectorDataConfig>> {
         if let Some(sparse_vectors) = &self.sparse_vectors {
-            Ok(sparse_vectors
+            sparse_vectors
                 .iter()
                 .map(|(name, params)| {
-                    (
+                    Ok((
                         name.into(),
                         SparseVectorDataConfig {
                             index: SparseIndexConfig {
@@ -386,11 +386,16 @@ impl CollectionParams {
                                     .index
                                     .and_then(|index| index.full_scan_threshold),
                                 index_type: SparseIndexType::MutableRam,
+                                datatype: params
+                                    .index
+                                    .and_then(|index| index.datatype)
+                                    .unwrap_or_default()
+                                    .try_into()?,
                             },
                         },
-                    )
+                    ))
                 })
-                .collect())
+                .collect()
         } else {
             Ok(Default::default())
         }

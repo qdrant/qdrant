@@ -14,7 +14,9 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram_from_iter;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -109,8 +111,11 @@ fn sparse_vector_index_search_benchmark_impl(
 
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    let sparse_index_config =
-        SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap);
+    let sparse_index_config = SparseIndexConfig::new(
+        Some(FULL_SCAN_THRESHOLD),
+        SparseIndexType::Mmap,
+        SparseVectorIndexDatatype::Float32,
+    );
     let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
