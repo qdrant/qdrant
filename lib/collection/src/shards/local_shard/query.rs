@@ -6,7 +6,6 @@ use std::time::Duration;
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use itertools::Itertools as _;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{
     Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -176,9 +175,8 @@ impl LocalShard {
             let root_query_needs_intermediate_results = || {
                 merge_plan
                     .merge
-                    .rescore
                     .as_ref()
-                    .map(|query| query.needs_intermediate_results())
+                    .map(|plan| plan.rescore.needs_intermediate_results())
                     .unwrap_or(false)
             };
 
@@ -196,33 +194,59 @@ impl LocalShard {
     }
 
     /// Rescore list of scored points
+    #[allow(clippy::too_many_arguments)]
     async fn rescore<'a>(
         &self,
         sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-        rescore_query: ScoringQuery,
-        limit: usize,
+        merge: ResultsMerge,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        match rescore_query {
+        let ResultsMerge {
+            rescore,
+            filter,
+            score_threshold,
+            limit,
+        } = merge;
+
+        match rescore {
             ScoringQuery::Fusion(Fusion::Rrf) => {
-                let mut top_rrf = rrf_scoring(sources.map(Cow::into_owned));
-                top_rrf.truncate(limit);
+                let sources: Vec<_> = sources.map(Cow::into_owned).collect();
+
+                // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
+                let valid_ids = if let Some(filter) = filter {
+                    let filter =
+                        filter_with_sources_ids(sources.iter().map(Cow::Borrowed), Some(filter));
+                    Some(self.read_filtered(Some(&filter))?)
+                } else {
+                    None
+                };
+
+                let mut top_rrf = rrf_scoring(sources);
+
+                top_rrf = top_rrf
+                    .into_iter()
+                    .filter(|point| {
+                        // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
+                        valid_ids
+                            .as_ref()
+                            .map(|valid_ids| valid_ids.contains(&point.id))
+                            .unwrap_or(true)
+                    })
+                    .take_while(|point| {
+                        // TODO(universal-query): Refactor this ugly part when we propagate merged filters to leaf queries
+                        score_threshold
+                            .map(|threshold| point.score >= threshold)
+                            .unwrap_or(true)
+                    })
+                    .take(limit)
+                    .collect();
+
                 Ok(top_rrf)
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let mut point_ids = HashSet::new();
-
-                for source in sources {
-                    for point in source.iter() {
-                        point_ids.insert(point.id);
-                    }
-                }
-
-                let filter = Filter::new_must(segment::types::Condition::HasId(
-                    HasIdCondition::from(point_ids),
-                ));
+                let filter = filter_with_sources_ids(sources, filter);
 
                 let scroll_request = ScrollRequestInternal {
                     offset: None,
@@ -244,18 +268,7 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let mut point_ids = HashSet::new();
-
-                for source in sources {
-                    for point in source.iter() {
-                        point_ids.insert(point.id);
-                    }
-                }
-
-                // create filter for target point ids
-                let filter = Filter::new_must(segment::types::Condition::HasId(
-                    HasIdCondition::from(point_ids),
-                ));
+                let filter = filter_with_sources_ids(sources, filter);
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -265,7 +278,7 @@ impl LocalShard {
                     offset: 0,
                     with_payload: None, // the payload is fetched separately
                     with_vector: None,  // the vector is fetched separately
-                    score_threshold: None,
+                    score_threshold,
                 };
 
                 let rescoring_core_search_request = CoreSearchRequestBatch {
@@ -293,28 +306,47 @@ impl LocalShard {
     /// Rescores if required.
     async fn merge_prefetches<'a>(
         &self,
-        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-        merge: ResultsMerge,
+        mut sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        merge: Option<ResultsMerge>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        if let Some(rescore) = merge.rescore {
-            self.rescore(
-                sources,
-                rescore,
-                merge.limit,
-                search_runtime_handle,
-                timeout,
-            )
-            .await
+        if let Some(results_merge) = merge {
+            self.rescore(sources, results_merge, search_runtime_handle, timeout)
+                .await
         } else {
-            // no rescore required - just merge, sort and limit
+            // The whole query request has no prefetches, and everything comes directly from a single source
             let top = sources
-                .flat_map(Cow::into_owned)
-                .sorted_unstable()
-                .take(merge.limit)
-                .collect();
+                .next()
+                .ok_or_else(|| {
+                    CollectionError::service_error("No sources to merge in the query request")
+                })?
+                .into_owned();
+
+            debug_assert!(sources.next().is_none());
+
             Ok(top)
         }
     }
+}
+
+/// Extracts point ids from sources, creates a filter and merges it with the provided filter.
+fn filter_with_sources_ids<'a>(
+    sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+    filter: Option<Filter>,
+) -> Filter {
+    let mut point_ids = HashSet::new();
+
+    for source in sources {
+        for point in source.iter() {
+            point_ids.insert(point.id);
+        }
+    }
+
+    // create filter for target point ids
+    let ids_filter = Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
+        point_ids,
+    )));
+
+    filter.unwrap_or_default().merge_owned(ids_filter)
 }
