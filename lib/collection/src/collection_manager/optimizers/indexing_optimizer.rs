@@ -112,11 +112,11 @@ impl IndexingOptimizer {
 
                 let indexing_threshold_bytes = self
                     .thresholds_config
-                    .indexing_threshold
+                    .indexing_threshold_kb
                     .saturating_mul(BYTES_IN_KB);
                 let mmap_threshold_bytes = self
                     .thresholds_config
-                    .memmap_threshold
+                    .memmap_threshold_kb
                     .saturating_mul(BYTES_IN_KB);
                 let mut require_optimization = false;
 
@@ -210,7 +210,7 @@ impl IndexingOptimizer {
                 && selected_segment_size + size
                     < self
                         .thresholds_config
-                        .max_segment_size
+                        .max_segment_size_kb
                         .saturating_mul(BYTES_IN_KB)
             {
                 return vec![selected_segment_id, *idx];
@@ -224,7 +224,7 @@ impl IndexingOptimizer {
                 && selected_segment_size + size
                     < self
                         .thresholds_config
-                        .max_segment_size
+                        .max_segment_size_kb
                         .saturating_mul(BYTES_IN_KB)
             {
                 return vec![selected_segment_id, idx];
@@ -350,9 +350,9 @@ mod tests {
         let mut index_optimizer = IndexingOptimizer::new(
             2,
             OptimizerThresholds {
-                max_segment_size: 300,
-                memmap_threshold: 1000,
-                indexing_threshold: 1000,
+                max_segment_size_kb: 300,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 1000,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -371,8 +371,8 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
@@ -451,9 +451,9 @@ mod tests {
         let mut index_optimizer = IndexingOptimizer::new(
             2,
             OptimizerThresholds {
-                max_segment_size: 300,
-                memmap_threshold: 1000,
-                indexing_threshold: 1000,
+                max_segment_size_kb: 300,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 1000,
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -480,30 +480,30 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
         assert!(suggested_to_optimize.contains(&middle_low_segment_id));
 
-        index_optimizer.thresholds_config.memmap_threshold = 1000;
-        index_optimizer.thresholds_config.indexing_threshold = 1000;
+        index_optimizer.thresholds_config.memmap_threshold_kb = 1000;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 1000;
 
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.is_empty());
 
-        index_optimizer.thresholds_config.memmap_threshold = 50;
-        index_optimizer.thresholds_config.indexing_threshold = 1000;
+        index_optimizer.thresholds_config.memmap_threshold_kb = 50;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 1000;
 
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
-        index_optimizer.thresholds_config.memmap_threshold = 150;
-        index_optimizer.thresholds_config.indexing_threshold = 50;
+        index_optimizer.thresholds_config.memmap_threshold_kb = 150;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
         process_field_index_operation(
@@ -658,7 +658,7 @@ mod tests {
 
         // Index even the smallest segment
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
-        index_optimizer.thresholds_config.indexing_threshold = 20;
+        index_optimizer.thresholds_config.indexing_threshold_kb = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
@@ -744,9 +744,9 @@ mod tests {
         let index_optimizer = IndexingOptimizer::new(
             number_of_segments, // Keep the same number of segments
             OptimizerThresholds {
-                max_segment_size: 1000,
-                memmap_threshold: 1000,
-                indexing_threshold: 10, // Always optimize
+                max_segment_size_kb: 1000,
+                memmap_threshold_kb: 1000,
+                indexing_threshold_kb: 10, // Always optimize
             },
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
@@ -821,9 +821,9 @@ mod tests {
         // Collection configuration
         let (point_count, dim) = (1000, 10);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: usize::MAX,
-            memmap_threshold: 10,
-            indexing_threshold: usize::MAX,
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: 10,
+            indexing_threshold_kb: usize::MAX,
         };
         let mut collection_params = CollectionParams {
             vectors: VectorsConfig::Single(

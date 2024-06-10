@@ -66,8 +66,10 @@ def test_triple_replication(tmp_path: pathlib.Path):
         all_active = True
         points_counts = set()
         for peer_api_uri in peer_api_uris:
+            count = get_collection_point_count(peer_api_uri, "test_collection", exact=True)
+            points_counts.add(count)
+
             res = check_collection_cluster(peer_api_uri, "test_collection")
-            points_counts.add(res['points_count'])
             if res['state'] != 'Active':
                 all_active = False
 
@@ -83,8 +85,8 @@ def test_triple_replication(tmp_path: pathlib.Path):
                         f.write(f"{peer_api_uri} {res.json()['result']}\n")
 
                 for peer_api_uri in peer_api_uris:
-                    res = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": True})
-                    print(res.json())
+                    count = get_collection_point_count(peer_api_uri, "test_collection", exact=True)
+                    print(count)
 
                 assert False, f"Points count is not equal on all peers: {points_counts}"
             break
