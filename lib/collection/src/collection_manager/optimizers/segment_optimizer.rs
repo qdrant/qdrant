@@ -33,9 +33,9 @@ const BYTES_IN_KB: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub struct OptimizerThresholds {
-    pub max_segment_size: usize,
-    pub memmap_threshold: usize,
-    pub indexing_threshold: usize,
+    pub max_segment_size_kb: usize,
+    pub memmap_threshold_kb: usize,
+    pub indexing_threshold_kb: usize,
 }
 
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
@@ -147,10 +147,10 @@ pub trait SegmentOptimizer {
         let collection_params = self.collection_params();
 
         let threshold_is_indexed = maximal_vector_store_size_bytes
-            >= thresholds.indexing_threshold.saturating_mul(BYTES_IN_KB);
+            >= thresholds.indexing_threshold_kb.saturating_mul(BYTES_IN_KB);
 
         let threshold_is_on_disk = maximal_vector_store_size_bytes
-            >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
+            >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
         let mut vector_data = collection_params.to_base_vector_data()?;
         let mut sparse_vector_data = collection_params.to_sparse_vector_data()?;

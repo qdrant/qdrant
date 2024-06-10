@@ -1,6 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -21,9 +21,12 @@ use tokio::time::{timeout, Duration};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
-use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, SegmentOptimizer,
+};
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::config::CollectionParams;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
@@ -257,6 +260,7 @@ impl UpdateHandler {
     {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
+
         'outer: for optimizer in optimizers.iter() {
             loop {
                 // Return early if we reached the optimization job limit
@@ -329,7 +333,7 @@ impl UpdateHandler {
                                 // Handle and report errors
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
-                                        debug!("Optimization cancelled - {}", description);
+                                        debug!("Optimization cancelled - {description}");
                                         tracker_handle
                                             .update(TrackerStatus::Cancelled(description));
                                         false
@@ -341,7 +345,7 @@ impl UpdateHandler {
                                         // It is only possible to fix after full restart,
                                         // so the best available action here is to stop whole
                                         // optimization thread and log the error
-                                        log::error!("Optimization error: {}", error);
+                                        log::error!("Optimization error: {error}");
 
                                         tracker_handle
                                             .update(TrackerStatus::Error(error.to_string()));
@@ -374,6 +378,48 @@ impl UpdateHandler {
         }
 
         handles
+    }
+
+    /// Ensure there is at least one appendable segment with enough capacity
+    ///
+    /// If there is no appendable segment, or all are at or over capacity, a new empty one is
+    /// created.
+    ///
+    /// Capacity is determined based on `optimizers.max_segment_size_kb`.
+    pub(super) fn ensure_appendable_segment_with_capacity(
+        segments: &LockedSegmentHolder,
+        segments_path: &Path,
+        collection_params: &CollectionParams,
+        thresholds_config: &OptimizerThresholds,
+    ) -> OperationResult<()> {
+        let no_segment_with_capacity = {
+            let segments_read = segments.read();
+            segments_read
+                .appendable_segments_ids()
+                .into_iter()
+                .filter_map(|segment_id| segments_read.get(segment_id))
+                .all(|segment| {
+                    let max_vector_size_bytes = segment
+                        .get()
+                        .read()
+                        .max_available_vectors_size_in_bytes()
+                        .unwrap_or_default();
+                    let max_segment_size_bytes = thresholds_config
+                        .max_segment_size_kb
+                        .saturating_mul(segment::common::BYTES_IN_KB);
+
+                    max_vector_size_bytes >= max_segment_size_bytes
+                })
+        };
+
+        if no_segment_with_capacity {
+            log::debug!("Creating new appendable segment, all existing segments are over capacity");
+            segments
+                .write()
+                .create_appendable_segment(segments_path, collection_params)?;
+        }
+
+        Ok(())
     }
 
     /// Checks conditions for all optimizers and returns whether any is satisfied
@@ -484,6 +530,21 @@ impl UpdateHandler {
                 // Optimizer signal
                 Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
                     has_triggered_optimizers.store(true, Ordering::Relaxed);
+
+                    // Ensure we have at least one appendable segment with enough capacity
+                    // Source required parameters from first optimizer
+                    if let Some(optimizer) = optimizers.first() {
+                        let result = Self::ensure_appendable_segment_with_capacity(
+                            &segments,
+                            optimizer.segments_path(),
+                            &optimizer.collection_params(),
+                            optimizer.threshold_config(),
+                        );
+                        if let Err(err) = result {
+                            log::error!("Failed to ensure there are appendable segments with capacity: {err}");
+                            panic!("Failed to ensure there are appendable segments with capacity: {err}");
+                        }
+                    }
 
                     // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop

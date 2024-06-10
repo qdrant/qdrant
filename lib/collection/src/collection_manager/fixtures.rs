@@ -35,7 +35,7 @@ pub fn empty_segment(path: &Path) -> Segment {
 
 /// A generator for random point IDs
 #[derive(Default)]
-struct PointIdGenerator {
+pub(crate) struct PointIdGenerator {
     thread_rng: ThreadRng,
     used: HashSet<u64>,
 }
@@ -217,14 +217,15 @@ pub(crate) fn get_merge_optimizer(
     segment_path: &Path,
     collection_temp_dir: &Path,
     dim: usize,
+    optimizer_thresholds: Option<OptimizerThresholds>,
 ) -> MergeOptimizer {
     MergeOptimizer::new(
         5,
-        OptimizerThresholds {
-            max_segment_size: 100_000,
-            memmap_threshold: 1000000,
-            indexing_threshold: 1000000,
-        },
+        optimizer_thresholds.unwrap_or(OptimizerThresholds {
+            max_segment_size_kb: 100_000,
+            memmap_threshold_kb: 1_000_000,
+            indexing_threshold_kb: 1_000_000,
+        }),
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
@@ -246,9 +247,9 @@ pub(crate) fn get_indexing_optimizer(
     IndexingOptimizer::new(
         2,
         OptimizerThresholds {
-            max_segment_size: 100_000,
-            memmap_threshold: 100,
-            indexing_threshold: 100,
+            max_segment_size_kb: 100_000,
+            memmap_threshold_kb: 100,
+            indexing_threshold_kb: 100,
         },
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),

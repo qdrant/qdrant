@@ -296,9 +296,9 @@ mod tests {
         // Collection configuration
         let (point_count, dim) = (1000, 10);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: usize::MAX,
-            memmap_threshold: usize::MAX,
-            indexing_threshold: 10,
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb: 10,
         };
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Single(
@@ -430,9 +430,9 @@ mod tests {
         // Collection configuration
         let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: usize::MAX,
-            memmap_threshold: usize::MAX,
-            indexing_threshold: 10,
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb: 10,
         };
         let hnsw_config_vector1 = HnswConfigDiff {
             m: Some(10),
@@ -598,9 +598,9 @@ mod tests {
         // Collection configuration
         let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: usize::MAX,
-            memmap_threshold: usize::MAX,
-            indexing_threshold: 10,
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb: 10,
         };
         let quantization_config_vector1 =
             QuantizationConfig::Scalar(segment::types::ScalarQuantization {

@@ -293,9 +293,9 @@ mod tests {
             0.2,
             50,
             OptimizerThresholds {
-                max_segment_size: 1000000,
-                memmap_threshold: 1000000,
-                indexing_threshold: 1000000,
+                max_segment_size_kb: 1000000,
+                memmap_threshold_kb: 1000000,
+                indexing_threshold_kb: 1000000,
             },
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
@@ -384,9 +384,9 @@ mod tests {
         // Collection configuration
         let (point_count, vector1_dim, vector2_dim) = (1000, 10, 20);
         let thresholds_config = OptimizerThresholds {
-            max_segment_size: usize::MAX,
-            memmap_threshold: usize::MAX,
-            indexing_threshold: 10,
+            max_segment_size_kb: usize::MAX,
+            memmap_threshold_kb: usize::MAX,
+            indexing_threshold_kb: 10,
         };
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Multi(BTreeMap::from([
