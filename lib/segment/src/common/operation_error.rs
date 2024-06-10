@@ -56,6 +56,8 @@ pub enum OperationError {
     WrongMulti,
     #[error("Wrong key of payload")]
     WrongPayloadKey { description: String },
+    #[error("No range index for `order_by` key: `{key}`. Please create one to use `order_by`. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Range conditions")]
+    MissingRangeIndexForOrderBy { key: String },
 }
 
 impl OperationError {
