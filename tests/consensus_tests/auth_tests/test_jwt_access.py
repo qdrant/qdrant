@@ -524,6 +524,9 @@ ACTION_ACCESS = {
     "count_points": EndpointAccess(
         True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
     ),
+    "query_points": EndpointAccess(
+        True, True, True, "POST /collections/{collection_name}/points/query", # "qdrant.Points/Query"
+    ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
     "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
@@ -1706,6 +1709,15 @@ def test_count_points():
     )
 
 
+def test_query_points():
+    check_access(
+        "query_points",
+        rest_request={"query": [0.1, 0.2, 0.3, 0.4]},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "query": {"vector": {"data": [0.1, 0.2, 0.3, 0.4]}}},
+    )
+    
+
 def test_root():
     check_access("root")
 
@@ -1740,6 +1752,7 @@ def test_get_locks():
 
 def test_get_issues():
     check_access("get_issues")
+
 
 def test_clear_issues():
     check_access("clear_issues")
