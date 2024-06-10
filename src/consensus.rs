@@ -19,8 +19,6 @@ use prost::Message as _;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
-#[cfg(feature = "chaos-test")]
-use rand::Rng;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use storage::content_manager::toc::TableOfContent;
