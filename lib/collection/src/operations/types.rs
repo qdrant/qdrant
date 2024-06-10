@@ -896,8 +896,10 @@ impl CollectionError {
         CollectionError::NotFound { what: what.into() }
     }
 
-    pub fn bad_request(description: String) -> CollectionError {
-        CollectionError::BadRequest { description }
+    pub fn bad_request(description: impl Into<String>) -> CollectionError {
+        CollectionError::BadRequest {
+            description: description.into(),
+        }
     }
 
     pub fn bad_shard_selection(description: String) -> CollectionError {

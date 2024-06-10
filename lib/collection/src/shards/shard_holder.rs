@@ -212,7 +212,7 @@ impl ShardHolder {
 
                 None => {
                     return Err(CollectionError::bad_request(
-                        "resharding is not in progress".into(),
+                        "resharding is not in progress",
                     ))
                 }
             }
