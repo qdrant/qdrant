@@ -22,6 +22,11 @@ uint candidates_count;
 #define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
 #define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
+ScoredPoint preprocess_candidates_heap_value(ScoredPoint scored_point) {
+    scored_point.score = -scored_point.score; // TODO: revert direction
+    return scored_point;
+}
+
 ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_change = scored_point.score > node_value.score;
     uint invocation = SUBGROUP_INVOKATION_ID;
@@ -116,12 +121,18 @@ ScoredPoint pop_candidate() {
         candidates.data[buffer_offset + candidates_count - 1] = ScoredPoint(0, positive_infinity);
     }
     groupMemoryBarrier();
+    candidates_count--;
+
+    if (candidates_count == 0) {
+        return preprocess_candidates_heap_value(first_candidate);
+    }
 
     uint node_index = 0;
     ScoredPoint node_value = candidates_heap_read(buffer_offset, node_index);
     node_value = candidates_heap_replace_first(node_value, last_candidate);
     while (true) {
         uint left_index = 2 * node_index + 1;
+        // TODO: check candidates count, not capcity - we do additional checks in the loop
         if (left_index * SUBGROUP_SIZE >= CANDIDATES_HEAP_CAPACITY) {
             break;
         }
@@ -159,14 +170,12 @@ ScoredPoint pop_candidate() {
     }
 
     candidates_heap_write(buffer_offset, node_index, node_value);
-    candidates_count--;
     groupMemoryBarrier();
-    first_candidate.score = -first_candidate.score; // TODO: revert direction
-    return first_candidate;
+    return preprocess_candidates_heap_value(first_candidate);
 }
 
 bool push_candidate(ScoredPoint scored_point) {
-    scored_point.score = -scored_point.score; // TODO: revert direction
+    scored_point = preprocess_candidates_heap_value(scored_point);
     if (candidates_count == CANDIDATES_HEAP_CAPACITY) {
         return false;
     }

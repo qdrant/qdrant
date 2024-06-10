@@ -31,7 +31,7 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
     check_and_process_visited(entry.id);
     push_nearest(entry);
     push_candidate(entry);
-
+    
     while (candidates_count > 0) {
         ScoredPoint candidate = pop_candidate();
         if (candidate.score < nearest_smaller.score) {
@@ -99,6 +99,7 @@ uint run_heuristic() {
         }
     }
 
+    nearest_count = result_count;
     return result_count;
 }
 

@@ -52,8 +52,12 @@ void main() {
 
     if (subgroupElect()) {
         uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
-        for (uint i = 0; i < count; i++) {
+        uint i = 0;
+        for (; i < count; i++) {
             search_results.data[result_index_offset + i] = get_nearest(i);
+        }
+        for (; i < NEAREST_HEAP_EF; i++) {
+            search_results.data[result_index_offset + i] = ScoredPoint(UINT_MAX, 0.0);
         }
     }
 }

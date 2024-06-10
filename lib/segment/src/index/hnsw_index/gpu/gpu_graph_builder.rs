@@ -194,7 +194,6 @@ impl GpuGraphBuilder {
     }
 
     fn build_level(&mut self, level: usize) -> OperationResult<()> {
-        println!("Build level {level}");
         let mut chunk_index = 0usize;
         while chunk_index < self.chunks.len() {
             let chunk = self.chunks[chunk_index].clone();
@@ -217,7 +216,6 @@ impl GpuGraphBuilder {
     }
 
     fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<usize> {
-        println!("Build chunk {:?}", chunk.clone());
         let timer = std::time::Instant::now();
         self.requests.clear();
         self.ids_hashset.clear();
@@ -245,15 +243,13 @@ impl GpuGraphBuilder {
             for patch in patches {
                 // conflict detect, this point and all after won't be updated
                 if !self.ids_hashset.insert(patch.id) {
+                    if i == 0 {
+                        panic!("Gpu links patch contains duplicate ids");
+                    }
                     self.patches_timer += timer.elapsed();
                     return Ok(i);
                 }
             }
-
-            println!(
-                "PATCH from point {:?}, entry={}, new_entry={}",
-                linking_point.point_id, linking_point.entry.point_id, new_entry
-            );
 
             // no conflicts, apply patch
             for patch in patches {
@@ -261,17 +257,8 @@ impl GpuGraphBuilder {
                 let mut links =
                     self.graph_layers_builder.links_layers[patch.id as usize][level].write();
 
-                println!(
-                    "apply patch {}: {:?}, old links {:?}",
-                    patch.id, &patch.links, &links
-                );
                 links.clear();
                 links.extend_from_slice(&patch.links);
-
-                let set = HashSet::from_iter(patch.links.iter().copied());
-                if set.len() != patch.links.len() {
-                    panic!("FFFFFUUUUUUUUUUUU");
-                }
             }
             linking_point.entry.point_id = new_entry;
         }
@@ -281,7 +268,6 @@ impl GpuGraphBuilder {
     }
 
     fn update_entries_chunk(&mut self, chunk: Range<usize>) -> OperationResult<()> {
-        println!("Update entries {:?}", chunk.clone());
         let timer = std::time::Instant::now();
         self.requests.clear();
         for linking_point in &self.points[chunk.clone()] {
@@ -297,10 +283,6 @@ impl GpuGraphBuilder {
             .iter_mut()
             .zip(new_entries.iter())
         {
-            println!(
-                "New entry for {:?}, entry={}, new_entry={}",
-                linking_point.point_id, linking_point.entry.point_id, new_entry.idx
-            );
             linking_point.entry.point_id = new_entry.idx;
         }
 
@@ -377,7 +359,6 @@ mod tests {
 
         let mut ids: Vec<_> = (0..num_vectors as PointOffsetType).collect();
         GpuGraphBuilder::sort_points_by_level(&graph_layers_builder, &mut ids);
-        println!("SORTED ids {:?}", ids);
 
         for &idx in &ids {
             let fake_filter_context = FakeFilterContext {};
@@ -460,8 +441,6 @@ mod tests {
             }
 
             total_sames += gpu_set.intersection(&cpu_set).count();
-
-            //assert_eq!(gpu_set, cpu_set);
         }
         println!(
             "total_sames: {}, total_top: {}, div {}",
@@ -479,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
-        let num_vectors = 6;
+        let num_vectors = 1024;
         let groups_count = 1;
         let dim = 64;
         let m = 8;
@@ -504,7 +483,6 @@ mod tests {
         .unwrap();
 
         for point_id in 0..num_vectors as PointOffsetType {
-            println!("point {point_id}");
             let gpu_levels = gpu_graph.get_point_level(point_id);
             let cpu_levels = test.graph_layers_builder.get_point_level(point_id);
             assert_eq!(cpu_levels, gpu_levels);
@@ -516,7 +494,6 @@ mod tests {
                 let cpu_links = test.graph_layers_builder.links_layers[point_id as usize][level]
                     .read()
                     .clone();
-                println!("level {level} links {:?}", cpu_links);
                 assert_eq!(gpu_links, cpu_links);
             }
         }

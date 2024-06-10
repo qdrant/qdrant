@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::types::{PointOffsetType, ScoredPointOffset};
+use itertools::Itertools;
 
 use super::gpu_candidates_heap::GpuCandidatesHeap;
 use super::gpu_links::GpuLinks;
@@ -41,6 +42,11 @@ pub struct GpuSearchContext {
     pub greedy_responses_buffer: Arc<gpu::Buffer>,
     pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
     pub greedy_pipeline: Arc<gpu::Pipeline>,
+
+    pub search_requests_buffer: Arc<gpu::Buffer>,
+    pub search_responses_buffer: Arc<gpu::Buffer>,
+    pub search_descriptor_set: Arc<gpu::DescriptorSet>,
+    pub search_pipeline: Arc<gpu::Pipeline>,
 
     pub patches_requests_buffer: Arc<gpu::Buffer>,
     pub patches_responses_buffer: Arc<gpu::Buffer>,
@@ -110,6 +116,42 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
             .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(greedy_search_shader.clone())
+            .build(device.clone());
+
+        let search_requests_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * std::mem::size_of::<GpuRequest>(),
+        ));
+        let search_responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
+        ));
+
+        let search_shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            include_bytes!("./shaders/compiled/test_hnsw_search.spv"),
+        ));
+        let search_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+            .add_storage_buffer(0)
+            .add_storage_buffer(1)
+            .build(device.clone());
+
+        let search_descriptor_set =
+            gpu::DescriptorSet::builder(search_descriptor_set_layout.clone())
+                .add_storage_buffer(0, search_requests_buffer.clone())
+                .add_storage_buffer(1, search_responses_buffer.clone())
+                .build();
+
+        let search_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, search_descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_shader(search_shader.clone())
             .build(device.clone());
 
         let patches_requests_buffer = Arc::new(gpu::Buffer::new(
@@ -185,12 +227,79 @@ impl GpuSearchContext {
             greedy_responses_buffer,
             greedy_descriptor_set,
             greedy_pipeline,
+            search_requests_buffer,
+            search_responses_buffer,
+            search_descriptor_set,
+            search_pipeline,
             patches_requests_buffer,
             patches_responses_buffer,
             entries_responses_buffer,
             patches_descriptor_set,
             patches_pipeline,
         })
+    }
+
+    pub fn search(
+        &mut self,
+        requests: &[GpuRequest],
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        if requests.len() > self.groups_count {
+            return Err(OperationError::service_error(
+                "Too many gpu greedy search requests",
+            ));
+        }
+
+        if self.is_dirty() {
+            self.apply_links_patch().unwrap();
+        }
+        self.gpu_visited_flags.clear(&mut self.context);
+
+        self.upload_staging_buffer.upload_slice(requests, 0);
+        self.context.copy_gpu_buffer(
+            self.upload_staging_buffer.clone(),
+            self.search_requests_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of_val(requests),
+        );
+        self.run_context();
+
+        self.context.bind_pipeline(
+            self.search_pipeline.clone(),
+            &[
+                self.search_descriptor_set.clone(),
+                self.gpu_vector_storage.descriptor_set.clone(),
+                self.gpu_links.descriptor_set.clone(),
+                self.gpu_nearest_heap.descriptor_set.clone(),
+                self.gpu_candidates_heap.descriptor_set.clone(),
+                self.gpu_visited_flags.descriptor_set.clone(),
+            ],
+        );
+        self.context.dispatch(requests.len(), 1, 1);
+        self.run_context();
+
+        // Download response
+        self.context.copy_gpu_buffer(
+            self.search_responses_buffer.clone(),
+            self.download_staging_buffer.clone(),
+            0,
+            0,
+            requests.len() * self.gpu_nearest_heap.ef * std::mem::size_of::<ScoredPointOffset>(),
+        );
+        self.run_context();
+        let mut gpu_responses =
+            vec![ScoredPointOffset::default(); requests.len() * self.gpu_nearest_heap.ef];
+        self.download_staging_buffer
+            .download_slice(&mut gpu_responses, 0);
+        Ok(gpu_responses
+            .chunks(self.gpu_nearest_heap.ef)
+            .map(|r| {
+                r.iter()
+                    .take_while(|s| s.idx != PointOffsetType::MAX)
+                    .cloned()
+                    .collect_vec()
+            })
+            .collect_vec())
     }
 
     pub fn greedy_search(
@@ -491,188 +600,16 @@ mod tests {
         // create request data
         let mut search_requests = vec![];
         for i in 0..groups_count {
-            search_requests.push(TestSearchRequest {
+            search_requests.push(GpuRequest {
                 id: (num_vectors + i) as PointOffsetType,
                 entry: 0,
             });
         }
 
-        // upload search requests to GPU
-        let search_requests_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::Storage,
-            search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
-        ));
-        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::CpuToGpu,
-            search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
-        ));
-        upload_staging_buffer.upload_slice(&search_requests, 0);
-        test.gpu_search_context.context.copy_gpu_buffer(
-            upload_staging_buffer.clone(),
-            search_requests_buffer.clone(),
-            0,
-            0,
-            search_requests_buffer.size,
-        );
-        test.gpu_search_context.run_context();
-
-        // create response and response staging buffers
-        let responses_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
-        ));
-        let responses_staging_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::GpuToCpu,
-            responses_buffer.size,
-        ));
-
-        // Create test pipeline
-        let shader = Arc::new(gpu::Shader::new(
-            test.gpu_search_context.device.clone(),
-            include_bytes!("./shaders/compiled/test_hnsw_search.spv"),
-        ));
-        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
-            .add_storage_buffer(0)
-            .add_storage_buffer(1)
-            .build(test.gpu_search_context.device.clone());
-
-        let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            .add_storage_buffer(0, search_requests_buffer.clone())
-            .add_storage_buffer(1, responses_buffer.clone())
-            .build();
-
-        let pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, descriptor_set_layout.clone())
-            .add_descriptor_set_layout(
-                1,
-                test.gpu_search_context
-                    .gpu_vector_storage
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_descriptor_set_layout(
-                2,
-                test.gpu_search_context
-                    .gpu_links
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_descriptor_set_layout(
-                3,
-                test.gpu_search_context
-                    .gpu_nearest_heap
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_descriptor_set_layout(
-                4,
-                test.gpu_search_context
-                    .gpu_candidates_heap
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_descriptor_set_layout(
-                5,
-                test.gpu_search_context
-                    .gpu_visited_flags
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_shader(shader.clone())
-            .build(test.gpu_search_context.device.clone());
-
-        test.gpu_search_context.context.bind_pipeline(
-            pipeline.clone(),
-            &[
-                descriptor_set.clone(),
-                test.gpu_search_context
-                    .gpu_vector_storage
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context.gpu_links.descriptor_set.clone(),
-                test.gpu_search_context
-                    .gpu_nearest_heap
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context
-                    .gpu_candidates_heap
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context
-                    .gpu_visited_flags
-                    .descriptor_set
-                    .clone(),
-            ],
-        );
-        test.gpu_search_context.context.dispatch(groups_count, 1, 1);
-        test.gpu_search_context.run_context();
-
-        // Download response
-        test.gpu_search_context.context.copy_gpu_buffer(
-            responses_buffer.clone(),
-            responses_staging_buffer.clone(),
-            0,
-            0,
-            responses_buffer.size,
-        );
-        test.gpu_search_context.run_context();
-        let mut gpu_responses_1 = vec![ScoredPointOffset::default(); groups_count * ef];
-        responses_staging_buffer.download_slice(&mut gpu_responses_1, 0);
-        let gpu_responses_1 = gpu_responses_1
-            .chunks_exact(ef)
-            .map(|r| r.to_owned())
-            .collect_vec();
+        let gpu_responses_1 = test.gpu_search_context.search(&search_requests).unwrap();
 
         // restart search to check reset
-        test.gpu_search_context
-            .gpu_visited_flags
-            .clear(&mut test.gpu_search_context.context);
-        test.gpu_search_context.run_context();
-        test.gpu_search_context.context.bind_pipeline(
-            pipeline,
-            &[
-                descriptor_set.clone(),
-                test.gpu_search_context
-                    .gpu_vector_storage
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context.gpu_links.descriptor_set.clone(),
-                test.gpu_search_context
-                    .gpu_nearest_heap
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context
-                    .gpu_candidates_heap
-                    .descriptor_set
-                    .clone(),
-                test.gpu_search_context
-                    .gpu_visited_flags
-                    .descriptor_set
-                    .clone(),
-            ],
-        );
-        test.gpu_search_context.context.dispatch(groups_count, 1, 1);
-        test.gpu_search_context.run_context();
-
-        // Download response second time
-        test.gpu_search_context.context.copy_gpu_buffer(
-            responses_buffer.clone(),
-            responses_staging_buffer.clone(),
-            0,
-            0,
-            responses_buffer.size,
-        );
-        test.gpu_search_context.run_context();
-        let mut gpu_responses_2 = vec![ScoredPointOffset::default(); groups_count * ef];
-        responses_staging_buffer.download_slice(&mut gpu_responses_2, 0);
-        let gpu_responses_2 = gpu_responses_2
-            .chunks_exact(ef)
-            .map(|r| r.to_owned())
-            .collect_vec();
+        let gpu_responses_2 = test.gpu_search_context.search(&search_requests).unwrap();
 
         // Check response
         for i in 0..groups_count {
