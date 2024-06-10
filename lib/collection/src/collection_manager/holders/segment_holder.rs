@@ -342,8 +342,52 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Get a random appendable segment
+    ///
+    /// If you want the smallest segment, use `random_appendable_segment_with_capacity` instead.
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
+        segment_ids
+            .choose(&mut rand::thread_rng())
+            .and_then(|idx| self.appendable_segments.get(idx).cloned())
+    }
+
+    /// Get the smallest appendable segment
+    ///
+    /// The returned segment likley has the most capacity for new points, which will help balance
+    /// new incoming data over all segments we have.
+    ///
+    /// This attempts a non-blocking read-lock on all segments to find the smallest one. Segments
+    /// that cannot be read-locked at this time are skipped. If no segment can be read-locked at
+    /// all, a random one is returned.
+    ///
+    /// If capacity is not important use `random_appendable_segment` instead because it is cheaper.
+    pub fn smallest_appendable_segment(&self) -> Option<LockedSegment> {
+        let segment_ids: Vec<_> = self.appendable_segments_ids();
+
+        // Try a non-blocking read lock on all segments and return the smallest one
+        let smallest_segment = segment_ids
+            .iter()
+            .filter_map(|segment_id| self.get(*segment_id))
+            .filter_map(|locked_segment| {
+                match locked_segment
+                    .get()
+                    .try_read()
+                    .map(|segment| segment.max_available_vectors_size_in_bytes())?
+                {
+                    Ok(size) => Some((locked_segment, size)),
+                    Err(err) => {
+                        log::error!("Failed to get segment size, ignoring: {err}");
+                        None
+                    }
+                }
+            })
+            .min_by_key(|(_, segment_size)| *segment_size);
+        if let Some((smallest_segment, _)) = smallest_segment {
+            return Some(LockedSegment::clone(smallest_segment));
+        }
+
+        // Fall back to picking a random segment
         segment_ids
             .choose(&mut rand::thread_rng())
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
