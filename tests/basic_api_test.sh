@@ -11,19 +11,7 @@ curl -X DELETE "http://$QDRANT_HOST/collections/test_collection" \
   --fail -s | jq
 
 # create collection
-curl -X PUT "http://$QDRANT_HOST/collections/test_collection" \
-  -H 'Content-Type: application/json' \
-  --fail -s \
-  --data-raw '{
-      "vectors": {
-        "size": 4,
-        "distance": "Dot"
-      },
-      "optimizers_config": {
-        "default_segment_number": 2
-      },
-      "replication_factor": 2
-    }' | jq
+curl -X PUT "http://localhost:6333/collections/test_collection" -H 'Content-Type: application/json' --data-raw '{ "vectors": { "size": 4, "distance": "Dot" } }'
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/test_collection/index" \
   -H 'Content-Type: application/json' \
