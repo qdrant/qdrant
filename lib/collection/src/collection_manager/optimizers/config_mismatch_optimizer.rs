@@ -329,7 +329,7 @@ mod tests {
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
-            thresholds_config.clone(),
+            thresholds_config,
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
@@ -487,7 +487,7 @@ mod tests {
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
-            thresholds_config.clone(),
+            thresholds_config,
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
@@ -654,7 +654,7 @@ mod tests {
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             2,
-            thresholds_config.clone(),
+            thresholds_config,
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             collection_params.clone(),
