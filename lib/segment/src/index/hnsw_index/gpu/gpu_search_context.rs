@@ -351,8 +351,11 @@ impl GpuSearchContext {
         self.gpu_links.set_links(point_id, links)
     }
 
-    pub fn update_layer_params(&mut self, m: usize) {
-        self.gpu_links.update_params(&mut self.context, m);
+    pub fn clear(&mut self, new_m: usize) -> OperationResult<()> {
+        self.gpu_links.update_params(&mut self.context, new_m);
+        self.gpu_links.clear(&mut self.context)?;
+        self.run_context();
+        Ok(())
     }
 
     fn apply_links_patch(&mut self) -> OperationResult<()> {

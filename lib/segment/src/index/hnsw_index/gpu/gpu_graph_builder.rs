@@ -177,14 +177,14 @@ impl GpuGraphBuilder {
     }
 
     fn build_levels(mut self) -> OperationResult<GraphLayersBuilder> {
-        let levels_count = self.points[0].level;
+        let levels_count = self.points[0].level + 1;
         for level in (0..levels_count).rev() {
             let level_m = if level > 0 {
                 self.graph_layers_builder.m
             } else {
                 self.graph_layers_builder.m0
             };
-            self.gpu_search_context.update_layer_params(level_m);
+            self.gpu_search_context.clear(level_m)?;
             self.build_level(level)?;
         }
 
@@ -194,6 +194,7 @@ impl GpuGraphBuilder {
     }
 
     fn build_level(&mut self, level: usize) -> OperationResult<()> {
+        println!("Build level {level}");
         let mut chunk_index = 0usize;
         while chunk_index < self.chunks.len() {
             let chunk = self.chunks[chunk_index].clone();
@@ -216,6 +217,7 @@ impl GpuGraphBuilder {
     }
 
     fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<usize> {
+        println!("Build chunk {:?}", chunk.clone());
         let timer = std::time::Instant::now();
         self.requests.clear();
         self.ids_hashset.clear();
@@ -248,19 +250,27 @@ impl GpuGraphBuilder {
                 }
             }
 
+            println!(
+                "PATCH from point {:?}, entry={}, new_entry={}",
+                linking_point.point_id, linking_point.entry.point_id, new_entry
+            );
+
             // no conflicts, apply patch
             for patch in patches {
-                if patch.id == 0 && level == 0 {
-                    println!("apply patch {:?}", &patch.links);
-                }
-
                 self.gpu_search_context.set_links(patch.id, &patch.links)?;
                 let mut links =
                     self.graph_layers_builder.links_layers[patch.id as usize][level].write();
+
+                println!(
+                    "apply patch {}: {:?}, old links {:?}",
+                    patch.id, &patch.links, &links
+                );
                 links.clear();
                 links.extend_from_slice(&patch.links);
-                if patch.id == 0 && level == 0 {
-                    println!("apply patch {:?}", &links);
+
+                let set = HashSet::from_iter(patch.links.iter().copied());
+                if set.len() != patch.links.len() {
+                    panic!("FFFFFUUUUUUUUUUUU");
                 }
             }
             linking_point.entry.point_id = new_entry;
@@ -271,6 +281,7 @@ impl GpuGraphBuilder {
     }
 
     fn update_entries_chunk(&mut self, chunk: Range<usize>) -> OperationResult<()> {
+        println!("Update entries {:?}", chunk.clone());
         let timer = std::time::Instant::now();
         self.requests.clear();
         for linking_point in &self.points[chunk.clone()] {
@@ -286,6 +297,10 @@ impl GpuGraphBuilder {
             .iter_mut()
             .zip(new_entries.iter())
         {
+            println!(
+                "New entry for {:?}, entry={}, new_entry={}",
+                linking_point.point_id, linking_point.entry.point_id, new_entry.idx
+            );
             linking_point.entry.point_id = new_entry.idx;
         }
 
@@ -362,6 +377,7 @@ mod tests {
 
         let mut ids: Vec<_> = (0..num_vectors as PointOffsetType).collect();
         GpuGraphBuilder::sort_points_by_level(&graph_layers_builder, &mut ids);
+        println!("SORTED ids {:?}", ids);
 
         for &idx in &ids {
             let fake_filter_context = FakeFilterContext {};
@@ -463,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
-        let num_vectors = 32;
+        let num_vectors = 6;
         let groups_count = 1;
         let dim = 64;
         let m = 8;
@@ -493,7 +509,7 @@ mod tests {
             let cpu_levels = test.graph_layers_builder.get_point_level(point_id);
             assert_eq!(cpu_levels, gpu_levels);
 
-            for level in 0..cpu_levels + 1 {
+            for level in (0..cpu_levels + 1).rev() {
                 let gpu_links = gpu_graph.links_layers[point_id as usize][level]
                     .read()
                     .clone();

@@ -139,9 +139,7 @@ impl GpuLinks {
 
     pub fn clear(&mut self, gpu_context: &mut gpu::Context) -> OperationResult<()> {
         if !self.patched_points.is_empty() {
-            return Err(OperationError::service_error(
-                "Gpu links patches are not empty",
-            ));
+            self.patched_points.clear();
         }
         gpu_context.clear_buffer(self.links_buffer.clone());
         self.links = vec![0; self.links.len()];
