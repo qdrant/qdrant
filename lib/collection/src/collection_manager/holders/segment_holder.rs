@@ -358,10 +358,58 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Get a random appendable segment
+    ///
+    /// If the segment capacity needs to be considered, use `random_appendable_segment_with_capacity` instead.
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
         segment_ids
             .choose(&mut rand::thread_rng())
+            .and_then(|idx| self.appendable_segments.get(idx).cloned())
+    }
+
+    /// Get a random appendable segment with capacity for new points
+    ///
+    /// This goes over appendable segments until one is found that meets the capacity requirements.
+    /// For each segment it attempts a cheap non-blocking read to check for capacity. If no read
+    /// lock can be acquired, the segment is assumed to be big and is skipped in the first check.
+    ///
+    /// If no segment has capacity, a random segment is returned.
+    ///
+    /// If capacity is not important use `random_appendable_segment` instead because it is cheaper.
+    pub fn random_appendable_segment_with_capacity(&self) -> Option<LockedSegment> {
+        let mut segment_ids: Vec<_> = self.appendable_segments_ids();
+        segment_ids.shuffle(&mut rand::thread_rng());
+        let max_segment_size = self
+            .thresholds_config
+            .max_segment_size_kb
+            .saturating_mul(BYTES_IN_KB);
+
+        // Check each segment in randomized order
+        // Attempt a non-blocking read and check for capacity, otherwise assume it has none
+        for segment_id in &segment_ids {
+            let Some(locked_segment) = self.get(*segment_id) else {
+                continue;
+            };
+            let segment_entry = locked_segment.get();
+            let Some(segment_read) = segment_entry.try_read() else {
+                continue;
+            };
+            let segment_size = match segment_read.max_available_vectors_size_in_bytes() {
+                Ok(segment_size) => segment_size,
+                Err(err) => {
+                    log::error!("Failed to get segment size, ignoring: {err}");
+                    continue;
+                }
+            };
+            if segment_size <= max_segment_size {
+                return Some(locked_segment.clone());
+            }
+        }
+
+        // Just take the first segment, which is a random one because we shuffled
+        segment_ids
+            .first()
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
