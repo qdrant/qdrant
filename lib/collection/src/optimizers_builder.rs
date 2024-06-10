@@ -105,25 +105,25 @@ impl OptimizersConfig {
     }
 
     pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
-        let indexing_threshold = match self.indexing_threshold {
+        let indexing_threshold_kb = match self.indexing_threshold {
             None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
             Some(0) => usize::MAX,                 // disable vector index
             Some(custom) => custom,
         };
 
-        let memmap_threshold = match self.memmap_threshold {
+        let memmap_threshold_kb = match self.memmap_threshold {
             None | Some(0) => usize::MAX, // default | disable memmap
             Some(custom) => custom,
         };
 
         OptimizerThresholds {
-            memmap_threshold,
-            indexing_threshold,
-            max_segment_size: self.get_max_segment_size(),
+            memmap_threshold_kb,
+            indexing_threshold_kb,
+            max_segment_size_kb: self.get_max_segment_size_in_kilobytes(),
         }
     }
 
-    pub fn get_max_segment_size(&self) -> usize {
+    pub fn get_max_segment_size_in_kilobytes(&self) -> usize {
         if let Some(max_segment_size) = self.max_segment_size {
             max_segment_size
         } else {

@@ -129,7 +129,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 *size
                     < self
                         .thresholds_config
-                        .max_segment_size
+                        .max_segment_size_kb
                         .saturating_mul(BYTES_IN_KB)
             })
             .take(max_candidates)
@@ -182,14 +182,14 @@ mod tests {
 
         merge_optimizer.default_segments_number = 1;
 
-        merge_optimizer.thresholds_config.max_segment_size = 100;
+        merge_optimizer.thresholds_config.max_segment_size_kb = 100;
 
         let check_result_empty =
             merge_optimizer.check_condition(locked_holder.clone(), &Default::default());
 
         assert!(check_result_empty.is_empty());
 
-        merge_optimizer.thresholds_config.max_segment_size = 200;
+        merge_optimizer.thresholds_config.max_segment_size_kb = 200;
 
         let check_result = merge_optimizer.check_condition(locked_holder, &Default::default());
 

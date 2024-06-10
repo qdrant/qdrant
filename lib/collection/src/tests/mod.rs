@@ -220,9 +220,9 @@ async fn test_new_segment_when_all_over_capacity() {
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
 
     let optimizer_thresholds = OptimizerThresholds {
-        max_segment_size: 1,
-        memmap_threshold: 1_000_000,
-        indexing_threshold: 1_000_000,
+        max_segment_size_kb: 1,
+        memmap_threshold_kb: 1_000_000,
+        indexing_threshold_kb: 1_000_000,
     };
     let merge_optimizer: Arc<Optimizer> = Arc::new(get_merge_optimizer(
         dir.path(),

@@ -222,9 +222,9 @@ pub(crate) fn get_merge_optimizer(
     MergeOptimizer::new(
         5,
         optimizer_thresholds.unwrap_or(OptimizerThresholds {
-            max_segment_size: 100_000,
-            memmap_threshold: 1_000_000,
-            indexing_threshold: 1_000_000,
+            max_segment_size_kb: 100_000,
+            memmap_threshold_kb: 1_000_000,
+            indexing_threshold_kb: 1_000_000,
         }),
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
@@ -247,9 +247,9 @@ pub(crate) fn get_indexing_optimizer(
     IndexingOptimizer::new(
         2,
         OptimizerThresholds {
-            max_segment_size: 100_000,
-            memmap_threshold: 100,
-            indexing_threshold: 100,
+            max_segment_size_kb: 100_000,
+            memmap_threshold_kb: 100,
+            indexing_threshold_kb: 100,
         },
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
