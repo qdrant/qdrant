@@ -9,6 +9,7 @@ pub mod gpu_visited_flags;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static GPU_INDEXING: AtomicBool = AtomicBool::new(false);
+pub const GPU_GROUPS_COUNT: usize = 64;
 
 pub fn set_gpu_indexing(gpu_indexing: bool) {
     GPU_INDEXING.store(gpu_indexing, Ordering::Relaxed);

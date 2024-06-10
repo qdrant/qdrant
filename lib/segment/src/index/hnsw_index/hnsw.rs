@@ -28,6 +28,8 @@ use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+use crate::index::hnsw_index::gpu::gpu_graph_builder::GpuGraphBuilder;
+use crate::index::hnsw_index::gpu::{get_gpu_indexing, GPU_GROUPS_COUNT};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -699,16 +701,17 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             permit.num_cpus,
         );
         let indexing_threshold = self.config.full_scan_threshold;
+        let num_entries = (total_vector_count
+            .checked_div(indexing_threshold)
+            .unwrap_or(0)
+            * 10)
+            .max(1);
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             self.config.m,
             self.config.m0,
             self.config.ef_construct,
-            (total_vector_count
-                .checked_div(indexing_threshold)
-                .unwrap_or(0)
-                * 10)
-                .max(1),
+            num_entries,
             HNSW_USE_HEURISTIC,
         );
 
@@ -738,51 +741,74 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             })
             .build()?;
 
-        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
-            check_process_stopped(stopped)?;
-            let level = graph_layers_builder.get_random_layer(&mut rng);
-            graph_layers_builder.set_levels(vector_id, level);
+        let use_gpu = get_gpu_indexing();
+        if !use_gpu {
+            for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
+                check_process_stopped(stopped)?;
+                let level = graph_layers_builder.get_random_layer(&mut rng);
+                graph_layers_builder.set_levels(vector_id, level);
+            }
         }
 
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
+            let single_threaded_threshold = if !use_gpu {
+                SINGLE_THREADED_HNSW_BUILD_THRESHOLD
+            } else {
+                0
+            };
+
             let mut ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
 
             let first_few_ids: Vec<_> = ids_iterator
                 .by_ref()
-                .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
+                .take(single_threaded_threshold)
                 .collect();
             let ids: Vec<_> = ids_iterator.collect();
 
             indexed_vectors = ids.len() + first_few_ids.len();
 
-            let insert_point = |vector_id| {
-                check_process_stopped(stopped)?;
-                let vector = vector_storage.get_vector(vector_id);
-                let vector = vector.as_vec_ref().into();
-                let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
-                    quantized_storage.raw_scorer(
-                        vector,
-                        id_tracker.deleted_point_bitslice(),
-                        vector_storage.deleted_vector_bitslice(),
-                        stopped,
-                    )
-                } else {
-                    new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
-                }?;
-                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+            if use_gpu {
+                graph_layers_builder = GpuGraphBuilder::build(
+                    &mut rng,
+                    None,
+                    GPU_GROUPS_COUNT,
+                    &vector_storage,
+                    self.config.m,
+                    self.config.m0,
+                    self.config.ef,
+                    num_entries,
+                    ids,
+                )?;
+            } else {
+                let insert_point = |vector_id| {
+                    check_process_stopped(stopped)?;
+                    let vector = vector_storage.get_vector(vector_id);
+                    let vector = vector.as_vec_ref().into();
+                    let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
+                        quantized_storage.raw_scorer(
+                            vector,
+                            id_tracker.deleted_point_bitslice(),
+                            vector_storage.deleted_vector_bitslice(),
+                            stopped,
+                        )
+                    } else {
+                        new_raw_scorer(vector, &vector_storage, id_tracker.deleted_point_bitslice())
+                    }?;
+                    let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
-                Ok::<_, OperationError>(())
-            };
+                    graph_layers_builder.link_new_point(vector_id, points_scorer);
+                    Ok::<_, OperationError>(())
+                };
 
-            for vector_id in first_few_ids {
-                insert_point(vector_id)?;
-            }
+                for vector_id in first_few_ids {
+                    insert_point(vector_id)?;
+                }
 
-            if !ids.is_empty() {
-                pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+                if !ids.is_empty() {
+                    pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
+                }
             }
 
             debug!("finish main graph");
