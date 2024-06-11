@@ -225,27 +225,9 @@ impl Collection {
 
         let order_by = request.order_by.map(OrderBy::from);
 
-        // Handle case of order_by
-        if let Some(order_by) = &order_by {
-            // Validate we have a range index for the order_by key
-            let has_range_index_for_order_by_field = self
-                .payload_index_schema
-                .read()
-                .schema
-                .get(&order_by.key)
-                .is_some_and(|field| field.has_range_index());
-
-            if !has_range_index_for_order_by_field {
-                return Err(CollectionError::bad_request(format!(
-                    "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer, float, and datetime payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
-                    &order_by.key
-                )));
-            }
-
-            // Validate user did not try to use an id offset with order_by
-            if id_offset.is_some() {
-                return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
-            }
+        // Validate user did not try to use an id offset with order_by
+        if order_by.is_some() && id_offset.is_some() {
+            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
         };
 
         if limit == 0 {
