@@ -351,6 +351,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::fixtures::index_fixtures::random_vector;
     use crate::fixtures::payload_fixtures::random_dense_byte_vector;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
@@ -412,7 +413,11 @@ mod tests {
 
         let mut rnd = StdRng::seed_from_u64(42);
         let points = (0..num_vectors)
-            .map(|_| random_dense_byte_vector(&mut rnd, dim))
+            .map(|_| match element_type {
+                TestElementType::Float32 => random_vector(&mut rnd, dim),
+                TestElementType::Float16 => random_vector(&mut rnd, dim),
+                TestElementType::Uint8 => random_dense_byte_vector(&mut rnd, dim),
+            })
             .collect::<Vec<_>>();
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
@@ -453,15 +458,19 @@ mod tests {
             device.clone(),
             match gpu_vector_storage.element_type {
                 GpuVectorStorageElementType::Float32 => {
+                    println!("Float32 shader");
                     include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
                 }
                 GpuVectorStorageElementType::Float16 => {
+                    println!("Float16 shader");
                     include_bytes!("./shaders/compiled/test_vector_storage_f16.spv")
                 }
                 GpuVectorStorageElementType::Uint8 => {
+                    println!("Uint8 shader");
                     include_bytes!("./shaders/compiled/test_vector_storage_u8.spv")
                 }
                 GpuVectorStorageElementType::Binary => {
+                    println!("Binary shader");
                     include_bytes!("./shaders/compiled/test_vector_storage_binary.spv")
                 }
             },
@@ -522,7 +531,7 @@ mod tests {
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[test_point_id], &points[i]);
             println!("CPU score = {}, GPU score = {}", score, scores[i]);
-            assert!((score - scores[i]).abs() < 1.0);
+            assert!((score - scores[i]).abs() < 0.01);
         }
         println!("CPU scoring time = {:?}", timer.elapsed());
 
