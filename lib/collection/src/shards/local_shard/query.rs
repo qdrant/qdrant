@@ -41,7 +41,7 @@ impl PrefetchHolder {
         }
     }
 
-    fn get<'a>(&'a self, element: FetchedSource) -> CollectionResult<Cow<'a, Vec<ScoredPoint>>> {
+    fn get(&self, element: FetchedSource) -> CollectionResult<Cow<'_, Vec<ScoredPoint>>> {
         match element {
             FetchedSource::Core(idx) => self.core_results.get(idx).map(Cow::Borrowed),
             FetchedSource::Scroll(idx) => self.scrolls.get(idx).map(Cow::Borrowed),
@@ -144,7 +144,7 @@ impl LocalShard {
                             )
                             .await?
                             .into_iter()
-                            .map(|v| Cow::Owned(v));
+                            .map(Cow::Owned);
                         cow_sources.extend(merged);
                     }
                 }
