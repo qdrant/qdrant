@@ -420,7 +420,7 @@ where
     {
         let default_write_segment =
             segments
-                .random_appendable_segment()
+                .smallest_appendable_segment()
                 .ok_or(CollectionError::service_error(
                     "No appendable segments exists, expected at least one",
                 ))?;
