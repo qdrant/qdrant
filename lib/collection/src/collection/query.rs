@@ -122,7 +122,6 @@ impl Collection {
     pub async fn query_internal(
         &self,
         request: ShardQueryRequest,
-        read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<ShardQueryResponse> {
         let request = Arc::new(request);
@@ -130,7 +129,7 @@ impl Collection {
         // Results from all shards
         // Shape: [num_shards, num_internal_queries, num_scored_points]
         let all_shards_results = self
-            .query_shards_concurrently(Arc::clone(&request), read_consistency, shard_selection)
+            .query_shards_concurrently(Arc::clone(&request), None, shard_selection)
             .await?;
 
         let merged = self
