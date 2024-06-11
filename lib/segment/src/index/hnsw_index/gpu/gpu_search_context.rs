@@ -6,7 +6,7 @@ use itertools::Itertools;
 use super::gpu_candidates_heap::GpuCandidatesHeap;
 use super::gpu_links::GpuLinks;
 use super::gpu_nearest_heap::GpuNearestHeap;
-use super::gpu_vector_storage::GpuVectorStorage;
+use super::gpu_vector_storage::{GpuVectorStorage, GpuVectorStorageElementType};
 use super::gpu_visited_flags::GpuVisitedFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -96,7 +96,20 @@ impl GpuSearchContext {
 
         let greedy_search_shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/run_greedy_search.spv"),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/run_greedy_search_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/run_greedy_search_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/run_greedy_search_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/run_greedy_search_binary.spv")
+                }
+            },
         ));
         let greedy_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
@@ -132,7 +145,20 @@ impl GpuSearchContext {
 
         let search_shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/test_hnsw_search.spv"),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_binary.spv")
+                }
+            },
         ));
         let search_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
@@ -173,7 +199,20 @@ impl GpuSearchContext {
 
         let patches_shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/run_insert_vector.spv"),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_binary.spv")
+                }
+            },
         ));
         let patches_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
@@ -782,7 +821,20 @@ mod tests {
         // Create test pipeline
         let shader = Arc::new(gpu::Shader::new(
             test.gpu_search_context.device.clone(),
-            include_bytes!("./shaders/compiled/test_heuristic.spv"),
+            match test.gpu_search_context.gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/test_heuristic_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/test_heuristic_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/test_heuristic_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/test_heuristic_binary.spv")
+                }
+            },
         ));
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)

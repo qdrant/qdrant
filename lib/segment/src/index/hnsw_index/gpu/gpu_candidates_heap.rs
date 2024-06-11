@@ -123,7 +123,7 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/test_candidates_heap.spv"),
+            include_bytes!("./shaders/compiled/test_candidates_heap_f32.spv"),
         ));
 
         let input_points_buffer = Arc::new(gpu::Buffer::new(

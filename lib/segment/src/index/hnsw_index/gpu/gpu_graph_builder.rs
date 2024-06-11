@@ -185,8 +185,7 @@ impl GpuGraphBuilder {
             } else {
                 self.graph_layers_builder.m0
             };
-            self.gpu_search_context.clear(level_m)?;
-            self.build_level(level)?;
+            self.build_level(level, level_m)?;
         }
 
         let sum = self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
@@ -197,7 +196,8 @@ impl GpuGraphBuilder {
         Ok(self.graph_layers_builder)
     }
 
-    fn build_level(&mut self, level: usize) -> OperationResult<()> {
+    fn build_level(&mut self, level: usize, level_m: usize) -> OperationResult<()> {
+        self.gpu_search_context.clear(level_m)?;
         let mut chunk_index = 0usize;
         while chunk_index < self.chunks.len() {
             let chunk = self.chunks[chunk_index].clone();
