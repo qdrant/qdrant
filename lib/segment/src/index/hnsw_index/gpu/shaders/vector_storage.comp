@@ -5,6 +5,47 @@
 #error "VECTOR_STORAGE_LAYOUT_SET not defined"
 #endif
 
+#ifdef VECTOR_STORAGE_ELEMENT_FLOAT32
+
+#define VECTOR_STORAGE_ELEMENT_TYPE vec4
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_FLOAT16
+
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
+#define VECTOR_STORAGE_ELEMENT_TYPE f16vec4
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_UINT8
+
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+
+float dot_u8vec4(u8vec4 a, u8vec4 b) {
+    uint sum = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    return float(sum);
+}
+
+#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+
+#endif
+
+#ifdef VECTOR_STORAGE_ELEMENT_BINARY
+
+#define VECTOR_STORAGE_ELEMENT_TYPE uint
+// TODO: find glsl function for XOR
+#define VECTOR_STORAGE_SCORE_ELEMENT(i, j) float(bitCount((a | b) - (a & b)))
+
+#endif
+
+#ifndef VECTOR_STORAGE_ELEMENT_TYPE
+#error "VECTOR_STORAGE_ELEMENT not defined"
+#endif
+
 #include "common.comp"
 
 layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
@@ -25,7 +66,7 @@ readonly uniform VectorStorageParams {
 #define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
     layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1 + STORAGE_INDEX) \
     readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
-        vec4 data[]; \
+        VECTOR_STORAGE_ELEMENT_TYPE data[]; \
     } STORAGE(STORAGE_INDEX);
 
 VECTOR_STORAGE_DEFINE(0)
@@ -33,17 +74,9 @@ VECTOR_STORAGE_DEFINE(1)
 VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
-#define VECTOR_STORAGE_SCORE(STORAGE_INDEX_A, STORAGE_INDEX_B) \
-    for (uint i = 0; i < d; i++) { \
-        result += dot( \
-            STORAGE(STORAGE_INDEX_A).data[aId + i], \
-            STORAGE(STORAGE_INDEX_B).data[bId + i] \
-        ); \
-    }
-
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A, STORAGE_INDEX_B) \
     for (uint i = 0; i < d; i += SUBGROUP_SIZE, aIndex += SUBGROUP_SIZE, bIndex += SUBGROUP_SIZE) { \
-        result += dot( \
+        result += VECTOR_STORAGE_SCORE_ELEMENT( \
             STORAGE(STORAGE_INDEX_A).data[aIndex], \
             STORAGE(STORAGE_INDEX_B).data[bIndex] \
         ); \
