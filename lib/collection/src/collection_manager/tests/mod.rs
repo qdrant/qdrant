@@ -177,3 +177,59 @@ fn test_move_points_to_copy_on_write() {
         eprintln!("{idx} -> {external}");
     }
 }
+
+#[test]
+fn test_upsert_points_in_smallest_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut segment1 = build_segment_1(dir.path());
+    let mut segment2 = build_segment_2(dir.path());
+    let segment3 = empty_segment(dir.path());
+
+    // Fill segment 1 and 2 to the capacity
+    for point_id in 0..100 {
+        segment1
+            .upsert_point(
+                20,
+                point_id.into(),
+                only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                20,
+                (100 + point_id).into(),
+                only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+            )
+            .unwrap();
+    }
+
+    let mut holder = SegmentHolder::default();
+
+    let _sid1 = holder.add_new(segment1);
+    let _sid2 = holder.add_new(segment2);
+    let sid3 = holder.add_new(segment3);
+
+    let segments = Arc::new(RwLock::new(holder));
+
+    let points: Vec<_> = (1000..1010)
+        .map(|id| PointStruct {
+            id: id.into(),
+            vector: VectorStruct::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            payload: None,
+        })
+        .collect();
+    upsert_points(&segments.read(), 1000, &points).unwrap();
+
+    // Segment 1 and 2 are over capacity, we expect to have the new points in segment 3
+    {
+        let segment3 = segments.read().get(sid3).unwrap().get();
+        let segment3_read = segment3.read();
+        for point_id in 1000..1010 {
+            assert!(segment3_read.has_point(point_id.into()));
+        }
+        for point_id in 0..10 {
+            assert!(!segment3_read.has_point(point_id.into()));
+        }
+    }
+}
