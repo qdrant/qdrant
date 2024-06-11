@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::cpu::CpuBudget;
 use segment::data_types::vectors::{NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
-use segment::types::{WithPayloadInterface, WithVector};
+use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -146,6 +146,44 @@ async fn test_shard_query_rrf_rescoring() {
     for source in sources_scores.iter() {
         assert_eq!(source.len(), inner_limit);
     }
+
+    ////// Test that the order of prefetches is preserved in the response //////
+    let query = ShardQueryRequest {
+        prefetches: vec![
+            ShardPrefetch {
+                filter: Some(filter_single_id(1)),
+                ..nearest_query_prefetch.clone()
+            },
+            ShardPrefetch {
+                filter: Some(filter_single_id(2)),
+                ..nearest_query_prefetch.clone()
+            },
+            ShardPrefetch {
+                filter: Some(filter_single_id(3)),
+                ..nearest_query_prefetch.clone()
+            },
+        ],
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+        filter: None,
+        score_threshold: None,
+        limit: outer_limit,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    let sources_scores = shard
+        .query(Arc::new(query), &current_runtime)
+        .await
+        .unwrap();
+
+    // one score per prefetch
+    assert_eq!(sources_scores.len(), 3);
+    assert!(sources_scores.iter().all(|source| source.len() == 1));
+    assert_eq!(sources_scores[0][0].id, PointIdType::NumId(1));
+    assert_eq!(sources_scores[1][0].id, PointIdType::NumId(2));
+    assert_eq!(sources_scores[2][0].id, PointIdType::NumId(3));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -260,7 +298,7 @@ async fn test_shard_query_vector_rescoring() {
         .await
         .unwrap();
 
-    // only one inner result in absence of prefetches
+    // only one inner result in absence of fusion
     assert_eq!(sources_scores.len(), 1);
     // merging taking place
     // number of results is limited by the outer limit for vector rescoring

@@ -23,6 +23,11 @@ use crate::operations::universal_query::planned_query::{
 };
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
+pub enum FetchedSource {
+    Core(usize),
+    Scroll(usize),
+}
+
 struct PrefetchHolder {
     core_results: Vec<Vec<ScoredPoint>>,
     scrolls: Vec<Vec<ScoredPoint>>,
@@ -36,44 +41,12 @@ impl PrefetchHolder {
         }
     }
 
-    /// Returns an iterator by Cow over the sources in no specific order.
-    fn iter_sources(
-        &self,
-        core_indices: Vec<usize>,
-        scroll_indices: Vec<usize>,
-        merged_list: Vec<Vec<ScoredPoint>>,
-    ) -> PrefetchIterator {
-        PrefetchIterator {
-            prefetch_holder: self,
-            core_indices,
-            scroll_indices,
-            merged_list,
+    fn get<'a>(&'a self, element: FetchedSource) -> CollectionResult<Cow<'a, Vec<ScoredPoint>>> {
+        match element {
+            FetchedSource::Core(idx) => self.core_results.get(idx).map(Cow::Borrowed),
+            FetchedSource::Scroll(idx) => self.scrolls.get(idx).map(Cow::Borrowed),
         }
-    }
-}
-
-struct PrefetchIterator<'a> {
-    prefetch_holder: &'a PrefetchHolder,
-    core_indices: Vec<usize>,
-    scroll_indices: Vec<usize>,
-    merged_list: Vec<Vec<ScoredPoint>>,
-}
-
-impl<'a> Iterator for PrefetchIterator<'a> {
-    type Item = Cow<'a, Vec<ScoredPoint>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(idx) = self.core_indices.pop() {
-            return self
-                .prefetch_holder
-                .core_results
-                .get(idx)
-                .map(Cow::Borrowed);
-        }
-        if let Some(idx) = self.scroll_indices.pop() {
-            return self.prefetch_holder.scrolls.get(idx).map(Cow::Borrowed);
-        }
-        self.merged_list.pop().map(Cow::Owned)
+        .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
     }
 }
 
@@ -149,14 +122,17 @@ impl LocalShard {
     {
         async move {
             let max_len = merge_plan.sources.len();
-            let mut search_indices = Vec::with_capacity(max_len);
-            let mut scroll_indices = Vec::with_capacity(max_len);
-            let mut merged_list = Vec::with_capacity(max_len);
+            let mut cow_sources = Vec::with_capacity(max_len);
 
+            // We need to preserve the order of the sources for some fusion strategies
             for source in merge_plan.sources.into_iter() {
                 match source {
-                    PrefetchSource::SearchesIdx(idx) => search_indices.push(idx),
-                    PrefetchSource::ScrollsIdx(idx) => scroll_indices.push(idx),
+                    PrefetchSource::SearchesIdx(idx) => {
+                        cow_sources.push(prefetch_holder.get(FetchedSource::Core(idx))?)
+                    }
+                    PrefetchSource::ScrollsIdx(idx) => {
+                        cow_sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
+                    }
                     PrefetchSource::Prefetch(prefetch) => {
                         let merged = self
                             .recurse_prefetch(
@@ -166,13 +142,13 @@ impl LocalShard {
                                 timeout,
                                 depth + 1,
                             )
-                            .await?;
-                        merged_list.extend(merged);
+                            .await?
+                            .into_iter()
+                            .map(|v| Cow::Owned(v));
+                        cow_sources.extend(merged);
                     }
                 }
             }
-
-            let sources = prefetch_holder.iter_sources(search_indices, scroll_indices, merged_list);
 
             let root_query_needs_intermediate_results = || {
                 merge_plan
@@ -183,11 +159,18 @@ impl LocalShard {
             };
 
             if depth == 0 && root_query_needs_intermediate_results() {
+                // TODO(universal-query): maybe there's a way to pass ownership of the prefetch_holder to avoid cloning with Cow::into_owned here
+
                 // in case of top level RRF, we need to propagate intermediate results
-                Ok(sources.map(Cow::into_owned).collect())
+                Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
             } else {
                 let merged = self
-                    .merge_prefetches(sources, merge_plan.merge, search_runtime_handle, timeout)
+                    .merge_prefetches(
+                        cow_sources,
+                        merge_plan.merge,
+                        search_runtime_handle,
+                        timeout,
+                    )
                     .await?;
                 Ok(vec![merged])
             }
@@ -294,24 +277,29 @@ impl LocalShard {
     /// Rescores if required.
     async fn merge_prefetches<'a>(
         &self,
-        mut sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        mut sources: Vec<Cow<'a, Vec<ScoredPoint>>>,
         merge: Option<ResultsMerge>,
         search_runtime_handle: &Handle,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if let Some(results_merge) = merge {
-            self.rescore(sources, results_merge, search_runtime_handle, timeout)
-                .await
+            self.rescore(
+                sources.into_iter(),
+                results_merge,
+                search_runtime_handle,
+                timeout,
+            )
+            .await
         } else {
             // The whole query request has no prefetches, and everything comes directly from a single source
+            debug_assert_eq!(sources.len(), 1, "No prefetches, but multiple sources");
+
             let top = sources
-                .next()
+                .pop()
                 .ok_or_else(|| {
                     CollectionError::service_error("No sources to merge in the query request")
                 })?
                 .into_owned();
-
-            debug_assert!(sources.next().is_none());
 
             Ok(top)
         }
