@@ -57,7 +57,7 @@ url = { version = "2", features = ["serde"] }
 validator = { workspace = true }
 actix-web-validator = "5.0.1"
 actix-web = {version = "4.7.0"}
-actix-files = "0.6.5"
+actix-files = "0.6.6"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
