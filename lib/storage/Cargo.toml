@@ -52,7 +52,7 @@ api = { path = "../api" }
 futures = { workspace = true }
 anyhow = "1.0.86"
 uuid = { workspace = true }
-url = "2.5.0"
+url = "2.5.1"
 reqwest = { workspace = true }
 tempfile = "3.10.1"
 async-trait = "0.1.80"
