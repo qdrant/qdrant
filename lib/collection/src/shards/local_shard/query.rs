@@ -204,7 +204,6 @@ impl LocalShard {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let ResultsMerge {
             rescore,
-            filter,
             score_threshold,
             limit,
         } = merge;
@@ -213,40 +212,23 @@ impl LocalShard {
             ScoringQuery::Fusion(Fusion::Rrf) => {
                 let sources: Vec<_> = sources.map(Cow::into_owned).collect();
 
-                // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
-                let valid_ids = if let Some(filter) = filter {
-                    let filter =
-                        filter_with_sources_ids(sources.iter().map(Cow::Borrowed), Some(filter));
-                    Some(self.read_filtered(Some(&filter))?)
-                } else {
-                    None
-                };
-
                 let mut top_rrf = rrf_scoring(sources);
 
-                top_rrf = top_rrf
-                    .into_iter()
-                    .filter(|point| {
-                        // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
-                        valid_ids
-                            .as_ref()
-                            .map(|valid_ids| valid_ids.contains(&point.id))
-                            .unwrap_or(true)
-                    })
-                    .take_while(|point| {
-                        // TODO(universal-query): Refactor this ugly part when we propagate merged filters to leaf queries
-                        score_threshold
-                            .map(|threshold| point.score >= threshold)
-                            .unwrap_or(true)
-                    })
-                    .take(limit)
-                    .collect();
+                if let Some(score_threshold) = score_threshold {
+                    top_rrf = top_rrf
+                        .into_iter()
+                        .take_while(|point| point.score >= score_threshold)
+                        .take(limit)
+                        .collect();
+                } else {
+                    top_rrf.truncate(limit);
+                };
 
                 Ok(top_rrf)
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(sources, filter);
+                let filter = filter_with_sources_ids(sources);
 
                 let scroll_request = ScrollRequestInternal {
                     offset: None,
@@ -268,7 +250,7 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_with_sources_ids(sources, filter);
+                let filter = filter_with_sources_ids(sources);
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -330,11 +312,8 @@ impl LocalShard {
     }
 }
 
-/// Extracts point ids from sources, creates a filter and merges it with the provided filter.
-fn filter_with_sources_ids<'a>(
-    sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-    filter: Option<Filter>,
-) -> Filter {
+/// Extracts point ids from sources, and creates a filter to only include those ids.
+fn filter_with_sources_ids<'a>(sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>) -> Filter {
     let mut point_ids = HashSet::new();
 
     for source in sources {
@@ -344,9 +323,7 @@ fn filter_with_sources_ids<'a>(
     }
 
     // create filter for target point ids
-    let ids_filter = Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
+    Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
         point_ids,
-    )));
-
-    filter.unwrap_or_default().merge_owned(ids_filter)
+    )))
 }

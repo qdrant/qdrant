@@ -28,9 +28,6 @@ pub struct ResultsMerge {
     /// Alter the scores before selecting the best limit
     pub rescore: ScoringQuery,
 
-    /// Use this filter
-    pub filter: Option<Filter>,
-
     /// Keep this many points from the top
     pub limit: usize,
 
@@ -62,7 +59,6 @@ pub struct MergePlan {
     pub merge: Option<ResultsMerge>,
 }
 
-// TODO(universal-query): Maybe just return a CoreSearchRequest if there is no prefetch?
 impl TryFrom<ShardQueryRequest> for PlannedQuery {
     type Error = CollectionError;
 
@@ -87,7 +83,13 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         let merge_plan = if !prefetches.is_empty() {
             offset = req_offset;
-            let sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches, offset)?;
+            let sources = recurse_prefetches(
+                &mut core_searches,
+                &mut scrolls,
+                prefetches,
+                offset,
+                req_filter,
+            )?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
@@ -99,7 +101,6 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 sources,
                 merge: Some(ResultsMerge {
                     rescore,
-                    filter: req_filter,
                     limit,
                     score_threshold: req_score_threshold,
                 }),
@@ -194,6 +195,7 @@ fn recurse_prefetches(
     scrolls: &mut Vec<ScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
     offset: usize,
+    propagate_filter: Option<Filter>,
 ) -> CollectionResult<Vec<PrefetchSource>> {
     let mut sources = Vec::with_capacity(prefetches.len());
 
@@ -209,6 +211,9 @@ fn recurse_prefetches(
 
         // Offset is replicated at each step from the root to the leaves
         let limit = prefetch_limit + offset;
+
+        // Filters are propagated into the leaves
+        let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
         let source = if prefetches.is_empty() {
             // This is a leaf prefetch. Fetch this info from the segments
@@ -268,7 +273,8 @@ fn recurse_prefetches(
             }
         } else {
             // This has nested prefetches. Recurse into them
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, offset)?;
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, prefetches, offset, filter)?;
 
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
@@ -278,7 +284,6 @@ fn recurse_prefetches(
                 sources: inner_sources,
                 merge: Some(ResultsMerge {
                     rescore,
-                    filter,
                     limit,
                     score_threshold,
                 }),
@@ -295,7 +300,10 @@ fn recurse_prefetches(
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashSet;
+
     use segment::data_types::vectors::{MultiDenseVector, NamedVectorStruct, Vector};
+    use segment::json_path::JsonPath;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
     };
@@ -308,6 +316,16 @@ mod tests {
     #[test]
     fn test_try_from_double_rescore() {
         let dummy_vector = vec![1.0, 2.0, 3.0];
+        let filter_inner_inner = Filter::new_must_not(Condition::IsNull(
+            JsonPath::try_from("apples").unwrap().into(),
+        ));
+        let filter_inner = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "has_oranges".try_into().unwrap(),
+            true.into(),
+        )));
+        let filter_outer =
+            Filter::new_must(Condition::HasId(HashSet::from([1.into(), 2.into()]).into()));
+
         let request = ShardQueryRequest {
             prefetches: vec![ShardPrefetch {
                 prefetches: vec![ShardPrefetch {
@@ -320,7 +338,7 @@ mod tests {
                     ))),
                     limit: 1000,
                     params: None,
-                    filter: None,
+                    filter: Some(filter_inner_inner.clone()),
                     score_threshold: None,
                 }],
                 query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
@@ -328,7 +346,7 @@ mod tests {
                 ))),
                 limit: 100,
                 params: None,
-                filter: None,
+                filter: Some(filter_inner.clone()),
                 score_threshold: None,
             }],
             query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
@@ -337,7 +355,7 @@ mod tests {
                     "multi",
                 ),
             ))),
-            filter: Some(Filter::default()),
+            filter: Some(filter_outer.clone()),
             score_threshold: None,
             limit: 10,
             offset: 0,
@@ -355,7 +373,11 @@ mod tests {
                     Vector::Dense(dummy_vector.clone()),
                     "byte",
                 )),
-                filter: None,
+                filter: Some(
+                    filter_outer
+                        .merge_owned(filter_inner)
+                        .merge_owned(filter_inner_inner)
+                ),
                 params: None,
                 limit: 1000,
                 offset: 0,
@@ -377,7 +399,6 @@ mod tests {
                                 "full",
                             )
                         )),
-                        filter: None,
                         limit: 100,
                         score_threshold: None
                     })
@@ -391,7 +412,6 @@ mod tests {
                             "multi"
                         )
                     )),
-                    filter: Some(Filter::default()),
                     limit: 10,
                     score_threshold: None,
                 })
@@ -459,6 +479,20 @@ mod tests {
     fn test_try_from_hybrid_query() {
         let dummy_vector = vec![1.0, 2.0, 3.0];
         let dummy_sparse = SparseVector::new(vec![100, 123, 2000], vec![0.2, 0.3, 0.4]).unwrap();
+
+        let filter_inner1 = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "city".try_into().unwrap(),
+            "Berlin".to_string().into(),
+        )));
+        let filter_inner2 = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "city".try_into().unwrap(),
+            "Munich".to_string().into(),
+        )));
+        let filter_outer = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            "country".try_into().unwrap(),
+            "Germany".to_string().into(),
+        )));
+
         let request = ShardQueryRequest {
             prefetches: vec![
                 ShardPrefetch {
@@ -471,7 +505,7 @@ mod tests {
                     ))),
                     limit: 100,
                     params: None,
-                    filter: None,
+                    filter: Some(filter_inner1.clone()),
                     score_threshold: None,
                 },
                 ShardPrefetch {
@@ -484,12 +518,12 @@ mod tests {
                     ))),
                     limit: 100,
                     params: None,
-                    filter: None,
+                    filter: Some(filter_inner2.clone()),
                     score_threshold: None,
                 },
             ],
             query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
-            filter: Some(Filter::default()),
+            filter: Some(filter_outer.clone()),
             score_threshold: None,
             limit: 50,
             offset: 0,
@@ -508,7 +542,7 @@ mod tests {
                         Vector::Dense(dummy_vector.clone()),
                         "dense",
                     )),
-                    filter: None,
+                    filter: Some(filter_outer.merge(&filter_inner1)),
                     params: None,
                     limit: 100,
                     offset: 0,
@@ -521,7 +555,7 @@ mod tests {
                         Vector::Sparse(dummy_sparse.clone()),
                         "sparse",
                     )),
-                    filter: None,
+                    filter: Some(filter_outer.merge(&filter_inner2)),
                     params: None,
                     limit: 100,
                     offset: 0,
@@ -541,7 +575,6 @@ mod tests {
                 ],
                 merge: Some(ResultsMerge {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
-                    filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: None
                 })
@@ -633,7 +666,6 @@ mod tests {
                 sources: vec![PrefetchSource::SearchesIdx(0)],
                 merge: Some(ResultsMerge {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
-                    filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: Some(0.666)
                 })
