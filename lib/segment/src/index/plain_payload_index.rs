@@ -371,6 +371,7 @@ impl VectorIndex for PlainIndex {
             vector_storage.insert_vector(id, vector)?;
         } else {
             if id as usize >= vector_storage.total_vector_count() {
+                debug_assert!(id as usize == vector_storage.total_vector_count());
                 // Vector doesn't exist in the storage
                 // Insert default vector to keep the sequence
                 let default_vector = vector_storage.default_vector();
