@@ -72,7 +72,7 @@ impl Instance {
                 ptr::null()
             };
 
-            let create_flags = if cfg!(any(target_os = "macos", target_os = "ios")) {
+            let create_flags = if cfg!(any(target_os = "macos")) {
                 vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
             } else {
                 vk::InstanceCreateFlags::default()

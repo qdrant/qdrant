@@ -63,6 +63,17 @@ impl Device {
             ..Default::default()
         };
 
+        // TODO(gpu): check presence of features
+        let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::builder()
+            .shader_int8(true)
+            .shader_float16(true)
+            .storage_buffer8_bit_access(true)
+            .build();
+
+        let mut physical_device_features_1_1 = vk::PhysicalDeviceVulkan11Features::builder()
+            .storage_buffer16_bit_access(true)
+            .build();
+
         let extension_names_raw: Vec<*const i8> = extensions_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
@@ -73,6 +84,8 @@ impl Device {
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&extension_names_raw)
             .enabled_features(&physical_device_features)
+            .push_next(&mut physical_device_features_1_2)
+            .push_next(&mut physical_device_features_1_1)
             .build();
 
         let vk_device = unsafe {
@@ -87,9 +100,10 @@ impl Device {
             let props = instance
                 .vk_instance
                 .get_physical_device_properties(vk_physical_device);
-            let mut props2 = vk::PhysicalDeviceProperties2::default();
             let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
-            props2.p_next = &mut subgroup_properties as *mut _ as *mut std::ffi::c_void;
+            let mut props2 = vk::PhysicalDeviceProperties2::builder()
+                .push_next(&mut subgroup_properties)
+                .build();
             instance
                 .vk_instance
                 .get_physical_device_properties2(vk_physical_device, &mut props2);
