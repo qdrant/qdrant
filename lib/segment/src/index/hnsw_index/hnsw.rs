@@ -29,7 +29,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GpuGraphBuilder;
-use crate::index::hnsw_index::gpu::{get_gpu_indexing, GPU_GROUPS_COUNT};
+use crate::index::hnsw_index::gpu::{get_gpu_indexing, get_gpu_max_groups_count};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -773,7 +773,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 graph_layers_builder = GpuGraphBuilder::build(
                     &mut rng,
                     None,
-                    GPU_GROUPS_COUNT,
+                    get_gpu_max_groups_count(),
                     &vector_storage,
                     self.config.m,
                     self.config.m0,

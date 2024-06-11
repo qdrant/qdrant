@@ -10,6 +10,8 @@ use crate::index::hnsw_index::entry_points::EntryPoint;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
+pub const GPU_CHECK_CONFLICTS_THRESHOLD: usize = 512;
+
 pub struct GpuGraphBuilder {
     graph_layers_builder: GraphLayersBuilder,
     gpu_search_context: GpuSearchContext,
@@ -40,6 +42,8 @@ impl GpuGraphBuilder {
         entry_points_num: usize,
         mut ids: Vec<PointOffsetType>,
     ) -> OperationResult<GraphLayersBuilder> {
+        log::debug!("Building GPU graph with max groups count: {}", groups_count);
+
         let num_vectors = vector_storage.total_vector_count();
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
@@ -188,6 +192,9 @@ impl GpuGraphBuilder {
             self.build_level(level)?;
         }
 
+        let sum = self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+        println!("Gpu graph chunks avg size: {}", sum / self.chunks.len());
+
         println!("Gpu graph patches time: {:?}", self.patches_timer);
         println!("Gpu graph update entries time: {:?}", self.updates_timer);
         Ok(self.graph_layers_builder)
@@ -240,14 +247,16 @@ impl GpuGraphBuilder {
             )
             .enumerate()
         {
-            for patch in patches {
-                // conflict detect, this point and all after won't be updated
-                if !self.ids_hashset.insert(patch.id) {
-                    if i == 0 {
-                        panic!("Gpu links patch contains duplicate ids");
+            if chunk.start < GPU_CHECK_CONFLICTS_THRESHOLD {
+                for patch in patches {
+                    // conflict detect, this point and all after won't be updated
+                    if !self.ids_hashset.insert(patch.id) {
+                        if i == 0 {
+                            panic!("Gpu links patch contains duplicate ids");
+                        }
+                        self.patches_timer += timer.elapsed();
+                        return Ok(i);
                     }
-                    self.patches_timer += timer.elapsed();
-                    return Ok(i);
                 }
             }
 

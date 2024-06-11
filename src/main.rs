@@ -150,7 +150,12 @@ fn main() -> anyhow::Result<()> {
 
     memory::madvise::set_global(settings.storage.mmap_advice);
     segment::vector_storage::common::set_async_scorer(settings.storage.async_scorer);
-    segment::index::hnsw_index::gpu::set_gpu_indexing(settings.storage.gpu_indexing);
+    if let Some(settings_gpu) = &settings.gpu {
+        segment::index::hnsw_index::gpu::set_gpu_indexing(settings_gpu.indexing);
+        if let Some(max_warps) = &settings_gpu.max_warps {
+            segment::index::hnsw_index::gpu::set_gpu_max_groups_count(*max_warps);
+        }
+    }
 
     welcome(&settings);
 

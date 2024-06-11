@@ -30,8 +30,6 @@ storage:
   # If `null` - maximum concurrency is used.
   update_concurrency: null
 
-  gpu_indexing: false
-
   # Write-ahead-log related configuration
   wal:
     # Size of a single WAL segment
@@ -304,3 +302,5 @@ tls:
   # If `null` - TTL is disabled.
   cert_ttl: 3600
 
+gpu:
+  indexing: false
