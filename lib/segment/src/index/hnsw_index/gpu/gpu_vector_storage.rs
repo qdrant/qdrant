@@ -18,7 +18,7 @@ struct GpuVectorParamsBuffer {
     count: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuVectorStorageElementType {
     Float32,
     Float16,
@@ -296,11 +296,12 @@ impl GpuVectorStorage {
         }
 
         println!(
-            "Upload vector data to GPU time = {:?}, vector data size {} MB",
+            "Upload vector data to GPU time = {:?}, vector data size {} MB, element type: {:?}",
             timer.elapsed(),
             STORAGES_COUNT * points_in_storage_count * capacity * std::mem::size_of::<TElement>()
                 / 1024
-                / 1024
+                / 1024,
+            element_type,
         );
 
         let mut descriptor_set_layout_builder =
@@ -359,15 +360,21 @@ mod tests {
         open_simple_dense_vector_storage,
     };
 
+    enum TestElementType {
+        Float32,
+        Float16,
+        Uint8,
+    }
+
     fn open_vector_storage(
         path: &Path,
         dim: usize,
-        element_type: GpuVectorStorageElementType,
+        element_type: TestElementType,
     ) -> Arc<AtomicRefCell<VectorStorageEnum>> {
         let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
 
         match element_type {
-            GpuVectorStorageElementType::Float32 => open_simple_dense_vector_storage(
+            TestElementType::Float32 => open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 dim,
@@ -375,7 +382,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap(),
-            GpuVectorStorageElementType::Float16 => open_simple_dense_half_vector_storage(
+            TestElementType::Float16 => open_simple_dense_half_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 dim,
@@ -383,7 +390,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap(),
-            GpuVectorStorageElementType::Uint8 => open_simple_dense_byte_vector_storage(
+            TestElementType::Uint8 => open_simple_dense_byte_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 dim,
@@ -391,16 +398,13 @@ mod tests {
                 &false.into(),
             )
             .unwrap(),
-            GpuVectorStorageElementType::Binary => {
-                unreachable!()
-            }
         }
     }
 
     fn test_gpu_vector_storage_scoring_impl(
-        element_type: GpuVectorStorageElementType,
+        element_type: TestElementType,
         force_half_precision: bool,
-    ) {
+    ) -> GpuVectorStorageElementType {
         let num_vectors = 2048;
         let dim = 128;
         let capacity = 128;
@@ -447,7 +451,7 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            match element_type {
+            match gpu_vector_storage.element_type {
                 GpuVectorStorageElementType::Float32 => {
                     include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
                 }
@@ -521,20 +525,31 @@ mod tests {
             assert!((score - scores[i]).abs() < 1.0);
         }
         println!("CPU scoring time = {:?}", timer.elapsed());
+
+        gpu_vector_storage.element_type
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float32, false);
+        let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float32, false);
+        assert_eq!(element, GpuVectorStorageElementType::Float32);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_f16() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float16, false);
+        let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float16, false);
+        assert_eq!(element, GpuVectorStorageElementType::Float16);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_u8() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Uint8, false);
+        let element = test_gpu_vector_storage_scoring_impl(TestElementType::Uint8, false);
+        assert_eq!(element, GpuVectorStorageElementType::Uint8);
+    }
+
+    #[test]
+    fn test_gpu_vector_storage_force_half_precision() {
+        let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float32, true);
+        assert_eq!(element, GpuVectorStorageElementType::Float16);
     }
 }
