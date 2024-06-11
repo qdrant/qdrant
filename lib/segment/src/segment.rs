@@ -839,7 +839,9 @@ impl Segment {
             .field_indexes
             .get(&order_by.key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
-            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+            .ok_or_else(|| OperationError::MissingRangeIndexForOrderBy {
+                key: order_by.key.to_string(),
+            })?;
 
         let start_from = order_by.start_from();
 
@@ -914,7 +916,9 @@ impl Segment {
             .field_indexes
             .get(&order_by.key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
-            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+            .ok_or_else(|| OperationError::MissingRangeIndexForOrderBy {
+                key: order_by.key.to_string(),
+            })?;
 
         let range_iter = numeric_index.stream_range(&order_by.as_range());
 
