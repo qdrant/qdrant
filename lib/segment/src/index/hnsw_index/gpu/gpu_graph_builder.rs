@@ -1,24 +1,21 @@
 use std::ops::Range;
+use std::thread::JoinHandle;
 
-use ahash::HashSet;
 use common::types::PointOffsetType;
 use rand::Rng;
 
 use super::gpu_search_context::{GpuRequest, GpuSearchContext};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::entry_points::EntryPoint;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
-
-pub const GPU_CHECK_CONFLICTS_THRESHOLD: usize = 512;
 
 pub struct GpuGraphBuilder {
     graph_layers_builder: GraphLayersBuilder,
     gpu_search_context: GpuSearchContext,
     points: Vec<PointLinkingData>,
-    requests: Vec<GpuRequest>,
-    ids_hashset: HashSet<PointOffsetType>,
     chunks: Vec<Range<usize>>,
+    min_cpu_linked_points_count: usize,
     updates_timer: std::time::Duration,
     patches_timer: std::time::Duration,
 }
@@ -41,6 +38,7 @@ impl GpuGraphBuilder {
         ef: usize,
         entry_points_num: usize,
         force_half_precision: bool,
+        min_cpu_linked_points_count: usize,
         mut ids: Vec<PointOffsetType>,
     ) -> OperationResult<GraphLayersBuilder> {
         log::debug!("Building GPU graph with max groups count: {}", groups_count);
@@ -111,9 +109,8 @@ impl GpuGraphBuilder {
             graph_layers_builder,
             gpu_search_context,
             points,
-            requests: Default::default(),
-            ids_hashset: Default::default(),
             chunks,
+            min_cpu_linked_points_count,
             updates_timer: Default::default(),
             patches_timer: Default::default(),
         };
@@ -178,6 +175,8 @@ impl GpuGraphBuilder {
     }
 
     fn build_levels(mut self) -> OperationResult<GraphLayersBuilder> {
+        let mut gpu_thread: JoinHandle<OperationResult<()>> = std::thread::spawn(|| Ok(()));
+
         let levels_count = self.points[0].level + 1;
         for level in (0..levels_count).rev() {
             let level_m = if level > 0 {
@@ -185,8 +184,17 @@ impl GpuGraphBuilder {
             } else {
                 self.graph_layers_builder.m0
             };
-            self.build_level(level, level_m)?;
+
+            gpu_thread.join().map_err(|e| {
+                OperationError::service_error(format!("Gpu graph build thread panicked: {:?}", e))
+            })??;
+
+            gpu_thread = self.build_level(level, level_m)?;
         }
+
+        gpu_thread.join().map_err(|e| {
+            OperationError::service_error(format!("Gpu graph build thread panicked: {:?}", e))
+        })??;
 
         let sum = self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
         println!("Gpu graph chunks avg size: {}", sum / self.chunks.len());
@@ -196,7 +204,11 @@ impl GpuGraphBuilder {
         Ok(self.graph_layers_builder)
     }
 
-    fn build_level(&mut self, level: usize, level_m: usize) -> OperationResult<()> {
+    fn build_level(
+        &mut self,
+        level: usize,
+        level_m: usize,
+    ) -> OperationResult<std::thread::JoinHandle<OperationResult<()>>> {
         self.gpu_search_context.clear(level_m)?;
         let mut chunk_index = 0usize;
         while chunk_index < self.chunks.len() {
@@ -205,58 +217,34 @@ impl GpuGraphBuilder {
             if level > chunk_level {
                 self.update_entries_chunk(chunk)?;
             } else {
-                let applied_count = self.build_chunk(chunk.clone(), level)?;
-                if applied_count != chunk.len() {
-                    let applied_chunk = chunk.start..chunk.start + applied_count;
-                    let remainder_chunk = chunk.start + applied_count..chunk.end;
-                    self.chunks[chunk_index] = applied_chunk;
-                    self.chunks.insert(chunk_index + 1, remainder_chunk);
-                }
+                self.build_chunk(chunk.clone(), level)?;
             }
             chunk_index += 1;
         }
 
-        Ok(())
+        Ok(std::thread::spawn(move || Ok(())))
     }
 
-    fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<usize> {
+    fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<()> {
         let timer = std::time::Instant::now();
-        self.requests.clear();
-        self.ids_hashset.clear();
+        let mut requests = Vec::with_capacity(chunk.len());
 
         for linking_point in &self.points[chunk.clone()] {
-            self.requests.push(GpuRequest {
+            requests.push(GpuRequest {
                 id: linking_point.point_id,
                 entry: linking_point.entry.point_id,
             })
         }
 
-        let (patches, new_entries) = self.gpu_search_context.run_insert_vector(&self.requests)?;
+        let (patches, new_entries) = self.gpu_search_context.run_insert_vector(&requests)?;
         assert_eq!(patches.len(), new_entries.len());
         assert_eq!(patches.len(), chunk.len());
 
-        for (i, (patches, (&new_entry, linking_point))) in patches
-            .iter()
-            .zip(
-                new_entries
-                    .iter()
-                    .zip(self.points[chunk.clone()].iter_mut()),
-            )
-            .enumerate()
-        {
-            if chunk.start < GPU_CHECK_CONFLICTS_THRESHOLD {
-                for patch in patches {
-                    // conflict detect, this point and all after won't be updated
-                    if !self.ids_hashset.insert(patch.id) {
-                        if i == 0 {
-                            panic!("Gpu links patch contains duplicate ids");
-                        }
-                        self.patches_timer += timer.elapsed();
-                        return Ok(i);
-                    }
-                }
-            }
-
+        for (patches, (&new_entry, linking_point)) in patches.iter().zip(
+            new_entries
+                .iter()
+                .zip(self.points[chunk.clone()].iter_mut()),
+        ) {
             // no conflicts, apply patch
             for patch in patches {
                 self.gpu_search_context.set_links(patch.id, &patch.links)?;
@@ -270,19 +258,19 @@ impl GpuGraphBuilder {
         }
 
         self.patches_timer += timer.elapsed();
-        Ok(chunk.len())
+        Ok(())
     }
 
     fn update_entries_chunk(&mut self, chunk: Range<usize>) -> OperationResult<()> {
         let timer = std::time::Instant::now();
-        self.requests.clear();
+        let mut requests = Vec::with_capacity(chunk.len());
         for linking_point in &self.points[chunk.clone()] {
-            self.requests.push(GpuRequest {
+            requests.push(GpuRequest {
                 id: linking_point.point_id,
                 entry: linking_point.entry.point_id,
             })
         }
-        let new_entries = self.gpu_search_context.greedy_search(&self.requests)?;
+        let new_entries = self.gpu_search_context.greedy_search(&requests)?;
         assert_eq!(new_entries.len(), chunk.len());
 
         for (linking_point, new_entry) in self.points[chunk.clone()]
@@ -410,6 +398,7 @@ mod tests {
             ef,
             1,
             false,
+            64,
             (0..num_vectors as PointOffsetType).collect(),
         )
         .unwrap();
@@ -486,6 +475,7 @@ mod tests {
             ef,
             1,
             false,
+            0,
             (0..num_vectors as PointOffsetType).collect(),
         )
         .unwrap();
