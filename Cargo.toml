@@ -69,7 +69,7 @@ config = "~0.14.0"
 tokio = { workspace = true }
 
 actix-cors = "0.7.0"
-actix-files = "0.6.5"
+actix-files = "0.6.6"
 actix-web = { version = "4.7.0", optional = true, features = ["rustls-0_23", "actix-tls"] }
 actix-web-validator = "5.0.1"
 tonic = { workspace = true }
