@@ -152,6 +152,9 @@ fn main() -> anyhow::Result<()> {
     segment::vector_storage::common::set_async_scorer(settings.storage.async_scorer);
     if let Some(settings_gpu) = &settings.gpu {
         segment::index::hnsw_index::gpu::set_gpu_indexing(settings_gpu.indexing);
+        segment::index::hnsw_index::gpu::set_gpu_force_half_precision(
+            settings_gpu.force_half_precision,
+        );
         if let Some(max_warps) = &settings_gpu.max_warps {
             segment::index::hnsw_index::gpu::set_gpu_max_groups_count(*max_warps);
         }

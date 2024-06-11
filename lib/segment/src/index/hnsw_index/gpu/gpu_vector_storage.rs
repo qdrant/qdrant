@@ -41,69 +41,141 @@ impl GpuVectorStorage {
     pub fn new(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,
+        force_half_precision: bool,
     ) -> OperationResult<Self> {
         match vector_storage {
-            VectorStorageEnum::DenseSimple(vector_storage) => Self::new_typed::<VectorElementType>(
-                device,
-                GpuVectorStorageElementType::Float32,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            VectorStorageEnum::DenseSimple(vector_storage) => {
+                if force_half_precision {
+                    Self::new_typed::<VectorElementTypeHalf>(
+                        device,
+                        GpuVectorStorageElementType::Float16,
+                        vector_storage.total_vector_count(),
+                        |id| {
+                            VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
+                                vector_storage.get_dense(id),
+                            ))
+                        },
+                    )
+                } else {
+                    Self::new_typed::<VectorElementType>(
+                        device,
+                        GpuVectorStorageElementType::Float32,
+                        vector_storage.total_vector_count(),
+                        |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                    )
+                }
+            }
+            VectorStorageEnum::DenseSimpleByte(vector_storage) => {
+                Self::new_typed::<VectorElementTypeByte>(
+                    device,
+                    GpuVectorStorageElementType::Uint8,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::DenseSimpleHalf(vector_storage) => {
+                Self::new_typed::<VectorElementTypeHalf>(
+                    device,
+                    GpuVectorStorageElementType::Float16,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::DenseMemmap(vector_storage) => {
+                if force_half_precision {
+                    Self::new_typed::<VectorElementTypeHalf>(
+                        device,
+                        GpuVectorStorageElementType::Float16,
+                        vector_storage.total_vector_count(),
+                        |id| {
+                            VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
+                                vector_storage.get_dense(id),
+                            ))
+                        },
+                    )
+                } else {
+                    Self::new_typed::<VectorElementType>(
+                        device,
+                        GpuVectorStorageElementType::Float32,
+                        vector_storage.total_vector_count(),
+                        |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                    )
+                }
+            }
+            VectorStorageEnum::DenseMemmapByte(vector_storage) => {
+                Self::new_typed::<VectorElementTypeByte>(
+                    device,
+                    GpuVectorStorageElementType::Uint8,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::DenseMemmapHalf(vector_storage) => {
+                Self::new_typed::<VectorElementTypeHalf>(
+                    device,
+                    GpuVectorStorageElementType::Float16,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::DenseAppendableMemmap(vector_storage) => {
+                if force_half_precision {
+                    Self::new_typed::<VectorElementTypeHalf>(
+                        device,
+                        GpuVectorStorageElementType::Float16,
+                        vector_storage.total_vector_count(),
+                        |id| {
+                            VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
+                                vector_storage.get_dense(id),
+                            ))
+                        },
+                    )
+                } else {
+                    Self::new_typed::<VectorElementType>(
+                        device,
+                        GpuVectorStorageElementType::Float32,
+                        vector_storage.total_vector_count(),
+                        |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                    )
+                }
+            }
+            VectorStorageEnum::DenseAppendableMemmapByte(vector_storage) => {
+                Self::new_typed::<VectorElementTypeByte>(
+                    device,
+                    GpuVectorStorageElementType::Uint8,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => {
+                Self::new_typed::<VectorElementTypeHalf>(
+                    device,
+                    GpuVectorStorageElementType::Float16,
+                    vector_storage.total_vector_count(),
+                    |id| Cow::Borrowed(vector_storage.get_dense(id)),
+                )
+            }
+            VectorStorageEnum::SparseSimple(_) => Err(OperationError::service_error(
+                "GPU does not support sparse vectors",
+            )),
+            VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            VectorStorageEnum::MultiDenseSimpleByte(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => Err(
+                OperationError::service_error("GPU does not support multivectors"),
             ),
-            VectorStorageEnum::DenseSimpleByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
-                device,
-                GpuVectorStorageElementType::Uint8,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => Err(
+                OperationError::service_error("GPU does not support multivectors"),
             ),
-            VectorStorageEnum::DenseSimpleHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
-                device,
-                GpuVectorStorageElementType::Float16,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseMemmap(vector_storage) => Self::new_typed::<VectorElementType>(
-                device,
-                GpuVectorStorageElementType::Float32,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseMemmapByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
-                device,
-                GpuVectorStorageElementType::Uint8,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseMemmapHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
-                device,
-                GpuVectorStorageElementType::Float16,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseAppendableMemmap(vector_storage) => Self::new_typed::<VectorElementType>(
-                device,
-                GpuVectorStorageElementType::Float32,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseAppendableMemmapByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
-                device,
-                GpuVectorStorageElementType::Uint8,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
-                device,
-                GpuVectorStorageElementType::Float16,
-                vector_storage.total_vector_count(),
-                |id| Cow::Borrowed(vector_storage.get_dense(id)),
-            ),
-            VectorStorageEnum::SparseSimple(_) => Err(OperationError::service_error("GPU does not support sparse vectors")),
-            VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::service_error("GPU does not support multivectors")),
-            VectorStorageEnum::MultiDenseSimpleByte(_) => Err(OperationError::service_error("GPU does not support multivectors")),
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => Err(OperationError::service_error("GPU does not support multivectors")),
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::service_error("GPU does not support multivectors")),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => Err(OperationError::service_error("GPU does not support multivectors")),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => Err(OperationError::service_error("GPU does not support multivectors")),
         }
     }
 
@@ -282,7 +354,10 @@ mod tests {
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
-    use crate::vector_storage::dense::simple_dense_vector_storage::{open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage, open_simple_dense_vector_storage};
+    use crate::vector_storage::dense::simple_dense_vector_storage::{
+        open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
+        open_simple_dense_vector_storage,
+    };
 
     fn open_vector_storage(
         path: &Path,
@@ -292,15 +367,30 @@ mod tests {
         let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
 
         match element_type {
-            GpuVectorStorageElementType::Float32 => {
-                open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
-            }
-            GpuVectorStorageElementType::Float16 => {
-                open_simple_dense_half_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
-            }
-            GpuVectorStorageElementType::Uint8 => {
-                open_simple_dense_byte_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
-            }
+            GpuVectorStorageElementType::Float32 => open_simple_dense_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                dim,
+                Distance::Dot,
+                &false.into(),
+            )
+            .unwrap(),
+            GpuVectorStorageElementType::Float16 => open_simple_dense_half_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                dim,
+                Distance::Dot,
+                &false.into(),
+            )
+            .unwrap(),
+            GpuVectorStorageElementType::Uint8 => open_simple_dense_byte_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                dim,
+                Distance::Dot,
+                &false.into(),
+            )
+            .unwrap(),
             GpuVectorStorageElementType::Binary => {
                 unreachable!()
             }
@@ -309,6 +399,7 @@ mod tests {
 
     fn test_gpu_vector_storage_scoring_impl(
         element_type: GpuVectorStorageElementType,
+        force_half_precision: bool,
     ) {
         let num_vectors = 2048;
         let dim = 128;
@@ -338,7 +429,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
         let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
+            GpuVectorStorage::new(device.clone(), &storage.borrow(), force_half_precision).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -357,11 +448,19 @@ mod tests {
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
             match element_type {
-                GpuVectorStorageElementType::Float32 => include_bytes!("./shaders/compiled/test_vector_storage_f32.spv"),
-                GpuVectorStorageElementType::Float16 => include_bytes!("./shaders/compiled/test_vector_storage_f16.spv"),
-                GpuVectorStorageElementType::Uint8 => include_bytes!("./shaders/compiled/test_vector_storage_u8.spv"),
-                GpuVectorStorageElementType::Binary => include_bytes!("./shaders/compiled/test_vector_storage_binary.spv"),
-            }
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/test_vector_storage_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/test_vector_storage_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/test_vector_storage_binary.spv")
+                }
+            },
         ));
 
         let pipeline = gpu::Pipeline::builder()
@@ -426,16 +525,16 @@ mod tests {
 
     #[test]
     fn test_gpu_vector_storage_scoring() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float32);
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float32, false);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_f16() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float16);
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float16, false);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_u8() {
-        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Uint8);
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Uint8, false);
     }
 }

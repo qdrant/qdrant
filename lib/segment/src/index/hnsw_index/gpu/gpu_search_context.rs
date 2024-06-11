@@ -65,6 +65,7 @@ impl GpuSearchContext {
         m0: usize,
         ef: usize,
         max_patched_points: usize,
+        force_half_precision: bool,
     ) -> OperationResult<Self> {
         let instance = Arc::new(gpu::Instance::new("qdrant", debug_messenger, false).unwrap());
         let device =
@@ -73,7 +74,8 @@ impl GpuSearchContext {
         let points_count = vector_storage.total_vector_count();
         let candidates_capacity = points_count;
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), vector_storage)?;
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), vector_storage, force_half_precision)?;
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count, max_patched_points)?;
         let gpu_nearest_heap =
             GpuNearestHeap::new(device.clone(), groups_count, ef, std::cmp::max(ef, m0 + 1))?;
@@ -566,6 +568,7 @@ mod tests {
             m,
             ef,
             num_vectors,
+            false,
         )
         .unwrap();
 

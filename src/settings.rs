@@ -128,6 +128,8 @@ pub struct GpuConfig {
     #[serde(default)]
     pub indexing: bool,
     #[serde(default)]
+    pub force_half_precision: bool,
+    #[serde(default)]
     #[validate(range(min = 1))]
     pub max_warps: Option<usize>,
     #[serde(default)]

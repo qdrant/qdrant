@@ -40,6 +40,7 @@ impl GpuGraphBuilder {
         m0: usize,
         ef: usize,
         entry_points_num: usize,
+        force_half_precision: bool,
         mut ids: Vec<PointOffsetType>,
     ) -> OperationResult<GraphLayersBuilder> {
         log::debug!("Building GPU graph with max groups count: {}", groups_count);
@@ -80,6 +81,7 @@ impl GpuGraphBuilder {
             m0,
             ef,
             max_patched_points,
+            force_half_precision,
         )?;
 
         let chunks = Self::build_initial_chunks(&graph_layers_builder, &ids, groups_count);
@@ -407,6 +409,7 @@ mod tests {
             m0,
             ef,
             1,
+            false,
             (0..num_vectors as PointOffsetType).collect(),
         )
         .unwrap();
@@ -482,6 +485,7 @@ mod tests {
             m0,
             ef,
             1,
+            false,
             (0..num_vectors as PointOffsetType).collect(),
         )
         .unwrap();
