@@ -8,7 +8,8 @@ use segment::data_types::vectors::{
     MultiDenseVector, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Condition, Filter, HasIdCondition, PointIdType, SearchParams, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams,
+    WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 
@@ -269,24 +270,15 @@ pub struct CollectionPrefetch {
 }
 
 /// Exclude the referenced ids by editing the filter.
-fn exclude_referenced_ids(query: &Option<Query>, filter: Option<Filter>) -> Option<Filter> {
-    match query {
-        Some(Query::Vector(vector_query)) => {
-            let ids: HashSet<_> = vector_query
-                .get_referenced_ids()
-                .into_iter()
-                .copied()
-                .collect();
+fn exclude_referenced_ids(ids: Vec<ExtendedPointId>, filter: Option<Filter>) -> Option<Filter> {
+    let ids: HashSet<_> = ids.into_iter().collect();
 
-            if ids.is_empty() {
-                return filter;
-            }
-
-            let id_filter = Filter::new_must_not(Condition::HasId(HasIdCondition::from(ids)));
-            Some(id_filter.merge_owned(filter.unwrap_or_default()))
-        }
-        _ => filter,
+    if ids.is_empty() {
+        return filter;
     }
+
+    let id_filter = Filter::new_must_not(Condition::HasId(HasIdCondition::from(ids)));
+    Some(id_filter.merge_owned(filter.unwrap_or_default()))
 }
 
 impl CollectionPrefetch {
@@ -302,8 +294,6 @@ impl CollectionPrefetch {
                 "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
             ));
         }
-
-        let filter = exclude_referenced_ids(&self.query, self.filter);
 
         let query = self
             .query
@@ -332,7 +322,7 @@ impl CollectionPrefetch {
         Ok(ShardPrefetch {
             prefetches,
             query,
-            filter,
+            filter: self.filter,
             score_threshold: self.score_threshold,
             limit: self.limit,
             params: self.params,
@@ -366,7 +356,8 @@ impl CollectionQueryRequest {
         let lookup_collection = (&self).get_lookup_collection().cloned();
         let using = self.using.clone();
 
-        let filter = exclude_referenced_ids(&self.query, self.filter);
+        // Edit filter to exclude all referenced point ids (root and nested)
+        let filter = exclude_referenced_ids((&self).get_referenced_point_ids(), self.filter);
 
         let query = self
             .query
