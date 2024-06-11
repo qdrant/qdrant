@@ -308,9 +308,7 @@ impl GraphLayersBuilder {
         let entry_point_opt = self
             .entry_points
             .lock()
-            .new_point(point_id, level, |point_id| {
-                points_scorer.check_vector(point_id)
-            });
+            .get_entry_point(|point_id| points_scorer.check_vector(point_id));
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)
             // We can't do much here, so just quit
@@ -450,6 +448,11 @@ impl GraphLayersBuilder {
             }
         }
         self.ready_list.write().set(point_id as usize, true);
+        self.entry_points
+            .lock()
+            .new_point(point_id, level, |point_id| {
+                points_scorer.check_vector(point_id)
+            });
     }
 
     /// This function returns average number of links per node in HNSW graph
