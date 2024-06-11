@@ -106,6 +106,7 @@ impl ShardOperation for DummyShard {
         &self,
         _: Arc<ShardQueryRequest>,
         _: &Handle,
+        _: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         self.dummy()
     }

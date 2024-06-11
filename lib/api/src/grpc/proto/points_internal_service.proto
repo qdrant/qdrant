@@ -271,6 +271,7 @@ message QueryPointsInternal {
   string collection_name = 1;
   QueryShardPoints query_points = 2;
   optional uint32 shard_id = 3;
+  optional uint64 timeout = 4;
 }
 
 message IntermediateResult {

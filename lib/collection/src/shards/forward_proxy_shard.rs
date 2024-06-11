@@ -287,8 +287,11 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let local_shard = &self.wrapped_shard;
-        local_shard.query(request, search_runtime_handle).await
+        local_shard
+            .query(request, search_runtime_handle, timeout)
+            .await
     }
 }

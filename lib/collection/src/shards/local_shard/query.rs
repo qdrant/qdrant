@@ -78,23 +78,25 @@ impl<'a> Iterator for PrefetchIterator<'a> {
 }
 
 impl LocalShard {
-    #[allow(unreachable_code, clippy::diverging_sub_expression, unused_variables)]
     pub async fn do_planned_query(
         &self,
         request: PlannedQuery,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
-        let core_results = self
-            .do_search(request.searches, search_runtime_handle, timeout)
-            .await?;
+        let start_time = std::time::Instant::now();
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
-        let scrolls = self
-            .query_scroll_batch(request.scrolls, search_runtime_handle)
-            .await?;
+        let core_results_f = self.do_search(request.searches, search_runtime_handle, Some(timeout));
 
+        let scrolls_f = self.query_scroll_batch(request.scrolls, search_runtime_handle, timeout);
+
+        // execute both searches and scrolls concurrently
+        let (core_results, scrolls) = tokio::try_join!(core_results_f, scrolls_f)?;
         let prefetch_holder = PrefetchHolder::new(core_results, scrolls);
 
+        // decrease timeout by the time spent so far
+        let timeout = timeout.saturating_sub(start_time.elapsed());
         let mut scored_points = self
             .recurse_prefetch(
                 request.merge_plan,
@@ -139,7 +141,7 @@ impl LocalShard {
         merge_plan: MergePlan,
         prefetch_holder: &'query PrefetchHolder,
         search_runtime_handle: &'shard Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
         depth: usize,
     ) -> BoxFuture<'query, CollectionResult<Vec<Vec<ScoredPoint>>>>
     where
@@ -200,7 +202,7 @@ impl LocalShard {
         sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
         merge: ResultsMerge,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let ResultsMerge {
             rescore,
@@ -239,14 +241,18 @@ impl LocalShard {
                     order_by: Some(OrderByInterface::Struct(order_by)),
                 };
 
-                self.query_scroll_batch(Arc::new(vec![scroll_request]), search_runtime_handle)
-                    .await?
-                    .pop()
-                    .ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Rescoring with order-by query didn't return expected batch of results",
-                        )
-                    })
+                self.query_scroll_batch(
+                    Arc::new(vec![scroll_request]),
+                    search_runtime_handle,
+                    timeout,
+                )
+                .await?
+                .pop()
+                .ok_or_else(|| {
+                    CollectionError::service_error(
+                        "Rescoring with order-by query didn't return expected batch of results",
+                    )
+                })
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
@@ -270,7 +276,7 @@ impl LocalShard {
                 self.do_search(
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
-                    timeout,
+                    Some(timeout),
                 )
                 .await?
                 // One search request is sent. We expect only one result
@@ -291,7 +297,7 @@ impl LocalShard {
         mut sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
         merge: Option<ResultsMerge>,
         search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if let Some(results_merge) = merge {
             self.rescore(sources, results_merge, search_runtime_handle, timeout)

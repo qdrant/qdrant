@@ -301,13 +301,14 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         access: Access,
+        timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
 
         collection
-            .query(request, read_consistency, &shard_selection)
+            .query(request, read_consistency, &shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }

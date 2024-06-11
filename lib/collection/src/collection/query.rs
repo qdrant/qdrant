@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
@@ -31,6 +32,7 @@ impl Collection {
         request: Arc<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
@@ -42,6 +44,7 @@ impl Collection {
                     Arc::clone(&request),
                     read_consistency,
                     shard_selection.is_shard_id(),
+                    timeout,
                 )
                 .and_then(move |mut records| async move {
                     if shard_key.is_none() {
@@ -66,6 +69,7 @@ impl Collection {
         request: CollectionQueryRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let instant = Instant::now();
 
@@ -81,7 +85,7 @@ impl Collection {
         let request = Arc::new(request.try_into_shard_request(&ids_to_vectors)?);
 
         let all_shards_results = self
-            .query_shards_concurrently(request.clone(), read_consistency, shard_selection)
+            .query_shards_concurrently(request.clone(), read_consistency, shard_selection, timeout)
             .await?;
 
         let mut merged_intermediates = self
@@ -123,13 +127,14 @@ impl Collection {
         &self,
         request: ShardQueryRequest,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let request = Arc::new(request);
 
         // Results from all shards
         // Shape: [num_shards, num_internal_queries, num_scored_points]
         let all_shards_results = self
-            .query_shards_concurrently(Arc::clone(&request), None, shard_selection)
+            .query_shards_concurrently(Arc::clone(&request), None, shard_selection, timeout)
             .await?;
 
         let merged = self
