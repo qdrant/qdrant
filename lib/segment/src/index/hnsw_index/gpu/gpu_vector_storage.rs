@@ -1,10 +1,12 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::DenseVector;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 pub const ALIGNMENT: usize = 32 * 4;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
@@ -16,6 +18,14 @@ struct GpuVectorParamsBuffer {
     count: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum GpuVectorStorageElementType {
+    Float32,
+    Float16,
+    Uint8,
+    Binary,
+}
+
 pub struct GpuVectorStorage {
     pub device: Arc<gpu::Device>,
     pub vectors_buffer: Vec<Arc<gpu::Buffer>>,
@@ -24,27 +34,99 @@ pub struct GpuVectorStorage {
     pub descriptor_set: Arc<gpu::DescriptorSet>,
     pub dim: usize,
     pub count: usize,
+    pub element_type: GpuVectorStorageElementType,
 }
 
 impl GpuVectorStorage {
     pub fn new(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,
-        dim: usize,
+    ) -> OperationResult<Self> {
+        match vector_storage {
+            VectorStorageEnum::DenseSimple(vector_storage) => Self::new_typed::<VectorElementType>(
+                device,
+                GpuVectorStorageElementType::Float32,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseSimpleByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
+                device,
+                GpuVectorStorageElementType::Uint8,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseSimpleHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
+                device,
+                GpuVectorStorageElementType::Float16,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseMemmap(vector_storage) => Self::new_typed::<VectorElementType>(
+                device,
+                GpuVectorStorageElementType::Float32,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseMemmapByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
+                device,
+                GpuVectorStorageElementType::Uint8,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseMemmapHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
+                device,
+                GpuVectorStorageElementType::Float16,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseAppendableMemmap(vector_storage) => Self::new_typed::<VectorElementType>(
+                device,
+                GpuVectorStorageElementType::Float32,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseAppendableMemmapByte(vector_storage) => Self::new_typed::<VectorElementTypeByte>(
+                device,
+                GpuVectorStorageElementType::Uint8,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => Self::new_typed::<VectorElementTypeHalf>(
+                device,
+                GpuVectorStorageElementType::Float16,
+                vector_storage.total_vector_count(),
+                |id| Cow::Borrowed(vector_storage.get_dense(id)),
+            ),
+            VectorStorageEnum::SparseSimple(_) => Err(OperationError::service_error("GPU does not support sparse vectors")),
+            VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+            VectorStorageEnum::MultiDenseSimpleByte(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => Err(OperationError::service_error("GPU does not support multivectors")),
+        }
+    }
+
+    fn new_typed<'a, TElement: PrimitiveVectorElement>(
+        device: Arc<gpu::Device>,
+        element_type: GpuVectorStorageElementType,
+        count: usize,
+        get_vector: impl Fn(PointOffsetType) -> Cow<'a, [TElement]>,
     ) -> OperationResult<Self> {
         let timer = std::time::Instant::now();
 
-        let capacity = Self::get_capacity(dim);
-        let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<f32>());
+        let dim = get_vector(0).len();
 
-        let count = vector_storage.total_vector_count();
+        let capacity = Self::get_capacity(dim);
+        let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<TElement>());
+
         let points_in_storage_count = Self::get_points_in_storage_count(count);
         let vectors_buffer = (0..STORAGES_COUNT)
             .map(|_| {
                 Arc::new(gpu::Buffer::new(
                     device.clone(),
                     gpu::BufferType::Storage,
-                    points_in_storage_count * capacity * std::mem::size_of::<f32>(),
+                    points_in_storage_count * capacity * std::mem::size_of::<TElement>(),
                 ))
             })
             .collect::<Vec<_>>();
@@ -59,7 +141,7 @@ impl GpuVectorStorage {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            upload_points_count * capacity * std::mem::size_of::<f32>(),
+            upload_points_count * capacity * std::mem::size_of::<TElement>(),
         ));
         println!(
             "Staging buffer size {}, upload_points_count = {}",
@@ -85,20 +167,19 @@ impl GpuVectorStorage {
             let mut gpu_offset = 0;
             let mut upload_size = 0;
             let mut upload_points = 0;
-            let mut extended_vector = vec![0.0f32; capacity];
+            let mut extended_vector = vec![TElement::default(); capacity];
             for point_id in 0..count {
                 if point_id % STORAGES_COUNT != storage_index {
                     continue;
                 }
 
-                let vector = vector_storage.get_vector(point_id as PointOffsetType);
-                let vector: DenseVector = vector.try_into().unwrap();
+                let vector = get_vector(point_id as PointOffsetType);
                 extended_vector[..vector.len()].copy_from_slice(&vector);
                 staging_buffer.upload_slice(
                     &extended_vector,
-                    upload_points * capacity * std::mem::size_of::<f32>(),
+                    upload_points * capacity * std::mem::size_of::<TElement>(),
                 );
-                upload_size += capacity * std::mem::size_of::<f32>();
+                upload_size += capacity * std::mem::size_of::<TElement>();
                 upload_points += 1;
 
                 if upload_points == upload_points_count {
@@ -145,7 +226,7 @@ impl GpuVectorStorage {
         println!(
             "Upload vector data to GPU time = {:?}, vector data size {} MB",
             timer.elapsed(),
-            STORAGES_COUNT * points_in_storage_count * capacity * std::mem::size_of::<f32>()
+            STORAGES_COUNT * points_in_storage_count * capacity * std::mem::size_of::<TElement>()
                 / 1024
                 / 1024
         );
@@ -174,6 +255,7 @@ impl GpuVectorStorage {
             descriptor_set,
             dim,
             count,
+            element_type,
         })
     }
 
@@ -188,34 +270,58 @@ impl GpuVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    use atomic_refcell::AtomicRefCell;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::fixtures::index_fixtures::random_vector;
+    use crate::fixtures::payload_fixtures::random_dense_byte_vector;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
-    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+    use crate::vector_storage::dense::simple_dense_vector_storage::{open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage, open_simple_dense_vector_storage};
 
-    #[test]
-    fn test_gpu_vector_storage_scoring() {
+    fn open_vector_storage(
+        path: &Path,
+        dim: usize,
+        element_type: GpuVectorStorageElementType,
+    ) -> Arc<AtomicRefCell<VectorStorageEnum>> {
+        let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
+
+        match element_type {
+            GpuVectorStorageElementType::Float32 => {
+                open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
+            }
+            GpuVectorStorageElementType::Float16 => {
+                open_simple_dense_half_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
+            }
+            GpuVectorStorageElementType::Uint8 => {
+                open_simple_dense_byte_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into()).unwrap()
+            }
+            GpuVectorStorageElementType::Binary => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn test_gpu_vector_storage_scoring_impl(
+        element_type: GpuVectorStorageElementType,
+    ) {
         let num_vectors = 2048;
-        let dim = 1536;
-        let capacity = 1536;
+        let dim = 128;
+        let capacity = 128;
         let test_point_id = 0usize;
 
         let mut rnd = StdRng::seed_from_u64(42);
         let points = (0..num_vectors)
-            .map(|_| random_vector(&mut rnd, dim))
+            .map(|_| random_dense_byte_vector(&mut rnd, dim))
             .collect::<Vec<_>>();
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
-            open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
-                .unwrap();
+        let storage = open_vector_storage(dir.path(), dim, element_type);
         {
             let mut borrowed_storage = storage.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
@@ -232,7 +338,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
         let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
+            GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -250,7 +356,12 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/test_vector_storage.spv"),
+            match element_type {
+                GpuVectorStorageElementType::Float32 => include_bytes!("./shaders/compiled/test_vector_storage_f32.spv"),
+                GpuVectorStorageElementType::Float16 => include_bytes!("./shaders/compiled/test_vector_storage_f16.spv"),
+                GpuVectorStorageElementType::Uint8 => include_bytes!("./shaders/compiled/test_vector_storage_u8.spv"),
+                GpuVectorStorageElementType::Binary => include_bytes!("./shaders/compiled/test_vector_storage_binary.spv"),
+            }
         ));
 
         let pipeline = gpu::Pipeline::builder()
@@ -307,8 +418,24 @@ mod tests {
         let timer = std::time::Instant::now();
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[test_point_id], &points[i]);
+            println!("CPU score = {}, GPU score = {}", score, scores[i]);
             assert!((score - scores[i]).abs() < 1.0);
         }
         println!("CPU scoring time = {:?}", timer.elapsed());
+    }
+
+    #[test]
+    fn test_gpu_vector_storage_scoring() {
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float32);
+    }
+
+    #[test]
+    fn test_gpu_vector_storage_scoring_f16() {
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Float16);
+    }
+
+    #[test]
+    fn test_gpu_vector_storage_scoring_u8() {
+        test_gpu_vector_storage_scoring_impl(GpuVectorStorageElementType::Uint8);
     }
 }

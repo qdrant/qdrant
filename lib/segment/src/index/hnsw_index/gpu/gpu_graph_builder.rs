@@ -53,10 +53,6 @@ impl GpuGraphBuilder {
         }
         let max_patched_points = groups_count * (m0 + 1);
 
-        let first_dense = vector_storage.get_vector(0);
-        let first_dense: &[f32] = first_dense.as_vec_ref().try_into()?;
-        let dim = first_dense.len();
-
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers_builder.get_random_layer(rng);
             graph_layers_builder.set_levels(idx, level);
@@ -80,7 +76,6 @@ impl GpuGraphBuilder {
             debug_messenger,
             groups_count,
             vector_storage,
-            dim,
             m,
             m0,
             ef,
