@@ -776,6 +776,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             if use_gpu {
                 graph_layers_builder = GpuGraphBuilder::build(
                     &mut rng,
+                    &pool,
                     None,
                     get_gpu_max_groups_count(),
                     &vector_storage,

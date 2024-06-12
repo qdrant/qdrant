@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicUsize;
 use bitvec::prelude::BitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use itertools::Itertools;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -479,15 +480,15 @@ impl GraphLayersBuilder {
     }
 
     pub fn get_patch(
-        &mut self,
+        &self,
         request: super::gpu::gpu_search_context::GpuRequest,
         level: usize,
         mut points_scorer: FilteredScorer,
     ) -> (
         Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
-        PointOffsetType,
+        Vec<PointOffsetType>,
     ) {
-        let mut entry = request.entry;
+        let entry = request.entry;
         let point_id = request.id;
         let mut patches = vec![];
 
@@ -509,9 +510,13 @@ impl GraphLayersBuilder {
             &mut points_scorer,
         );
 
-        if let Some(the_nearest) = search_context.nearest.iter().max() {
-            entry = the_nearest.idx;
-        }
+        let new_entries = search_context
+            .nearest
+            .clone()
+            .into_vec()
+            .iter()
+            .map(|p| p.idx)
+            .collect_vec();
 
         let scorer = |a, b| points_scorer.score_internal(a, b);
 
@@ -560,7 +565,7 @@ impl GraphLayersBuilder {
             });
         }
 
-        (patches, entry)
+        (patches, new_entries)
     }
 
     pub fn try_apply_patch(

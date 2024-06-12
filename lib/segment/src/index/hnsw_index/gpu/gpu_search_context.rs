@@ -757,7 +757,7 @@ mod tests {
             let (cpu_patches, cpu_new_entry) =
                 test.graph_layers_builder.get_patch(requests[i], 0, scorer);
 
-            assert_eq!(new_entries[i], cpu_new_entry);
+            assert_eq!(new_entries[i], *cpu_new_entry.first().unwrap());
             assert_eq!(gpu_patches.len(), cpu_patches.len());
             for (gpu_patch, cpu_patch) in gpu_patches.iter().zip(cpu_patches.iter()) {
                 assert_eq!(gpu_patch.id, cpu_patch.id);

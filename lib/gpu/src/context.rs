@@ -15,6 +15,9 @@ pub struct Context {
     pub submit_info: Vec<vk::SubmitInfo>,
 }
 
+unsafe impl Send for Context {}
+unsafe impl Sync for Context {}
+
 impl Drop for Context {
     fn drop(&mut self) {
         self.wait_finish();
