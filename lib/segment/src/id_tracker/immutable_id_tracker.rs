@@ -48,7 +48,7 @@ pub(super) struct PointMappings {
 
 impl ImmutableIdTracker {
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let mappings = Self::load_mappings(segment_path.join(MAPPINGS_FILE_NAME).as_path())?;
+        let mappings = Self::load_mappings(&Self::mappings_file_path(segment_path))?;
 
         let deleted_raw = open_write_mmap(&Self::deleted_file_path(segment_path))?;
         let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
@@ -56,7 +56,7 @@ impl ImmutableIdTracker {
         let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_mmap);
 
         let internal_to_version_map =
-            open_write_mmap(&segment_path.join(VERSION_MAPPING_FILE_NAME))?;
+            open_write_mmap(&Self::version_mapping_file_path(segment_path))?;
         let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
         let internal_to_version = internal_to_version_mapslice.to_vec();
@@ -124,7 +124,7 @@ impl ImmutableIdTracker {
         base.join(VERSION_MAPPING_FILE_NAME)
     }
 
-    fn mappings_file_path(base: &Path) -> PathBuf {
+    pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
         base.join(MAPPINGS_FILE_NAME)
     }
 
@@ -402,9 +402,9 @@ impl IdTracker for ImmutableIdTracker {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![
-            self.path.join(DELETED_FILE_NAME),
-            self.path.join(MAPPINGS_FILE_NAME),
-            self.path.join(VERSION_MAPPING_FILE_NAME),
+            Self::deleted_file_path(&self.path),
+            Self::mappings_file_path(&self.path),
+            Self::version_mapping_file_path(&self.path),
         ]
     }
 }

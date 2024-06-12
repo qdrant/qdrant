@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::id_tracker::immutable_id_tracker::{ImmutableIdTracker, MAPPINGS_FILE_NAME};
+use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
@@ -411,7 +411,7 @@ fn create_segment(
     let appendable_flag = config.is_appendable();
 
     let mutable_id_tracker =
-        appendable_flag || !Path::new(segment_path).join(MAPPINGS_FILE_NAME).is_file();
+        appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
     let id_tracker = if mutable_id_tracker {
         sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
