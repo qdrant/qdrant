@@ -334,6 +334,13 @@ pub(crate) fn create_vector_index(
     Ok(vector_index)
 }
 
+#[cfg(feature = "testing")]
+pub fn create_sparse_vector_index_test(
+    args: SparseVectorIndexOpenArgs,
+) -> OperationResult<VectorIndexEnum> {
+    create_sparse_vector_index(args)
+}
+
 pub(crate) fn create_sparse_vector_index(
     args: SparseVectorIndexOpenArgs,
 ) -> OperationResult<VectorIndexEnum> {
