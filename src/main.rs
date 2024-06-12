@@ -1,5 +1,3 @@
-#![allow(deprecated)]
-
 #[cfg(feature = "web")]
 mod actix;
 mod common;
