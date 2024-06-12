@@ -1,13 +1,14 @@
 use std::ops::Range;
 use std::thread::JoinHandle;
 
+use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 use itertools::Itertools;
+use parking_lot::RwLock;
 use rand::Rng;
 
 use super::gpu_search_context::{GpuRequest, GpuSearchContext};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::payload_storage::FilterContext;
@@ -57,6 +58,7 @@ impl GpuGraphBuilder {
         let num_vectors = vector_storage.total_vector_count();
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
+        graph_layers_builder.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
 
         if num_vectors == 0 {
             return Ok(graph_layers_builder);
@@ -493,6 +495,7 @@ mod tests {
         let m0 = 16;
         let ef = 32;
         let search_counts = 50;
+        let cpu_first_points = 64;
 
         let test = create_test_data(num_vectors, dim, m, m0, ef, search_counts);
 
@@ -508,7 +511,7 @@ mod tests {
             ef,
             1,
             false,
-            64,
+            cpu_first_points,
             (0..num_vectors as PointOffsetType).collect(),
             |id| {
                 let fake_filter_context = FakeFilterContext {};
@@ -573,13 +576,13 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
-        let num_vectors = 10;
+        let num_vectors = 1024;
         let groups_count = 1;
         let dim = 64;
         let m = 8;
         let m0 = 16;
         let ef = 32;
-        let cpu_first_points = 3;
+        let cpu_first_points = 64;
 
         let test = create_test_data(num_vectors, dim, m, m0, ef, 0);
 

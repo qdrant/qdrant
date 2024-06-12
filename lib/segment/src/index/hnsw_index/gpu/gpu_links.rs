@@ -15,6 +15,7 @@ pub struct GpuLinks {
     pub links_capacity: usize,
     pub points_count: usize,
     pub max_patched_points: usize,
+    // TODO(gpu) we don't need cpu copy now
     pub links: Vec<PointOffsetType>,
     pub device: Arc<gpu::Device>,
     pub links_buffer: Arc<gpu::Buffer>,
