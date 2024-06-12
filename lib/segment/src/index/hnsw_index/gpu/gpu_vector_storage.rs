@@ -530,7 +530,6 @@ mod tests {
         let timer = std::time::Instant::now();
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[test_point_id], &points[i]);
-            println!("CPU score = {}, GPU score = {}", score, scores[i]);
             assert!((score - scores[i]).abs() < 0.01);
         }
         println!("CPU scoring time = {:?}", timer.elapsed());

@@ -95,7 +95,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
 
         *locked_index += 1;
         while *locked_finished_chunks < self.chunks.len()
-            && index >= self.chunks[*locked_finished_chunks].end
+            && index + 1 >= self.chunks[*locked_finished_chunks].end
         {
             let mut all_point_ids_from_prev_chunks = self.all_point_ids_from_prev_chunks.lock();
             let obsolete_chunk = self.chunks[*locked_finished_chunks].clone();
@@ -542,7 +542,6 @@ impl GpuGraphBuilder {
                 .iter()
                 .zip(points.lock()[chunk.clone()].iter_mut()),
         ) {
-            // no conflicts, apply patch
             for patch in patches {
                 gpu_search_context.set_links(patch.id, &patch.links)?;
                 let mut links = graph_layers_builder.links_layers[patch.id as usize][level].write();
