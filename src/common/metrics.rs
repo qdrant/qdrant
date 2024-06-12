@@ -213,16 +213,21 @@ impl MetricsProvider for WebApiTelemetry {
             if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
                 continue;
             }
-            for (status, stats) in responses {
-                builder.add(
-                    stats,
-                    &[
+            for (collection, responses) in responses {
+                for (status, stats) in responses {
+                    let should_add_timings = *status == REST_TIMINGS_FOR_STATUS;
+                    let status = status.to_string();
+                    let mut labels = vec![
+                        // Maintaining the convenient order:
                         ("method", method),
                         ("endpoint", endpoint),
-                        ("status", &status.to_string()),
-                    ],
-                    *status == REST_TIMINGS_FOR_STATUS,
-                );
+                    ];
+                    if !collection.is_empty() {
+                        labels.push(("collection", collection));
+                    }
+                    labels.push(("status", &status));
+                    builder.add(stats, &labels, should_add_timings);
+                }
             }
         }
         builder.build("rest", metrics);
