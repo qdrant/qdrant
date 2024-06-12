@@ -2,7 +2,7 @@ import pytest
 import requests
 from consensus_tests import fixtures
 
-from .utils import API_KEY_HEADERS, REST_URI, SECRET, encode_jwt
+from .utils import API_KEY_HEADERS, READ_ONLY_API_KEY, REST_URI, SECRET, encode_jwt
 
 COLL_NAME = "jwt_test_collection"
 
@@ -179,6 +179,25 @@ def test_payload_filters_count(berlin_token):
     ],
 )
 def test_payload_filters_query(berlin_token, prefetch):
+    # Check that there are more cities in the payload
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/query",
+        json={
+            "prefetch": prefetch,
+            "query": [0.1, 0.2, 0.3, 0.4],
+            "limit": 100,
+            "with_payload": True,
+        },
+        headers=API_KEY_HEADERS,
+    )
+
+    cities_in_payload = set(
+        point["payload"].get("city") for point in res.json()["result"]
+    )
+
+    assert len(cities_in_payload) > 1
+
+    # Now check that there is only Berlin with the payload claim in the token
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/points/query",
         json={
@@ -204,6 +223,10 @@ def test_payload_claim_fails_with_ids_in_recommend(berlin_token):
         headers={"Authorization": f"Bearer {berlin_token}"},
     )
     assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == 'Forbidden: This operation is not allowed when "payload" restriction is present for collection jwt_test_collection'
+    )
 
 
 @pytest.mark.parametrize("target", [1, None])
@@ -218,6 +241,10 @@ def test_payload_claim_fails_with_ids_in_discover(berlin_token, target, context)
         headers={"Authorization": f"Bearer {berlin_token}"},
     )
     assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == 'Forbidden: This operation is not allowed when "payload" restriction is present for collection jwt_test_collection'
+    )
 
 
 @pytest.mark.parametrize(
@@ -257,3 +284,7 @@ def test_payload_claim_fails_with_ids_in_query(berlin_token, query, in_prefetch)
         )
 
     assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == 'Forbidden: This operation is not allowed when "payload" restriction is present for collection jwt_test_collection'
+    )
