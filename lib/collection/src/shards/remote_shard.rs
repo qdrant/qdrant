@@ -841,6 +841,7 @@ impl ShardOperation for RemoteShard {
         &self,
         request: Arc<ShardQueryRequest>,
         _search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let is_payload_required = request.with_payload.is_required();
 
@@ -850,11 +851,17 @@ impl ShardOperation for RemoteShard {
             collection_name: self.collection_id.clone(),
             query_points,
             shard_id: Some(__self.id),
+            timeout: timeout.map(|t| t.as_secs()),
         };
 
         let query_response = self
             .with_points_client(|mut client| async move {
-                client.query(tonic::Request::new(request.clone())).await
+                let mut request = tonic::Request::new(request.clone());
+
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+                client.query(request).await
             })
             .await?
             .into_inner();

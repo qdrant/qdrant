@@ -143,13 +143,14 @@ impl ShardReplicaSet {
         request: Arc<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.query(request, &search_runtime).await }.boxed()
+                async move { shard.query(request, &search_runtime, timeout).await }.boxed()
             },
             read_consistency,
             local_only,

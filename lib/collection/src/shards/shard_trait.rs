@@ -52,6 +52,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse>;
 }
 

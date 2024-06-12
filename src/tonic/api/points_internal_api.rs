@@ -45,6 +45,7 @@ pub async fn query(
     collection_name: String,
     query_points: QueryShardPoints,
     shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
 ) -> Result<Response<QueryResponse>, Status> {
     let request = ShardQueryRequest::try_from(query_points)?;
 
@@ -61,7 +62,7 @@ pub async fn query(
     };
 
     let scored_points = toc
-        .query_internal(&collection_name, request, shard_selection)
+        .query_internal(&collection_name, request, shard_selection, timeout)
         .await
         .map_err(error_to_status)?;
 
@@ -482,16 +483,23 @@ impl PointsInternal for PointsInternalService {
             collection_name,
             shard_id,
             query_points,
+            timeout,
         } = request.into_inner();
 
         let query_points =
             query_points.ok_or_else(|| Status::invalid_argument("QueryPoints is missing"))?;
 
-        // TODO(universal-query): add timeout
-        // let timeout = timeout.map(Duration::from_secs);
+        let timeout = timeout.map(Duration::from_secs);
 
         // Individual `read_consistency` values are ignored
 
-        query(self.toc.as_ref(), collection_name, query_points, shard_id).await
+        query(
+            self.toc.as_ref(),
+            collection_name,
+            query_points,
+            shard_id,
+            timeout,
+        )
+        .await
     }
 }

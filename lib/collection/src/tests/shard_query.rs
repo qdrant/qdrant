@@ -56,7 +56,7 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let sources_scores = shard.query(Arc::new(query), &current_runtime).await;
+    let sources_scores = shard.query(Arc::new(query), &current_runtime, None).await;
     let expected_error =
         CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
@@ -89,7 +89,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
@@ -133,7 +133,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
@@ -205,7 +205,7 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
@@ -229,7 +229,7 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
@@ -256,7 +256,7 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
@@ -314,7 +314,7 @@ async fn test_shard_query_payload_vector() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 

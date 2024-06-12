@@ -8365,6 +8365,8 @@ pub struct QueryPointsInternal {
     pub query_points: ::core::option::Option<QueryShardPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "4")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

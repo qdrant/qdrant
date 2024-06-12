@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
@@ -11,7 +12,7 @@ use tokio::runtime::Handle;
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{CollectionResult, Record, ScrollRequestInternal};
+use crate::operations::types::{CollectionError, CollectionResult, Record, ScrollRequestInternal};
 
 impl LocalShard {
     /// Basic parallel batching, it is conveniently used for the universal query API.
@@ -19,6 +20,7 @@ impl LocalShard {
         &self,
         batch: Arc<Vec<ScrollRequestInternal>>,
         search_runtime_handle: &Handle,
+        timeout: Duration,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let default_request = ScrollRequestInternal::default();
 
@@ -26,7 +28,17 @@ impl LocalShard {
             .iter()
             .map(|request| self.query_scroll(request, &default_request, search_runtime_handle));
 
-        try_join_all(scrolls).await
+        // execute all the scrolls concurrently
+        let all_scroll_results = try_join_all(scrolls);
+        tokio::time::timeout(timeout, all_scroll_results)
+            .await
+            .map_err(|_| {
+                log::debug!(
+                    "Query scroll timeout reached: {} seconds",
+                    timeout.as_secs()
+                );
+                CollectionError::timeout(timeout.as_secs() as usize, "Query scroll")
+            })?
     }
 
     /// Scroll a single page, to be used for the universal query API only.

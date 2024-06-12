@@ -297,12 +297,13 @@ impl ShardOperation for QueueProxyShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
             .wrapped_shard
-            .query(request, search_runtime_handle)
+            .query(request, search_runtime_handle, timeout)
             .await
     }
 }
@@ -578,14 +579,15 @@ impl ShardOperation for Inner {
             .await
     }
 
-    /// Forward read-only `query` to `wrapped_shard`    
+    /// Forward read-only `query` to `wrapped_shard`
     async fn query(
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.wrapped_shard
-            .query(request, search_runtime_handle)
+            .query(request, search_runtime_handle, timeout)
             .await
     }
 }
