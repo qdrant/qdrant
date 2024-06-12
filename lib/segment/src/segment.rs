@@ -1,7 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -1901,21 +1900,7 @@ impl SegmentEntry for Segment {
 
         for (vector_name, idf) in query_context.mut_idf().iter_mut() {
             if let Some(vector_data) = self.vector_data.get(vector_name) {
-                let vector_index = vector_data.vector_index.borrow();
-                match vector_index.deref() {
-                    VectorIndexEnum::SparseRam(sparse_index) => {
-                        sparse_index.fill_idf_statistics(idf);
-                    }
-                    VectorIndexEnum::SparseImmutableRam(sparse_index) => {
-                        sparse_index.fill_idf_statistics(idf);
-                    }
-                    VectorIndexEnum::SparseMmap(sparse_index) => {
-                        sparse_index.fill_idf_statistics(idf);
-                    }
-                    VectorIndexEnum::Plain(_)
-                    | VectorIndexEnum::HnswRam(_)
-                    | VectorIndexEnum::HnswMmap(_) => {}
-                }
+                vector_data.vector_index.borrow().fill_idf_statistics(idf);
             }
         }
     }

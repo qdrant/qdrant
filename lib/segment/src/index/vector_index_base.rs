@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -72,6 +74,15 @@ impl VectorIndexEnum {
             Self::SparseRam(_) => true,
             Self::SparseImmutableRam(_) => true,
             Self::SparseMmap(_) => true,
+        }
+    }
+
+    pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
+        match self {
+            Self::Plain(_) | Self::HnswRam(_) | Self::HnswMmap(_) => (),
+            Self::SparseRam(index) => index.fill_idf_statistics(idf),
+            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf),
+            Self::SparseMmap(index) => index.fill_idf_statistics(idf),
         }
     }
 }
