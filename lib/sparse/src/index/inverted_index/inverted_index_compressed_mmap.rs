@@ -15,7 +15,7 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam;
+use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use super::INDEX_FILE_NAME;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
@@ -36,7 +36,7 @@ pub struct InvertedIndexFileHeader {
 }
 
 /// Inverted flatten index from dimension id to posting list
-pub struct InvertedIndexMmap<W> {
+pub struct InvertedIndexCompressedMmap<W> {
     path: PathBuf,
     mmap: Arc<Mmap>,
     pub file_header: InvertedIndexFileHeader,
@@ -55,7 +55,7 @@ struct PostingListFileHeader {
     pub chunks_count: u32,
 }
 
-impl<W: Weight> InvertedIndex for InvertedIndexMmap<W> {
+impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
     type Iter<'a> = CompressedPostingListIterator<'a, W>;
 
     fn open(path: &Path) -> std::io::Result<Self> {
@@ -94,7 +94,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexMmap<W> {
         ram_index: Cow<InvertedIndexRam>,
         path: P,
     ) -> std::io::Result<Self> {
-        let index = InvertedIndexImmutableRam::from_ram_index(ram_index, &path)?;
+        let index = InvertedIndexCompressedImmutableRam::from_ram_index(ram_index, &path)?;
         Self::convert_and_save(&index, path)
     }
 
@@ -110,7 +110,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexMmap<W> {
     }
 }
 
-impl<W: Weight> InvertedIndexMmap<W> {
+impl<W: Weight> InvertedIndexCompressedMmap<W> {
     pub fn index_file_path(path: &Path) -> PathBuf {
         path.join(INDEX_FILE_NAME)
     }
@@ -172,7 +172,7 @@ impl<W: Weight> InvertedIndexMmap<W> {
     }
 
     pub fn convert_and_save<P: AsRef<Path>>(
-        index: &InvertedIndexImmutableRam<W>,
+        index: &InvertedIndexCompressedImmutableRam<W>,
         path: P,
     ) -> std::io::Result<Self> {
         let total_posting_headers_size = index.postings.as_slice().len() * POSTING_HEADER_SIZE;
@@ -256,8 +256,8 @@ mod tests {
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
     fn compare_indexes<W: Weight>(
-        inverted_index_ram: &InvertedIndexImmutableRam<W>,
-        inverted_index_mmap: &InvertedIndexMmap<W>,
+        inverted_index_ram: &InvertedIndexCompressedImmutableRam<W>,
+        inverted_index_mmap: &InvertedIndexCompressedMmap<W>,
     ) {
         for id in 0..inverted_index_ram.postings.len() as DimId {
             let posting_list_ram = inverted_index_ram.postings.get(id as usize).unwrap().view();
@@ -286,7 +286,7 @@ mod tests {
         builder.add(9, [(1, 6.0)].into());
         let inverted_index_ram = builder.build();
         let tmp_dir_path = Builder::new().prefix("test_index_dir1").tempdir().unwrap();
-        let inverted_index_ram = InvertedIndexImmutableRam::from_ram_index(
+        let inverted_index_ram = InvertedIndexCompressedImmutableRam::from_ram_index(
             Cow::Borrowed(&inverted_index_ram),
             &tmp_dir_path,
         )
@@ -295,13 +295,15 @@ mod tests {
         let tmp_dir_path = Builder::new().prefix("test_index_dir2").tempdir().unwrap();
 
         {
-            let inverted_index_mmap =
-                InvertedIndexMmap::<W>::convert_and_save(&inverted_index_ram, &tmp_dir_path)
-                    .unwrap();
+            let inverted_index_mmap = InvertedIndexCompressedMmap::<W>::convert_and_save(
+                &inverted_index_ram,
+                &tmp_dir_path,
+            )
+            .unwrap();
 
             compare_indexes(&inverted_index_ram, &inverted_index_mmap);
         }
-        let inverted_index_mmap = InvertedIndexMmap::<W>::load(&tmp_dir_path).unwrap();
+        let inverted_index_mmap = InvertedIndexCompressedMmap::<W>::load(&tmp_dir_path).unwrap();
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(inverted_index_mmap.file_header.posting_count, 6);
         assert_eq!(inverted_index_mmap.file_header.vector_count, 9);

@@ -14,8 +14,8 @@ use rand::SeedableRng as _;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
-use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam;
-use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexMmap as InvertedIndexCompressedMmap;
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
@@ -137,7 +137,7 @@ pub fn run_bench(
 
     run_bench2(
         c.benchmark_group(format!("search/ram_c32/{name}")),
-        &InvertedIndexImmutableRam::<f32>::from_ram_index(
+        &InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
             Cow::Borrowed(&index),
             "nonexistent/path",
         )
@@ -148,7 +148,7 @@ pub fn run_bench(
 
     run_bench2(
         c.benchmark_group(format!("search/ram_c16/{name}")),
-        &InvertedIndexImmutableRam::<half::f16>::from_ram_index(
+        &InvertedIndexCompressedImmutableRam::<half::f16>::from_ram_index(
             Cow::Borrowed(&index),
             "nonexistent/path",
         )
