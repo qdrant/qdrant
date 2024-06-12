@@ -562,6 +562,46 @@ impl GraphLayersBuilder {
 
         (patches, entry)
     }
+
+    pub fn try_apply_patch(
+        &self,
+        level: usize,
+        patches: Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
+    ) -> bool {
+        let mut locks = Vec::with_capacity(patches.len());
+        let mut links_to_apply = Vec::with_capacity(patches.len());
+        for patch in &patches {
+            if let Some(lock) = self.links_layers[patch.id as usize][level].try_write() {
+                //if lock.as_slice() != patch.old_links.as_slice() {
+                //    return false;
+                //}
+
+                locks.push(lock);
+                links_to_apply.push(patch.links.clone());
+            } else {
+                return false;
+            }
+        }
+
+        for (links, lock) in links_to_apply.iter().zip(locks.iter_mut()) {
+            lock.clear();
+            lock.extend(links.iter().copied());
+        }
+
+        true
+    }
+
+    pub fn apply_patch(
+        &self,
+        level: usize,
+        patches: Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
+    ) {
+        for patch in &patches {
+            let mut lock = self.links_layers[patch.id as usize][level].write();
+            lock.clear();
+            lock.extend(patch.links.iter().copied());
+        }
+    }
 }
 
 #[cfg(test)]

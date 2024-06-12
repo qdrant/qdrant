@@ -755,6 +755,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
+            let timer = std::time::Instant::now();
+
             let single_threaded_threshold = if !use_gpu {
                 SINGLE_THREADED_HNSW_BUILD_THRESHOLD
             } else {
@@ -784,6 +786,26 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     get_gpu_force_half_precision(),
                     SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
                     ids,
+                    |vector_id| {
+                        let vector = vector_storage.get_vector(vector_id);
+                        let vector = vector.as_vec_ref().into();
+                        let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref()
+                        {
+                            quantized_storage.raw_scorer(
+                                vector,
+                                id_tracker.deleted_point_bitslice(),
+                                vector_storage.deleted_vector_bitslice(),
+                                stopped,
+                            )
+                        } else {
+                            new_raw_scorer(
+                                vector,
+                                &vector_storage,
+                                id_tracker.deleted_point_bitslice(),
+                            )
+                        }?;
+                        Ok((raw_scorer, None))
+                    },
                 )?;
             } else {
                 let insert_point = |vector_id| {
@@ -815,7 +837,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }
             }
 
-            debug!("finish main graph");
+            debug!("finish main graph in time {:?}", timer.elapsed());
         } else {
             debug!("skip building main HNSW graph");
         }

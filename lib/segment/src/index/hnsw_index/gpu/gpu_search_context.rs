@@ -507,13 +507,13 @@ impl GpuSearchContext {
         Ok(())
     }
 
-    fn apply_links_patch(&mut self) -> OperationResult<()> {
+    pub fn apply_links_patch(&mut self) -> OperationResult<()> {
         self.gpu_links.apply_gpu_patches(&mut self.context);
         self.is_dirty_links = false;
         Ok(())
     }
 
-    fn run_context(&mut self) {
+    pub fn run_context(&mut self) {
         self.context.run();
         self.context.wait_finish();
     }

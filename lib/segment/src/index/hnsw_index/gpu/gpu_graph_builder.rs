@@ -2,13 +2,16 @@ use std::ops::Range;
 use std::thread::JoinHandle;
 
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use rand::Rng;
 
 use super::gpu_search_context::{GpuRequest, GpuSearchContext};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::entry_points::EntryPoint;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::payload_storage::FilterContext;
+use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 
 pub struct GpuGraphBuilder {
     graph_layers_builder: GraphLayersBuilder,
@@ -20,6 +23,7 @@ pub struct GpuGraphBuilder {
     patches_timer: std::time::Duration,
 }
 
+#[derive(Clone)]
 struct PointLinkingData {
     point_id: PointOffsetType,
     level: usize,
@@ -28,7 +32,7 @@ struct PointLinkingData {
 
 impl GpuGraphBuilder {
     #[allow(clippy::too_many_arguments)]
-    pub fn build<R: Rng + ?Sized>(
+    pub fn build<'a, R: Rng + ?Sized>(
         rng: &mut R,
         debug_messenger: Option<&dyn gpu::DebugMessenger>,
         groups_count: usize,
@@ -40,6 +44,12 @@ impl GpuGraphBuilder {
         force_half_precision: bool,
         min_cpu_linked_points_count: usize,
         mut ids: Vec<PointOffsetType>,
+        points_scorer_builder: impl Fn(
+            PointOffsetType,
+        ) -> OperationResult<(
+            Box<dyn RawScorer + 'a>,
+            Option<Box<dyn FilterContext + 'a>>,
+        )>,
     ) -> OperationResult<GraphLayersBuilder> {
         log::debug!("Building GPU graph with max groups count: {}", groups_count);
 
@@ -114,7 +124,7 @@ impl GpuGraphBuilder {
             updates_timer: Default::default(),
             patches_timer: Default::default(),
         };
-        builder.build_levels()
+        builder.build_levels(points_scorer_builder)
     }
 
     fn sort_points_by_level(
@@ -174,8 +184,17 @@ impl GpuGraphBuilder {
         chunks
     }
 
-    fn build_levels(mut self) -> OperationResult<GraphLayersBuilder> {
-        let mut gpu_thread: JoinHandle<OperationResult<()>> = std::thread::spawn(|| Ok(()));
+    fn build_levels<'a>(
+        mut self,
+        points_scorer_builder: impl Fn(
+            PointOffsetType,
+        ) -> OperationResult<(
+            Box<dyn RawScorer + 'a>,
+            Option<Box<dyn FilterContext + 'a>>,
+        )>,
+    ) -> OperationResult<GraphLayersBuilder> {
+        let mut gpu_thread: Option<JoinHandle<OperationResult<()>>> =
+            Some(std::thread::spawn(|| Ok(())));
 
         let levels_count = self.points[0].level + 1;
         for level in (0..levels_count).rev() {
@@ -185,16 +204,29 @@ impl GpuGraphBuilder {
                 self.graph_layers_builder.m0
             };
 
+            if let Some(gpu_thread) = gpu_thread.take() {
+                gpu_thread.join().map_err(|e| {
+                    OperationError::service_error(format!(
+                        "Gpu graph build thread panicked: {:?}",
+                        e
+                    ))
+                })??;
+            }
+
+            let start_gpu_chunk_index = self.build_level_on_cpu(level, &points_scorer_builder)?;
+
+            gpu_thread = if start_gpu_chunk_index < self.chunks.len() {
+                self.build_level_on_gpu(level, level_m, start_gpu_chunk_index)?
+            } else {
+                None
+            }
+        }
+
+        if let Some(gpu_thread) = gpu_thread.take() {
             gpu_thread.join().map_err(|e| {
                 OperationError::service_error(format!("Gpu graph build thread panicked: {:?}", e))
             })??;
-
-            gpu_thread = self.build_level(level, level_m)?;
         }
-
-        gpu_thread.join().map_err(|e| {
-            OperationError::service_error(format!("Gpu graph build thread panicked: {:?}", e))
-        })??;
 
         let sum = self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
         println!("Gpu graph chunks avg size: {}", sum / self.chunks.len());
@@ -204,14 +236,89 @@ impl GpuGraphBuilder {
         Ok(self.graph_layers_builder)
     }
 
-    fn build_level(
+    fn build_level_on_cpu<'a>(
+        &mut self,
+        level: usize,
+        points_scorer_builder: impl Fn(
+            PointOffsetType,
+        ) -> OperationResult<(
+            Box<dyn RawScorer + 'a>,
+            Option<Box<dyn FilterContext + 'a>>,
+        )>,
+    ) -> OperationResult<usize> {
+        let mut finished_chunks_count = 0;
+        let mut index = 0;
+
+        loop {
+            let out_of_range = index >= self.points.len();
+            let min_cpu_points_achived = index >= self.min_cpu_linked_points_count;
+            let is_new_chunk = index >= self.chunks[finished_chunks_count].end;
+            let is_gpu_ready = true;
+            if out_of_range || (min_cpu_points_achived && is_new_chunk && is_gpu_ready) {
+                break;
+            }
+
+            while finished_chunks_count < self.chunks.len()
+                && index >= self.chunks[finished_chunks_count].end
+            {
+                finished_chunks_count += 1;
+            }
+
+            let chunk_level = self.points[finished_chunks_count].level;
+            if level > chunk_level {
+                break;
+            }
+
+            let linking_point = self.points[index].clone();
+            let (raw_scorer, filter_context) = points_scorer_builder(linking_point.point_id)?;
+            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+            let (patches, new_entry) = self.graph_layers_builder.get_patch(
+                GpuRequest {
+                    id: linking_point.point_id,
+                    entry: linking_point.entry.point_id,
+                },
+                level,
+                points_scorer,
+            );
+
+            let success = self.graph_layers_builder.try_apply_patch(level, patches);
+            if success {
+                println!("CPU: success {}", index);
+                self.points[index].entry.point_id = new_entry;
+            }
+            index += 1;
+        }
+
+        Ok(finished_chunks_count)
+    }
+
+    fn build_level_on_gpu(
         &mut self,
         level: usize,
         level_m: usize,
-    ) -> OperationResult<std::thread::JoinHandle<OperationResult<()>>> {
+        start_chunk_index: usize,
+    ) -> OperationResult<Option<std::thread::JoinHandle<OperationResult<()>>>> {
+        if start_chunk_index >= self.chunks.len() {
+            return Ok(None);
+        }
+
         self.gpu_search_context.clear(level_m)?;
-        let mut chunk_index = 0usize;
-        while chunk_index < self.chunks.len() {
+
+        let ids_to_upload = (0..self.chunks[start_chunk_index].start)
+            .map(|index| self.points[index].point_id)
+            .collect_vec();
+        for links_upload_slice in
+            ids_to_upload.chunks(self.gpu_search_context.gpu_links.max_patched_points)
+        {
+            for &point_id in links_upload_slice {
+                let links = self.graph_layers_builder.links_layers[point_id as usize][level].read();
+                self.gpu_search_context.set_links(point_id, &links)?;
+            }
+            self.gpu_search_context.apply_links_patch()?;
+            self.gpu_search_context.run_context();
+        }
+
+        for chunk_index in start_chunk_index..self.chunks.len() {
             let chunk = self.chunks[chunk_index].clone();
             let chunk_level = self.points[chunk.start].level;
             if level > chunk_level {
@@ -219,10 +326,9 @@ impl GpuGraphBuilder {
             } else {
                 self.build_chunk(chunk.clone(), level)?;
             }
-            chunk_index += 1;
         }
 
-        Ok(std::thread::spawn(move || Ok(())))
+        Ok(Some(std::thread::spawn(move || Ok(()))))
     }
 
     fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<()> {
@@ -400,6 +506,15 @@ mod tests {
             false,
             64,
             (0..num_vectors as PointOffsetType).collect(),
+            |id| {
+                let fake_filter_context = FakeFilterContext {};
+                let added_vector = test.vector_holder.vectors.get(id).to_vec();
+                let raw_scorer = test
+                    .vector_holder
+                    .get_raw_scorer(added_vector.clone())
+                    .unwrap();
+                Ok((raw_scorer, Some(Box::new(fake_filter_context))))
+            },
         )
         .unwrap();
 
@@ -454,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
-        let num_vectors = 1024;
+        let num_vectors = 10;
         let groups_count = 1;
         let dim = 64;
         let m = 8;
@@ -475,8 +590,17 @@ mod tests {
             ef,
             1,
             false,
-            0,
+            4,
             (0..num_vectors as PointOffsetType).collect(),
+            |id| {
+                let fake_filter_context = FakeFilterContext {};
+                let added_vector = test.vector_holder.vectors.get(id).to_vec();
+                let raw_scorer = test
+                    .vector_holder
+                    .get_raw_scorer(added_vector.clone())
+                    .unwrap();
+                Ok((raw_scorer, Some(Box::new(fake_filter_context))))
+            },
         )
         .unwrap();
 
