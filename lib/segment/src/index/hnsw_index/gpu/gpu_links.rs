@@ -15,8 +15,6 @@ pub struct GpuLinks {
     pub links_capacity: usize,
     pub points_count: usize,
     pub max_patched_points: usize,
-    // TODO(gpu) we don't need cpu copy now
-    pub links: Vec<PointOffsetType>,
     pub device: Arc<gpu::Device>,
     pub links_buffer: Arc<gpu::Buffer>,
     pub params_buffer: Arc<gpu::Buffer>,
@@ -85,7 +83,6 @@ impl GpuLinks {
             links_capacity,
             points_count,
             max_patched_points,
-            links: vec![0; points_count * (links_capacity + 1)],
             device,
             links_buffer,
             params_buffer,
@@ -94,27 +91,6 @@ impl GpuLinks {
             descriptor_set_layout,
             descriptor_set,
         })
-    }
-
-    pub fn upload(&self, gpu_context: &mut gpu::Context, count: usize) {
-        let upload_size =
-            count * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
-        let staging_buffer = Arc::new(gpu::Buffer::new(
-            self.device.clone(),
-            gpu::BufferType::CpuToGpu,
-            upload_size,
-        ));
-        staging_buffer.upload_slice(&self.links[0..count * (self.links_capacity + 1)], 0);
-
-        gpu_context.copy_gpu_buffer(
-            staging_buffer.clone(),
-            self.links_buffer.clone(),
-            0,
-            0,
-            upload_size,
-        );
-        gpu_context.run();
-        gpu_context.wait_finish();
     }
 
     pub fn update_params(&mut self, context: &mut gpu::Context, m: usize) {
@@ -143,7 +119,6 @@ impl GpuLinks {
             self.patched_points.clear();
         }
         gpu_context.clear_buffer(self.links_buffer.clone());
-        self.links = vec![0; self.links.len()];
         Ok(())
     }
 
@@ -167,12 +142,6 @@ impl GpuLinks {
         self.patched_points.clear();
     }
 
-    pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
-        let start_index = point_id as usize * (self.links_capacity + 1);
-        let len = self.links[start_index] as usize;
-        &self.links[start_index + 1..start_index + 1 + len]
-    }
-
     pub fn set_links(
         &mut self,
         point_id: PointOffsetType,
@@ -181,9 +150,6 @@ impl GpuLinks {
         if self.patched_points.len() >= self.max_patched_points {
             return Err(OperationError::service_error("Gpu links patches are full"));
         }
-        let start_index = point_id as usize * (self.links_capacity + 1);
-        self.links[start_index] = links.len() as PointOffsetType;
-        self.links[start_index + 1..start_index + 1 + links.len()].copy_from_slice(links);
 
         let mut patch_start_index = self.patched_points.len()
             * (self.links_capacity + 1)

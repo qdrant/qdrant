@@ -487,10 +487,6 @@ impl GpuSearchContext {
         Ok((all_patches, new_entries))
     }
 
-    pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
-        self.gpu_links.get_links(point_id)
-    }
-
     pub fn set_links(
         &mut self,
         point_id: PointOffsetType,
