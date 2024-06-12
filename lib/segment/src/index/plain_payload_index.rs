@@ -360,7 +360,26 @@ impl VectorIndex for PlainIndex {
         0
     }
 
-    fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
+    fn update_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<VectorRef>,
+    ) -> OperationResult<()> {
+        let mut vector_storage = self.vector_storage.borrow_mut();
+
+        if let Some(vector) = vector {
+            vector_storage.insert_vector(id, vector)?;
+        } else {
+            if id as usize >= vector_storage.total_vector_count() {
+                debug_assert!(id as usize == vector_storage.total_vector_count());
+                // Vector doesn't exist in the storage
+                // Insert default vector to keep the sequence
+                let default_vector = vector_storage.default_vector();
+                vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+            }
+            vector_storage.delete_vector(id)?;
+        }
+
         Ok(())
     }
 }

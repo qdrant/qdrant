@@ -3,7 +3,9 @@ use std::cmp::max;
 use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
 
-use super::posting_list_common::{PostingElement, PostingElementEx, PostingListIter};
+use super::posting_list_common::{
+    PostingElement, PostingElementEx, PostingListIter, DEFAULT_MAX_NEXT_WEIGHT,
+};
 use crate::common::types::DimWeight;
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -26,6 +28,23 @@ impl PostingList {
     pub fn new_one(record_id: PointOffsetType, weight: DimWeight) -> PostingList {
         PostingList {
             elements: vec![PostingElementEx::new(record_id, weight)],
+        }
+    }
+
+    pub fn delete(&mut self, record_id: PointOffsetType) {
+        let index = self
+            .elements
+            .binary_search_by_key(&record_id, |e| e.record_id);
+        if let Ok(found_index) = index {
+            self.elements.remove(found_index);
+            if let Some(last) = self.elements.last_mut() {
+                last.max_next_weight = DEFAULT_MAX_NEXT_WEIGHT;
+            }
+            if found_index < self.elements.len() {
+                self.propagate_max_next_weight_to_the_left(found_index);
+            } else if !self.elements.is_empty() {
+                self.propagate_max_next_weight_to_the_left(self.elements.len() - 1);
+            }
         }
     }
 
@@ -86,13 +105,7 @@ impl PostingList {
         for element in self.elements[..up_to_index].iter_mut().rev() {
             // update max_next_weight for element
             element.max_next_weight = max_next_weight;
-            if element.weight >= max_next_weight {
-                // no need to propagate further because the current element is larger
-                break;
-            } else {
-                // update max_next_weight based on current element
-                max_next_weight = max_next_weight.max(element.weight);
-            }
+            max_next_weight = max_next_weight.max(element.weight);
         }
     }
 
@@ -284,6 +297,8 @@ impl<'a> PostingListIterator<'a> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
     use crate::index::posting_list_common::DEFAULT_MAX_NEXT_WEIGHT;
 
@@ -457,5 +472,82 @@ mod tests {
             posting_list.elements[2].max_next_weight,
             DEFAULT_MAX_NEXT_WEIGHT
         );
+    }
+
+    #[test]
+    fn test_random_delete() {
+        use rand::seq::SliceRandom;
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        for _ in 0..1000 {
+            let mut ids = Vec::new();
+            let mut cur_id = 0;
+            for _ in 0..32 {
+                cur_id += rng.gen_range(1..10);
+                ids.push(cur_id);
+            }
+            ids.shuffle(&mut rng);
+            let random_id = ids[rng.gen_range(0..ids.len())];
+
+            let mut builder1 = PostingBuilder::new();
+            let mut builder2 = PostingBuilder::new();
+            for id in ids {
+                let val = rng.gen_range(0..100) as f32 / 10.0;
+                builder1.add(id, val);
+                if id != random_id {
+                    builder2.add(id, val);
+                }
+            }
+
+            let mut posting_list1 = builder1.build();
+            posting_list1.delete(random_id);
+            let posting_list2 = builder2.build();
+
+            // Ok
+            assert_eq!(
+                posting_list1
+                    .elements
+                    .iter()
+                    .map(|e| e.record_id)
+                    .collect_vec(),
+                posting_list2
+                    .elements
+                    .iter()
+                    .map(|e| e.record_id)
+                    .collect_vec(),
+            );
+            assert_eq!(
+                posting_list1
+                    .elements
+                    .iter()
+                    .map(|e| e.weight)
+                    .collect_vec(),
+                posting_list2
+                    .elements
+                    .iter()
+                    .map(|e| e.weight)
+                    .collect_vec(),
+            );
+
+            // Fail
+            assert_eq!(
+                posting_list1
+                    .elements
+                    .iter()
+                    .map(|e| e.max_next_weight)
+                    .collect_vec(),
+                posting_list2
+                    .elements
+                    .iter()
+                    .map(|e| e.max_next_weight)
+                    .collect_vec(),
+            );
+
+            // Ok (at least they won't break pruning logic)
+            assert!(
+                std::iter::zip(&posting_list1.elements, &posting_list2.elements,)
+                    .all(|(e1, e2)| e1.max_next_weight >= e2.max_next_weight),
+            );
+        }
     }
 }

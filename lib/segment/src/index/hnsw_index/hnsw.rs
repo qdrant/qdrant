@@ -906,7 +906,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .unwrap_or(0)
     }
 
-    fn update_vector(&mut self, _id: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
+    fn update_vector(
+        &mut self,
+        _id: PointOffsetType,
+        _vector: Option<VectorRef>,
+    ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
 }

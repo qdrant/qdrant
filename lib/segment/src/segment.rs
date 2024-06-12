@@ -15,7 +15,6 @@ use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
-use sparse::common::sparse_vector::SparseVector;
 use tar::Builder;
 use uuid::Uuid;
 
@@ -28,7 +27,7 @@ use crate::common::{check_named_vectors, check_query_vectors, check_stopped, che
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
-use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::numeric_index::StreamRange;
@@ -46,9 +45,7 @@ use crate::types::{
 use crate::utils;
 use crate::utils::fs::find_symlink;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum,
-};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -142,19 +139,8 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
-            match vector {
-                Some(vector) => {
-                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.insert_vector(internal_id, vector)?;
-                    let mut vector_index = vector_data.vector_index.borrow_mut();
-                    vector_index.update_vector(internal_id, vector)?;
-                }
-                None => {
-                    // No vector provided, so we remove it
-                    let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    vector_storage.delete_vector(internal_id)?;
-                }
-            }
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector(internal_id, vector)?;
         }
         Ok(())
     }
@@ -181,15 +167,8 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
-            let new_vector = new_vector.as_vec_ref();
-            vector_data
-                .vector_storage
-                .borrow_mut()
-                .insert_vector(internal_id, new_vector)?;
-            vector_data
-                .vector_index
-                .borrow_mut()
-                .update_vector(internal_id, new_vector)?;
+            let mut vector_index = vector_data.vector_index.borrow_mut();
+            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()))?;
         }
         Ok(())
     }
@@ -209,68 +188,8 @@ impl Segment {
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
-            let mut vector_storage = vector_data.vector_storage.borrow_mut();
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            match vector_opt {
-                None => {
-                    // placeholder vector for marking deletion
-                    let vector = match &*vector_storage {
-                        VectorStorageEnum::DenseSimple(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseSimpleByte(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseSimpleHalf(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseMemmap(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseMemmapByte(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseMemmapHalf(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseAppendableMemmap(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                            Vector::from(vec![1.0; v.vector_dim()])
-                        }
-                        VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                        VectorStorageEnum::MultiDenseSimpleByte(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                        VectorStorageEnum::MultiDenseSimpleHalf(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                        VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
-                        }
-                    };
-                    vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
-                    vector_storage.delete_vector(new_index)?;
-                    vector_index.update_vector(new_index, VectorRef::from(&vector))?;
-                }
-                Some(vec) => {
-                    vector_storage.insert_vector(new_index, vec)?;
-                    vector_index.update_vector(new_index, vec)?;
-                }
-            }
+            vector_index.update_vector(new_index, vector_opt)?;
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)

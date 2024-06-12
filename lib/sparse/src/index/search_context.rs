@@ -564,6 +564,7 @@ mod tests {
                 indices: vec![1, 2, 3],
                 values: vec![40.0, 40.0, 40.0],
             },
+            None,
         );
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -801,7 +802,7 @@ mod tests {
             let SparseVector { indices, values } =
                 random_sparse_vector(rnd_gen, max_sparse_dimension);
             let vector = RemappedSparseVector::new(indices, values).unwrap();
-            inverted_index_ram.upsert(i, vector);
+            inverted_index_ram.upsert(i, vector, None);
         }
         inverted_index_ram
     }

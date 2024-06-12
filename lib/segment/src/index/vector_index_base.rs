@@ -51,7 +51,19 @@ pub trait VectorIndex {
     fn indexed_vector_count(&self) -> usize;
 
     /// Update index for a single vector
-    fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
+    ///
+    /// # Arguments
+    /// - `id` - sequential vector id, offset in the vector storage
+    /// - `vector` - new vector value,
+    ///        if None - vector will be removed from the index marked as deleted in storage.
+    ///        Note: inserting None vector is not equal to removing vector from the storage.
+    ///              Unlike removing, it will always result in storage growth.
+    ///              Proper removing should be performed by the optimizer.
+    fn update_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<VectorRef>,
+    ) -> OperationResult<()>;
 }
 
 pub enum VectorIndexEnum {
@@ -168,7 +180,11 @@ impl VectorIndex for VectorIndexEnum {
         }
     }
 
-    fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn update_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: Option<VectorRef>,
+    ) -> OperationResult<()> {
         match self {
             Self::Plain(index) => index.update_vector(id, vector),
             Self::HnswRam(index) => index.update_vector(id, vector),
