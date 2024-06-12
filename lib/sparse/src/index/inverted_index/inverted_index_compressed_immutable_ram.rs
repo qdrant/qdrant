@@ -28,6 +28,8 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
 impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
     type Iter<'a> = CompressedPostingListIterator<'a, W>;
 
+    type Version = <InvertedIndexCompressedMmap<W> as InvertedIndex>::Version;
+
     fn open(path: &Path) -> std::io::Result<Self> {
         let mmap_inverted_index = InvertedIndexCompressedMmap::load(path)?;
         let mut inverted_index = InvertedIndexCompressedImmutableRam {

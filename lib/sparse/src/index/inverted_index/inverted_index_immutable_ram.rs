@@ -20,6 +20,8 @@ pub struct InvertedIndexImmutableRam {
 impl InvertedIndex for InvertedIndexImmutableRam {
     type Iter<'a> = PostingListIterator<'a>;
 
+    type Version = <InvertedIndexMmap as InvertedIndex>::Version;
+
     fn open(path: &Path) -> std::io::Result<Self> {
         let mmap_inverted_index = InvertedIndexMmap::load(path)?;
         let mut inverted_index = InvertedIndexRam {

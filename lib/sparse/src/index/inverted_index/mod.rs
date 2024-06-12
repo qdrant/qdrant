@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
+use io::storage_version::StorageVersion;
 
 use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -22,6 +23,8 @@ pub trait InvertedIndex: Sized {
     type Iter<'a>: PostingListIter + Clone
     where
         Self: 'a;
+
+    type Version: StorageVersion;
 
     /// Open existing index based on path
     fn open(path: &Path) -> std::io::Result<Self>;

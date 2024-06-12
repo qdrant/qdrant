@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use io::storage_version::StorageVersion;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::mmap_ops::{
@@ -23,6 +24,14 @@ use crate::index::posting_list_common::PostingElementEx;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
+
+pub struct Version;
+
+impl StorageVersion for Version {
+    fn current_raw() -> &'static str {
+        "0.1.0"
+    }
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {
@@ -45,6 +54,8 @@ struct PostingListFileHeader {
 
 impl InvertedIndex for InvertedIndexMmap {
     type Iter<'a> = PostingListIterator<'a>;
+
+    type Version = Version;
 
     fn open(path: &Path) -> std::io::Result<Self> {
         Self::load(path)
