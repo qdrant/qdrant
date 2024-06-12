@@ -40,7 +40,6 @@ pub struct S3Config {
     pub endpoint_url: Option<String>,
 }
 
-#[allow(dead_code)]
 pub struct SnapshotStorageCloud {
     client: Box<dyn object_store::ObjectStore>,
 }
