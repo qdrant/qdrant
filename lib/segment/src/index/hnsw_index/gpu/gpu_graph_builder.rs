@@ -7,7 +7,7 @@ use rand::Rng;
 
 use super::gpu_search_context::{GpuRequest, GpuSearchContext};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::hnsw_index::entry_points::EntryPoint;
+use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::payload_storage::FilterContext;
@@ -19,6 +19,7 @@ pub struct GpuGraphBuilder {
     points: Vec<PointLinkingData>,
     chunks: Vec<Range<usize>>,
     min_cpu_linked_points_count: usize,
+    first_point_id: PointOffsetType,
     updates_timer: std::time::Duration,
     patches_timer: std::time::Duration,
 }
@@ -27,7 +28,7 @@ pub struct GpuGraphBuilder {
 struct PointLinkingData {
     point_id: PointOffsetType,
     level: usize,
-    entry: EntryPoint,
+    entry: PointOffsetType,
 }
 
 impl GpuGraphBuilder {
@@ -75,7 +76,7 @@ impl GpuGraphBuilder {
             .entry_points
             .lock()
             .new_point(ids[0], levels_count - 1, |_| true);
-        ids.remove(0);
+        let first_point_id = ids.remove(0);
 
         if ids.is_empty() {
             return Ok(graph_layers_builder);
@@ -99,7 +100,7 @@ impl GpuGraphBuilder {
             for i in chunk.clone() {
                 let point_id = ids[i];
                 let level = graph_layers_builder.get_point_level(point_id);
-                let entry = entry_points.get_entry_point(|_| true).unwrap();
+                let entry = entry_points.get_entry_point(|_| true).unwrap().point_id;
                 points.push(PointLinkingData {
                     point_id,
                     level,
@@ -121,6 +122,7 @@ impl GpuGraphBuilder {
             points,
             chunks,
             min_cpu_linked_points_count,
+            first_point_id,
             updates_timer: Default::default(),
             patches_timer: Default::default(),
         };
@@ -251,17 +253,18 @@ impl GpuGraphBuilder {
 
         loop {
             let out_of_range = index >= self.points.len();
-            let min_cpu_points_achived = index >= self.min_cpu_linked_points_count;
+            let min_cpu_points_achived = index > self.min_cpu_linked_points_count;
             let is_new_chunk = index >= self.chunks[finished_chunks_count].end;
             let is_gpu_ready = true;
-            if out_of_range || (min_cpu_points_achived && is_new_chunk && is_gpu_ready) {
-                break;
-            }
 
             while finished_chunks_count < self.chunks.len()
                 && index >= self.chunks[finished_chunks_count].end
             {
                 finished_chunks_count += 1;
+            }
+
+            if out_of_range || (min_cpu_points_achived && is_new_chunk && is_gpu_ready) {
+                break;
             }
 
             let chunk_level = self.points[finished_chunks_count].level;
@@ -275,17 +278,17 @@ impl GpuGraphBuilder {
             let (patches, new_entry) = self.graph_layers_builder.get_patch(
                 GpuRequest {
                     id: linking_point.point_id,
-                    entry: linking_point.entry.point_id,
+                    entry: linking_point.entry,
                 },
                 level,
                 points_scorer,
             );
 
-            let success = self.graph_layers_builder.try_apply_patch(level, patches);
-            if success {
-                println!("CPU: success {}", index);
-                self.points[index].entry.point_id = new_entry;
-            }
+            self.graph_layers_builder.apply_patch(level, patches);
+
+            // TODO(gpu) new entry should be in another chunk
+            self.points[index].entry = new_entry;
+
             index += 1;
         }
 
@@ -304,9 +307,10 @@ impl GpuGraphBuilder {
 
         self.gpu_search_context.clear(level_m)?;
 
-        let ids_to_upload = (0..self.chunks[start_chunk_index].start)
+        let mut ids_to_upload = (0..self.chunks[start_chunk_index].start)
             .map(|index| self.points[index].point_id)
             .collect_vec();
+        ids_to_upload.push(self.first_point_id);
         for links_upload_slice in
             ids_to_upload.chunks(self.gpu_search_context.gpu_links.max_patched_points)
         {
@@ -338,7 +342,7 @@ impl GpuGraphBuilder {
         for linking_point in &self.points[chunk.clone()] {
             requests.push(GpuRequest {
                 id: linking_point.point_id,
-                entry: linking_point.entry.point_id,
+                entry: linking_point.entry,
             })
         }
 
@@ -360,7 +364,7 @@ impl GpuGraphBuilder {
                 links.clear();
                 links.extend_from_slice(&patch.links);
             }
-            linking_point.entry.point_id = new_entry;
+            linking_point.entry = new_entry;
         }
 
         self.patches_timer += timer.elapsed();
@@ -373,7 +377,7 @@ impl GpuGraphBuilder {
         for linking_point in &self.points[chunk.clone()] {
             requests.push(GpuRequest {
                 id: linking_point.point_id,
-                entry: linking_point.entry.point_id,
+                entry: linking_point.entry,
             })
         }
         let new_entries = self.gpu_search_context.greedy_search(&requests)?;
@@ -383,7 +387,7 @@ impl GpuGraphBuilder {
             .iter_mut()
             .zip(new_entries.iter())
         {
-            linking_point.entry.point_id = new_entry.idx;
+            linking_point.entry = new_entry.idx;
         }
 
         self.updates_timer += timer.elapsed();
@@ -575,6 +579,7 @@ mod tests {
         let m = 8;
         let m0 = 16;
         let ef = 32;
+        let cpu_first_points = 3;
 
         let test = create_test_data(num_vectors, dim, m, m0, ef, 0);
 
@@ -590,7 +595,7 @@ mod tests {
             ef,
             1,
             false,
-            4,
+            cpu_first_points,
             (0..num_vectors as PointOffsetType).collect(),
             |id| {
                 let fake_filter_context = FakeFilterContext {};
