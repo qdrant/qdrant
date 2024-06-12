@@ -15,8 +15,8 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
-    VectorRef,
+    MultiDenseVector, TypedMultiDenseVectorRef, Vector, VectorElementType, VectorElementTypeByte,
+    VectorElementTypeHalf, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -160,6 +160,43 @@ impl VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmap(s) => Some(s.multi_vector_config()),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(s) => Some(s.multi_vector_config()),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(s) => Some(s.multi_vector_config()),
+        }
+    }
+
+    pub(crate) fn default_vector(&self) -> Vector {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseSimpleByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseSimpleHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseMemmapByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseMemmapHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseAppendableMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                Vector::from(vec![1.0; v.vector_dim()])
+            }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                Vector::from(vec![1.0; v.vector_dim()])
+            }
+            VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
+            VectorStorageEnum::MultiDenseSimple(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseSimpleByte(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+            }
         }
     }
 }
