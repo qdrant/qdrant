@@ -37,7 +37,7 @@ async fn query_points(
                 params.consistency,
                 shard_selection,
                 access,
-                // TODO(universal-query): add params.timeout()
+                params.timeout(),
             )
             .await
             .map(|scored_points| {

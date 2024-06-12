@@ -252,9 +252,10 @@ impl ShardOperation for ProxyShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         self.wrapped_shard
-            .query(request, search_runtime_handle)
+            .query(request, search_runtime_handle, timeout)
             .await
     }
 }
