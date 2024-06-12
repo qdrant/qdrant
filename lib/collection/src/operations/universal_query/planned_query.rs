@@ -12,6 +12,8 @@ use crate::operations::types::{
     ScrollRequestInternal,
 };
 
+const MAX_PREFETCH_DEPTH: usize = 64;
+
 #[derive(Debug)]
 pub struct PlannedQuery {
     pub merge_plan: MergePlan,
@@ -63,6 +65,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
     type Error = CollectionError;
 
     fn try_from(request: ShardQueryRequest) -> CollectionResult<Self> {
+        let depth = request.prefetches_depth();
         let ShardQueryRequest {
             prefetches,
             query,
@@ -82,6 +85,12 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let with_payload;
 
         let merge_plan = if !prefetches.is_empty() {
+            if depth > MAX_PREFETCH_DEPTH {
+                return Err(CollectionError::bad_request(format!(
+                    "prefetches depth {} exceeds max depth {}",
+                    depth, MAX_PREFETCH_DEPTH
+                )));
+            }
             offset = req_offset;
             let sources = recurse_prefetches(
                 &mut core_searches,
@@ -688,5 +697,110 @@ mod tests {
                 score_threshold: Some(0.1)
             }]
         )
+    }
+
+    pub fn make_prefetches_at_depth(depth: usize) -> ShardPrefetch {
+        // recursive helper for accumulation
+        pub fn make_prefetches_at_depth_acc(depth: usize, acc: ShardPrefetch) -> ShardPrefetch {
+            if depth == 0 {
+                acc
+            } else {
+                make_prefetches_at_depth_acc(
+                    depth - 1,
+                    ShardPrefetch {
+                        prefetches: vec![acc],
+                        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                            NamedVectorStruct::new_from_vector(
+                                Vector::Dense(vec![1.0, 2.0, 3.0]),
+                                "dense",
+                            ),
+                        ))),
+                        limit: 10,
+                        params: None,
+                        filter: None,
+                        score_threshold: None,
+                    },
+                )
+            }
+        }
+        // lowest prefetch
+        let prefetch = ShardPrefetch {
+            prefetches: Vec::new(),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                NamedVectorStruct::new_from_vector(Vector::Dense(vec![1.0, 2.0, 3.0]), "dense"),
+            ))),
+            limit: 100,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        };
+        make_prefetches_at_depth_acc(depth - 1, prefetch)
+    }
+    #[test]
+    fn test_detect_max_depth() {
+        // depth 0
+        let mut request = ShardQueryRequest {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                NamedVectorStruct::new_from_vector(Vector::Dense(vec![1.0, 2.0, 3.0]), "dense"),
+            ))),
+            filter: None,
+            score_threshold: None,
+            limit: 10,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(true),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+        assert_eq!(request.prefetches_depth(), 0);
+
+        // depth 3
+        request.prefetches = vec![ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![ShardPrefetch {
+                    prefetches: vec![],
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                        NamedVectorStruct::new_from_vector(
+                            Vector::Dense(vec![1.0, 2.0, 3.0]),
+                            "dense",
+                        ),
+                    ))),
+                    limit: 10,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                }],
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                    NamedVectorStruct::new_from_vector(Vector::Dense(vec![1.0, 2.0, 3.0]), "dense"),
+                ))),
+                limit: 10,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                NamedVectorStruct::new_from_vector(Vector::Dense(vec![1.0, 2.0, 3.0]), "dense"),
+            ))),
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        }];
+        assert_eq!(request.prefetches_depth(), 3);
+
+        // use with helper for less boilerplate
+        request.prefetches = vec![make_prefetches_at_depth(3)];
+        assert_eq!(request.prefetches_depth(), 3);
+        let _planned_query = PlannedQuery::try_from(request.clone()).unwrap();
+
+        request.prefetches = vec![make_prefetches_at_depth(64)];
+        assert_eq!(request.prefetches_depth(), 64);
+        let _planned_query = PlannedQuery::try_from(request.clone()).unwrap();
+
+        request.prefetches = vec![make_prefetches_at_depth(65)];
+        assert_eq!(request.prefetches_depth(), 65);
+        // assert error
+        let err_description = "prefetches depth 65 exceeds max depth 64".to_string();
+        matches!(PlannedQuery::try_from(request), Err(CollectionError::BadRequest { description}) if description == err_description);
     }
 }

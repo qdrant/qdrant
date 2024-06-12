@@ -33,6 +33,16 @@ pub struct ShardQueryRequest {
     pub with_payload: WithPayloadInterface,
 }
 
+impl ShardQueryRequest {
+    pub fn prefetches_depth(&self) -> usize {
+        self.prefetches
+            .iter()
+            .map(ShardPrefetch::depth)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fusion {
     Rrf,
@@ -107,6 +117,16 @@ pub struct ShardPrefetch {
     pub params: Option<SearchParams>,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
+}
+
+impl ShardPrefetch {
+    pub fn depth(&self) -> usize {
+        let mut depth = 1;
+        for prefetch in &self.prefetches {
+            depth = depth.max(prefetch.depth() + 1);
+        }
+        depth
+    }
 }
 
 impl ShardQueryRequest {
