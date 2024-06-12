@@ -60,7 +60,8 @@ impl SegmentBuilder {
 
         let database = open_segment_db(&temp_path, segment_config)?;
 
-        let id_tracker = create_mutable_id_tracker(database.clone())?;
+        let id_tracker =
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?);
 
         let payload_storage = create_payload_storage(database.clone(), segment_config)?;
 
@@ -347,6 +348,13 @@ impl SegmentBuilder {
                     stopped,
                     tick_progress: || (),
                 })?;
+            }
+
+            // Make the IdTracker immutable if segment is not appendable.
+            if !appendable_flag {
+                if let IdTrackerEnum::MutableIdTracker(mutable) = &*id_tracker_arc.borrow() {
+                    mutable.make_immutable(&temp_path)?;
+                }
             }
 
             // We're done with CPU-intensive tasks, release CPU permit

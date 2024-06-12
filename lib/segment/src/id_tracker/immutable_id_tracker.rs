@@ -8,14 +8,14 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::id_tracker::simple_id_tracker::StoredPointId;
-use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
@@ -23,12 +23,14 @@ pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
 pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 
 pub struct ImmutableIdTracker {
+    path: PathBuf,
+
     deleted: MmapBitSlice,
     internal_to_version: MmapSlice<SeqNumberType>,
     mappings: PointMappings,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub(super) struct PointMappings {
     pub(crate) internal_to_external: Vec<StoredPointId>,
 
@@ -39,8 +41,7 @@ pub(super) struct PointMappings {
 
 impl ImmutableIdTracker {
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let mappings: PointMappings =
-            Self::deserialize_file(segment_path.join(MAPPINGS_FILE_NAME).as_path())?;
+        let mappings = Self::load_mappings(segment_path.join(MAPPINGS_FILE_NAME).as_path())?;
 
         let deleted_map = open_write_mmap(&Self::deleted_file_path(segment_path))?;
         let deleted = MmapBitSlice::try_from(deleted_map, 0)?;
@@ -51,6 +52,7 @@ impl ImmutableIdTracker {
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
 
         Ok(Self {
+            path: segment_path.to_path_buf(),
             deleted,
             internal_to_version,
             mappings,
@@ -84,20 +86,13 @@ impl ImmutableIdTracker {
         internal_to_version_new.copy_from_slice(internal_to_version);
 
         // Serialize the mappings with bincode and write them to disk
-        Self::serialize_file(&Self::mappings_file_path(path), &mappings)?;
+        Self::serialize_mappings(&Self::mappings_file_path(path), &mappings)?;
 
         Ok(Self {
+            path: path.to_path_buf(),
             deleted: deleted_new,
             internal_to_version: internal_to_version_new,
             mappings,
-        })
-    }
-
-    fn deserialize_file<T: DeserializeOwned>(file: &Path) -> OperationResult<T> {
-        let file = File::open(file)?;
-        let reader = BufReader::new(file);
-        bincode::deserialize_from(reader).map_err(|err| OperationError::InconsistentStorage {
-            description: format!("id tracker can't be deserialized: {:?}", err),
         })
     }
 
@@ -113,6 +108,52 @@ impl ImmutableIdTracker {
         base.join(MAPPINGS_FILE_NAME)
     }
 
+    fn serialize_mappings(path: &Path, mappings: &PointMappings) -> OperationResult<()> {
+        let mappings: Vec<_> = mappings
+            .internal_to_external
+            .iter()
+            .map(|external| {
+                let internal_id = match external {
+                    StoredPointId::NumId(n) => mappings.external_to_internal_num.get(n),
+                    StoredPointId::Uuid(u) => mappings.external_to_internal_uuid.get(u),
+                    StoredPointId::String(str) => {
+                        unimplemented!("cannot convert internal string id '{str}' to external id")
+                    }
+                }
+                .unwrap();
+                (external.clone(), internal_id)
+            })
+            .collect();
+        Self::serialize_file(path, &mappings)
+    }
+
+    fn load_mappings(path: &Path) -> OperationResult<PointMappings> {
+        let mappings: Vec<(StoredPointId, PointOffsetType)> = Self::deserialize_file(path)?;
+        let internal_to_external: Vec<_> = mappings.iter().map(|i| i.0.clone()).collect();
+        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
+        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
+
+        for (external, internal) in mappings {
+            match external {
+                StoredPointId::NumId(num) => {
+                    external_to_internal_num.insert(num, internal);
+                }
+                StoredPointId::Uuid(uuid) => {
+                    external_to_internal_uuid.insert(uuid, internal);
+                }
+                StoredPointId::String(str) => {
+                    unimplemented!("cannot convert internal string id '{str}' to external id")
+                }
+            }
+        }
+
+        Ok(PointMappings {
+            internal_to_external,
+            external_to_internal_num,
+            external_to_internal_uuid,
+        })
+    }
+
     fn serialize_file<T: Serialize>(path: &Path, value: &T) -> OperationResult<()> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
@@ -123,12 +164,21 @@ impl ImmutableIdTracker {
         })?;
         Ok(())
     }
+
+    fn deserialize_file<T: DeserializeOwned>(file: &Path) -> OperationResult<T> {
+        let file = File::open(file)?;
+        let reader = BufReader::new(file);
+        bincode::deserialize_from(reader).map_err(|err| OperationError::InconsistentStorage {
+            description: format!("id tracker can't be deserialized: {:?}", err),
+        })
+    }
 }
 
 /// Returns the required mmap filesize for a `BitSlice`.
 fn bitmap_mmap_size(deleted: &BitSlice) -> usize {
+    let usize_bytes = std::mem::size_of::<usize>();
     let num_bytes = deleted.len().div_ceil(8); // used bytes
-    num_bytes.div_ceil(8) * 8 // get next factor of 8
+    num_bytes.div_ceil(usize_bytes) * usize_bytes // Make it a mutiple of usize-width.
 }
 
 impl IdTracker for ImmutableIdTracker {
@@ -301,10 +351,6 @@ impl IdTracker for ImmutableIdTracker {
         self.deleted[key]
     }
 
-    fn make_immutable(&self, _: &Path) -> OperationResult<IdTrackerEnum> {
-        panic!("Can't make an immutable id tracker immutable again");
-    }
-
     fn name(&self) -> &'static str {
         "immutable id tracker"
     }
@@ -328,6 +374,14 @@ impl IdTracker for ImmutableIdTracker {
             }
         }
         Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![
+            self.path.join(DELETED_FILE_NAME),
+            self.path.join(MAPPINGS_FILE_NAME),
+            self.path.join(VERSION_MAPPING_FILE_NAME),
+        ]
     }
 }
 
