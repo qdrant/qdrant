@@ -49,11 +49,8 @@ void clear_patches() {
     uint patch_size = LEVEL_M + 2; // id + links_count + links
     uint all_patches_size = (LEVEL_M + 1) * patch_size;
     uint patches_offset = subgroup_index * all_patches_size;
-    // TODO: parallel clear
-    if (subgroupElect()) {
-        for (uint i = 0; i < all_patches_size; i++) {
-            patches.data[patches_offset + i] = UINT_MAX;
-        }
+    for (uint i = SUBGROUP_INVOKATION_ID; i < all_patches_size; i += SUBGROUP_SIZE) {
+        patches.data[patches_offset + i] = UINT_MAX;
     }
     groupMemoryBarrier();
 }
