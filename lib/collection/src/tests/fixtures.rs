@@ -1,5 +1,9 @@
+use std::collections::HashSet;
+
 use segment::data_types::vectors::VectorStruct;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{
+    Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
+};
 
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointOperations, PointStruct};
@@ -101,4 +105,8 @@ pub fn delete_point_operation(idx: u64) -> CollectionUpdateOperations {
     CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
         ids: vec![idx.into()],
     })
+}
+
+pub fn filter_single_id(id: impl Into<PointIdType>) -> Filter {
+    Filter::new_must(Condition::HasId(HashSet::from([id.into()]).into()))
 }
