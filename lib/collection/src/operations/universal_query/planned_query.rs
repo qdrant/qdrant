@@ -1,15 +1,12 @@
 //! Types used within `LocalShard` to represent a planned `ShardQueryRequest`
 
-use std::sync::Arc;
-
 use api::rest::OrderByInterface;
 use common::types::ScoreType;
 use segment::types::{Filter, WithPayloadInterface, WithVector};
 
 use super::shard_query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    ScrollRequestInternal,
+    CollectionError, CollectionResult, CoreSearchRequest, ScrollRequestInternal,
 };
 
 const MAX_PREFETCH_DEPTH: usize = 64;
@@ -17,8 +14,8 @@ const MAX_PREFETCH_DEPTH: usize = 64;
 #[derive(Debug)]
 pub struct PlannedQuery {
     pub merge_plan: MergePlan,
-    pub searches: Arc<CoreSearchRequestBatch>,
-    pub scrolls: Arc<Vec<ScrollRequestInternal>>,
+    pub searches: Vec<CoreSearchRequest>,
+    pub scrolls: Vec<ScrollRequestInternal>,
     pub offset: usize,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
@@ -188,10 +185,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         Ok(Self {
             merge_plan,
-            searches: Arc::new(CoreSearchRequestBatch {
-                searches: core_searches,
-            }),
-            scrolls: Arc::new(scrolls),
+            searches: core_searches,
+            scrolls,
             offset,
             with_vector,
             with_payload,
@@ -376,7 +371,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.searches.searches,
+            planned_query.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),
@@ -452,7 +447,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.searches.searches,
+            planned_query.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),
@@ -544,7 +539,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.searches.searches,
+            planned_query.searches,
             vec![
                 CoreSearchRequest {
                     query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
@@ -682,7 +677,7 @@ mod tests {
         );
 
         assert_eq!(
-            planned_query.searches.searches,
+            planned_query.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),

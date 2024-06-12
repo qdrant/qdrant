@@ -60,9 +60,16 @@ impl LocalShard {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
-        let core_results_f = self.do_search(request.searches, search_runtime_handle, Some(timeout));
+        let core_results_f = self.do_search(
+            Arc::new(CoreSearchRequestBatch {
+                searches: request.searches,
+            }),
+            search_runtime_handle,
+            Some(timeout),
+        );
 
-        let scrolls_f = self.query_scroll_batch(request.scrolls, search_runtime_handle, timeout);
+        let scrolls_f =
+            self.query_scroll_batch(Arc::new(request.scrolls), search_runtime_handle, timeout);
 
         // execute both searches and scrolls concurrently
         let (core_results, scrolls) = tokio::try_join!(core_results_f, scrolls_f)?;
