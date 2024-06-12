@@ -147,6 +147,37 @@ impl std::ops::Add for OperationDurationStatistics {
     }
 }
 
+impl std::ops::AddAssign for OperationDurationStatistics {
+    fn add_assign(&mut self, other: Self) {
+        self.count += other.count;
+        self.fail_count += other.fail_count;
+        self.avg_duration_micros = Self::weighted_mean_duration(
+            self.avg_duration_micros,
+            self.count,
+            other.avg_duration_micros,
+            other.count,
+        );
+        self.min_duration_micros = Self::compared_duration(
+            self.min_duration_micros,
+            other.min_duration_micros,
+            |a, b| a < b,
+        );
+        self.max_duration_micros = Self::compared_duration(
+            self.max_duration_micros,
+            other.max_duration_micros,
+            |a, b| a > b,
+        );
+        self.total_duration_micros += other.total_duration_micros;
+        self.last_responded = std::cmp::max(self.last_responded, other.last_responded);
+        self.duration_micros_histogram = merge_histograms(
+            &self.duration_micros_histogram,
+            &other.duration_micros_histogram,
+            self.count,
+            other.count,
+        );
+    }
+}
+
 impl OperationDurationStatistics {
     pub fn is_empty(&self) -> bool {
         self.count == 0
