@@ -5,12 +5,15 @@ use std::mem::size_of_val;
 use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitSlice;
+use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
@@ -25,8 +28,12 @@ pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 pub struct ImmutableIdTracker {
     path: PathBuf,
 
-    deleted: MmapBitSlice,
-    internal_to_version: MmapSlice<SeqNumberType>,
+    deleted: BitVec,
+    deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
+
+    internal_to_version: Vec<SeqNumberType>,
+    internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
+
     mappings: PointMappings,
 }
 
@@ -43,17 +50,24 @@ impl ImmutableIdTracker {
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
         let mappings = Self::load_mappings(segment_path.join(MAPPINGS_FILE_NAME).as_path())?;
 
-        let deleted_map = open_write_mmap(&Self::deleted_file_path(segment_path))?;
-        let deleted = MmapBitSlice::try_from(deleted_map, 0)?;
+        let deleted_raw = open_write_mmap(&Self::deleted_file_path(segment_path))?;
+        let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
+        let deleted_bitvec = deleted_mmap.to_bitvec();
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_mmap);
 
         let internal_to_version_map =
             open_write_mmap(&segment_path.join(VERSION_MAPPING_FILE_NAME))?;
-        let internal_to_version: MmapSlice<SeqNumberType> =
+        let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
+        let internal_to_version = internal_to_version_mapslice.to_vec();
+        let internal_to_version_wrapper =
+            MmapSliceBufferedUpdateWrapper::new(internal_to_version_mapslice);
 
         Ok(Self {
             path: segment_path.to_path_buf(),
-            deleted,
+            deleted: deleted_bitvec,
+            deleted_wrapper,
+            internal_to_version_wrapper,
             internal_to_version,
             mappings,
         })
@@ -74,6 +88,7 @@ impl ImmutableIdTracker {
 
         let mut deleted_new = MmapBitSlice::try_from(open_write_mmap(&deleted_filepath)?, 0)?;
         deleted_new[..deleted.len()].copy_from_bitslice(deleted);
+        let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_new);
 
         // Create mmap file for internal-to-version list
         let version_filepath = Self::version_mapping_file_path(path);
@@ -81,17 +96,22 @@ impl ImmutableIdTracker {
             let version_size = size_of_val(internal_to_version);
             create_and_ensure_length(&version_filepath, version_size)?;
         }
-        let mut internal_to_version_new =
+        let mut internal_to_version_wrapper =
             unsafe { MmapSlice::try_from(open_write_mmap(&version_filepath)?)? };
-        internal_to_version_new.copy_from_slice(internal_to_version);
+        internal_to_version_wrapper.copy_from_slice(internal_to_version);
+        let internal_to_version = internal_to_version_wrapper.to_vec();
+        let internal_to_version_wrapper =
+            MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
         // Serialize the mappings with bincode and write them to disk
         Self::serialize_mappings(&Self::mappings_file_path(path), &mappings)?;
 
         Ok(Self {
             path: path.to_path_buf(),
-            deleted: deleted_new,
-            internal_to_version: internal_to_version_new,
+            deleted: deleted.to_bitvec(),
+            deleted_wrapper,
+            internal_to_version_wrapper,
+            internal_to_version,
             mappings,
         })
     }
@@ -178,7 +198,7 @@ impl ImmutableIdTracker {
 fn bitmap_mmap_size(deleted: &BitSlice) -> usize {
     let usize_bytes = std::mem::size_of::<usize>();
     let num_bytes = deleted.len().div_ceil(8); // used bytes
-    num_bytes.div_ceil(usize_bytes) * usize_bytes // Make it a mutiple of usize-width.
+    num_bytes.div_ceil(usize_bytes) * usize_bytes // Make it a multiple of usize-width.
 }
 
 impl IdTracker for ImmutableIdTracker {
@@ -194,6 +214,8 @@ impl IdTracker for ImmutableIdTracker {
         if self.external_id(internal_id).is_some() {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
+                self.internal_to_version_wrapper
+                    .set(internal_id as usize, version);
             }
         }
 
@@ -234,6 +256,7 @@ impl IdTracker for ImmutableIdTracker {
 
         if let Some(internal_id) = internal_id {
             self.deleted.set(internal_id as usize, true);
+            self.deleted_wrapper.set(internal_id as usize, true);
         }
 
         Ok(())
@@ -318,13 +341,14 @@ impl IdTracker for ImmutableIdTracker {
         self.iter_internal()
     }
 
-    /// Creates a flusher function, that flushes the deleted points bitvec to disk.
+    /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
-        self.deleted.flusher()
+        self.deleted_wrapper.flusher()
     }
 
+    /// Creates a flusher function, that writes the points versions to disk.
     fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version.flusher()
+        self.internal_to_version_wrapper.flusher()
     }
 
     fn total_point_count(&self) -> usize {
@@ -393,6 +417,7 @@ mod test {
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::id_tracker::IdTrackerEnum;
 
     #[test]
     fn test_iterator() {
@@ -456,7 +481,11 @@ mod test {
             IdTrackerEnum::MutableIdTracker(_) => {
                 unreachable!()
             }
-            IdTrackerEnum::ImmutableIdTracker(m) => m,
+            IdTrackerEnum::ImmutableIdTracker(m) => {
+                m.mapping_flusher()().unwrap();
+                m.versions_flusher()().unwrap();
+                m
+            }
         }
     }
 
@@ -474,7 +503,7 @@ mod test {
     }
 
     #[test]
-    fn tets_load_store() {
+    fn test_load_store() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let (old_deleted, old_mappings) = {
             let id_tracker = make_immutable_tracker(dir.path());
@@ -484,7 +513,10 @@ mod test {
         let mut loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
 
         assert_eq!(old_mappings, loaded_id_tracker.mappings);
-        assert_eq!(old_deleted, loaded_id_tracker.deleted.to_bitvec());
+
+        // We may extend the length of deleted bitvec as memory maps need to be aligned to
+        // a multiple of `usize-width`.
+        assert_eq!(old_deleted, loaded_id_tracker.deleted[..old_deleted.len()]);
 
         loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
     }
