@@ -1117,7 +1117,6 @@ dependencies = [
  "approx",
  "arc-swap",
  "async-trait",
- "atomic_refcell",
  "atomicwrites",
  "bitvec",
  "bytes",

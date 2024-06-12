@@ -81,7 +81,7 @@ fnv = { workspace = true }
 indexmap = { workspace = true }
 ringbuffer = "0.15.0"
 strum = { workspace = true }
-atomic_refcell = { workspace = true }
+#atomic_refcell = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 fs4 = "0.8.4"

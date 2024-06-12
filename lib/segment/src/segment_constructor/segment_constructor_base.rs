@@ -288,13 +288,13 @@ pub(crate) fn create_payload_storage(
 pub(crate) fn create_mutable_id_tracker(
     database: Arc<RwLock<DB>>,
 ) -> OperationResult<SimpleIdTracker> {
-    Ok(SimpleIdTracker::open(database)?)
+    SimpleIdTracker::open(database)
 }
 
 pub(crate) fn create_immutable_id_tracker(
     segment_path: &Path,
 ) -> OperationResult<ImmutableIdTracker> {
-    Ok(ImmutableIdTracker::open(segment_path)?)
+    ImmutableIdTracker::open(segment_path)
 }
 
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
