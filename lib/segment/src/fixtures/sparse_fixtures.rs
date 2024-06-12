@@ -16,7 +16,7 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
+use crate::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
@@ -72,14 +72,15 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     );
 
     let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type);
-    let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
-        sparse_index_config,
-        id_tracker,
-        vector_storage.clone(),
-        wrapped_payload_index,
-        index_dir,
-        stopped,
-    )?;
+    let sparse_vector_index: SparseVectorIndex<I> =
+        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+            config: sparse_index_config,
+            id_tracker,
+            vector_storage: vector_storage.clone(),
+            payload_index: wrapped_payload_index,
+            path: index_dir,
+            stopped,
+        })?;
 
     Ok(sparse_vector_index)
 }

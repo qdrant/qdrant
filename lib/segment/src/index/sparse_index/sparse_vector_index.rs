@@ -78,16 +78,27 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 }
 
+pub struct OpenArgs<'a> {
+    pub config: SparseIndexConfig,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub path: &'a Path,
+    pub stopped: &'a AtomicBool,
+}
+
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
-    pub fn open(
-        config: SparseIndexConfig,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        path: &Path,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
+    pub fn open(args: OpenArgs) -> OperationResult<Self> {
+        let OpenArgs {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+            stopped,
+        } = args;
+
         // create directory if it does not exist
         create_dir_all(path)?;
 

@@ -18,6 +18,7 @@ use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::index::sparse_index::sparse_vector_index;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -337,14 +338,14 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
 
-                let mut vector_index = create_sparse_vector_index(
-                    sparse_vector_config.clone(),
-                    &vector_index_path,
-                    id_tracker_arc.clone(),
-                    vector_storage_arc,
-                    payload_index_arc.clone(),
+                let mut vector_index = create_sparse_vector_index(sparse_vector_index::OpenArgs {
+                    config: sparse_vector_config.index,
+                    id_tracker: id_tracker_arc.clone(),
+                    vector_storage: vector_storage_arc.clone(),
+                    payload_index: payload_index_arc.clone(),
+                    path: &vector_index_path,
                     stopped,
-                )?;
+                })?;
 
                 vector_index.build_index(permit.clone(), stopped)?;
             }

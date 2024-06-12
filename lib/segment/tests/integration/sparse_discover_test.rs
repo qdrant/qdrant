@@ -13,7 +13,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
+use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
@@ -166,18 +166,19 @@ fn sparse_index_discover_test() {
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
-    let mut sparse_index = SparseVectorIndex::<InvertedIndexImmutableRam>::open(
-        SparseIndexConfig {
-            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-            index_type: SparseIndexType::ImmutableRam,
-        },
-        sparse_segment.id_tracker.clone(),
-        vector_storage.clone(),
-        payload_index_ptr.clone(),
-        index_dir.path(),
-        &stopped,
-    )
-    .unwrap();
+    let mut sparse_index =
+        SparseVectorIndex::<InvertedIndexImmutableRam>::open(sparse_vector_index::OpenArgs {
+            config: SparseIndexConfig {
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::ImmutableRam,
+            },
+            id_tracker: sparse_segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            payload_index: payload_index_ptr.clone(),
+            path: index_dir.path(),
+            stopped: &stopped,
+        })
+        .unwrap();
 
     sparse_index.build_index(permit, &stopped).unwrap();
 

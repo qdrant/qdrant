@@ -22,7 +22,7 @@ use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
-use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
+use crate::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -31,7 +31,7 @@ use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::{
     open_appendable_memmap_vector_storage, open_appendable_memmap_vector_storage_byte,
@@ -333,38 +333,14 @@ pub(crate) fn create_vector_index(
 }
 
 pub(crate) fn create_sparse_vector_index(
-    sparse_vector_config: SparseVectorDataConfig,
-    vector_index_path: &Path,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    stopped: &AtomicBool,
+    args: sparse_vector_index::OpenArgs,
 ) -> OperationResult<VectorIndexEnum> {
-    let vector_index = match sparse_vector_config.index.index_type {
-        SparseIndexType::MutableRam => VectorIndexEnum::SparseRam(SparseVectorIndex::open(
-            sparse_vector_config.index,
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
-            vector_index_path,
-            stopped,
-        )?),
-        SparseIndexType::ImmutableRam => VectorIndexEnum::SparseImmRam(SparseVectorIndex::open(
-            sparse_vector_config.index,
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
-            vector_index_path,
-            stopped,
-        )?),
-        SparseIndexType::Mmap => VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
-            sparse_vector_config.index,
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
-            vector_index_path,
-            stopped,
-        )?),
+    let vector_index = match args.config.index_type {
+        SparseIndexType::MutableRam => VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?),
+        SparseIndexType::ImmutableRam => {
+            VectorIndexEnum::SparseImmRam(SparseVectorIndex::open(args)?)
+        }
+        SparseIndexType::Mmap => VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?),
     };
 
     Ok(vector_index)
@@ -478,14 +454,14 @@ fn create_segment(
             );
         }
 
-        let vector_index = sp(create_sparse_vector_index(
-            sparse_vector_config.clone(),
-            &vector_index_path,
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
+        let vector_index = sp(create_sparse_vector_index(sparse_vector_index::OpenArgs {
+            config: sparse_vector_config.index,
+            id_tracker: id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            payload_index: payload_index.clone(),
+            path: &vector_index_path,
             stopped,
-        )?);
+        })?);
 
         check_process_stopped(stopped)?;
 

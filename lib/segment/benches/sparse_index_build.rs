@@ -15,7 +15,7 @@ use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
+use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
@@ -72,15 +72,16 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
 
     let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
 
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
-        index_config,
-        id_tracker.clone(),
-        vector_storage.clone(),
-        wrapped_payload_index.clone(),
-        index_dir.path(),
-        &stopped,
-    )
-    .unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+            config: index_config,
+            id_tracker: id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            payload_index: wrapped_payload_index.clone(),
+            path: index_dir.path(),
+            stopped: &stopped,
+        })
+        .unwrap();
 
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
@@ -93,15 +94,16 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     });
 
     // build once to reuse in mmap conversion benchmark
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
-        index_config,
-        id_tracker,
-        vector_storage.clone(),
-        wrapped_payload_index,
-        index_dir.path(),
-        &stopped,
-    )
-    .unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+            config: index_config,
+            id_tracker,
+            vector_storage,
+            payload_index: wrapped_payload_index,
+            path: index_dir.path(),
+            stopped: &stopped,
+        })
+        .unwrap();
 
     sparse_vector_index.build_index(permit, &stopped).unwrap();
 
