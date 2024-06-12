@@ -141,7 +141,7 @@ impl ImmutableIdTracker {
                     }
                 }
                 .unwrap();
-                (external.clone(), internal_id)
+                (external, internal_id)
             })
             .collect();
         Self::serialize_file(path, &mappings)
