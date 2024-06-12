@@ -349,16 +349,14 @@ pub(crate) fn create_sparse_vector_index(
             vector_index_path,
             stopped,
         )?),
-        SparseIndexType::ImmutableRam => {
-            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(
-                sparse_vector_config.index,
-                id_tracker.clone(),
-                vector_storage.clone(),
-                payload_index.clone(),
-                vector_index_path,
-                stopped,
-            )?)
-        }
+        SparseIndexType::ImmutableRam => VectorIndexEnum::SparseImmRam(SparseVectorIndex::open(
+            sparse_vector_config.index,
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+            vector_index_path,
+            stopped,
+        )?),
         SparseIndexType::Mmap => VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
             sparse_vector_config.index,
             id_tracker.clone(),
