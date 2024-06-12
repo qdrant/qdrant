@@ -1771,6 +1771,15 @@ impl SegmentEntry for Segment {
             )?;
         }
 
+        for file in self.id_tracker.borrow().files() {
+            utils::tar::append_file_relative_to_base(
+                &mut builder,
+                &self.current_path,
+                &file,
+                &files,
+            )?;
+        }
+
         utils::tar::append_file(
             &mut builder,
             &self.current_path.join(SEGMENT_STATE_FILE),

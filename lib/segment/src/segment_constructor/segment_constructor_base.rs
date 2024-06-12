@@ -287,16 +287,14 @@ pub(crate) fn create_payload_storage(
 
 pub(crate) fn create_mutable_id_tracker(
     database: Arc<RwLock<DB>>,
-) -> OperationResult<IdTrackerEnum> {
-    Ok(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
-        database,
-    )?))
+) -> OperationResult<SimpleIdTracker> {
+    Ok(SimpleIdTracker::open(database)?)
 }
 
-pub(crate) fn create_immutable_id_tracker(segment_path: &Path) -> OperationResult<IdTrackerEnum> {
-    Ok(IdTrackerEnum::ImmutableIdTracker(ImmutableIdTracker::open(
-        segment_path,
-    )?))
+pub(crate) fn create_immutable_id_tracker(
+    segment_path: &Path,
+) -> OperationResult<ImmutableIdTracker> {
+    Ok(ImmutableIdTracker::open(segment_path)?)
 }
 
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
@@ -416,9 +414,13 @@ fn create_segment(
         appendable_flag || !Path::new(segment_path).join(MAPPINGS_FILE_NAME).is_file();
 
     let id_tracker = if mutable_id_tracker {
-        sp(create_mutable_id_tracker(database.clone())?)
+        sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+            database.clone(),
+        )?))
     } else {
-        sp(create_immutable_id_tracker(segment_path)?)
+        sp(IdTrackerEnum::ImmutableIdTracker(
+            create_immutable_id_tracker(segment_path)?,
+        ))
     };
 
     let payload_index_path = get_payload_index_path(segment_path);

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bincode;
@@ -209,6 +209,36 @@ impl SimpleIdTracker {
             Self::store_key(external_id),
             bincode::serialize(&internal_id).unwrap(),
         )
+    }
+
+    pub(crate) fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
+        let external_to_internal_num: BTreeMap<_, _> = self
+            .external_to_internal_num
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .collect();
+
+        let external_to_internal_uuid = self
+            .external_to_internal_uuid
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .collect();
+
+        let mappings = PointMappings {
+            external_to_internal_num,
+            external_to_internal_uuid,
+            internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
+        };
+
+        let mut internal_to_version = self.internal_to_version.clone();
+        if internal_to_version.len() < self.internal_to_external.len() {
+            internal_to_version.resize(self.internal_to_external.len(), 0);
+        }
+
+        let immutable_tracker =
+            ImmutableIdTracker::new(save_path, &self.deleted, &internal_to_version, mappings)?;
+
+        Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
     }
 }
 
@@ -426,38 +456,12 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
-    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        let external_to_internal_num: BTreeMap<_, _> = self
-            .external_to_internal_num
-            .iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-
-        let external_to_internal_uuid = self
-            .external_to_internal_uuid
-            .iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-
-        let mappings = PointMappings {
-            external_to_internal_num,
-            external_to_internal_uuid,
-            internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
-        };
-
-        let mut internal_to_version = self.internal_to_version.clone();
-        if internal_to_version.len() < self.internal_to_external.len() {
-            internal_to_version.resize(self.internal_to_external.len(), 0);
-        }
-
-        let immutable_tracker =
-            ImmutableIdTracker::new(save_path, &self.deleted, &internal_to_version, mappings)?;
-
-        Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
-    }
-
     fn name(&self) -> &'static str {
         "simple id tracker"
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }
 

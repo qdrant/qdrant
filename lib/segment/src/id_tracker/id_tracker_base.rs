@@ -1,9 +1,8 @@
-use std::path::Path;
-
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::path::PathBuf;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -115,8 +114,6 @@ pub trait IdTracker {
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
 
-    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum>;
-
     fn name(&self) -> &'static str;
 
     /// Iterator over `n` random IDs which are not deleted
@@ -149,6 +146,8 @@ pub trait IdTracker {
     /// It might happen that point doesn't have version due to un-flushed WAL.
     /// This method makes those points usable again.
     fn cleanup_versions(&mut self) -> OperationResult<()>;
+
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
@@ -294,15 +293,6 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.make_immutable(save_path),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
-                Ok(id_tracker.make_immutable(save_path)?)
-            }
-        }
-    }
-
     fn name(&self) -> &'static str {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
@@ -314,6 +304,13 @@ impl IdTracker for IdTrackerEnum {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.files(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.files(),
         }
     }
 }
