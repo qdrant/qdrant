@@ -174,7 +174,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime)
+        .query(Arc::new(query), &current_runtime, None)
         .await
         .unwrap();
 
