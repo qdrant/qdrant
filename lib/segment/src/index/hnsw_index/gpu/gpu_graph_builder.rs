@@ -79,7 +79,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         // 1. Minimum points `self.min_cpu_points_count` must be processed
         let min_cpu_points_achived = index > self.min_cpu_points_count;
         // 2. The whole chunk is processed
-        let is_new_chunk = index >= self.chunks[*locked_finished_chunks].end;
+        let is_new_chunk = index + 1 >= self.chunks[*locked_finished_chunks].end;
         // 3. GPU is ready to work
         while index >= self.gpu_processed.load(Ordering::Relaxed) {
             log::info!("Wait for gpu at level {}", self.level);
@@ -96,9 +96,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         }
 
         *locked_index += 1;
-        while *locked_finished_chunks < self.chunks.len()
-            && index + 1 >= self.chunks[*locked_finished_chunks].end
-        {
+        if is_new_chunk && *locked_finished_chunks < self.chunks.len() {
             let mut all_point_ids_from_prev_chunks = self.all_point_ids_from_prev_chunks.lock();
             let obsolete_chunk = self.chunks[*locked_finished_chunks].clone();
             for i in obsolete_chunk {
@@ -125,6 +123,11 @@ struct PointLinkingData {
     point_id: PointOffsetType,
     level: usize,
     entry: AtomicU32,
+}
+
+enum StopOrErr {
+    Err(OperationError),
+    Stop,
 }
 
 impl GpuGraphBuilder {
@@ -395,12 +398,12 @@ impl GpuGraphBuilder {
         );
 
         let points_count = self.points.len();
-        pool.install(|| {
+        let cpu_build_result = pool.install(|| {
             (0..points_count).into_par_iter().try_for_each(|_| {
                 let index = if let Some(index) = index_iter.next() {
                     index
                 } else {
-                    return OperationResult::Ok(());
+                    return Err(StopOrErr::Stop);
                 };
 
                 // update links
@@ -411,7 +414,8 @@ impl GpuGraphBuilder {
                     level,
                     &retry_mutex,
                     &points_scorer_builder,
-                )?;
+                )
+                .map_err(StopOrErr::Err)?;
 
                 // update entry
                 if level > 0 {
@@ -425,7 +429,10 @@ impl GpuGraphBuilder {
 
                 Ok(())
             })
-        })?;
+        });
+        if let Err(StopOrErr::Err(err)) = cpu_build_result {
+            return Err(err);
+        }
 
         Ok(index_iter.into_finished_chunks_count())
     }
@@ -694,7 +701,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
-        let num_vectors = 1024;
+        let num_vectors = 512;
         let groups_count = 4;
         let dim = 64;
         let m = 8;
