@@ -324,10 +324,8 @@ def test_order_by():
         path_params={"collection_name": collection_name},
         body={
             "order_by": "count",
-            "using": "dense-image",
         },
     )
-    print(response.json())
     assert response.ok
     scroll_result = response.json()["result"]["points"]
 
@@ -339,6 +337,16 @@ def test_order_by():
 
 
 def test_rrf():
+    filter = {
+        "must": [
+            {
+                "key": "city",
+                "match": {
+                    "value": "Berlin"
+                }
+            }
+        ]
+    }
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -348,6 +356,7 @@ def test_rrf():
                 "name": "dense-image",
                 "vector": [0.1, 0.2, 0.3, 0.4]
             },
+            "filter": filter,
             "limit": 10,
         },
     )
@@ -363,6 +372,7 @@ def test_rrf():
                 "name": "dense-text",
                 "vector": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
             },
+            "filter": filter,
             "limit": 10,
         },
     )
@@ -381,6 +391,7 @@ def test_rrf():
                     "values": [1, 2.2, 3.3],
                 }
             },
+            "filter": filter,
             "limit": 10,
         },
     )
@@ -396,6 +407,7 @@ def test_rrf():
                 "name": "dense-multi",
                 "vector": [3.05, 3.61, 3.76, 3.74], # legacy API expands single vector to multiple vectors
             },
+            "filter": filter,
             "limit": 10,
         },
     )
@@ -430,6 +442,8 @@ def test_rrf():
                     "using": "dense-multi"
                 },
             ],
+            "filter": filter,
+            "limit": 10,
             "query": {"fusion": "rrf"}
         },
     )
