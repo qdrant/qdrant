@@ -19,7 +19,7 @@ use crate::operations::types::{
     ScrollRequestInternal,
 };
 use crate::operations::universal_query::planned_query::{
-    MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
+    MergeSources, PlannedQuery, RescoreParams, Source,
 };
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
@@ -79,7 +79,7 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start_time.elapsed());
         let mut scored_points = self
             .recurse_prefetch(
-                request.merge_plan,
+                request.merge_sources,
                 &prefetch_holder,
                 search_runtime_handle,
                 timeout,
@@ -118,7 +118,7 @@ impl LocalShard {
 
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
-        merge_plan: MergePlan,
+        merge_sources: MergeSources,
         prefetch_holder: &'query PrefetchHolder,
         search_runtime_handle: &'shard Handle,
         timeout: Duration,
@@ -128,19 +128,19 @@ impl LocalShard {
         'shard: 'query,
     {
         async move {
-            let max_len = merge_plan.sources.len();
+            let max_len = merge_sources.sources.len();
             let mut cow_sources = Vec::with_capacity(max_len);
 
             // We need to preserve the order of the sources for some fusion strategies
-            for source in merge_plan.sources.into_iter() {
+            for source in merge_sources.sources.into_iter() {
                 match source {
-                    PrefetchSource::SearchesIdx(idx) => {
+                    Source::SearchesIdx(idx) => {
                         cow_sources.push(prefetch_holder.get(FetchedSource::Core(idx))?)
                     }
-                    PrefetchSource::ScrollsIdx(idx) => {
+                    Source::ScrollsIdx(idx) => {
                         cow_sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
                     }
-                    PrefetchSource::Prefetch(prefetch) => {
+                    Source::Prefetch(prefetch) => {
                         let merged = self
                             .recurse_prefetch(
                                 prefetch,
@@ -158,10 +158,10 @@ impl LocalShard {
             }
 
             let root_query_needs_intermediate_results = || {
-                merge_plan
-                    .merge
+                merge_sources
+                    .rescore_params
                     .as_ref()
-                    .map(|plan| plan.rescore.needs_intermediate_results())
+                    .map(|params| params.rescore.needs_intermediate_results())
                     .unwrap_or(false)
             };
 
@@ -172,9 +172,9 @@ impl LocalShard {
                 Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
             } else {
                 let merged = self
-                    .merge_prefetches(
+                    .merge_sources(
                         cow_sources,
-                        merge_plan.merge,
+                        merge_sources.rescore_params,
                         search_runtime_handle,
                         timeout,
                     )
@@ -190,15 +190,15 @@ impl LocalShard {
     async fn rescore<'a>(
         &self,
         sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-        merge: ResultsMerge,
+        rescore_params: RescoreParams,
         search_runtime_handle: &Handle,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let ResultsMerge {
+        let RescoreParams {
             rescore,
             score_threshold,
             limit,
-        } = merge;
+        } = rescore_params;
 
         match rescore {
             ScoringQuery::Fusion(Fusion::Rrf) => {
@@ -222,6 +222,8 @@ impl LocalShard {
                 // create single scroll request for rescoring query
                 let filter = filter_with_sources_ids(sources);
 
+                // Note: score_threshold is not used in this case, as all results will have same score,
+                // but different order_value
                 let scroll_request = ScrollRequestInternal {
                     offset: None,
                     limit: Some(limit),
@@ -282,17 +284,17 @@ impl LocalShard {
 
     /// Merge multiple prefetches into a single result up to the limit.
     /// Rescores if required.
-    async fn merge_prefetches<'a>(
+    async fn merge_sources<'a>(
         &self,
         mut sources: Vec<Cow<'a, Vec<ScoredPoint>>>,
-        merge: Option<ResultsMerge>,
+        rescore_params: Option<RescoreParams>,
         search_runtime_handle: &Handle,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        if let Some(results_merge) = merge {
+        if let Some(rescore_params) = rescore_params {
             self.rescore(
                 sources.into_iter(),
-                results_merge,
+                rescore_params,
                 search_runtime_handle,
                 timeout,
             )
