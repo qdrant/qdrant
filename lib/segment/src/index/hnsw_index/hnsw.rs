@@ -775,14 +775,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
             if use_gpu {
                 graph_layers_builder = GpuGraphBuilder::build(
-                    &mut rng,
                     &pool,
+                    &graph_layers_builder,
                     None,
                     get_gpu_max_groups_count(),
                     &vector_storage,
-                    self.config.m,
-                    self.config.m0,
-                    self.config.ef,
                     num_entries,
                     get_gpu_force_half_precision(),
                     SINGLE_THREADED_HNSW_BUILD_THRESHOLD,

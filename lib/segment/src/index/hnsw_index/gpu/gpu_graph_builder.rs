@@ -8,7 +8,6 @@ use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPool;
 
@@ -127,15 +126,12 @@ struct PointLinkingData {
 
 impl GpuGraphBuilder {
     #[allow(clippy::too_many_arguments)]
-    pub fn build<'a, R: Rng + ?Sized>(
-        rng: &mut R,
+    pub fn build<'a>(
         pool: &ThreadPool,
+        reference_graph: &GraphLayersBuilder,
         debug_messenger: Option<&dyn gpu::DebugMessenger>,
         groups_count: usize,
         vector_storage: &VectorStorageEnum,
-        m: usize,
-        m0: usize,
-        ef: usize,
         entry_points_num: usize,
         force_half_precision: bool,
         min_cpu_linked_points_count: usize,
@@ -149,6 +145,10 @@ impl GpuGraphBuilder {
     ) -> OperationResult<GraphLayersBuilder> {
         log::debug!("Building GPU graph with max groups count: {}", groups_count);
 
+        let m = reference_graph.m;
+        let m0 = reference_graph.m0;
+        let ef = reference_graph.ef_construct;
+
         let num_vectors = vector_storage.total_vector_count();
         let mut graph_layers_builder =
             GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
@@ -160,7 +160,7 @@ impl GpuGraphBuilder {
         let max_patched_points = groups_count * (m0 + 1);
 
         for idx in 0..(num_vectors as PointOffsetType) {
-            let level = graph_layers_builder.get_random_layer(rng);
+            let level = reference_graph.get_point_level(idx);
             graph_layers_builder.set_levels(idx, level);
         }
 
@@ -537,11 +537,10 @@ impl GpuGraphBuilder {
         assert_eq!(patches.len(), new_entries.len());
         assert_eq!(patches.len(), chunk.len());
 
-        for (patches, (&new_entry, linking_point)) in patches.iter().zip(
-            new_entries
-                .iter()
-                .zip(points[chunk.clone()].iter()),
-        ) {
+        for (patches, (&new_entry, linking_point)) in patches
+            .iter()
+            .zip(new_entries.iter().zip(points[chunk.clone()].iter()))
+        {
             for patch in patches {
                 gpu_search_context.set_links(patch.id, &patch.links)?;
                 let mut links = graph_layers_builder.links_layers[patch.id as usize][level].write();
@@ -570,10 +569,7 @@ impl GpuGraphBuilder {
         let new_entries = gpu_search_context.greedy_search(&requests)?;
         assert_eq!(new_entries.len(), chunk.len());
 
-        for (linking_point, new_entry) in points[chunk.clone()]
-            .iter()
-            .zip(new_entries.iter())
-        {
+        for (linking_point, new_entry) in points[chunk.clone()].iter().zip(new_entries.iter()) {
             linking_point.entry.store(new_entry.idx, Ordering::Relaxed);
         }
 
@@ -688,17 +684,14 @@ mod tests {
             .num_threads(groups_count)
             .build()
             .unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
+
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let gpu_graph = GpuGraphBuilder::build(
-            &mut rng,
             &pool,
+            &test.graph_layers_builder,
             Some(&debug_messenger),
             groups_count,
             &test.vector_storage.borrow(),
-            m,
-            m0,
-            ef,
             1,
             false,
             cpu_first_points,
@@ -781,17 +774,13 @@ mod tests {
             .num_threads(1)
             .build()
             .unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let gpu_graph = GpuGraphBuilder::build(
-            &mut rng,
             &pool,
+            &test.graph_layers_builder,
             Some(&debug_messenger),
             groups_count,
             &test.vector_storage.borrow(),
-            m,
-            m0,
-            ef,
             1,
             false,
             cpu_first_points,
