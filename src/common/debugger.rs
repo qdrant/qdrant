@@ -28,6 +28,7 @@ pub enum DebugConfigPatch {
 }
 
 pub struct DebuggerState {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub pyroscope: Arc<Mutex<Option<PyroscopeState>>>,
 }
 
