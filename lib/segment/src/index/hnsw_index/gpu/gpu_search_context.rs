@@ -53,6 +53,9 @@ pub struct GpuSearchContext {
     pub entries_responses_buffer: Arc<gpu::Buffer>,
     pub patches_descriptor_set: Arc<gpu::DescriptorSet>,
     pub patches_pipeline: Arc<gpu::Pipeline>,
+
+    pub updates_timer: std::time::Duration,
+    pub patches_timer: std::time::Duration,
 }
 
 impl GpuSearchContext {
@@ -276,6 +279,8 @@ impl GpuSearchContext {
             entries_responses_buffer,
             patches_descriptor_set,
             patches_pipeline,
+            updates_timer: Default::default(),
+            patches_timer: Default::default(),
         })
     }
 
@@ -378,7 +383,10 @@ impl GpuSearchContext {
             ],
         );
         self.context.dispatch(requests.len(), 1, 1);
+
+        let timer = std::time::Instant::now();
         self.run_context();
+        self.updates_timer += timer.elapsed();
 
         // Download response
         self.context.copy_gpu_buffer(
@@ -430,7 +438,10 @@ impl GpuSearchContext {
             ],
         );
         self.context.dispatch(requests.len(), 1, 1);
+
+        let timer = std::time::Instant::now();
         self.run_context();
+        self.patches_timer += timer.elapsed();
 
         // Download response
         self.context.copy_gpu_buffer(

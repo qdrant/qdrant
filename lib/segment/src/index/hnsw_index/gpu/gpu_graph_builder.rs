@@ -25,8 +25,6 @@ pub struct GpuGraphBuilder {
     chunks: Arc<Vec<Range<usize>>>,
     min_cpu_linked_points_count: usize,
     first_point_id: PointOffsetType,
-    updates_timer: std::time::Duration,
-    patches_timer: std::time::Duration,
 }
 
 struct CpuBuilderIndexSynchronizer<'a> {
@@ -69,11 +67,13 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
 
         // all points are processed
         if *locked_finished_chunks >= self.chunks.len() || index >= self.points_count {
+            log::info!("All points at level {} are processed", self.level);
             return None;
         }
 
         // no more points to link
         if self.level > self.points[index].level {
+            log::info!("All points at level {} are linked", self.level);
             return None;
         }
 
@@ -84,11 +84,16 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         let is_new_chunk = index >= self.chunks[*locked_finished_chunks].end;
         // 3. GPU is ready to work
         while index >= self.gpu_processed.load(Ordering::Relaxed) {
+            log::info!("Wait for gpu at level {}", self.level);
             // gpu processed less points than cpu, we have to wait for GPU
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         let is_gpu_ready = self.gpu_processed.load(Ordering::Relaxed) == self.points_count;
         if min_cpu_points_achived && is_new_chunk && is_gpu_ready {
+            log::info!(
+                "All conditions to stop cpu at level {} are true",
+                self.level
+            );
             return None;
         }
 
@@ -224,10 +229,10 @@ impl GpuGraphBuilder {
             chunks: Arc::new(chunks),
             min_cpu_linked_points_count,
             first_point_id,
-            updates_timer: Default::default(),
-            patches_timer: Default::default(),
         };
-        builder.build_levels(pool, points_scorer_builder)
+        let result = builder.build_levels(pool, points_scorer_builder);
+        log::info!("GPU finished and destroyed");
+        result
     }
 
     fn sort_points_by_level(
@@ -334,6 +339,7 @@ impl GpuGraphBuilder {
                     gpu_processed.clone(),
                 )
             } else {
+                log::error!("No gpu thread for level {}", level);
                 None
             }
         }
@@ -345,10 +351,24 @@ impl GpuGraphBuilder {
         }
 
         let sum = self.chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
-        println!("Gpu graph chunks avg size: {}", sum / self.chunks.len());
+        log::debug!("Gpu graph chunks avg size: {}", sum / self.chunks.len());
 
-        println!("Gpu graph patches time: {:?}", self.patches_timer);
-        println!("Gpu graph update entries time: {:?}", self.updates_timer);
+        {
+            let mut gpu_search_context = self.gpu_search_context.lock();
+            println!(
+                "Gpu graph patches time: {:?}",
+                &gpu_search_context.patches_timer
+            );
+            println!(
+                "Gpu graph update entries time: {:?}",
+                &gpu_search_context.updates_timer
+            );
+            if gpu_search_context.is_dirty_links {
+                gpu_search_context.apply_links_patch()?;
+                gpu_search_context.run_context();
+            }
+        }
+
         Ok(Arc::into_inner(self.graph_layers_builder).unwrap())
     }
 
@@ -461,6 +481,12 @@ impl GpuGraphBuilder {
         start_chunk_index: usize,
         gpu_processed: Arc<AtomicUsize>,
     ) -> Option<std::thread::JoinHandle<OperationResult<()>>> {
+        println!(
+            "GPU build level: {} from chunk {} of {}",
+            level,
+            start_chunk_index,
+            self.chunks.len()
+        );
         if start_chunk_index >= self.chunks.len() {
             return None;
         }
