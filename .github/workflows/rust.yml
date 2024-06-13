@@ -31,9 +31,7 @@ jobs:
       run: cargo build --tests --workspace
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      # Allow failures on Windows until the issue #4419 is solved.
-      run: cargo nextest run --workspace --profile ci || [ "$RUNNER_OS" = "Windows" ]
-      shell: bash
+      run: cargo nextest run --workspace --profile ci
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
