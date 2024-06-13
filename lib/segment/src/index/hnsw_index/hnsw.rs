@@ -744,12 +744,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .build()?;
 
         let use_gpu = get_gpu_indexing();
-        if !use_gpu {
-            for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
-                check_process_stopped(stopped)?;
-                let level = graph_layers_builder.get_random_layer(&mut rng);
-                graph_layers_builder.set_levels(vector_id, level);
-            }
+        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
+            check_process_stopped(stopped)?;
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(vector_id, level);
         }
 
         let mut indexed_vectors = 0;
