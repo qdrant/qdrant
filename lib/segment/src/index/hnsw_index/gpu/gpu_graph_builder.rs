@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -22,7 +22,7 @@ use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 pub struct GpuGraphBuilder {
     graph_layers_builder: Arc<GraphLayersBuilder>,
     gpu_search_context: Arc<Mutex<GpuSearchContext>>,
-    points: Arc<Mutex<Vec<PointLinkingData>>>,
+    points: Arc<Vec<PointLinkingData>>,
     chunks: Arc<Vec<Range<usize>>>,
     min_cpu_linked_points_count: usize,
     first_point_id: PointOffsetType,
@@ -32,7 +32,7 @@ pub struct GpuGraphBuilder {
 
 struct CpuBuilderIndexSynchronizer<'a> {
     chunks: &'a [Range<usize>],
-    points: &'a Mutex<Vec<PointLinkingData>>,
+    points: &'a [PointLinkingData],
     points_count: usize,
     level: usize,
     min_cpu_points_count: usize,
@@ -45,7 +45,7 @@ struct CpuBuilderIndexSynchronizer<'a> {
 impl<'a> CpuBuilderIndexSynchronizer<'a> {
     fn new(
         chunks: &'a [Range<usize>],
-        points: &'a Mutex<Vec<PointLinkingData>>,
+        points: &'a [PointLinkingData],
         level: usize,
         min_cpu_points_count: usize,
         gpu_processed: Arc<AtomicUsize>,
@@ -53,7 +53,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         Self {
             chunks,
             points,
-            points_count: points.lock().len(),
+            points_count: points.len(),
             level,
             min_cpu_points_count,
             finished_chunks: Default::default(),
@@ -74,7 +74,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         }
 
         // no more points to link
-        if self.level > self.points.lock()[index].level {
+        if self.level > self.points[index].level {
             return None;
         }
 
@@ -100,7 +100,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
             let mut all_point_ids_from_prev_chunks = self.all_point_ids_from_prev_chunks.lock();
             let obsolete_chunk = self.chunks[*locked_finished_chunks].clone();
             for i in obsolete_chunk {
-                all_point_ids_from_prev_chunks.insert(self.points.lock()[i].point_id);
+                all_point_ids_from_prev_chunks.insert(self.points[i].point_id);
             }
             *locked_finished_chunks += 1;
         }
@@ -119,11 +119,10 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
     }
 }
 
-#[derive(Clone)]
 struct PointLinkingData {
     point_id: PointOffsetType,
     level: usize,
-    entry: PointOffsetType,
+    entry: AtomicU32,
 }
 
 impl GpuGraphBuilder {
@@ -206,7 +205,7 @@ impl GpuGraphBuilder {
                 points.push(PointLinkingData {
                     point_id,
                     level,
-                    entry,
+                    entry: entry.into(),
                 });
             }
 
@@ -221,7 +220,7 @@ impl GpuGraphBuilder {
         let builder = GpuGraphBuilder {
             graph_layers_builder: Arc::new(graph_layers_builder),
             gpu_search_context: Arc::new(Mutex::new(gpu_search_context)),
-            points: Arc::new(Mutex::new(points)),
+            points: Arc::new(points),
             chunks: Arc::new(chunks),
             min_cpu_linked_points_count,
             first_point_id,
@@ -301,15 +300,22 @@ impl GpuGraphBuilder {
     ) -> OperationResult<GraphLayersBuilder> {
         let mut gpu_thread: Option<JoinHandle<OperationResult<()>>> =
             Some(std::thread::spawn(|| Ok(())));
-        let gpu_processed: Arc<AtomicUsize> = Arc::new(self.points.lock().len().into());
+        let gpu_processed: Arc<AtomicUsize> = Arc::new(self.points.len().into());
 
-        let levels_count = self.points.lock()[0].level + 1;
+        let levels_count = self.points[0].level + 1;
         for level in (0..levels_count).rev() {
             let level_m = if level > 0 {
                 self.graph_layers_builder.m
             } else {
                 self.graph_layers_builder.m0
             };
+
+            let start_gpu_chunk_index = self.build_level_on_cpu(
+                level,
+                pool,
+                gpu_processed.clone(),
+                &points_scorer_builder,
+            )?;
 
             if let Some(gpu_thread) = gpu_thread.take() {
                 gpu_thread.join().map_err(|e| {
@@ -319,13 +325,6 @@ impl GpuGraphBuilder {
                     ))
                 })??;
             }
-
-            let start_gpu_chunk_index = self.build_level_on_cpu(
-                level,
-                pool,
-                gpu_processed.clone(),
-                &points_scorer_builder,
-            )?;
 
             gpu_thread = if start_gpu_chunk_index < self.chunks.len() {
                 self.build_level_on_gpu(
@@ -375,7 +374,7 @@ impl GpuGraphBuilder {
             gpu_processed,
         );
 
-        let points_count = self.points.lock().len();
+        let points_count = self.points.len();
         pool.install(|| {
             (0..points_count).into_par_iter().try_for_each(|_| {
                 let index = if let Some(index) = index_iter.next() {
@@ -387,7 +386,8 @@ impl GpuGraphBuilder {
                 // update links
                 let new_entries = Self::link_point_cpu(
                     &self.graph_layers_builder,
-                    self.points.lock()[index].clone(),
+                    self.points[index].point_id,
+                    self.points[index].entry.load(Ordering::Relaxed),
                     level,
                     &retry_mutex,
                     &points_scorer_builder,
@@ -397,7 +397,7 @@ impl GpuGraphBuilder {
                 if level > 0 {
                     for new_entry in new_entries {
                         if index_iter.is_presented_in_prev_chunks(new_entry) {
-                            self.points.lock()[index].entry = new_entry;
+                            self.points[index].entry.store(new_entry, Ordering::Relaxed);
                             break;
                         }
                     }
@@ -412,7 +412,8 @@ impl GpuGraphBuilder {
 
     fn link_point_cpu<'a>(
         graph_layers_builder: &GraphLayersBuilder,
-        linking_point: PointLinkingData,
+        point_id: PointOffsetType,
+        entry: PointOffsetType,
         level: usize,
         retry_mutex: &Mutex<()>,
         points_scorer_builder: impl Fn(
@@ -422,12 +423,12 @@ impl GpuGraphBuilder {
             Option<Box<dyn FilterContext + 'a>>,
         )>,
     ) -> OperationResult<Vec<PointOffsetType>> {
-        let (raw_scorer, filter_context) = points_scorer_builder(linking_point.point_id)?;
+        let (raw_scorer, filter_context) = points_scorer_builder(point_id)?;
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
         let (patches, new_entries) = graph_layers_builder.get_patch(
             GpuRequest {
-                id: linking_point.point_id,
-                entry: linking_point.entry,
+                id: point_id,
+                entry,
             },
             level,
             points_scorer,
@@ -440,8 +441,8 @@ impl GpuGraphBuilder {
             let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
             let (patches, new_entries) = graph_layers_builder.get_patch(
                 GpuRequest {
-                    id: linking_point.point_id,
-                    entry: linking_point.entry,
+                    id: point_id,
+                    entry,
                 },
                 level,
                 points_scorer,
@@ -478,9 +479,8 @@ impl GpuGraphBuilder {
             gpu_search_context.clear(level_m)?;
 
             let mut ids_to_upload = {
-                let points_lock = points.lock();
                 (0..chunks[start_chunk_index].start)
-                    .map(|index| points_lock[index].point_id)
+                    .map(|index| points[index].point_id)
                     .collect_vec()
             };
             ids_to_upload.push(first_point_id);
@@ -497,7 +497,7 @@ impl GpuGraphBuilder {
 
             for chunk_index in start_chunk_index..chunks.len() {
                 let chunk = chunks[chunk_index].clone();
-                let chunk_level = points.lock()[chunk.start].level;
+                let chunk_level = points[chunk.start].level;
                 if level > chunk_level {
                     Self::gpu_update_entries_chunk(&mut gpu_search_context, points.clone(), chunk)?;
                 } else {
@@ -519,17 +519,17 @@ impl GpuGraphBuilder {
 
     fn gpu_build_chunk(
         gpu_search_context: &mut GpuSearchContext,
-        points: Arc<Mutex<Vec<PointLinkingData>>>,
+        points: Arc<Vec<PointLinkingData>>,
         graph_layers_builder: Arc<GraphLayersBuilder>,
         chunk: Range<usize>,
         level: usize,
     ) -> OperationResult<()> {
         let mut requests = Vec::with_capacity(chunk.len());
 
-        for linking_point in &points.lock()[chunk.clone()] {
+        for linking_point in &points[chunk.clone()] {
             requests.push(GpuRequest {
                 id: linking_point.point_id,
-                entry: linking_point.entry,
+                entry: linking_point.entry.load(Ordering::Relaxed),
             })
         }
 
@@ -540,7 +540,7 @@ impl GpuGraphBuilder {
         for (patches, (&new_entry, linking_point)) in patches.iter().zip(
             new_entries
                 .iter()
-                .zip(points.lock()[chunk.clone()].iter_mut()),
+                .zip(points[chunk.clone()].iter()),
         ) {
             for patch in patches {
                 gpu_search_context.set_links(patch.id, &patch.links)?;
@@ -549,7 +549,7 @@ impl GpuGraphBuilder {
                 links.clear();
                 links.extend_from_slice(&patch.links);
             }
-            linking_point.entry = new_entry;
+            linking_point.entry.store(new_entry, Ordering::Relaxed);
         }
 
         Ok(())
@@ -557,24 +557,24 @@ impl GpuGraphBuilder {
 
     fn gpu_update_entries_chunk(
         gpu_search_context: &mut GpuSearchContext,
-        points: Arc<Mutex<Vec<PointLinkingData>>>,
+        points: Arc<Vec<PointLinkingData>>,
         chunk: Range<usize>,
     ) -> OperationResult<()> {
         let mut requests = Vec::with_capacity(chunk.len());
-        for linking_point in &points.lock()[chunk.clone()] {
+        for linking_point in &points[chunk.clone()] {
             requests.push(GpuRequest {
                 id: linking_point.point_id,
-                entry: linking_point.entry,
+                entry: linking_point.entry.load(Ordering::Relaxed),
             })
         }
         let new_entries = gpu_search_context.greedy_search(&requests)?;
         assert_eq!(new_entries.len(), chunk.len());
 
-        for (linking_point, new_entry) in points.lock()[chunk.clone()]
-            .iter_mut()
+        for (linking_point, new_entry) in points[chunk.clone()]
+            .iter()
             .zip(new_entries.iter())
         {
-            linking_point.entry = new_entry.idx;
+            linking_point.entry.store(new_entry.idx, Ordering::Relaxed);
         }
 
         Ok(())
