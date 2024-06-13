@@ -17,6 +17,7 @@ fn main() {
         let mut builder = cc::Build::new();
         builder.file("src/spaces/metric_f16/cpp/neon.c");
         builder.flag("-O3");
+        builder.flag("-march=armv8.2-a+fp16");
         builder.compile("simd_utils");
     }
 }
