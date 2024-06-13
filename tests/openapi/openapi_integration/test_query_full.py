@@ -458,3 +458,46 @@ def test_rrf():
         assert expected["id"] == result["id"]
         assert expected["payload"] == result["payload"]
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
+
+    # test with inner filters instead of root filter
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": [0.1, 0.2, 0.3, 0.4],
+                    "using": "dense-image",
+                    "filter": filter,
+                },
+                {
+                    "query": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                    "using": "dense-text",
+                    "filter": filter,
+                },
+                {
+                    "query": {
+                        "indices": [63, 65, 66],
+                        "values": [1, 2.2, 3.3],
+                    },
+                    "using": "sparse-text",
+                    "filter": filter,
+                },
+                {
+                    "query": [[3.05, 3.61, 3.76, 3.74]],
+                    "using": "dense-multi",
+                    "filter": filter,
+                },
+            ],
+            "limit": 10,
+            "query": {"fusion": "rrf"}
+        },
+    )
+    assert response.ok, response.json()
+    rrf_inner_filter_result = response.json()["result"]
+
+    for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_inner_filter_result, key=get_id)):
+        assert expected["id"] == result["id"]
+        assert expected["payload"] == result["payload"]
+        assert isclose(expected["score"], result["score"], rel_tol=1e-5)
