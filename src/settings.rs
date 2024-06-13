@@ -15,6 +15,7 @@ use crate::tracing;
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
 
 #[derive(Debug, Deserialize, Validate, Clone)]
+#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct ServiceConfig {
     #[validate(length(min = 1))]
     pub host: String,
@@ -65,6 +66,7 @@ pub struct ClusterConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
+#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct P2pConfig {
     #[serde(default)]
     pub port: Option<u16>,
@@ -122,6 +124,7 @@ pub struct TlsConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
+#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct Settings {
     #[serde(default)]
     pub log_level: Option<String>,
