@@ -197,6 +197,7 @@ codegen-units = 256 # restore default value for faster compilation
 inherits = "release"
 lto = false
 opt-level = 3
+codegen-units = 256 # restore default value for faster compilation
 
 [patch.crates-io]
 # Temporary patch until <https://github.com/hyperium/tonic/pull/1401> is merged
