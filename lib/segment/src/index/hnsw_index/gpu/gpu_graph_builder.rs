@@ -331,6 +331,8 @@ impl GpuGraphBuilder {
                 })??;
             }
 
+            gpu_processed.store(0, Ordering::Relaxed);
+
             gpu_thread = if start_gpu_chunk_index < self.chunks.len() {
                 self.build_level_on_gpu(
                     level,
