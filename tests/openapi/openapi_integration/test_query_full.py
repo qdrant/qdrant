@@ -36,7 +36,7 @@ def setup(on_disk_vectors):
     drop_collection(collection_name=collection_name)
 
 
-def root_and_rescored_query(query, using, limit=None, with_payload=None):
+def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=None):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -44,6 +44,7 @@ def root_and_rescored_query(query, using, limit=None, with_payload=None):
         body={
             "query": query,
             "limit": limit,
+            "filter": filter,
             "with_payload": with_payload,
             "using": using,
         },
@@ -60,6 +61,7 @@ def root_and_rescored_query(query, using, limit=None, with_payload=None):
                 "limit": 1000,
             },
             "query": query,
+            "filter": filter,
             "with_payload": with_payload,
             "using": using,
         },
@@ -94,6 +96,40 @@ def test_search():
     assert search_result == default_query_result
     assert search_result == nearest_query_result
 
+def test_filtered_search():
+    filter = {
+        "must": [
+            {
+                "key": "city",
+                "match": {
+                    "value": "Berlin"
+                }
+            }
+        ]
+    }
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": {
+                "name": "dense-image",
+                "vector": [0.1, 0.2, 0.3, 0.4],
+            },
+            "filter": filter,
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result = response.json()["result"]
+
+    default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter)
+
+    nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter)
+
+    assert search_result == default_query_result
+    assert search_result == nearest_query_result
+
 
 def test_scroll():
     response = request_with_validation(
@@ -111,6 +147,44 @@ def test_scroll():
         path_params={"collection_name": collection_name},
         body={
             "with_payload": True,
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]
+
+    for record, scored_point in zip(scroll_result, query_result):
+        assert record.get("id") == scored_point.get("id")
+        assert record.get("payload") == scored_point.get("payload")
+
+def test_filtered_scroll():
+    filter = {
+        "must": [
+            {
+                "key": "city",
+                "match": {
+                    "value": "Berlin"
+                }
+            }
+        ]
+    }
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "filter": filter
+        },
+    )
+    assert response.ok
+    scroll_result = response.json()["result"]["points"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "filter": filter
         },
     )
     assert response.ok
