@@ -16,7 +16,6 @@ use uuid::Uuid;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
-use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
@@ -291,11 +290,11 @@ pub(crate) fn create_mutable_id_tracker(
     SimpleIdTracker::open(database)
 }
 
-pub(crate) fn create_immutable_id_tracker(
+/*pub(crate) fn create_immutable_id_tracker(
     segment_path: &Path,
 ) -> OperationResult<ImmutableIdTracker> {
     ImmutableIdTracker::open(segment_path)
-}
+}*/
 
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
@@ -410,6 +409,8 @@ fn create_segment(
 
     let appendable_flag = config.is_appendable();
 
+    // Disable immutable id tracker for now.
+    /*
     let mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
@@ -422,6 +423,11 @@ fn create_segment(
             create_immutable_id_tracker(segment_path)?,
         ))
     };
+     */
+
+    let id_tracker = sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+        database.clone(),
+    )?));
 
     let payload_index_path = get_payload_index_path(segment_path);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
