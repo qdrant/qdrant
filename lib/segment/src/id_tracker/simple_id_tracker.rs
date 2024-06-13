@@ -212,7 +212,7 @@ impl SimpleIdTracker {
     }
 
     pub(crate) fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        let external_to_internal_num: BTreeMap<_, _> = self
+        let external_to_internal_num = self
             .external_to_internal_num
             .iter()
             .map(|(k, v)| (*k, *v))
@@ -227,7 +227,7 @@ impl SimpleIdTracker {
         let mappings = PointMappings {
             external_to_internal_num,
             external_to_internal_uuid,
-            internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
+            internal_to_external: self.internal_to_external.iter().map(Into::into).collect(),
         };
 
         let mut internal_to_version = self.internal_to_version.clone();
