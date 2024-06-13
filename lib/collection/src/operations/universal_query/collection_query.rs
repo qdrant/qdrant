@@ -570,6 +570,7 @@ mod from_grpc {
     use crate::operations::consistency_params::ReadConsistency;
     use crate::operations::shard_selector_internal::ShardSelectorInternal;
 
+    #[allow(dead_code)]
     pub struct IntoCollectionQueryRequest {
         pub request: CollectionQueryRequest,
         pub collection_name: String,
