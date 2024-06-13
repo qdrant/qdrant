@@ -10,6 +10,7 @@ extern "C" {
     fn euclideanDist_half_4x4(v1: *const f16, v2: *const f16, n: i32) -> f32;
 }
 
+#[allow(clippy::missing_safety_doc)]
 #[cfg(target_feature = "neon")]
 pub unsafe fn neon_euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
