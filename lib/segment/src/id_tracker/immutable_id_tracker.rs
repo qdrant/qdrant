@@ -9,7 +9,8 @@ use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
@@ -17,6 +18,7 @@ use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWr
 use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::id_tracker::immutable_id_tracker::point_mappings_deser::PointMappingVisitor;
 use crate::id_tracker::simple_id_tracker::StoredPointId;
 use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, SeqNumberType};
@@ -48,7 +50,7 @@ pub(super) struct PointMappings {
 
 impl ImmutableIdTracker {
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let mappings = Self::load_mappings(&Self::mappings_file_path(segment_path))?;
+        let mappings = Self::deserialize_file(&Self::mappings_file_path(segment_path))?;
 
         let deleted_raw = open_write_mmap(&Self::deleted_file_path(segment_path))?;
         let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
@@ -104,7 +106,7 @@ impl ImmutableIdTracker {
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
         // Serialize the mappings with bincode and write them to disk
-        Self::serialize_mappings(&Self::mappings_file_path(path), &mappings)?;
+        Self::serialize_file(&Self::mappings_file_path(path), &mappings)?;
 
         Ok(Self {
             path: path.to_path_buf(),
@@ -126,52 +128,6 @@ impl ImmutableIdTracker {
 
     pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
         base.join(MAPPINGS_FILE_NAME)
-    }
-
-    fn serialize_mappings(path: &Path, mappings: &PointMappings) -> OperationResult<()> {
-        let mappings: Vec<_> = mappings
-            .internal_to_external
-            .iter()
-            .map(|external| {
-                let internal_id = match external {
-                    StoredPointId::NumId(n) => mappings.external_to_internal_num.get(n),
-                    StoredPointId::Uuid(u) => mappings.external_to_internal_uuid.get(u),
-                    StoredPointId::String(str) => {
-                        unimplemented!("cannot convert internal string id '{str}' to external id")
-                    }
-                }
-                .unwrap();
-                (external, internal_id)
-            })
-            .collect();
-        Self::serialize_file(path, &mappings)
-    }
-
-    fn load_mappings(path: &Path) -> OperationResult<PointMappings> {
-        let mappings: Vec<(StoredPointId, PointOffsetType)> = Self::deserialize_file(path)?;
-        let internal_to_external: Vec<_> = mappings.iter().map(|i| i.0.clone()).collect();
-        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
-        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
-
-        for (external, internal) in mappings {
-            match external {
-                StoredPointId::NumId(num) => {
-                    external_to_internal_num.insert(num, internal);
-                }
-                StoredPointId::Uuid(uuid) => {
-                    external_to_internal_uuid.insert(uuid, internal);
-                }
-                StoredPointId::String(str) => {
-                    unimplemented!("cannot convert internal string id '{str}' to external id")
-                }
-            }
-        }
-
-        Ok(PointMappings {
-            internal_to_external,
-            external_to_internal_num,
-            external_to_internal_uuid,
-        })
     }
 
     fn serialize_file<T: Serialize>(path: &Path, value: &T) -> OperationResult<()> {
@@ -527,6 +483,94 @@ mod test {
         let id_tracker = make_immutable_tracker(dir.path());
         for i in id_tracker.iter_ids() {
             assert!(id_tracker.internal_version(i).is_some());
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PointMappings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(PointMappingVisitor)
+    }
+}
+
+impl Serialize for PointMappings {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.internal_to_external.len()))?;
+
+        for external_id in self.internal_to_external.iter() {
+            let internal_id = match external_id {
+                StoredPointId::NumId(n) => self.external_to_internal_num.get(n),
+                StoredPointId::Uuid(u) => self.external_to_internal_uuid.get(u),
+                StoredPointId::String(str) => {
+                    unimplemented!("cannot convert internal string id '{str}' to external id")
+                }
+            }
+            .unwrap();
+
+            sequence.serialize_element(&(external_id, internal_id))?;
+        }
+
+        sequence.end()
+    }
+}
+
+mod point_mappings_deser {
+    use std::collections::BTreeMap;
+    use std::fmt::Formatter;
+
+    use common::types::PointOffsetType;
+    use serde::de::{SeqAccess, Visitor};
+    use uuid::Uuid;
+
+    use crate::id_tracker::immutable_id_tracker::PointMappings;
+    use crate::id_tracker::simple_id_tracker::StoredPointId;
+
+    pub(super) struct PointMappingVisitor;
+
+    impl<'de> Visitor<'de> for PointMappingVisitor {
+        type Value = PointMappings;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("err")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut internal_to_external = Vec::with_capacity(seq.size_hint().unwrap_or_default());
+            let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
+            let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
+
+            while let Some((external, internal)) =
+                seq.next_element::<(StoredPointId, PointOffsetType)>()?
+            {
+                internal_to_external.push(external.clone());
+
+                match external {
+                    StoredPointId::NumId(num) => {
+                        external_to_internal_num.insert(num, internal);
+                    }
+                    StoredPointId::Uuid(uuid) => {
+                        external_to_internal_uuid.insert(uuid, internal);
+                    }
+                    StoredPointId::String(str) => {
+                        unimplemented!("cannot convert internal string id '{str}' to external id")
+                    }
+                }
+            }
+
+            Ok(PointMappings {
+                internal_to_external,
+                external_to_internal_num,
+                external_to_internal_uuid,
+            })
         }
     }
 }
