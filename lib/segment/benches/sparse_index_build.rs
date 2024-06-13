@@ -15,7 +15,9 @@ use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
+use segment::index::sparse_index::sparse_vector_index::{
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
+};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
@@ -73,7 +75,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
 
     let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: index_config,
             id_tracker: id_tracker.clone(),
             vector_storage: vector_storage.clone(),
@@ -95,7 +97,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
 
     // build once to reuse in mmap conversion benchmark
     let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: index_config,
             id_tracker,
             vector_storage,

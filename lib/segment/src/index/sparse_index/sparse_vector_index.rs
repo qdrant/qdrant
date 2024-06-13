@@ -79,7 +79,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 }
 
-pub struct OpenArgs<'a> {
+pub struct SparseVectorIndexOpenArgs<'a> {
     pub config: SparseIndexConfig,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -90,8 +90,8 @@ pub struct OpenArgs<'a> {
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
-    pub fn open(args: OpenArgs) -> OperationResult<Self> {
-        let OpenArgs {
+    pub fn open(args: SparseVectorIndexOpenArgs) -> OperationResult<Self> {
+        let SparseVectorIndexOpenArgs {
             config,
             id_tracker,
             vector_storage,

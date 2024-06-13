@@ -15,7 +15,9 @@ use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram_from_iter;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
+use segment::index::sparse_index::sparse_vector_index::{
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
+};
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{Condition, FieldCondition, Filter, Payload};
@@ -110,7 +112,7 @@ fn sparse_vector_index_search_benchmark_impl(
     let sparse_index_config =
         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap);
     let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_index.id_tracker().clone(),
             vector_storage: sparse_vector_index.vector_storage().clone(),

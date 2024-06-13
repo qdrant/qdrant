@@ -22,7 +22,9 @@ use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
-use crate::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
+use crate::index::sparse_index::sparse_vector_index::{
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
+};
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
@@ -333,12 +335,12 @@ pub(crate) fn create_vector_index(
 }
 
 pub(crate) fn create_sparse_vector_index(
-    args: sparse_vector_index::OpenArgs,
+    args: SparseVectorIndexOpenArgs,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match args.config.index_type {
         SparseIndexType::MutableRam => VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?),
         SparseIndexType::ImmutableRam => {
-            VectorIndexEnum::SparseImmRam(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args)?)
         }
         SparseIndexType::Mmap => VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?),
     };
@@ -454,7 +456,7 @@ fn create_segment(
             );
         }
 
-        let vector_index = sp(create_sparse_vector_index(sparse_vector_index::OpenArgs {
+        let vector_index = sp(create_sparse_vector_index(SparseVectorIndexOpenArgs {
             config: sparse_vector_config.index,
             id_tracker: id_tracker.clone(),
             vector_storage: vector_storage.clone(),

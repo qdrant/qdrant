@@ -13,7 +13,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
+use segment::index::sparse_index::sparse_vector_index::{
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
+};
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
@@ -167,7 +169,7 @@ fn sparse_index_discover_test() {
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
     let mut sparse_index =
-        SparseVectorIndex::<InvertedIndexImmutableRam>::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::<InvertedIndexImmutableRam>::open(SparseVectorIndexOpenArgs {
             config: SparseIndexConfig {
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::ImmutableRam,

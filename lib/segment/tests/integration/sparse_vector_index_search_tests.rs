@@ -18,7 +18,9 @@ use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-use segment::index::sparse_index::sparse_vector_index::{self, SparseVectorIndex};
+use segment::index::sparse_index::sparse_vector_index::{
+    SparseVectorIndex, SparseVectorIndexOpenArgs,
+};
 use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use segment::json_path::path;
 use segment::segment::Segment;
@@ -216,7 +218,7 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
             vector_storage: sparse_vector_ram_index.vector_storage().clone(),
@@ -246,7 +248,7 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
             vector_storage: sparse_vector_ram_index.vector_storage().clone(),
@@ -706,7 +708,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
         .unwrap();
 
     let open_index = || -> SparseVectorIndex<TInvertedIndex> {
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: SparseIndexConfig {
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::Mmap,
@@ -787,7 +789,7 @@ fn sparse_vector_index_files() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
-        SparseVectorIndex::open(sparse_vector_index::OpenArgs {
+        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
             vector_storage: sparse_vector_ram_index.vector_storage().clone(),
