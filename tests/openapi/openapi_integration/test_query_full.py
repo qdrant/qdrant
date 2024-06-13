@@ -73,7 +73,7 @@ def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=
     return root_query_result
 
 
-def test_search():
+def test_search_by_vector():
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -95,6 +95,22 @@ def test_search():
 
     assert search_result == default_query_result
     assert search_result == nearest_query_result
+
+def test_search_by_id():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": 2,
+            "using": "dense-image",
+        },
+    )
+    assert response.ok
+    by_id_query_result = response.json()["result"]
+
+    top = by_id_query_result[0]
+    assert top["id"] != 2 # id 2 is excluded from the results
 
 def test_filtered_search():
     filter = {
@@ -501,3 +517,35 @@ def test_rrf():
         assert expected["id"] == result["id"]
         assert expected["payload"] == result["payload"]
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
+
+def test_sparse_dense_rerank_colbert():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": [0.1, 0.2, 0.3, 0.4],
+                    "using": "dense-image"
+                },
+                {
+                    "query": {
+                        "indices": [63, 65, 66],
+                        "values": [1, 2.2, 3.3],
+                    },
+                    "using": "sparse-text",
+                }
+            ],
+            "limit": 3,
+            "query": [[3.05, 3.61, 3.76, 3.74]],
+            "using": "dense-multi"
+        },
+    )
+    assert response.ok, response.json()
+    rerank_result = response.json()["result"]
+    assert len(rerank_result) == 3
+    # record current result to detect change
+    assert rerank_result[0]["id"] == 5
+    assert rerank_result[1]["id"] == 2
+    assert rerank_result[2]["id"] == 1
