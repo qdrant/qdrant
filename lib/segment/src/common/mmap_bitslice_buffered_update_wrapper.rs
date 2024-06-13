@@ -5,6 +5,14 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use parking_lot::{Mutex, RwLock};
+
+use crate::common::mmap_type::MmapBitSlice;
+use crate::common::Flusher;
+
+/// A wrapper around `MmapBitSlice` that delays writing changes to the underlying file until they get
+/// flushed manually.
+/// This expects the underlying MmapBitSlice not to grow in size.
 pub struct MmapBitSliceBufferedUpdateWrapper {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
