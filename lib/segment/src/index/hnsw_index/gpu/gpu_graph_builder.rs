@@ -67,13 +67,11 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
 
         // all points are processed
         if *locked_finished_chunks >= self.chunks.len() || index >= self.points_count {
-            log::info!("All points at level {} are processed", self.level);
             return None;
         }
 
         // no more points to link
         if self.level > self.points[index].level {
-            log::info!("All points at level {} are linked", self.level);
             return None;
         }
 
