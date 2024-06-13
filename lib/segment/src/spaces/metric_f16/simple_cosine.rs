@@ -46,7 +46,10 @@ impl Metric<VectorElementTypeHalf> for CosineMetric {
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
+            if std::arch::is_aarch64_feature_detected!("neon")
+                && std::arch::is_aarch64_feature_detected!("fp16")
+                && v1.len() >= MIN_DIM_SIZE_SIMD
+            {
                 return unsafe { neon_dot_similarity_half(v1, v2) };
             }
         }

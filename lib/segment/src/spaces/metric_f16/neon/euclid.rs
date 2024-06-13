@@ -1,39 +1,22 @@
 #[cfg(target_feature = "neon")]
 use common::types::ScoreType;
 use half::f16;
-#[cfg(not(feature = "neon_fp16"))]
-use itertools::Itertools;
 
 #[cfg(target_feature = "neon")]
 use crate::data_types::vectors::VectorElementTypeHalf;
-#[cfg(not(feature = "neon_fp16"))]
-use crate::spaces::simple_neon;
 
 #[cfg(target_feature = "neon")]
-#[cfg(feature = "neon_fp16")]
 extern "C" {
     fn euclideanDist_half_4x4(v1: *const f16, v2: *const f16, n: i32) -> f32;
 }
 
 #[cfg(target_feature = "neon")]
-#[cfg(feature = "neon_fp16")]
 pub unsafe fn neon_euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
     let n = v1.len();
     -euclideanDist_half_4x4(v1.as_ptr(), v2.as_ptr(), n.try_into().unwrap())
-}
-
-#[cfg(not(feature = "neon_fp16"))]
-#[allow(clippy::missing_safety_doc)]
-pub unsafe fn neon_euclid_similarity_half(
-    v1: &[VectorElementTypeHalf],
-    v2: &[VectorElementTypeHalf],
-) -> ScoreType {
-    let v1_f32 = v1.iter().map(|x| f16::to_f32(*x)).collect_vec();
-    let v2_f32 = v2.iter().map(|x| f16::to_f32(*x)).collect_vec();
-    simple_neon::euclid_similarity_neon(&v1_f32, &v2_f32)
 }
 
 #[cfg(test)]
@@ -44,7 +27,9 @@ mod tests {
         use super::*;
         use crate::spaces::metric_f16::simple_euclid::*;
 
-        if std::arch::is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon")
+            && std::arch::is_aarch64_feature_detected!("fp16")
+        {
             let v1_f32: Vec<f32> = vec![
                 3.7, 4.3, 5.6, 7.7, 7.6, 4.2, 4.2, 7.3, 4.1, 6., 6.4, 1., 2.4, 7., 2.4, 6.4, 4.8,
                 2.4, 2.9, 3.9, 3.9, 7.4, 6.9, 5.3, 6.2, 5.2, 5.2, 4.2, 5.9, 1.8, 4.5, 3.5, 3.1,
