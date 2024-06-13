@@ -299,6 +299,7 @@ impl IdTracker for ImmutableIdTracker {
 
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
+        // Only flush deletions because mappings are immutable
         self.deleted_wrapper.flusher()
     }
 
@@ -417,7 +418,7 @@ mod point_mappings_deser {
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
             formatter.write_str("a sequence of tuples")
         }
-
+        // Custom deserializer to prevent allocating a humongous intermediate list of points
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
             A: SeqAccess<'de>,
