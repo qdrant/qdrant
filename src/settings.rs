@@ -133,7 +133,6 @@ pub struct GpuConfig {
     #[validate(range(min = 1))]
     pub max_warps: Option<usize>,
     #[serde(default)]
-    #[validate(range(min = 1))]
     pub device_index: usize,
     #[serde(default)]
     pub device_name_filter: String,

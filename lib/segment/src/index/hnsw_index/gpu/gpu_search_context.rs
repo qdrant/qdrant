@@ -38,21 +38,23 @@ pub struct GpuSearchContext {
     pub upload_staging_buffer: Arc<gpu::Buffer>,
     pub download_staging_buffer: Arc<gpu::Buffer>,
 
-    pub greedy_requests_buffer: Arc<gpu::Buffer>,
+    pub requests_buffer: Arc<gpu::Buffer>,
+    pub responses_buffer: Arc<gpu::Buffer>,
+
     pub greedy_responses_buffer: Arc<gpu::Buffer>,
     pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
     pub greedy_pipeline: Arc<gpu::Pipeline>,
 
-    pub search_requests_buffer: Arc<gpu::Buffer>,
     pub search_responses_buffer: Arc<gpu::Buffer>,
     pub search_descriptor_set: Arc<gpu::DescriptorSet>,
     pub search_pipeline: Arc<gpu::Pipeline>,
 
-    pub patches_requests_buffer: Arc<gpu::Buffer>,
     pub patches_responses_buffer: Arc<gpu::Buffer>,
-    pub entries_responses_buffer: Arc<gpu::Buffer>,
     pub patches_descriptor_set: Arc<gpu::DescriptorSet>,
     pub patches_pipeline: Arc<gpu::Pipeline>,
+
+    pub insert_descriptor_set: Arc<gpu::DescriptorSet>,
+    pub insert_pipeline: Arc<gpu::Pipeline>,
 
     pub updates_timer: std::time::Duration,
     pub patches_timer: std::time::Duration,
@@ -86,11 +88,17 @@ impl GpuSearchContext {
             GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
         let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;
 
-        let greedy_requests_buffer = Arc::new(gpu::Buffer::new(
+        let requests_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             groups_count * std::mem::size_of::<GpuRequest>(),
         ));
+        let responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * std::mem::size_of::<PointOffsetType>(),
+        ));
+
         let greedy_responses_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
@@ -121,7 +129,7 @@ impl GpuSearchContext {
 
         let greedy_descriptor_set =
             gpu::DescriptorSet::builder(greedy_descriptor_set_layout.clone())
-                .add_storage_buffer(0, greedy_requests_buffer.clone())
+                .add_storage_buffer(0, requests_buffer.clone())
                 .add_storage_buffer(1, greedy_responses_buffer.clone())
                 .build();
 
@@ -135,11 +143,6 @@ impl GpuSearchContext {
             .add_shader(greedy_search_shader.clone())
             .build(device.clone());
 
-        let search_requests_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<GpuRequest>(),
-        ));
         let search_responses_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
@@ -170,7 +173,7 @@ impl GpuSearchContext {
 
         let search_descriptor_set =
             gpu::DescriptorSet::builder(search_descriptor_set_layout.clone())
-                .add_storage_buffer(0, search_requests_buffer.clone())
+                .add_storage_buffer(0, requests_buffer.clone())
                 .add_storage_buffer(1, search_responses_buffer.clone())
                 .build();
 
@@ -184,23 +187,54 @@ impl GpuSearchContext {
             .add_shader(search_shader.clone())
             .build(device.clone());
 
-        let patches_requests_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<GpuRequest>(),
-        ));
         let patches_responses_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             groups_count * ((m0 + 1) * (m0 + 2)) * std::mem::size_of::<PointOffsetType>(),
         ));
-        let entries_responses_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<PointOffsetType>(),
-        ));
 
         let patches_shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/run_get_patch_binary.spv")
+                }
+            },
+        ));
+
+        let patches_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+            .add_storage_buffer(0)
+            .add_storage_buffer(1)
+            .add_storage_buffer(2)
+            .build(device.clone());
+
+        let patches_descriptor_set =
+            gpu::DescriptorSet::builder(patches_descriptor_set_layout.clone())
+                .add_storage_buffer(0, requests_buffer.clone())
+                .add_storage_buffer(1, patches_responses_buffer.clone())
+                .add_storage_buffer(2, responses_buffer.clone())
+                .build();
+
+        let patches_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, patches_descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_shader(patches_shader.clone())
+            .build(device.clone());
+
+        let insert_shader = Arc::new(gpu::Shader::new(
             device.clone(),
             match gpu_vector_storage.element_type {
                 GpuVectorStorageElementType::Float32 => {
@@ -217,40 +251,41 @@ impl GpuSearchContext {
                 }
             },
         ));
-        let patches_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+
+        let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
             .add_storage_buffer(2)
             .build(device.clone());
 
-        let patches_descriptor_set =
-            gpu::DescriptorSet::builder(patches_descriptor_set_layout.clone())
-                .add_storage_buffer(0, patches_requests_buffer.clone())
+        let insert_descriptor_set =
+            gpu::DescriptorSet::builder(insert_descriptor_set_layout.clone())
+                .add_storage_buffer(0, requests_buffer.clone())
                 .add_storage_buffer(1, patches_responses_buffer.clone())
-                .add_storage_buffer(2, entries_responses_buffer.clone())
+                .add_storage_buffer(2, responses_buffer.clone())
                 .build();
 
-        let patches_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, patches_descriptor_set_layout.clone())
+        let insert_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, insert_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
             .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
             .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
             .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
-            .add_shader(patches_shader.clone())
+            .add_shader(insert_shader.clone())
             .build(device.clone());
 
         let upload_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            std::cmp::max(greedy_requests_buffer.size, patches_requests_buffer.size),
+            requests_buffer.size,
         ));
         let download_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::GpuToCpu,
             std::cmp::max(
                 greedy_responses_buffer.size,
-                patches_responses_buffer.size + entries_responses_buffer.size,
+                patches_responses_buffer.size + responses_buffer.size,
             ),
         ));
 
@@ -266,19 +301,19 @@ impl GpuSearchContext {
             is_dirty_links: false,
             upload_staging_buffer,
             download_staging_buffer,
-            greedy_requests_buffer,
+            requests_buffer,
+            responses_buffer,
             greedy_responses_buffer,
             greedy_descriptor_set,
             greedy_pipeline,
-            search_requests_buffer,
             search_responses_buffer,
             search_descriptor_set,
             search_pipeline,
-            patches_requests_buffer,
             patches_responses_buffer,
-            entries_responses_buffer,
             patches_descriptor_set,
             patches_pipeline,
+            insert_descriptor_set,
+            insert_pipeline,
             updates_timer: Default::default(),
             patches_timer: Default::default(),
         })
@@ -302,7 +337,7 @@ impl GpuSearchContext {
         self.upload_staging_buffer.upload_slice(requests, 0);
         self.context.copy_gpu_buffer(
             self.upload_staging_buffer.clone(),
-            self.search_requests_buffer.clone(),
+            self.requests_buffer.clone(),
             0,
             0,
             std::mem::size_of_val(requests),
@@ -364,7 +399,7 @@ impl GpuSearchContext {
         self.upload_staging_buffer.upload_slice(requests, 0);
         self.context.copy_gpu_buffer(
             self.upload_staging_buffer.clone(),
-            self.greedy_requests_buffer.clone(),
+            self.requests_buffer.clone(),
             0,
             0,
             std::mem::size_of_val(requests),
@@ -406,6 +441,7 @@ impl GpuSearchContext {
     pub fn run_insert_vector(
         &mut self,
         requests: &[GpuRequest],
+        
     ) -> OperationResult<(Vec<Vec<GpuGraphLinksPatch>>, Vec<PointOffsetType>)> {
         if requests.len() > self.groups_count {
             return Err(OperationError::service_error("Too many gpu patch requests"));
@@ -419,7 +455,7 @@ impl GpuSearchContext {
         self.upload_staging_buffer.upload_slice(requests, 0);
         self.context.copy_gpu_buffer(
             self.upload_staging_buffer.clone(),
-            self.patches_requests_buffer.clone(),
+            self.requests_buffer.clone(),
             0,
             0,
             std::mem::size_of_val(requests),
@@ -445,7 +481,7 @@ impl GpuSearchContext {
 
         // Download response
         self.context.copy_gpu_buffer(
-            self.entries_responses_buffer.clone(),
+            self.responses_buffer.clone(),
             self.download_staging_buffer.clone(),
             0,
             0,
@@ -455,7 +491,7 @@ impl GpuSearchContext {
             self.patches_responses_buffer.clone(),
             self.download_staging_buffer.clone(),
             0,
-            self.entries_responses_buffer.size,
+            self.responses_buffer.size,
             self.patches_responses_buffer.size,
         );
         self.run_context();
@@ -469,7 +505,102 @@ impl GpuSearchContext {
                 / std::mem::size_of::<PointOffsetType>()
         ];
         self.download_staging_buffer
-            .download_slice(&mut patches_data, self.entries_responses_buffer.size);
+            .download_slice(&mut patches_data, self.responses_buffer.size);
+
+        let m = self.gpu_links.m;
+        let mut all_patches = vec![];
+        for i in 0..requests.len() {
+            let patch_size = m + 2;
+            let all_patches_size = (m + 1) * patch_size;
+            let mut patches_offset = i * all_patches_size;
+
+            let mut patches = vec![];
+            for _ in 0..m + 1 {
+                let point_id = patches_data[patches_offset];
+                if point_id == PointOffsetType::MAX {
+                    break;
+                }
+                let links_count = patches_data[patches_offset + 1] as usize;
+                let links = &patches_data[patches_offset + 2..patches_offset + 2 + links_count];
+                patches.push(GpuGraphLinksPatch {
+                    id: point_id,
+                    links: links.to_vec(),
+                });
+                patches_offset += patch_size;
+            }
+            all_patches.push(patches);
+        }
+
+        Ok((all_patches, new_entries))
+    }
+
+    pub fn run_get_patch(
+        &mut self,
+        requests: &[GpuRequest],
+    ) -> OperationResult<(Vec<Vec<GpuGraphLinksPatch>>, Vec<PointOffsetType>)> {
+        if requests.len() > self.groups_count {
+            return Err(OperationError::service_error("Too many gpu patch requests"));
+        }
+
+        if self.is_dirty() {
+            self.apply_links_patch().unwrap();
+        }
+        self.gpu_visited_flags.clear(&mut self.context);
+
+        self.upload_staging_buffer.upload_slice(requests, 0);
+        self.context.copy_gpu_buffer(
+            self.upload_staging_buffer.clone(),
+            self.requests_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of_val(requests),
+        );
+        self.run_context();
+
+        self.context.bind_pipeline(
+            self.patches_pipeline.clone(),
+            &[
+                self.patches_descriptor_set.clone(),
+                self.gpu_vector_storage.descriptor_set.clone(),
+                self.gpu_links.descriptor_set.clone(),
+                self.gpu_nearest_heap.descriptor_set.clone(),
+                self.gpu_candidates_heap.descriptor_set.clone(),
+                self.gpu_visited_flags.descriptor_set.clone(),
+            ],
+        );
+        self.context.dispatch(requests.len(), 1, 1);
+
+        let timer = std::time::Instant::now();
+        self.run_context();
+        self.patches_timer += timer.elapsed();
+
+        // Download response
+        self.context.copy_gpu_buffer(
+            self.responses_buffer.clone(),
+            self.download_staging_buffer.clone(),
+            0,
+            0,
+            requests.len() * std::mem::size_of::<PointOffsetType>(),
+        );
+        self.context.copy_gpu_buffer(
+            self.patches_responses_buffer.clone(),
+            self.download_staging_buffer.clone(),
+            0,
+            self.responses_buffer.size,
+            self.patches_responses_buffer.size,
+        );
+        self.run_context();
+        let mut new_entries = vec![PointOffsetType::default(); requests.len()];
+        self.download_staging_buffer
+            .download_slice(&mut new_entries, 0);
+
+        let mut patches_data = vec![
+            PointOffsetType::default();
+            self.patches_responses_buffer.size
+                / std::mem::size_of::<PointOffsetType>()
+        ];
+        self.download_staging_buffer
+            .download_slice(&mut patches_data, self.responses_buffer.size);
 
         let m = self.gpu_links.m;
         let mut all_patches = vec![];
@@ -749,7 +880,7 @@ mod tests {
 
         let (patches, new_entries) = test
             .gpu_search_context
-            .run_insert_vector(&requests)
+            .run_get_patch(&requests)
             .unwrap();
 
         for (i, gpu_patches) in patches.iter().enumerate() {
