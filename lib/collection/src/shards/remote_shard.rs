@@ -880,4 +880,14 @@ impl ShardOperation for RemoteShard {
 
         result.map_err(CollectionError::from)
     }
+
+    async fn query_batch(
+        &self,
+        _request: Arc<Vec<ShardQueryRequest>>,
+        _search_runtime_handle: &Handle,
+        _timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        // TODO(universal-query): implement remote query batch
+        todo!()
+    }
 }

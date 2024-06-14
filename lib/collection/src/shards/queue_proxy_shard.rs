@@ -306,6 +306,20 @@ impl ShardOperation for QueueProxyShard {
             .query(request, search_runtime_handle, timeout)
             .await
     }
+
+    async fn query_batch(
+        &self,
+        request: Arc<Vec<ShardQueryRequest>>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        self.inner
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .wrapped_shard
+            .query_batch(request, search_runtime_handle, timeout)
+            .await
+    }
 }
 
 // Safe guard in debug mode to ensure that `finalize()` is called before dropping
@@ -588,6 +602,18 @@ impl ShardOperation for Inner {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.wrapped_shard
             .query(request, search_runtime_handle, timeout)
+            .await
+    }
+
+    async fn query_batch(
+        &self,
+        request: Arc<Vec<ShardQueryRequest>>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .query_batch(request, search_runtime_handle, timeout)
             .await
     }
 }

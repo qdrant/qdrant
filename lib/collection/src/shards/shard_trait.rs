@@ -54,6 +54,13 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse>;
+
+    async fn query_batch(
+        &self,
+        request: Arc<Vec<ShardQueryRequest>>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>>;
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;
