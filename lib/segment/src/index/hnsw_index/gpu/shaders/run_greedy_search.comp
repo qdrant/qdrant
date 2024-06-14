@@ -37,7 +37,7 @@ layout(set = 0, binding = 0) buffer SearchRequests {
 } search_requests;
 
 layout(set = 0, binding = 1) buffer SearchResults {
-    ScoredPoint data[];
+    uint data[];
 } search_results;
 
 void main() {
@@ -49,6 +49,6 @@ void main() {
     ScoredPoint result = greedy_search(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
     if (subgroupElect()) {
-        search_results.data[subgroup_index] = result;
+        search_results.data[subgroup_index] = result.id;
     }
 }

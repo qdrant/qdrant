@@ -385,7 +385,7 @@ impl GpuSearchContext {
     pub fn greedy_search(
         &mut self,
         requests: &[GpuRequest],
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> OperationResult<Vec<PointOffsetType>> {
         if requests.len() > self.groups_count {
             return Err(OperationError::service_error(
                 "Too many gpu greedy search requests",
@@ -429,10 +429,10 @@ impl GpuSearchContext {
             self.download_staging_buffer.clone(),
             0,
             0,
-            requests.len() * std::mem::size_of::<ScoredPointOffset>(),
+            requests.len() * std::mem::size_of::<PointOffsetType>(),
         );
         self.run_context();
-        let mut gpu_responses = vec![ScoredPointOffset::default(); requests.len()];
+        let mut gpu_responses = vec![PointOffsetType::default(); requests.len()];
         self.download_staging_buffer
             .download_slice(&mut gpu_responses, 0);
         Ok(gpu_responses)
@@ -854,8 +854,7 @@ mod tests {
             let search_result = test
                 .graph_layers_builder
                 .search_entry_on_level(0, 0, &mut scorer);
-            assert_eq!(search_result.idx, gpu_responses[i].idx);
-            assert!((search_result.score - gpu_responses[i].score).abs() < 1e-5);
+            assert_eq!(search_result.idx, gpu_responses[i]);
         }
     }
 

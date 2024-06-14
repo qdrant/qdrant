@@ -602,8 +602,8 @@ impl GpuGraphBuilder {
         let new_entries = gpu_search_context.greedy_search(&requests)?;
         assert_eq!(new_entries.len(), chunk.len());
 
-        for (linking_point, new_entry) in points[chunk.clone()].iter().zip(new_entries.iter()) {
-            linking_point.entry.store(new_entry.idx, Ordering::Relaxed);
+        for (linking_point, new_entry) in points[chunk.clone()].iter().zip(new_entries.into_iter()) {
+            linking_point.entry.store(new_entry, Ordering::Relaxed);
         }
 
         Ok(())
