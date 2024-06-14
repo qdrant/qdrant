@@ -143,12 +143,16 @@ pub struct AbortTransferOperation {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
 pub struct StartReshardingOperation {
+    #[validate]
     pub start_resharding: StartResharding,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
 pub struct AbortReshardingOperation {
+    #[validate]
     pub abort_resharding: AbortResharding,
 }
 
@@ -206,10 +210,12 @@ pub struct AbortShardTransfer {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
 pub struct StartResharding {
     pub peer_id: Option<PeerId>,
     pub shard_key: Option<ShardKey>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
 pub struct AbortResharding {}
