@@ -252,7 +252,9 @@ def test_points_query(tmp_path: pathlib.Path):
     for (action1, body1), (action2, body2) in list_of_pairs:
         # Capture result from first peer
         r_init_one = requests.post(
-            f"{peer_api_uris[0]}/collections/test_collection/points/{action1}", json=body1
+            f"{peer_api_uris[0]}/collections/test_collection/points/{action1}",
+            params= {"consistency": "all"},
+            json=body1
         )
         assert_http_ok(r_init_one)
         r_init_one = r_init_one.json()["result"]
@@ -261,7 +263,9 @@ def test_points_query(tmp_path: pathlib.Path):
         for uri in peer_api_uris:
             # first request
             r_one = requests.post(
-                f"{uri}/collections/test_collection/points/{action1}", json=body1
+                f"{uri}/collections/test_collection/points/{action1}",
+                params= {"consistency": "all"},
+                json=body1
             )
             assert_http_ok(r_one)
             r_one = r_one.json()["result"]
@@ -269,7 +273,9 @@ def test_points_query(tmp_path: pathlib.Path):
 
             # second request
             r_two = requests.post(
-                f"{uri}/collections/test_collection/points/{action2}", json=body2
+                f"{uri}/collections/test_collection/points/{action2}",
+                params= {"consistency": "all"},
+                json=body2
             )
             assert_http_ok(r_two)
             r_two = r_two.json()["result"]
