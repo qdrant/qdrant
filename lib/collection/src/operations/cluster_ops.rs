@@ -29,7 +29,7 @@ pub enum ClusterOperations {
     /// Start resharding
     #[schemars(skip)]
     StartResharding(StartReshardingOperation),
-    // Abort resharding
+    /// Abort resharding
     #[schemars(skip)]
     AbortResharding(AbortReshardingOperation),
 }
