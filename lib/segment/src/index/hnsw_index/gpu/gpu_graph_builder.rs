@@ -533,46 +533,44 @@ impl GpuGraphBuilder {
                 gpu_search_context.apply_links_patch()?;
                 gpu_search_context.run_context();
             }
-            println!("Upload links time: {:?}", timer.elapsed());
+            println!("Upload links on level {level} time: {:?}", timer.elapsed());
 
             let mut linked_points_count = chunks[start_chunk_index].start;
-
+            let mut prev_chunk = None;
             for chunk_index in start_chunk_index..chunks.len() {
                 let chunk = chunks[chunk_index].clone();
                 let chunk_level = points[chunk.start].level;
                 if level > chunk_level {
-                    Self::gpu_update_entries_chunk(&mut gpu_search_context, points.clone(), chunk)?;
+                    Self::gpu_update_entries_chunk(
+                        &mut gpu_search_context,
+                        points.clone(),
+                        chunk.clone(),
+                        prev_chunk.clone(),
+                    )?;
                 } else {
                     Self::gpu_build_chunk(
                         &mut gpu_search_context,
                         points.clone(),
-                        graph_layers_builder.clone(),
                         chunk.clone(),
-                        level,
+                        prev_chunk.clone(),
                     )?;
                     linked_points_count = chunk.end;
                 }
-
+                prev_chunk = Some(chunk);
                 gpu_processed.store(chunks[chunk_index].end, Ordering::Relaxed);
+            }
+
+            if let Some(prev_chunk) = prev_chunk {
+                let new_entries = gpu_search_context.download_responses(prev_chunk.len())?;
+                Self::update_entries(&points, prev_chunk, new_entries);
             }
 
             let mut download_ids = vec![first_point_id];
             download_ids.extend(points[0..linked_points_count].iter().map(|p| p.point_id));
-            println!("Linked points count: {}", download_ids.len());
-
-            {// TODO(gpu): remove test cleaning
-                if gpu_search_context.is_dirty_links {
-                    gpu_search_context.apply_links_patch()?;
-                    gpu_search_context.run_context();
-                }
-                for point_id in 0..graph_layers_builder.links_layers.len() {
-                    if graph_layers_builder.get_point_level(point_id as PointOffsetType) < level {
-                        continue;
-                    }
-                    let mut links = graph_layers_builder.links_layers[point_id][level].write();
-                    links.clear();
-                }
-            }
+            println!(
+                "Linked points at level {level} count: {}",
+                download_ids.len()
+            );
 
             gpu_search_context.download_links(
                 level,
@@ -587,9 +585,8 @@ impl GpuGraphBuilder {
     fn gpu_build_chunk(
         gpu_search_context: &mut GpuSearchContext,
         points: Arc<Vec<PointLinkingData>>,
-        graph_layers_builder: Arc<GraphLayersBuilder>,
         chunk: Range<usize>,
-        level: usize,
+        prev_chunk: Option<Range<usize>>,
     ) -> OperationResult<()> {
         let mut requests = Vec::with_capacity(chunk.len());
 
@@ -600,24 +597,14 @@ impl GpuGraphBuilder {
             })
         }
 
-        let (patches, new_entries) = gpu_search_context.run_insert_vector(&requests)?;
-        assert_eq!(patches.len(), new_entries.len());
-        assert_eq!(patches.len(), chunk.len());
+        let prev_results_count = prev_chunk.clone().map(|chunk| chunk.len()).unwrap_or(0);
 
-        for (patches, (&new_entry, linking_point)) in patches
-            .iter()
-            .zip(new_entries.iter().zip(points[chunk.clone()].iter()))
-        {
-            for patch in patches {
-                gpu_search_context.set_links(patch.id, &patch.links)?;
-                let mut links = graph_layers_builder.links_layers[patch.id as usize][level].write();
+        let new_entries = gpu_search_context.run_insert_vector(&requests, prev_results_count)?;
+        assert_eq!(new_entries.len(), prev_results_count);
 
-                links.clear();
-                links.extend_from_slice(&patch.links);
-            }
-            linking_point.entry.store(new_entry, Ordering::Relaxed);
+        if let Some(prev_chunk) = prev_chunk {
+            Self::update_entries(&points, prev_chunk, new_entries);
         }
-
         Ok(())
     }
 
@@ -625,6 +612,7 @@ impl GpuGraphBuilder {
         gpu_search_context: &mut GpuSearchContext,
         points: Arc<Vec<PointLinkingData>>,
         chunk: Range<usize>,
+        prev_chunk: Option<Range<usize>>,
     ) -> OperationResult<()> {
         let mut requests = Vec::with_capacity(chunk.len());
         for linking_point in &points[chunk.clone()] {
@@ -633,14 +621,28 @@ impl GpuGraphBuilder {
                 entry: linking_point.entry.load(Ordering::Relaxed),
             })
         }
-        let new_entries = gpu_search_context.greedy_search(&requests)?;
-        assert_eq!(new_entries.len(), chunk.len());
 
-        for (linking_point, new_entry) in points[chunk.clone()].iter().zip(new_entries.into_iter()) {
+        let prev_results_count = prev_chunk.clone().map(|chunk| chunk.len()).unwrap_or(0);
+
+        let new_entries = gpu_search_context.greedy_search(&requests, prev_results_count)?;
+        assert_eq!(new_entries.len(), prev_results_count);
+
+        if let Some(prev_chunk) = prev_chunk {
+            Self::update_entries(&points, prev_chunk, new_entries);
+        }
+        Ok(())
+    }
+
+    fn update_entries(
+        points: &[PointLinkingData],
+        chunk: Range<usize>,
+        new_entries: Vec<PointOffsetType>,
+    ) {
+        assert_eq!(chunk.len(), new_entries.len());
+        for (linking_point, new_entry) in points[chunk.clone()].iter().zip(new_entries.into_iter())
+        {
             linking_point.entry.store(new_entry, Ordering::Relaxed);
         }
-
-        Ok(())
     }
 }
 

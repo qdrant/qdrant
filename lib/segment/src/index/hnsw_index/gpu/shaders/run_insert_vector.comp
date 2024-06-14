@@ -36,27 +36,11 @@ layout(set = 0, binding = 0) buffer Requests {
     Request data[];
 } requests;
 
-layout(set = 0, binding = 1) buffer Patches {
-    uint data[];
-} patches;
-
-layout(set = 0, binding = 2) buffer NewEntries {
+layout(set = 0, binding = 1) buffer NewEntries {
     uint data[];
 } new_entries;
 
-void clear_patches() {
-    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
-    uint patch_size = LEVEL_M + 2; // id + links_count + links
-    uint all_patches_size = (LEVEL_M + 1) * patch_size;
-    uint patches_offset = subgroup_index * all_patches_size;
-    for (uint i = SUBGROUP_INVOKATION_ID; i < all_patches_size; i += SUBGROUP_SIZE) {
-        patches.data[patches_offset + i] = UINT_MAX;
-    }
-    groupMemoryBarrier();
-}
-
 void main() {
-    clear_patches();
     search_context_init();
     uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
     Request request = requests.data[subgroup_index];
@@ -78,35 +62,26 @@ void main() {
 
     uint count = run_heuristic();
 
-    uint patch_size = LEVEL_M + 2; // id + links_count + links
-    uint all_patches_size = (LEVEL_M + 1) * patch_size;
-    uint patches_offset = subgroup_index * all_patches_size;
-    
-    // write request.id patch
-    if (subgroupElect()) {
-        patches.data[patches_offset] = request.id;
-        patches.data[patches_offset + 1] = count;
-        for (uint i = 0; i < count; i++) {
-            patches.data[patches_offset + i + 2] = get_nearest(i).id;
-        }
+    // sync all threads to make sure that we don't do search while updating links
+    barrier();
+
+    // update request.id links
+    for (uint i = SUBGROUP_INVOKATION_ID; i < count; i += SUBGROUP_SIZE) {
+        GET_LINK(request.id, i) = get_nearest(i).id;
     }
+    if (subgroupElect()) {
+        LINKS_SET_SIZE(request.id, count);
+    }
+
     groupMemoryBarrier();
 
     for (uint i = 0; i < count; i++) {
-        uint other_id = patches.data[patches_offset + i + 2];
+        uint other_id = GET_LINK(request.id, i);
         uint other_links_count = LINKS_COUNT(other_id);
-        uint other_patches_offset = patches_offset + (i + 1) * patch_size;
         if (other_links_count < LEVEL_M) {
             if (subgroupElect()) {
-                patches.data[other_patches_offset] = other_id;
-                other_patches_offset++;
-                patches.data[other_patches_offset] = other_links_count + 1;
-                other_patches_offset++;
-                LINKS_FOREACH(other_id) {
-                    patches.data[other_patches_offset] = LINKS_FOREACH_VALUE;
-                    other_patches_offset++;
-                }
-                patches.data[other_patches_offset] = request.id;
+                GET_LINK(other_id, other_links_count) = request.id;
+                LINKS_SET_SIZE(other_id, other_links_count + 1);
             }
         } else {
             nearest_count = 0;
@@ -130,18 +105,11 @@ void main() {
             sort_nearest();
             uint other_new_links_count = run_heuristic();
 
-            if (subgroupElect()) {
-                patches.data[other_patches_offset] = other_id;
-                other_patches_offset++;
-                patches.data[other_patches_offset] = other_new_links_count;
-                other_patches_offset++;
+            for (uint j = SUBGROUP_INVOKATION_ID; j < other_new_links_count; j += SUBGROUP_SIZE) {
+                GET_LINK(other_id, j) = get_nearest(j).id;
             }
-            for (uint j = 0; j < other_new_links_count; j++) {
-                if (subgroupElect()) {
-                    uint l = get_nearest(j).id;
-                    patches.data[other_patches_offset] = l;
-                    other_patches_offset++;
-                }
+            if (subgroupElect()) {
+                LINKS_SET_SIZE(other_id, other_new_links_count);
             }
         }
     }

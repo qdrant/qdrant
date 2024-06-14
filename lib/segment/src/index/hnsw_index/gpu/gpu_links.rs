@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 
-use crate::{common::operation_error::{OperationError, OperationResult}, index::hnsw_index::graph_layers_builder::GraphLayersBuilder};
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 
 #[repr(C)]
 struct GpuLinksParamsBuffer {
@@ -172,7 +173,9 @@ impl GpuLinks {
     ) -> OperationResult<()> {
         let timer = std::time::Instant::now();
 
-        let links_patch_capacity = self.max_patched_points * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
+        let links_patch_capacity = self.max_patched_points
+            * (self.links_capacity + 1)
+            * std::mem::size_of::<PointOffsetType>();
         let download_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::GpuToCpu,
@@ -197,7 +200,8 @@ impl GpuLinks {
             context.run();
             context.wait_finish();
 
-            let mut links = vec![PointOffsetType::default(); chunk_size * (self.links_capacity + 1)];
+            let mut links =
+                vec![PointOffsetType::default(); chunk_size * (self.links_capacity + 1)];
             download_buffer.download_slice(&mut links, 0);
 
             for (index, chunk) in links.chunks(self.links_capacity + 1).enumerate() {
@@ -210,7 +214,11 @@ impl GpuLinks {
             }
         }
 
-        println!("Downloading links for level {} in time {:?}", level, timer.elapsed());
+        println!(
+            "Downloading links for level {} in time {:?}",
+            level,
+            timer.elapsed()
+        );
         Ok(())
     }
 }

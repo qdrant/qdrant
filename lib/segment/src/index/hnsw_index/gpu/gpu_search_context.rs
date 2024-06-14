@@ -249,14 +249,12 @@ impl GpuSearchContext {
         let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
-            .add_storage_buffer(2)
             .build(device.clone());
 
         let insert_descriptor_set =
             gpu::DescriptorSet::builder(insert_descriptor_set_layout.clone())
                 .add_storage_buffer(0, requests_buffer.clone())
-                .add_storage_buffer(1, patches_responses_buffer.clone())
-                .add_storage_buffer(2, responses_buffer.clone())
+                .add_storage_buffer(1, responses_buffer.clone())
                 .build();
 
         let insert_pipeline = gpu::Pipeline::builder()
@@ -309,10 +307,7 @@ impl GpuSearchContext {
         })
     }
 
-    pub fn download_responses(
-        &mut self,
-        count: usize,
-    ) -> OperationResult<Vec<PointOffsetType>> {
+    pub fn download_responses(&mut self, count: usize) -> OperationResult<Vec<PointOffsetType>> {
         self.context.copy_gpu_buffer(
             self.responses_buffer.clone(),
             self.download_staging_buffer.clone(),
@@ -393,6 +388,7 @@ impl GpuSearchContext {
     pub fn greedy_search(
         &mut self,
         requests: &[GpuRequest],
+        prev_results_count: usize,
     ) -> OperationResult<Vec<PointOffsetType>> {
         if requests.len() > self.groups_count {
             return Err(OperationError::service_error(
@@ -400,10 +396,13 @@ impl GpuSearchContext {
             ));
         }
 
+        let timer = std::time::Instant::now();
+
         if self.is_dirty() {
             self.apply_links_patch().unwrap();
         }
 
+        // upload requests
         self.upload_staging_buffer.upload_slice(requests, 0);
         self.context.copy_gpu_buffer(
             self.upload_staging_buffer.clone(),
@@ -412,6 +411,17 @@ impl GpuSearchContext {
             0,
             std::mem::size_of_val(requests),
         );
+
+        // download previous results
+        if prev_results_count > 0 {
+            self.context.copy_gpu_buffer(
+                self.responses_buffer.clone(),
+                self.download_staging_buffer.clone(),
+                0,
+                0,
+                prev_results_count * std::mem::size_of::<PointOffsetType>(),
+            );
+        }
         self.run_context();
 
         self.context.bind_pipeline(
@@ -426,28 +436,36 @@ impl GpuSearchContext {
             ],
         );
         self.context.dispatch(requests.len(), 1, 1);
-
-        let timer = std::time::Instant::now();
         self.run_context();
-        self.updates_timer += timer.elapsed();
 
-        self.download_responses(requests.len())
+        self.updates_timer += timer.elapsed();
+        if prev_results_count > 0 {
+            let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
+            self.download_staging_buffer
+                .download_slice(&mut gpu_responses, 0);
+            Ok(gpu_responses)
+        } else {
+            Ok(vec![])
+        }
     }
 
     pub fn run_insert_vector(
         &mut self,
         requests: &[GpuRequest],
-        
-    ) -> OperationResult<(Vec<Vec<GpuGraphLinksPatch>>, Vec<PointOffsetType>)> {
+        prev_results_count: usize,
+    ) -> OperationResult<Vec<PointOffsetType>> {
         if requests.len() > self.groups_count {
             return Err(OperationError::service_error("Too many gpu patch requests"));
         }
+
+        let timer = std::time::Instant::now();
 
         if self.is_dirty() {
             self.apply_links_patch().unwrap();
         }
         self.gpu_visited_flags.clear(&mut self.context);
 
+        // upload requests
         self.upload_staging_buffer.upload_slice(requests, 0);
         self.context.copy_gpu_buffer(
             self.upload_staging_buffer.clone(),
@@ -456,12 +474,23 @@ impl GpuSearchContext {
             0,
             std::mem::size_of_val(requests),
         );
+
+        // download previous results
+        if prev_results_count > 0 {
+            self.context.copy_gpu_buffer(
+                self.responses_buffer.clone(),
+                self.download_staging_buffer.clone(),
+                0,
+                0,
+                prev_results_count * std::mem::size_of::<PointOffsetType>(),
+            );
+        }
         self.run_context();
 
         self.context.bind_pipeline(
-            self.patches_pipeline.clone(),
+            self.insert_pipeline.clone(),
             &[
-                self.patches_descriptor_set.clone(),
+                self.insert_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set.clone(),
                 self.gpu_links.descriptor_set.clone(),
                 self.gpu_nearest_heap.descriptor_set.clone(),
@@ -470,64 +499,17 @@ impl GpuSearchContext {
             ],
         );
         self.context.dispatch(requests.len(), 1, 1);
-
-        let timer = std::time::Instant::now();
         self.run_context();
+
         self.patches_timer += timer.elapsed();
-
-        // Download response
-        self.context.copy_gpu_buffer(
-            self.responses_buffer.clone(),
-            self.download_staging_buffer.clone(),
-            0,
-            0,
-            requests.len() * std::mem::size_of::<PointOffsetType>(),
-        );
-        self.context.copy_gpu_buffer(
-            self.patches_responses_buffer.clone(),
-            self.download_staging_buffer.clone(),
-            0,
-            self.responses_buffer.size,
-            self.patches_responses_buffer.size,
-        );
-        self.run_context();
-        let mut new_entries = vec![PointOffsetType::default(); requests.len()];
-        self.download_staging_buffer
-            .download_slice(&mut new_entries, 0);
-
-        let mut patches_data = vec![
-            PointOffsetType::default();
-            self.patches_responses_buffer.size
-                / std::mem::size_of::<PointOffsetType>()
-        ];
-        self.download_staging_buffer
-            .download_slice(&mut patches_data, self.responses_buffer.size);
-
-        let m = self.gpu_links.m;
-        let mut all_patches = vec![];
-        for i in 0..requests.len() {
-            let patch_size = m + 2;
-            let all_patches_size = (m + 1) * patch_size;
-            let mut patches_offset = i * all_patches_size;
-
-            let mut patches = vec![];
-            for _ in 0..m + 1 {
-                let point_id = patches_data[patches_offset];
-                if point_id == PointOffsetType::MAX {
-                    break;
-                }
-                let links_count = patches_data[patches_offset + 1] as usize;
-                let links = &patches_data[patches_offset + 2..patches_offset + 2 + links_count];
-                patches.push(GpuGraphLinksPatch {
-                    id: point_id,
-                    links: links.to_vec(),
-                });
-                patches_offset += patch_size;
-            }
-            all_patches.push(patches);
+        if prev_results_count > 0 {
+            let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
+            self.download_staging_buffer
+                .download_slice(&mut gpu_responses, 0);
+            Ok(gpu_responses)
+        } else {
+            Ok(vec![])
         }
-
-        Ok((all_patches, new_entries))
     }
 
     pub fn run_get_patch(
@@ -640,7 +622,8 @@ impl GpuSearchContext {
         points: &[PointOffsetType],
         graph_layers_builder: &GraphLayersBuilder,
     ) -> OperationResult<()> {
-        self.gpu_links.download_links(level, points, graph_layers_builder, &mut self.context)
+        self.gpu_links
+            .download_links(level, points, graph_layers_builder, &mut self.context)
     }
 
     pub fn clear(&mut self, new_m: usize) -> OperationResult<()> {
@@ -842,9 +825,12 @@ mod tests {
             });
         }
 
+        test.gpu_search_context
+            .greedy_search(&search_requests, 0)
+            .unwrap();
         let gpu_responses = test
             .gpu_search_context
-            .greedy_search(&search_requests)
+            .download_responses(groups_count)
             .unwrap();
 
         // Check response
@@ -882,10 +868,7 @@ mod tests {
             });
         }
 
-        let (patches, new_entries) = test
-            .gpu_search_context
-            .run_get_patch(&requests)
-            .unwrap();
+        let (patches, new_entries) = test.gpu_search_context.run_get_patch(&requests).unwrap();
 
         for (i, gpu_patches) in patches.iter().enumerate() {
             let fake_filter_context = FakeFilterContext {};
