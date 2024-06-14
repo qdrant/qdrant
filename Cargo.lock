@@ -480,7 +480,7 @@ version = "1.9.6-dev"
 dependencies = [
  "chrono",
  "common",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "parking_lot",
  "prost 0.11.9",
  "prost-build 0.11.9",
@@ -1134,7 +1134,7 @@ dependencies = [
  "indicatif",
  "io",
  "issues",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "lazy_static",
  "log",
  "merge",
@@ -2941,6 +2941,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4456,7 +4465,7 @@ dependencies = [
  "futures",
  "futures-util",
  "issues",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "jsonwebtoken",
  "log",
  "memory",
@@ -5393,7 +5402,7 @@ dependencies = [
  "io-uring",
  "is_sorted",
  "issues",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "macro_rules_attribute",
  "memmap2 0.9.4",
@@ -5774,7 +5783,7 @@ dependencies = [
  "half 2.4.1",
  "indicatif",
  "io",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "memmap2 0.9.4",
  "memory",
@@ -5832,7 +5841,7 @@ dependencies = [
  "http 0.2.9",
  "io",
  "issues",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "memory",
  "parking_lot",
@@ -5889,11 +5898,11 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.26.2"
+version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "rustversion",
