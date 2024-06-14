@@ -132,6 +132,19 @@ impl LocalShard {
                 .map(|scored_point| scored_point.id)
                 .collect::<Vec<PointIdType>>();
 
+            // Assert that the flattened list is in the same order as iterating over each of the inner lists.
+            debug_assert!({
+                let mut point_ids_iter = point_ids.iter();
+                query_response.iter().all(|intermediate| {
+                    intermediate.iter().all(|point| {
+                        point_ids_iter
+                            .next()
+                            .map(|id| *id == point.id)
+                            .unwrap_or(false)
+                    })
+                })
+            });
+
             let mut records_iter = SegmentsSearcher::retrieve(
                 self.segments(),
                 &point_ids,
