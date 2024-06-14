@@ -15,6 +15,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
+use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
@@ -191,11 +192,18 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.do_planned_query(
-            PlannedQuery::try_from(request.as_ref().to_owned())?,
-            search_runtime_handle,
-            timeout,
-        )
-        .await
+        let planned_query = PlannedQuery::try_from(request.as_ref().to_owned())?;
+
+        let planned_query_batch = PlannedQueryBatch::from(vec![planned_query]);
+
+        let mut batch_result = self
+            .do_planned_query_batch(planned_query_batch, search_runtime_handle, timeout)
+            .await?;
+
+        debug_assert_eq!(batch_result.len(), 1);
+
+        batch_result
+            .pop()
+            .ok_or_else(|| CollectionError::service_error("Query result is empty".to_string()))
     }
 }

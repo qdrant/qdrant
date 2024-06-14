@@ -6,9 +6,10 @@ use std::time::Duration;
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use itertools::{Itertools, PeekingNext};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{
-    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -18,9 +19,8 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     ScrollRequestInternal,
 };
-use crate::operations::universal_query::planned_query::{
-    MergeSources, PlannedQuery, RescoreParams, Source,
-};
+use crate::operations::universal_query::planned_query::{MergeSources, RescoreParams, Source};
+use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
 pub enum FetchedSource {
@@ -51,12 +51,12 @@ impl PrefetchHolder {
 }
 
 impl LocalShard {
-    pub async fn do_planned_query(
+    pub async fn do_planned_query_batch(
         &self,
-        request: PlannedQuery,
+        request: PlannedQueryBatch,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<ShardQueryResponse> {
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
@@ -75,45 +75,113 @@ impl LocalShard {
         let (core_results, scrolls) = tokio::try_join!(core_results_f, scrolls_f)?;
         let prefetch_holder = PrefetchHolder::new(core_results, scrolls);
 
+        let (all_merge_plans, all_with_payloads_or_vectors): (Vec<_>, Vec<_>) = request
+            .root_queries
+            .into_iter()
+            .map(|query_plan| {
+                (
+                    query_plan.merge_sources,
+                    (query_plan.with_payload, query_plan.with_vector),
+                )
+            })
+            .unzip();
+
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
-        let mut scored_points = self
-            .recurse_prefetch(
-                request.merge_sources,
+
+        let merge_futures = all_merge_plans.into_iter().map(|merge_plan| {
+            self.recurse_prefetch(
+                merge_plan,
                 &prefetch_holder,
                 search_runtime_handle,
                 timeout,
-                0, // initial depth
+                0,
             )
-            .await?;
+        });
+
+        let batched_scored_points = futures::future::try_join_all(merge_futures).await?;
 
         // fetch payload and/or vector for scored points if necessary
-        if request.with_payload.is_required() || request.with_vector.is_enabled() {
+        //
+        // TODO(universal-query): it might make sense to change this approach to fetch payload and vector at the collection level
+        // after the shard results merge, but it requires careful benchmarking
+        let fill_futures = batched_scored_points
+            .into_iter()
+            .zip(all_with_payloads_or_vectors)
+            .map(|(query_response, (with_payload, with_vector))| {
+                self.fill_with_payload_or_vectors(query_response, with_payload, with_vector)
+            });
+
+        let batched_scored_points = futures::future::try_join_all(fill_futures).await?;
+
+        Ok(batched_scored_points)
+    }
+
+    /// Fetches the payload and/or vector if required. This will filter out points if they are deleted between search and retrieve.
+    async fn fill_with_payload_or_vectors(
+        &self,
+        query_response: ShardQueryResponse,
+        with_payload: WithPayloadInterface,
+        with_vector: WithVector,
+    ) -> CollectionResult<ShardQueryResponse> {
+        let filled = if with_payload.is_required() || with_vector.is_enabled() {
             // ids to retrieve (deduplication happens in the searcher)
-            let point_ids = scored_points
+            let point_ids = query_response
                 .iter()
                 .flatten()
                 .map(|scored_point| scored_point.id)
                 .collect::<Vec<PointIdType>>();
 
-            // it might make sense to change this approach to fetch payload and vector at the collection level
-            // after the shard results merge, but it requires careful benchmarking
-            let mut records = SegmentsSearcher::retrieve(
+            // Assert that the flattened list is in the same order as iterating over each of the inner lists.
+            debug_assert!({
+                let mut point_ids_iter = point_ids.iter();
+                query_response.iter().all(|intermediate| {
+                    intermediate.iter().all(|point| {
+                        point_ids_iter
+                            .next()
+                            .map(|id| *id == point.id)
+                            .unwrap_or(false)
+                    })
+                })
+            });
+
+            let mut records_iter = SegmentsSearcher::retrieve(
                 self.segments(),
                 &point_ids,
-                &WithPayload::from(&request.with_payload),
-                &request.with_vector,
-            )?;
+                &(&with_payload).into(),
+                &with_vector,
+            )?
+            .into_iter()
+            .peekable();
 
-            // update scored points in place
-            for (scored_point, record) in scored_points.iter_mut().flatten().zip(records.iter_mut())
-            {
-                scored_point.payload = record.payload.take();
-                scored_point.vector = record.vector.take();
-            }
-        }
+            query_response
+                .into_iter()
+                .map(|intermediate| {
+                    intermediate
+                        .into_iter()
+                        // Points might get deleted between search and retrieve.
+                        // But it's not a problem, because we just filter them out.
+                        .filter_map(|mut scored_point| {
+                            match records_iter.peeking_next(|record| record.id == scored_point.id) {
+                                Some(mut record) => {
+                                    scored_point.payload = record.payload.take();
+                                    scored_point.vector = record.vector.take();
+                                    Some(scored_point)
+                                }
+                                None => {
+                                    // The record was not found, skip this scored point
+                                    None
+                                }
+                            }
+                        })
+                        .collect_vec()
+                })
+                .collect_vec()
+        } else {
+            query_response
+        };
 
-        Ok(scored_points)
+        Ok(filled)
     }
 
     fn recurse_prefetch<'shard, 'query>(

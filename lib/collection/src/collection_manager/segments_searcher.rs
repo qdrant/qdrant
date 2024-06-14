@@ -341,6 +341,8 @@ impl SegmentsSearcher {
     ///
     /// The points ids can contain duplicates, the records will be fetched only once
     /// and returned in the same order as the input points.
+    ///
+    /// If an id is not found in the segments, it won't be included in the output.
     pub fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
