@@ -91,7 +91,7 @@ pub async fn query_batch_internal(
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let batch_requests: Vec<_> = query_points
         .into_iter()
-        .map(|query_points| ShardQueryRequest::try_from(query_points))
+        .map(ShardQueryRequest::try_from)
         .try_collect()?;
 
     let timing = Instant::now();
