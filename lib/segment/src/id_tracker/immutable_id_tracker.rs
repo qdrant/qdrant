@@ -27,6 +27,7 @@ pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
 pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
 pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 
+#[derive(Debug)]
 pub struct ImmutableIdTracker {
     path: PathBuf,
 

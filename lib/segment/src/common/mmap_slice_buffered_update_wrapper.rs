@@ -1,6 +1,3 @@
-use crate::common::mmap_type::MmapSlice;
-use crate::common::Flusher;
-use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
@@ -13,6 +10,7 @@ use crate::common::Flusher;
 /// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
 /// This expects the underlying MmapSlice not to grow in size.
+#[derive(Debug)]
 pub struct MmapSliceBufferedUpdateWrapper<T>
 where
     T: 'static,

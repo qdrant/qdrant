@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
