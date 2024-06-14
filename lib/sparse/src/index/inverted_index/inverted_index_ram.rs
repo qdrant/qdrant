@@ -112,7 +112,9 @@ impl InvertedIndexRam {
                 .filter(|&dim_id| !vector.indices.contains(dim_id))
                 .map(|&dim_id| dim_id as usize);
             for dim_id in elements_to_delete {
-                self.postings[dim_id].delete(id);
+                if let Some(posting) = self.postings.get_mut(dim_id) {
+                    posting.delete(id);
+                }
             }
         }
 
