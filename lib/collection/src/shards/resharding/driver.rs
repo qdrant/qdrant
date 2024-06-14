@@ -200,6 +200,8 @@ fn completed_init(state: &PersistedState) -> bool {
 ///
 /// Do initialize the resharding process.
 fn stage_init(state: &PersistedState) -> CollectionResult<()> {
+    log::debug!("Resharding stage: init");
+
     state.write(|data| {
         data.bump_all_peers_to(Stage::S1_InitEnd);
     })?;
@@ -227,6 +229,8 @@ async fn stage_migrate_points(
     consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
+    log::debug!("Resharding stage: migrate points");
+
     state.write(|data| {
         data.bump_all_peers_to(Stage::S2_MigratePointsStart);
     })?;
@@ -377,6 +381,8 @@ async fn stage_replicate(
     collection_id: &CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
 ) -> CollectionResult<()> {
+    log::debug!("Resharding stage: replicate");
+
     state.write(|data| {
         data.bump_all_peers_to(Stage::S3_ReplicateStart);
     })?;
@@ -464,6 +470,7 @@ fn completed_commit_hashring() -> bool {
 ///
 /// Do commit the new hashring.
 fn stage_commit_hashring() -> CollectionResult<()> {
+    log::debug!("Resharding stage: commit hashring");
     todo!()
 }
 
@@ -478,6 +485,7 @@ fn completed_propagate_deletes() -> bool {
 ///
 /// Do delete migrated points from their old shards.
 fn stage_propagate_deletes() -> CollectionResult<()> {
+    log::debug!("Resharding stage: propagate deletes");
     todo!()
 }
 
@@ -485,6 +493,7 @@ fn stage_propagate_deletes() -> CollectionResult<()> {
 ///
 /// Finalize the resharding operation.
 fn stage_finalize() -> CollectionResult<()> {
+    log::debug!("Resharding stage: finalize");
     todo!()
 }
 
