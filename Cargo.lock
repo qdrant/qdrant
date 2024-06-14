@@ -5396,6 +5396,7 @@ dependencies = [
  "bincode",
  "bitpacking",
  "bitvec",
+ "byteorder",
  "cc",
  "cgroups-rs",
  "charabia",
