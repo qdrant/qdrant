@@ -130,7 +130,7 @@ generic-tests = "0.1.2"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
-itertools = "0.12"
+itertools = "0.13.0"
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
