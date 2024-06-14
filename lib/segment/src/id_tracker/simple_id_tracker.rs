@@ -28,6 +28,15 @@ pub(crate) enum StoredPointId {
     String(String),
 }
 
+impl From<&ExtendedPointId> for PointIdType {
+    fn from(point_id: &ExtendedPointId) -> Self {
+        match point_id {
+            ExtendedPointId::NumId(idx) => PointIdType::NumId(*idx),
+            ExtendedPointId::Uuid(uuid) => PointIdType::Uuid(*uuid),
+        }
+    }
+}
+
 impl From<&ExtendedPointId> for StoredPointId {
     fn from(point_id: &ExtendedPointId) -> Self {
         match point_id {

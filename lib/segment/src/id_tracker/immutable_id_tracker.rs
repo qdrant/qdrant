@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem::size_of_val;
 use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use serde::de::DeserializeOwned;
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
@@ -18,10 +16,8 @@ use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWr
 use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::id_tracker::immutable_id_tracker::point_mappings_deser::PointMappingVisitor;
-use crate::id_tracker::simple_id_tracker::StoredPointId;
 use crate::id_tracker::IdTracker;
-use crate::types::{PointIdType, SeqNumberType};
+use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
 pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
@@ -40,18 +36,129 @@ pub struct ImmutableIdTracker {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub(super) struct PointMappings {
-    pub(crate) internal_to_external: Vec<StoredPointId>,
+pub struct PointMappings {
+    pub(crate) internal_to_external: Vec<PointIdType>,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
     pub(crate) external_to_internal_num: BTreeMap<u64, PointOffsetType>,
     pub(crate) external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
 }
 
+type Byteorder = LittleEndian;
+
+impl PointMappings {
+    const EXTERNAL_ID_NUMBER_BYTE: u8 = 0;
+    const EXTERNAL_ID_UUID_BYTE: u8 = 1;
+
+    // TODO:
+    // - Describe storage layout in comment
+    // - Add code comments
+    // - Add tests for this load/store
+    // - Improve readability
+    // - Fix failing test causted by differently built BTreeMaps
+
+    pub fn load(file: &Path, filter: Option<&BitSlice>) -> OperationResult<Self> {
+        let mut reader = BufReader::new(File::open(file)?);
+
+        let len = reader.read_u64::<Byteorder>()? as usize;
+
+        let mut internal_to_external = Vec::with_capacity(len);
+        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
+        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
+
+        for i in 0..len {
+            let external_id_type = reader.read_u8()?;
+
+            let external_id = if external_id_type == Self::EXTERNAL_ID_NUMBER_BYTE {
+                let num = reader.read_u64::<Byteorder>()?;
+                PointIdType::NumId(num)
+            } else if external_id_type == Self::EXTERNAL_ID_UUID_BYTE {
+                let uuid_u128 = reader.read_u128::<Byteorder>()?;
+                PointIdType::Uuid(Uuid::from_u128(uuid_u128))
+            } else {
+                return Err(OperationError::InconsistentStorage {
+                    description: "Invalid byte read when deserializing Immutable id tracker"
+                        .to_string(),
+                });
+            };
+
+            let internal_id = reader.read_u32::<Byteorder>()? as PointOffsetType;
+
+            // Need to push this regardless of point deletion as the vecs index represents the internal id
+            // which would become wrong if we leave out entries.
+            internal_to_external.push(external_id);
+
+            let deleted = filter
+                .as_ref()
+                .and_then(|deleted| deleted.get(i).as_deref().copied())
+                .unwrap_or_default();
+
+            if deleted {
+                continue;
+            }
+
+            match external_id {
+                ExtendedPointId::NumId(num) => {
+                    external_to_internal_num.insert(num, internal_id);
+                }
+                ExtendedPointId::Uuid(uuid) => {
+                    external_to_internal_uuid.insert(uuid, internal_id);
+                }
+            }
+        }
+
+        // assert that the file has ben fully read.
+        #[cfg(debug_assertions)] // Only for dev builds
+        {
+            let mut buf = vec![];
+            let read_bytes = reader.read_to_end(&mut buf).unwrap();
+            assert_eq!(buf.len(), 0);
+            assert_eq!(read_bytes, 0);
+        }
+
+        Ok(PointMappings {
+            internal_to_external,
+            external_to_internal_num,
+            external_to_internal_uuid,
+        })
+    }
+
+    pub fn store(&self, file: &Path) -> OperationResult<()> {
+        let mut writer = BufWriter::new(File::create(file)?);
+
+        // Serialize the length
+        writer.write_u64::<Byteorder>(self.internal_to_external.len() as u64)?;
+
+        for external_id in self.internal_to_external.iter() {
+            // Serializing External ID
+            match external_id {
+                PointIdType::NumId(num) => {
+                    writer.write_u8(Self::EXTERNAL_ID_NUMBER_BYTE)?;
+                    writer.write_u64::<Byteorder>(*num)?;
+                }
+                PointIdType::Uuid(uuid) => {
+                    writer.write_u8(Self::EXTERNAL_ID_UUID_BYTE)?;
+                    writer.write_u128::<Byteorder>(uuid.to_u128_le())?;
+                }
+            }
+
+            let internal_id = match external_id {
+                PointIdType::NumId(n) => self.external_to_internal_num.get(n),
+                PointIdType::Uuid(u) => self.external_to_internal_uuid.get(u),
+            }
+            .unwrap();
+
+            // Serializing Internal ID
+            writer.write_u32::<Byteorder>(*internal_id)?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+}
+
 impl ImmutableIdTracker {
     pub fn open(segment_path: &Path) -> OperationResult<Self> {
-        let mappings = Self::deserialize_file(&Self::mappings_file_path(segment_path))?;
-
         let deleted_raw = open_write_mmap(&Self::deleted_file_path(segment_path))?;
         let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
         let deleted_bitvec = deleted_mmap.to_bitvec();
@@ -64,6 +171,11 @@ impl ImmutableIdTracker {
         let internal_to_version = internal_to_version_mapslice.to_vec();
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_mapslice);
+
+        let mappings = PointMappings::load(
+            &Self::mappings_file_path(segment_path),
+            Some(&deleted_bitvec),
+        )?;
 
         Ok(Self {
             path: segment_path.to_path_buf(),
@@ -88,7 +200,8 @@ impl ImmutableIdTracker {
             create_and_ensure_length(&deleted_filepath, deleted_size)?;
         }
 
-        let mut deleted_new = MmapBitSlice::try_from(open_write_mmap(&deleted_filepath)?, 0)?;
+        let deleted_mmap = open_write_mmap(&deleted_filepath)?;
+        let mut deleted_new = MmapBitSlice::try_from(deleted_mmap, 0)?;
         deleted_new[..deleted.len()].copy_from_bitslice(deleted);
         let deleted_wrapper = MmapBitSliceBufferedUpdateWrapper::new(deleted_new);
 
@@ -105,8 +218,8 @@ impl ImmutableIdTracker {
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
-        // Serialize the mappings with bincode and write them to disk
-        Self::serialize_file(&Self::mappings_file_path(path), &mappings)?;
+        // Write mappings to disk.
+        mappings.store(&Self::mappings_file_path(path))?;
 
         Ok(Self {
             path: path.to_path_buf(),
@@ -128,25 +241,6 @@ impl ImmutableIdTracker {
 
     pub(crate) fn mappings_file_path(base: &Path) -> PathBuf {
         base.join(MAPPINGS_FILE_NAME)
-    }
-
-    fn serialize_file<T: Serialize>(path: &Path, value: &T) -> OperationResult<()> {
-        let file = File::create(path)?;
-        let writer = BufWriter::new(file);
-        bincode::serialize_into(writer, value).map_err(|err| {
-            OperationError::InconsistentStorage {
-                description: format!("id tracker can't be serialized: {:?}", err),
-            }
-        })?;
-        Ok(())
-    }
-
-    fn deserialize_file<T: DeserializeOwned>(file: &Path) -> OperationResult<T> {
-        let file = File::open(file)?;
-        let reader = BufReader::new(file);
-        bincode::deserialize_from(reader).map_err(|err| OperationError::InconsistentStorage {
-            description: format!("id tracker can't be deserialized: {:?}", err),
-        })
     }
 }
 
@@ -206,8 +300,10 @@ impl IdTracker for ImmutableIdTracker {
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = match external_id {
-            PointIdType::NumId(num) => self.mappings.external_to_internal_num.get(&num).copied(),
-            PointIdType::Uuid(uuid) => self.mappings.external_to_internal_uuid.get(&uuid).copied(),
+            // We "temporarily" remove existing points from the BTreeMaps without writing them to disk
+            // because we remove deleted points of a previous load directly when loading.
+            PointIdType::NumId(num) => self.mappings.external_to_internal_num.remove(&num),
+            PointIdType::Uuid(uuid) => self.mappings.external_to_internal_uuid.remove(&uuid),
         };
 
         if let Some(internal_id) = internal_id {
@@ -366,6 +462,7 @@ impl IdTracker for ImmutableIdTracker {
     }
 }
 
+/*
 impl<'de> Deserialize<'de> for PointMappings {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -453,6 +550,7 @@ mod point_mappings_deser {
         }
     }
 }
+*/
 
 #[cfg(test)]
 mod test {
@@ -561,8 +659,6 @@ mod test {
 
         let mut loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
 
-        assert_eq!(old_mappings, loaded_id_tracker.mappings);
-
         // We may extend the length of deleted bitvec as memory maps need to be aligned to
         // a multiple of `usize-width`.
         assert_eq!(old_deleted, loaded_id_tracker.deleted[..old_deleted.len()]);
@@ -579,5 +675,59 @@ mod test {
         for i in id_tracker.iter_ids() {
             assert!(id_tracker.internal_version(i).is_some());
         }
+    }
+
+    #[test]
+    fn test_point_deletion_correctness() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let id_tracker = make_immutable_tracker(dir.path());
+        point_deletion_correctness(IdTrackerEnum::ImmutableIdTracker(id_tracker));
+    }
+
+    fn point_deletion_correctness(mut id_tracker: IdTrackerEnum) {
+        // No deletions yet
+        assert_eq!(
+            id_tracker.total_point_count(),
+            id_tracker.available_point_count()
+        );
+
+        let point_to_delete = PointIdType::NumId(100);
+
+        assert!(id_tracker.iter_external().contains(&point_to_delete));
+
+        assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
+
+        id_tracker.drop(point_to_delete).unwrap();
+
+        assert!(!point_exists(&id_tracker, point_to_delete));
+
+        assert_eq!(
+            id_tracker.available_point_count(),
+            id_tracker.total_point_count() - 1
+        );
+    }
+
+    fn point_exists(id_tracker: &IdTrackerEnum, point: PointIdType) -> bool {
+        id_tracker.internal_id(point).is_some()
+            && id_tracker.iter_external().contains(&point)
+            && id_tracker.iter_from(None).any(|i| i.0 == point)
+    }
+
+    #[test]
+    fn test_point_deletion_persists_reload() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let point_to_delete = PointIdType::NumId(100);
+
+        {
+            let mut id_tracker = make_immutable_tracker(dir.path());
+            id_tracker.drop(point_to_delete).unwrap();
+            id_tracker.versions_flusher()().unwrap();
+            id_tracker.mapping_flusher()().unwrap();
+        }
+
+        // Point should still be gone
+        let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        assert_eq!(id_tracker.internal_id(point_to_delete), None);
     }
 }
