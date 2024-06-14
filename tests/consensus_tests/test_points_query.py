@@ -49,6 +49,14 @@ def test_points_query(tmp_path: pathlib.Path):
         })
     assert_http_ok(r_two)
 
+    # add index on count field
+    r_index = requests.put(
+        f"{peer_api_uris[0]}/collections/test_collection/index?wait=true", json={
+            "field_name": "count",
+            "field_schema": "integer"
+        })
+    assert_http_ok(r_index)
+
     # Check that it exists on all peers
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
@@ -85,7 +93,9 @@ def test_points_query(tmp_path: pathlib.Path):
                     "id": 3,
                     "vector": [0.36, 0.55, 0.47, 0.94],
                     "payload": {
-                        "city": ["Berlin", "Moscow"]
+                        "city": ["Berlin", "Moscow"],
+                        "count": 2,
+
                     }
                 },
                 {
@@ -104,7 +114,10 @@ def test_points_query(tmp_path: pathlib.Path):
                 },
                 {
                     "id": 6,
-                    "vector": [0.35, 0.08, 0.11, 0.44]
+                    "vector": [0.35, 0.08, 0.11, 0.44],
+                    "payload": {
+                        "count": 4,
+                    }
                 },
                 {
                     "id": 7,
@@ -119,7 +132,10 @@ def test_points_query(tmp_path: pathlib.Path):
                 },
                 {
                     "id": 9,
-                    "vector": [0.30, 0.01, 0.1, 0.12]
+                    "vector": [0.30, 0.01, 0.1, 0.12],
+                    "payload": {
+                        "count": 3,
+                    }
                 },
                 {
                     "id": 10,
@@ -256,6 +272,37 @@ def test_points_query(tmp_path: pathlib.Path):
                 "filter": filter,
                 "limit": 5,
                 "with_payload": True,
+            }),
+        ),
+        (
+            # scroll order by `asc`
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "asc",
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "asc",
+            }),
+        )
+        ,
+        (
+            # scroll order by `desc`
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "desc",
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "desc",
             }),
         )
     ]
