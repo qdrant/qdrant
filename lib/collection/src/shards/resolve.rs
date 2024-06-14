@@ -4,7 +4,9 @@ use std::hash;
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
+use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::types::{CountResult, Record};
+use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResolveCondition {
@@ -51,13 +53,12 @@ impl Resolve for Vec<Record> {
 
 impl Resolve for Vec<Vec<ScoredPoint>> {
     fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
-        // batches: <replica_id, <batch_id, ScoredPoint>>
-        // transpose to <batch_id, <replica_id, ScoredPoint>>
+        // batches: <replica_id, <batch_id, ScoredPoints>>
+        // transpose to <batch_id, <replica_id, ScoredPoints>>
 
-        let batches = transpose(batches);
+        let batches = transposed_iter(batches);
 
         batches
-            .into_iter()
             .map(|points| {
                 let mut resolved =
                     Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
@@ -69,18 +70,18 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
     }
 }
 
-fn transpose<T>(vec: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    if vec.is_empty() {
-        return Vec::new();
+impl Resolve for Vec<ShardQueryResponse> {
+    fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
+        // batches: <replica_id, <batch_id, ShardQueryResponse>>
+        // transpose to <batch_id, <replica_id, ShardQueryResponse>>
+
+        let batches = transposed_iter(batches);
+
+        batches
+            .into_iter()
+            .map(|shard_responses| Resolve::resolve(shard_responses, condition))
+            .collect()
     }
-
-    let len = vec[0].len();
-
-    let mut iters: Vec<_> = vec.into_iter().map(IntoIterator::into_iter).collect();
-
-    (0..len)
-        .map(|_| iters.iter_mut().filter_map(Iterator::next).collect())
-        .collect()
 }
 
 fn record_eq(this: &Record, other: &Record) -> bool {
