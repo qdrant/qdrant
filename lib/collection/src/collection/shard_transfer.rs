@@ -57,8 +57,10 @@ impl Collection {
             shard_transfer.method.replace(method);
         }
 
-        let shard_id = shard_transfer.shard_id;
         let do_transfer = {
+            // Set state of target shard, in the case of resharding this will be a different shard
+            let shard_id = shard_transfer.to_shard_id.unwrap_or(shard_transfer.shard_id);
+
             let shards_holder = self.shards_holder.read().await;
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
