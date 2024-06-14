@@ -213,7 +213,39 @@ def test_points_query(tmp_path: pathlib.Path):
                 },
                 "limit": 5,
             })
+        ),
+        # request filter & source filters
+        (
+            ("query",{
+                "prefetch": [
+                    {
+                        "query": [0.2, 0.1, 0.9, 0.7],
+                        "filter": filter,
+                    }
+                ],
+                "query": {"fusion": "rrf"},
+                "limit": 5,
+                "offset": 1,
+                "with_vector": True,
+                "with_payload": True,
+                "score_threshold": 0.5
+            }),
+            ("query",{
+                "prefetch": [
+                    {
+                        "query": [0.2, 0.1, 0.9, 0.7],
+                    }
+                ],
+                "query": {"fusion": "rrf"},
+                "limit": 5,
+                "offset": 1,
+                "filter": filter,
+                "with_vector": True,
+                "with_payload": True,
+                "score_threshold": 0.5
+            })
         )
+
     ]
 
     # Verify that the results are the same across all peers
