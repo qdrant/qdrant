@@ -1,8 +1,9 @@
+use std::path::PathBuf;
+
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::path::PathBuf;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
