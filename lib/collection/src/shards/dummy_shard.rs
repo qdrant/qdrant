@@ -110,4 +110,13 @@ impl ShardOperation for DummyShard {
     ) -> CollectionResult<ShardQueryResponse> {
         self.dummy()
     }
+
+    async fn query_batch(
+        &self,
+        _request: Arc<Vec<ShardQueryRequest>>,
+        _search_runtime_handle: &Handle,
+        _timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        self.dummy()
+    }
 }

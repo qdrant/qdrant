@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -16,7 +17,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
-use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -205,5 +206,22 @@ impl ShardOperation for LocalShard {
         batch_result
             .pop()
             .ok_or_else(|| CollectionError::service_error("Query result is empty".to_string()))
+    }
+
+    async fn query_batch(
+        &self,
+        request: Arc<Vec<ShardQueryRequest>>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let planned_queries: Vec<_> = request
+            .iter()
+            .map(|shard_req| PlannedQuery::try_from(shard_req.clone()))
+            .try_collect()?;
+
+        let planned_query_batch = PlannedQueryBatch::from(planned_queries);
+
+        self.do_planned_query_batch(planned_query_batch, search_runtime_handle, timeout)
+            .await
     }
 }
