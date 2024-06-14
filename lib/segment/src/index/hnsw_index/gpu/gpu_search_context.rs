@@ -57,7 +57,9 @@ pub struct GpuSearchContext {
     pub insert_pipeline: Arc<gpu::Pipeline>,
 
     pub updates_timer: std::time::Duration,
+    pub updates_count: usize,
     pub patches_timer: std::time::Duration,
+    pub patches_count: usize,
 }
 
 impl GpuSearchContext {
@@ -303,7 +305,9 @@ impl GpuSearchContext {
             insert_descriptor_set,
             insert_pipeline,
             updates_timer: Default::default(),
+            updates_count: 0,
             patches_timer: Default::default(),
+            patches_count: 0,
         })
     }
 
@@ -439,6 +443,8 @@ impl GpuSearchContext {
         self.run_context();
 
         self.updates_timer += timer.elapsed();
+        self.updates_count += 1;
+
         if prev_results_count > 0 {
             let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
             self.download_staging_buffer
@@ -502,6 +508,8 @@ impl GpuSearchContext {
         self.run_context();
 
         self.patches_timer += timer.elapsed();
+        self.patches_count += 1;
+
         if prev_results_count > 0 {
             let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
             self.download_staging_buffer

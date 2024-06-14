@@ -88,10 +88,6 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         }
         let is_gpu_ready = self.gpu_processed.load(Ordering::Relaxed) == self.points_count;
         if min_cpu_points_achived && is_new_chunk && is_gpu_ready {
-            log::info!(
-                "All conditions to stop cpu at level {} are true",
-                self.level
-            );
             return None;
         }
 
@@ -363,12 +359,16 @@ impl GpuGraphBuilder {
         {
             let mut gpu_search_context = self.gpu_search_context.lock();
             println!(
-                "Gpu graph patches time: {:?}",
-                &gpu_search_context.patches_timer
+                "Gpu graph patches time: {:?}, count {:?}, avg {:?}",
+                &gpu_search_context.patches_timer,
+                gpu_search_context.patches_count,
+                gpu_search_context.patches_timer / gpu_search_context.patches_count as u32,
             );
             println!(
-                "Gpu graph update entries time: {:?}",
-                &gpu_search_context.updates_timer
+                "Gpu graph update entries time: {:?}, count {:?}, avg {:?}",
+                &gpu_search_context.updates_timer,
+                gpu_search_context.updates_count,
+                gpu_search_context.updates_timer / gpu_search_context.updates_count as u32,
             );
             if gpu_search_context.is_dirty_links {
                 gpu_search_context.apply_links_patch()?;
