@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::{common::operation_error::{OperationError, OperationResult}, index::hnsw_index::graph_layers_builder::GraphLayersBuilder};
 
 #[repr(C)]
 struct GpuLinksParamsBuffer {
@@ -160,6 +160,57 @@ impl GpuLinks {
         self.patch_buffer.upload_slice(links, patch_start_index);
         self.patched_points.push((point_id, links.len()));
 
+        Ok(())
+    }
+
+    pub fn download_links(
+        &mut self,
+        level: usize,
+        points: &[PointOffsetType],
+        graph_layers_builder: &GraphLayersBuilder,
+        context: &mut gpu::Context,
+    ) -> OperationResult<()> {
+        let timer = std::time::Instant::now();
+
+        let links_patch_capacity = self.max_patched_points * (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
+        let download_buffer = Arc::new(gpu::Buffer::new(
+            self.device.clone(),
+            gpu::BufferType::GpuToCpu,
+            links_patch_capacity,
+        ));
+
+        for chunk_index in 0..points.len().div_ceil(self.max_patched_points) {
+            let start = chunk_index * self.max_patched_points;
+            let end = (start + self.max_patched_points).min(points.len());
+            let chunk_size = end - start;
+            for index in start..end {
+                let point_id = points[index] as usize;
+                let links_size = (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
+                context.copy_gpu_buffer(
+                    self.links_buffer.clone(),
+                    download_buffer.clone(),
+                    point_id * links_size,
+                    (index - start) * links_size,
+                    links_size,
+                );
+            }
+            context.run();
+            context.wait_finish();
+
+            let mut links = vec![PointOffsetType::default(); chunk_size * (self.links_capacity + 1)];
+            download_buffer.download_slice(&mut links, 0);
+
+            for (index, chunk) in links.chunks(self.links_capacity + 1).enumerate() {
+                let point_id = points[start + index] as usize;
+                let links_count = chunk[0] as usize;
+                let links = &chunk[1..=links_count];
+                let mut dst = graph_layers_builder.links_layers[point_id][level].write();
+                dst.clear();
+                dst.extend_from_slice(links);
+            }
+        }
+
+        println!("Downloading links for level {} in time {:?}", level, timer.elapsed());
         Ok(())
     }
 }

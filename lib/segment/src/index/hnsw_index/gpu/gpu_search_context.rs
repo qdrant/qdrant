@@ -9,6 +9,7 @@ use super::gpu_nearest_heap::GpuNearestHeap;
 use super::gpu_vector_storage::{GpuVectorStorage, GpuVectorStorageElementType};
 use super::gpu_visited_flags::GpuVisitedFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Clone, Copy, Debug)]
@@ -41,7 +42,6 @@ pub struct GpuSearchContext {
     pub requests_buffer: Arc<gpu::Buffer>,
     pub responses_buffer: Arc<gpu::Buffer>,
 
-    pub greedy_responses_buffer: Arc<gpu::Buffer>,
     pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
     pub greedy_pipeline: Arc<gpu::Pipeline>,
 
@@ -99,12 +99,6 @@ impl GpuSearchContext {
             groups_count * std::mem::size_of::<PointOffsetType>(),
         ));
 
-        let greedy_responses_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
-
         let greedy_search_shader = Arc::new(gpu::Shader::new(
             device.clone(),
             match gpu_vector_storage.element_type {
@@ -130,7 +124,7 @@ impl GpuSearchContext {
         let greedy_descriptor_set =
             gpu::DescriptorSet::builder(greedy_descriptor_set_layout.clone())
                 .add_storage_buffer(0, requests_buffer.clone())
-                .add_storage_buffer(1, greedy_responses_buffer.clone())
+                .add_storage_buffer(1, responses_buffer.clone())
                 .build();
 
         let greedy_pipeline = gpu::Pipeline::builder()
@@ -283,10 +277,7 @@ impl GpuSearchContext {
         let download_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::GpuToCpu,
-            std::cmp::max(
-                greedy_responses_buffer.size,
-                patches_responses_buffer.size + responses_buffer.size,
-            ),
+            patches_responses_buffer.size + responses_buffer.size,
         ));
 
         Ok(Self {
@@ -303,7 +294,6 @@ impl GpuSearchContext {
             download_staging_buffer,
             requests_buffer,
             responses_buffer,
-            greedy_responses_buffer,
             greedy_descriptor_set,
             greedy_pipeline,
             search_responses_buffer,
@@ -317,6 +307,24 @@ impl GpuSearchContext {
             updates_timer: Default::default(),
             patches_timer: Default::default(),
         })
+    }
+
+    pub fn download_responses(
+        &mut self,
+        count: usize,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        self.context.copy_gpu_buffer(
+            self.responses_buffer.clone(),
+            self.download_staging_buffer.clone(),
+            0,
+            0,
+            count * std::mem::size_of::<PointOffsetType>(),
+        );
+        self.run_context();
+        let mut gpu_responses = vec![PointOffsetType::default(); count];
+        self.download_staging_buffer
+            .download_slice(&mut gpu_responses, 0);
+        Ok(gpu_responses)
     }
 
     pub fn search(
@@ -423,19 +431,7 @@ impl GpuSearchContext {
         self.run_context();
         self.updates_timer += timer.elapsed();
 
-        // Download response
-        self.context.copy_gpu_buffer(
-            self.greedy_responses_buffer.clone(),
-            self.download_staging_buffer.clone(),
-            0,
-            0,
-            requests.len() * std::mem::size_of::<PointOffsetType>(),
-        );
-        self.run_context();
-        let mut gpu_responses = vec![PointOffsetType::default(); requests.len()];
-        self.download_staging_buffer
-            .download_slice(&mut gpu_responses, 0);
-        Ok(gpu_responses)
+        self.download_responses(requests.len())
     }
 
     pub fn run_insert_vector(
@@ -636,6 +632,15 @@ impl GpuSearchContext {
     ) -> OperationResult<()> {
         self.is_dirty_links = true;
         self.gpu_links.set_links(point_id, links)
+    }
+
+    pub fn download_links(
+        &mut self,
+        level: usize,
+        points: &[PointOffsetType],
+        graph_layers_builder: &GraphLayersBuilder,
+    ) -> OperationResult<()> {
+        self.gpu_links.download_links(level, points, graph_layers_builder, &mut self.context)
     }
 
     pub fn clear(&mut self, new_m: usize) -> OperationResult<()> {

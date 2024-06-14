@@ -257,6 +257,8 @@ impl GpuGraphBuilder {
         groups_count: usize,
         min_cpu_linked_points_count: usize,
     ) -> Vec<Range<usize>> {
+        let timer = std::time::Instant::now();
+
         let num_vectors = ids.len();
         let mut chunks: Vec<_> = (0..num_vectors.div_ceil(groups_count))
             .map(|start| {
@@ -290,6 +292,8 @@ impl GpuGraphBuilder {
                 assert_eq!(chunk_pair[0].end, chunk_pair[1].start);
             }
         }
+
+        println!("Initial chunks time: {:?}", timer.elapsed());
 
         chunks
     }
@@ -517,6 +521,8 @@ impl GpuGraphBuilder {
                     .collect_vec()
             };
             ids_to_upload.push(first_point_id);
+
+            let timer = std::time::Instant::now();
             for links_upload_slice in
                 ids_to_upload.chunks(gpu_search_context.gpu_links.max_patched_points)
             {
@@ -527,6 +533,9 @@ impl GpuGraphBuilder {
                 gpu_search_context.apply_links_patch()?;
                 gpu_search_context.run_context();
             }
+            println!("Upload links time: {:?}", timer.elapsed());
+
+            let mut linked_points_count = chunks[start_chunk_index].start;
 
             for chunk_index in start_chunk_index..chunks.len() {
                 let chunk = chunks[chunk_index].clone();
@@ -538,13 +547,38 @@ impl GpuGraphBuilder {
                         &mut gpu_search_context,
                         points.clone(),
                         graph_layers_builder.clone(),
-                        chunk,
+                        chunk.clone(),
                         level,
                     )?;
+                    linked_points_count = chunk.end;
                 }
 
                 gpu_processed.store(chunks[chunk_index].end, Ordering::Relaxed);
             }
+
+            let mut download_ids = vec![first_point_id];
+            download_ids.extend(points[0..linked_points_count].iter().map(|p| p.point_id));
+            println!("Linked points count: {}", download_ids.len());
+
+            {// TODO(gpu): remove test cleaning
+                if gpu_search_context.is_dirty_links {
+                    gpu_search_context.apply_links_patch()?;
+                    gpu_search_context.run_context();
+                }
+                for point_id in 0..graph_layers_builder.links_layers.len() {
+                    if graph_layers_builder.get_point_level(point_id as PointOffsetType) < level {
+                        continue;
+                    }
+                    let mut links = graph_layers_builder.links_layers[point_id][level].write();
+                    links.clear();
+                }
+            }
+
+            gpu_search_context.download_links(
+                level,
+                &download_ids,
+                graph_layers_builder.as_ref(),
+            )?;
 
             Ok(())
         }))
