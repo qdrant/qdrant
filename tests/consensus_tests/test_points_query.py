@@ -345,11 +345,18 @@ def test_points_query(tmp_path: pathlib.Path):
                 r_two = apply_json_path(r_two, extract2)
 
             # assert same number of results
-            assert len(r_one) == len(r_two)
+            assert len(r_one) == len(r_two), f"Different number of results for {action1} and {action2}"
+            print(action1)
+            print(body1)
+            print(r_one)
+            print("VS")
+            print(action2)
+            print(body2)
+            print(r_two)
             # search equivalent results
-            assert set(str(d) for d in r_one) == set(str(d) for d in r_two)
+            assert set(str(d) for d in r_one) == set(str(d) for d in r_two), f"Different results for {action1} and {action2}"
             # assert stable across peers
-            assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one)
+            assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one), f"Different results for {action1} and {action2}"
 
 def apply_json_path(json_obj, json_path):
     if json_path is None:
