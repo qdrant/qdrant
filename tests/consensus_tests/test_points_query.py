@@ -145,10 +145,11 @@ def test_points_query(tmp_path: pathlib.Path):
     }
 
     # pairs of requests that should produce the same results
-    list_of_pairs = [
+    # each element is ("request path", "extract key", "request body")
+    list_of_equivalences = [
         # nearest search & query with filter
         (
-            ("search", {
+            ("search", None, {
                 "vector": [0.2, 0.1, 0.9, 0.7],
                 "limit": 5,
                 "offset": 1,
@@ -157,7 +158,7 @@ def test_points_query(tmp_path: pathlib.Path):
                 "with_payload": True,
                 "score_threshold": 0.5
             }),
-            ("query",{
+            ("query", None,{
                 "query": [0.2, 0.1, 0.9, 0.7],
                 "limit": 5,
                 "offset": 1,
@@ -169,12 +170,12 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         # recommend & query recommend
         (
-            ("recommend", {
+            ("recommend", None, {
                 "positive": [1, 2, 3, 4],
                 "negative": [3],
                 "limit": 5,
             }),
-            ("query",{
+            ("query", None, {
                 "query":  {
                     "recommend": {
                         "positive": [1, 2, 3, 4],
@@ -186,12 +187,12 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         # discover & query discover
         (
-            ("discover", {
+            ("discover", None, {
                 "target": 2,
                 "context": [{"positive": 3, "negative": 4}],
                 "limit": 5,
             }),
-            ("query",{
+            ("query", None, {
                 "query":  {
                     "discover": {
                         "target": 2,
@@ -203,11 +204,11 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         # context & query context
         (
-            ("discover", {
+            ("discover", None, {
                 "context": [{"positive": 2, "negative": 4}],
                 "limit": 5,
             }),
-            ("query",{
+            ("query", None, {
                 "query":  {
                     "context": [{"positive": 2, "negative": 4}]
                 },
@@ -216,7 +217,7 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         # request filter & source filters
         (
-            ("query",{
+            ("query", None, {
                 "prefetch": [
                     {
                         "query": [0.2, 0.1, 0.9, 0.7],
@@ -230,7 +231,7 @@ def test_points_query(tmp_path: pathlib.Path):
                 "with_payload": True,
                 "score_threshold": 0.5
             }),
-            ("query",{
+            ("query", None, {
                 "prefetch": [
                     {
                         "query": [0.2, 0.1, 0.9, 0.7],
@@ -244,42 +245,57 @@ def test_points_query(tmp_path: pathlib.Path):
                 "with_payload": True,
                 "score_threshold": 0.5
             })
+        ),
+        (
+            # scroll
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "with_payload": True,
+            }),
         )
-
     ]
 
     # Verify that the results are the same across all peers
-    for (action1, body1), (action2, body2) in list_of_pairs:
+    for (action1, extract1, body1), (action2, extract2, body2) in list_of_equivalences:
         # Capture result from first peer
         r_init_one = requests.post(
             f"{peer_api_uris[0]}/collections/test_collection/points/{action1}",
-            params= {"consistency": "all"},
+            params={"consistency":"all"},
             json=body1
         )
         assert_http_ok(r_init_one)
         r_init_one = r_init_one.json()["result"]
+        if extract1:
+            r_init_one = apply_json_path(r_init_one, extract1)
 
         # Loop through all peers
         for uri in peer_api_uris:
             # first request
             r_one = requests.post(
                 f"{uri}/collections/test_collection/points/{action1}",
-                params= {"consistency": "all"},
+                params={"consistency":"all"},
                 json=body1
             )
             assert_http_ok(r_one)
             r_one = r_one.json()["result"]
-            is_sorted_by_score(r_one)
+            if extract1:
+                r_one = apply_json_path(r_one, extract1)
 
             # second request
             r_two = requests.post(
                 f"{uri}/collections/test_collection/points/{action2}",
-                params= {"consistency": "all"},
+                params={"consistency":"all"},
                 json=body2
             )
             assert_http_ok(r_two)
             r_two = r_two.json()["result"]
-            is_sorted_by_score(r_two)
+            if extract2:
+                r_two = apply_json_path(r_two, extract2)
 
             # assert same number of results
             assert len(r_one) == len(r_two)
@@ -288,6 +304,12 @@ def test_points_query(tmp_path: pathlib.Path):
             # assert stable across peers
             assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one)
 
-def is_sorted_by_score(list_of_dicts):
-    key = "score"
-    return all(d1[key] <= d2[key] for d1, d2 in zip(list_of_dicts, list_of_dicts[1:]))
+def apply_json_path(json_obj, json_path):
+    if json_path is None:
+        return json_obj
+    for key in json_path.split("."):
+        if isinstance(json_obj, list):
+            # return [apply_json_path(item, key) for item in json_obj]
+            return [item[key] for item in json_obj]
+        json_obj = json_obj[key]
+    return json_obj
