@@ -155,8 +155,8 @@ fn main() -> anyhow::Result<()> {
         segment::index::hnsw_index::gpu::set_gpu_force_half_precision(
             settings_gpu.force_half_precision,
         );
-        if let Some(max_warps) = &settings_gpu.max_warps {
-            segment::index::hnsw_index::gpu::set_gpu_max_groups_count(*max_warps);
+        if let Some(max_memory_mb) = &settings_gpu.max_memory_mb {
+            segment::index::hnsw_index::gpu::set_gpu_max_memory_mb(*max_memory_mb);
         }
     }
 

@@ -131,7 +131,7 @@ pub struct GpuConfig {
     pub force_half_precision: bool,
     #[serde(default)]
     #[validate(range(min = 1))]
-    pub max_warps: Option<usize>,
+    pub max_memory_mb: Option<usize>,
     #[serde(default)]
     pub device_index: usize,
     #[serde(default)]

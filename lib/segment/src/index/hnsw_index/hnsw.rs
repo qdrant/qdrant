@@ -776,7 +776,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     &pool,
                     &graph_layers_builder,
                     None,
-                    get_gpu_max_groups_count(),
+                    get_gpu_max_groups_count(
+                        vector_storage.available_size_in_bytes(),
+                        total_vector_count,
+                        self.config.m0,
+                        self.config.ef_construct,
+                    ),
                     &vector_storage,
                     num_entries,
                     get_gpu_force_half_precision(),

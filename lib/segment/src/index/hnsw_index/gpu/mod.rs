@@ -8,10 +8,12 @@ pub mod gpu_visited_flags;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use common::types::{PointOffsetType, ScoredPointOffset};
+
 static GPU_INDEXING: AtomicBool = AtomicBool::new(false);
 static GPU_FORCE_HALF_PRECISION: AtomicBool = AtomicBool::new(false);
-static GPU_MAX_GROUPS_COUNT: AtomicUsize = AtomicUsize::new(GPU_MAX_GROUPS_COUNT_DEFAULT);
-pub const GPU_MAX_GROUPS_COUNT_DEFAULT: usize = 256;
+static GPU_MAX_MEMORY_MB: AtomicUsize = AtomicUsize::new(0);
+pub const GPU_MAX_GROUPS_COUNT_DEFAULT: usize = 2048;
 
 pub fn set_gpu_indexing(gpu_indexing: bool) {
     GPU_INDEXING.store(gpu_indexing, Ordering::Relaxed);
@@ -29,10 +31,34 @@ pub fn get_gpu_force_half_precision() -> bool {
     GPU_FORCE_HALF_PRECISION.load(Ordering::Relaxed)
 }
 
-pub fn set_gpu_max_groups_count(count: usize) {
-    GPU_MAX_GROUPS_COUNT.store(count, Ordering::Relaxed);
+pub fn set_gpu_max_memory_mb(memory_mb: usize) {
+    GPU_MAX_MEMORY_MB.store(memory_mb, Ordering::Relaxed);
 }
 
-pub fn get_gpu_max_groups_count() -> usize {
-    GPU_MAX_GROUPS_COUNT.load(Ordering::Relaxed)
+pub fn get_gpu_max_memory_mb() -> usize {
+    GPU_MAX_MEMORY_MB.load(Ordering::Relaxed)
+}
+
+pub fn get_gpu_max_groups_count(
+    vector_storage_size: usize,
+    num_vectors: usize,
+    m0: usize,
+    ef: usize,
+) -> usize {
+    if get_gpu_max_memory_mb() != 0 {
+        let links_size = num_vectors * (m0 + 1) * std::mem::size_of::<PointOffsetType>();
+        let nearest_heap_size = ef * std::mem::size_of::<ScoredPointOffset>();
+        let candidates_heap_size = 10_000 * std::mem::size_of::<ScoredPointOffset>();
+        let visited_flags_size = num_vectors * std::mem::size_of::<u8>();
+
+        let left_memory =
+            (get_gpu_max_memory_mb() * 1024 * 1024).checked_sub(links_size + vector_storage_size);
+        if let Some(left_memory) = left_memory {
+            left_memory / (nearest_heap_size + candidates_heap_size + visited_flags_size)
+        } else {
+            128
+        }
+    } else {
+        GPU_MAX_GROUPS_COUNT_DEFAULT
+    }
 }
