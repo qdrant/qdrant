@@ -22,8 +22,6 @@
 
 #ifdef VECTOR_STORAGE_ELEMENT_UINT8
 
-#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
-
 float dot_u8vec4(u8vec4 a, u8vec4 b) {
     uint sum = uint(a.x) * uint(b.x) + uint(a.y) * uint(b.y) + uint(a.z) * uint(b.z) + uint(a.w) * uint(b.w);
     return float(sum);

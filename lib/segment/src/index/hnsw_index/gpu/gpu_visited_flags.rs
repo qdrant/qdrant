@@ -44,7 +44,7 @@ impl GpuVisitedFlags {
         ));
 
         let params = GpuVisitedFlagsParamsBuffer {
-            capacity: (points_count as u32) / 4,
+            capacity: points_count as u32,
             generation: 1,
         };
         params_staging_buffer.upload(&params, 0);

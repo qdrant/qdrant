@@ -17,18 +17,45 @@ bool process_candidate(ScoredPoint scored_point) {
     return true;
 }
 
-bool process_link(POINT_ID point_id, POINT_ID link) {
-    if (check_and_process_visited(link)) {
-        float score = similarity(point_id, link);
-        ScoredPoint scored_point = ScoredPoint(link, score);
-        return process_candidate(scored_point);
+bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
+    uint links_count = LINKS_COUNT(candidate_id);
+    uint subgroup_link = 0;
+    bool subgroup_is_visited = true;
+    uint invocation = SUBGROUP_INVOKATION_ID;
+
+    for (uint i = 0; i < links_count; i++) {
+        if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+            subgroup_link = GET_LINK(candidate_id, i + invocation);
+            subgroup_is_visited = is_visited(subgroup_link);
+            if (!subgroup_is_visited) {
+                mark_visited(subgroup_link);
+            }
+        }
+
+        uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+        bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
+
+        if (!is_visited) {
+            float score = similarity(point_id, link);
+            ScoredPoint scored_point = ScoredPoint(link, score);
+            bool success = process_candidate(scored_point);
+            if (!success) {
+                return false;
+            }
+        }
     }
+
+    // flush all changed visited flags
+    groupMemoryBarrier();
+
     return true;
 }
 
 uint search(POINT_ID point_id, ScoredPoint entry) {
-    check_and_process_visited(point_id);
-    check_and_process_visited(entry.id);
+    if (subgroupElect()) {
+        mark_visited(point_id);
+        mark_visited(entry.id);
+    }
     push_nearest(entry);
     push_candidate(entry);
     
@@ -37,20 +64,10 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
         if (candidate.score < nearest_smaller.score) {
             continue;
         }
-        LINKS_FOREACH(candidate.id) {
-            bool success = process_link(point_id, LINKS_FOREACH_VALUE);
-            if (!success) {
-                return UINT_MAX;
-            }
-        }
+        process_candidate(point_id, candidate.id);
     }
 
-    LINKS_FOREACH(point_id) {
-        bool success = process_link(point_id, LINKS_FOREACH_VALUE);
-        if (!success) {
-            return UINT_MAX;
-        }
-    }
+    process_candidate(point_id, point_id);
 
     sort_nearest();
     return nearest_count;
@@ -59,14 +76,24 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     bool changed = true;
     ScoredPoint result = entry;
+
+    uint subgroup_link = 0;
+    uint invocation = SUBGROUP_INVOKATION_ID;
+
     while (changed) {
         changed = false;
 
-        LINKS_FOREACH(result.id) {
-            float score = similarity(point_id, LINKS_FOREACH_VALUE);
+        uint links_count = LINKS_COUNT(result.id);
+        for (uint i = 0; i < links_count; i++) {
+            if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
+                subgroup_link = GET_LINK(result.id, i + invocation);
+            }
+            uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+
+            float score = similarity(point_id, link);
             if (score > result.score) {
                 changed = true;
-                result = ScoredPoint(LINKS_FOREACH_VALUE, score);
+                result = ScoredPoint(link, score);
             }
         }
     }
