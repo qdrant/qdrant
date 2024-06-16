@@ -24,27 +24,27 @@ use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
 pub enum FetchedSource {
-    Core(usize),
+    Search(usize),
     Scroll(usize),
 }
 
-struct PrefetchHolder {
-    core_results: Vec<Vec<ScoredPoint>>,
-    scrolls: Vec<Vec<ScoredPoint>>,
+struct PrefetchResults {
+    search_results: Vec<Vec<ScoredPoint>>,
+    scroll_results: Vec<Vec<ScoredPoint>>,
 }
 
-impl PrefetchHolder {
-    fn new(core_results: Vec<Vec<ScoredPoint>>, scrolls: Vec<Vec<ScoredPoint>>) -> Self {
+impl PrefetchResults {
+    fn new(search_results: Vec<Vec<ScoredPoint>>, scroll_results: Vec<Vec<ScoredPoint>>) -> Self {
         Self {
-            core_results,
-            scrolls,
+            search_results,
+            scroll_results,
         }
     }
 
     fn get(&self, element: FetchedSource) -> CollectionResult<Cow<'_, Vec<ScoredPoint>>> {
         match element {
-            FetchedSource::Core(idx) => self.core_results.get(idx).map(Cow::Borrowed),
-            FetchedSource::Scroll(idx) => self.scrolls.get(idx).map(Cow::Borrowed),
+            FetchedSource::Search(idx) => self.search_results.get(idx).map(Cow::Borrowed),
+            FetchedSource::Scroll(idx) => self.scroll_results.get(idx).map(Cow::Borrowed),
         }
         .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
     }
@@ -60,7 +60,7 @@ impl LocalShard {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
-        let core_results_f = self.do_search(
+        let searches_f = self.do_search(
             Arc::new(CoreSearchRequestBatch {
                 searches: request.searches,
             }),
@@ -72,8 +72,8 @@ impl LocalShard {
             self.query_scroll_batch(Arc::new(request.scrolls), search_runtime_handle, timeout);
 
         // execute both searches and scrolls concurrently
-        let (core_results, scrolls) = tokio::try_join!(core_results_f, scrolls_f)?;
-        let prefetch_holder = PrefetchHolder::new(core_results, scrolls);
+        let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
+        let prefetch_holder = PrefetchResults::new(search_results, scroll_results);
 
         let (all_merge_plans, all_with_payloads_or_vectors): (Vec<_>, Vec<_>) = request
             .root_queries
@@ -187,7 +187,7 @@ impl LocalShard {
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
         merge_sources: MergeSources,
-        prefetch_holder: &'query PrefetchHolder,
+        prefetch_holder: &'query PrefetchResults,
         search_runtime_handle: &'shard Handle,
         timeout: Duration,
         depth: usize,
@@ -203,7 +203,7 @@ impl LocalShard {
             for source in merge_sources.sources.into_iter() {
                 match source {
                     Source::SearchesIdx(idx) => {
-                        cow_sources.push(prefetch_holder.get(FetchedSource::Core(idx))?)
+                        cow_sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)
                     }
                     Source::ScrollsIdx(idx) => {
                         cow_sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
