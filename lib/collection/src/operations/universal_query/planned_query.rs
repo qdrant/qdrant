@@ -91,7 +91,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             params,
         } = request;
 
-        let mut core_searches = Vec::new();
+        let mut searches = Vec::new();
         let mut scrolls = Vec::new();
         let offset;
 
@@ -103,13 +103,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 )));
             }
             offset = req_offset;
-            let sources = recurse_prefetches(
-                &mut core_searches,
-                &mut scrolls,
-                prefetches,
-                offset,
-                req_filter,
-            )?;
+            let sources =
+                recurse_prefetches(&mut searches, &mut scrolls, prefetches, offset, req_filter)?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
@@ -139,7 +134,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                         limit,
                     };
 
-                    core_searches.push(core_search);
+                    searches.push(core_search);
 
                     offset = 0; // already handled by the core search
 
@@ -195,7 +190,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         Ok(Self {
             merge_plan: merge_sources,
-            searches: core_searches,
+            searches,
             scrolls,
             offset,
         })
