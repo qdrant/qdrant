@@ -12,21 +12,21 @@ use tokio::runtime::Handle;
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{CollectionError, CollectionResult, Record, ScrollRequestInternal};
+use crate::operations::types::{
+    CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollRequestInternal,
+};
 
 impl LocalShard {
     /// Basic parallel batching, it is conveniently used for the universal query API.
     pub(super) async fn query_scroll_batch(
         &self,
-        batch: Arc<Vec<ScrollRequestInternal>>,
+        batch: Arc<Vec<QueryScrollRequestInternal>>,
         search_runtime_handle: &Handle,
         timeout: Duration,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let default_request = ScrollRequestInternal::default();
-
         let scrolls = batch
             .iter()
-            .map(|request| self.query_scroll(request, &default_request, search_runtime_handle));
+            .map(|request| self.query_scroll(request, search_runtime_handle));
 
         // execute all the scrolls concurrently
         let all_scroll_results = try_join_all(scrolls);
@@ -44,11 +44,10 @@ impl LocalShard {
     /// Scroll a single page, to be used for the universal query API only.
     async fn query_scroll(
         &self,
-        request: &ScrollRequestInternal,
-        default_request: &ScrollRequestInternal,
+        request: &QueryScrollRequestInternal,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let ScrollRequestInternal {
+        let QueryScrollRequestInternal {
             offset,
             limit,
             with_vector,
@@ -57,42 +56,46 @@ impl LocalShard {
             with_payload,
         } = request;
 
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit()) + offset;
+
+        let offset_id = None;
+
         let with_payload = with_payload
             .as_ref()
-            .or(default_request.with_payload.as_ref())
-            .unwrap();
+            .cloned()
+            .unwrap_or(ScrollRequestInternal::default_with_payload());
+
         let order_by = order_by.clone().map(OrderBy::from);
 
-        match order_by {
+        let point_results = match order_by {
             None => self
                 .scroll_by_id(
-                    *offset,
-                    limit.or(default_request.limit).unwrap(),
-                    with_payload,
+                    offset_id,
+                    limit,
+                    &with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
                 )
-                .await
-                .map(|records| {
-                    records
-                        .into_iter()
-                        .map(|record| ScoredPoint {
-                            id: record.id,
-                            version: 0,
-                            score: 0.0,
-                            payload: record.payload,
-                            vector: record.vector,
-                            shard_key: record.shard_key,
-                            order_value: None,
-                        })
-                        .collect()
-                }),
+                .await?
+                .into_iter()
+                .skip(offset)
+                .map(|record| ScoredPoint {
+                    id: record.id,
+                    version: 0,
+                    score: 0.0,
+                    payload: record.payload,
+                    vector: record.vector,
+                    shard_key: record.shard_key,
+                    order_value: None,
+                })
+                .collect(),
             Some(order_by) => {
                 let (records, values) = self
                     .scroll_by_field(
-                        limit.or(default_request.limit).unwrap(),
-                        with_payload,
+                        limit,
+                        &with_payload,
                         with_vector,
                         filter.as_ref(),
                         search_runtime_handle,
@@ -100,9 +103,10 @@ impl LocalShard {
                     )
                     .await?;
 
-                let scored_points = records
+                records
                     .into_iter()
                     .zip(values)
+                    .skip(offset)
                     .map(|(record, value)| ScoredPoint {
                         id: record.id,
                         version: 0,
@@ -112,11 +116,11 @@ impl LocalShard {
                         shard_key: record.shard_key,
                         order_value: Some(value),
                     })
-                    .collect();
-
-                Ok(scored_points)
+                    .collect()
             }
-        }
+        };
+
+        Ok(point_results)
     }
 
     pub async fn scroll_by_id(

@@ -1,5 +1,5 @@
 use super::planned_query::{MergePlan, PlannedQuery, Source};
-use crate::operations::types::{CoreSearchRequest, ScrollRequestInternal};
+use crate::operations::types::{CoreSearchRequest, QueryScrollRequestInternal};
 
 /// Same as a [PlannedQuery], but without the scrolls and searches.
 /// The sources in merge_sources have been updated to point to the scrolls and searches in the batch.
@@ -8,17 +8,12 @@ pub struct WeakPlannedQuery {
     /// References to the searches and scrolls in the batch, and how to merge them.
     /// This retains the recursive structure of the original query.
     pub merge_plan: MergePlan,
-
-    /// The offset into the final results. Skip this many points before returning
-    ///
-    /// This is not used inside of local shard, as this part acts at collection level, but we keep it here for completeness
-    pub offset: usize,
 }
 
 #[derive(Debug)]
 pub struct PlannedQueryBatch {
     pub searches: Vec<CoreSearchRequest>,
-    pub scrolls: Vec<ScrollRequestInternal>,
+    pub scrolls: Vec<QueryScrollRequestInternal>,
     pub root_queries: Vec<WeakPlannedQuery>,
 }
 
@@ -56,7 +51,6 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
                 merge_plan: mut merge_sources,
                 searches,
                 scrolls,
-                offset,
             } = planned_query;
 
             // Offset the indices of the sources in the merge plan.
@@ -71,7 +65,6 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
 
             batch.root_queries.push(WeakPlannedQuery {
                 merge_plan: merge_sources,
-                offset,
             });
         }
 
@@ -102,8 +95,8 @@ mod tests {
         }
     }
 
-    fn dummy_scroll(limit: usize) -> ScrollRequestInternal {
-        ScrollRequestInternal {
+    fn dummy_scroll(limit: usize) -> QueryScrollRequestInternal {
+        QueryScrollRequestInternal {
             offset: None,
             limit: Some(limit),
             filter: None,
@@ -124,7 +117,6 @@ mod tests {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: None,
                 },
-                offset: 0,
             },
             // A no-prefetch scroll query
             PlannedQuery {
@@ -134,7 +126,6 @@ mod tests {
                     sources: vec![Source::ScrollsIdx(0)],
                     rescore_params: None,
                 },
-                offset: 0,
             },
             // A double fusion query
             PlannedQuery {
@@ -147,6 +138,7 @@ mod tests {
                             rescore_params: Some(RescoreParams {
                                 rescore: ScoringQuery::Fusion(Fusion::Rrf),
                                 limit: 10,
+                                offset: 0,
                                 score_threshold: None,
                                 with_vector: WithVector::Bool(true),
                                 with_payload: WithPayloadInterface::Bool(true),
@@ -157,12 +149,12 @@ mod tests {
                     rescore_params: Some(RescoreParams {
                         rescore: ScoringQuery::Fusion(Fusion::Rrf),
                         limit: 10,
+                        offset: 0,
                         score_threshold: None,
                         with_vector: WithVector::Bool(true),
                         with_payload: WithPayloadInterface::Bool(true),
                     }),
                 },
-                offset: 0,
             },
         ];
 
@@ -179,14 +171,12 @@ mod tests {
                         sources: vec![Source::SearchesIdx(0)],
                         rescore_params: None,
                     },
-                    offset: 0,
                 },
                 WeakPlannedQuery {
                     merge_plan: MergePlan {
                         sources: vec![Source::ScrollsIdx(0)],
                         rescore_params: None,
                     },
-                    offset: 0,
                 },
                 WeakPlannedQuery {
                     merge_plan: MergePlan {
@@ -196,6 +186,7 @@ mod tests {
                                 rescore_params: Some(RescoreParams {
                                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
                                     limit: 10,
+                                    offset: 0,
                                     score_threshold: None,
                                     with_vector: WithVector::Bool(true),
                                     with_payload: WithPayloadInterface::Bool(true),
@@ -206,12 +197,12 @@ mod tests {
                         rescore_params: Some(RescoreParams {
                             rescore: ScoringQuery::Fusion(Fusion::Rrf),
                             limit: 10,
+                            offset: 0,
                             score_threshold: None,
                             with_vector: WithVector::Bool(true),
                             with_payload: WithPayloadInterface::Bool(true),
                         }),
                     },
-                    offset: 0,
                 }
             ]
         );

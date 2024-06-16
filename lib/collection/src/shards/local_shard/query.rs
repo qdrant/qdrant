@@ -14,7 +14,7 @@ use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    ScrollRequestInternal,
+    QueryScrollRequestInternal,
 };
 use crate::operations::universal_query::planned_query::{MergePlan, RescoreParams, Source};
 use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
@@ -210,7 +210,6 @@ impl LocalShard {
     }
 
     /// Rescore list of scored points
-    #[allow(clippy::too_many_arguments)]
     async fn rescore<'a>(
         &self,
         sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
@@ -220,6 +219,7 @@ impl LocalShard {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let RescoreParams {
             rescore,
+            offset,
             score_threshold,
             limit,
             with_vector,
@@ -230,16 +230,17 @@ impl LocalShard {
             ScoringQuery::Fusion(Fusion::Rrf) => {
                 let sources: Vec<_> = sources.map(Cow::into_owned).collect();
 
-                let mut top_rrf = rrf_scoring(sources);
+                let top_rrf = rrf_scoring(sources);
 
-                if let Some(score_threshold) = score_threshold {
-                    top_rrf = top_rrf
+                let top_rrf: Vec<_> = if let Some(score_threshold) = score_threshold {
+                    top_rrf
                         .into_iter()
                         .take_while(|point| point.score >= score_threshold)
+                        .skip(offset)
                         .take(limit)
-                        .collect();
+                        .collect()
                 } else {
-                    top_rrf.truncate(limit);
+                    top_rrf.into_iter().skip(offset).take(limit).collect()
                 };
 
                 let filled_top_rrf = self
@@ -254,8 +255,8 @@ impl LocalShard {
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
-                let scroll_request = ScrollRequestInternal {
-                    offset: None,
+                let scroll_request = QueryScrollRequestInternal {
+                    offset: Some(offset),
                     limit: Some(limit),
                     filter: Some(filter),
                     with_payload: Some(with_payload),
@@ -285,7 +286,7 @@ impl LocalShard {
                     filter: Some(filter),
                     params: None,
                     limit,
-                    offset: 0,
+                    offset,
                     with_payload: Some(with_payload),
                     with_vector: Some(with_vector),
                     score_threshold,
