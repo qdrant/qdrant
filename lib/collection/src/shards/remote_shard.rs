@@ -12,13 +12,14 @@ use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
     GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
-    QueryPointsInternal, QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
-    ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation, UpdateShardCutoffPointRequest,
-    WaitForShardStateRequest,
+    QueryBatchPointsInternal, QueryPointsInternal, QueryShardPoints, RecoverShardSnapshotRequest,
+    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
+use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -837,6 +838,7 @@ impl ShardOperation for RemoteShard {
         result.map_err(|e| e.into())
     }
 
+    // TODO(universal-query): remove in favor of batch version
     async fn query(
         &self,
         request: Arc<ShardQueryRequest>,
@@ -845,18 +847,20 @@ impl ShardOperation for RemoteShard {
     ) -> CollectionResult<ShardQueryResponse> {
         let is_payload_required = request.with_payload.is_required();
 
-        let query_points = Some(QueryShardPoints::from(request.as_ref().to_owned()));
-
-        let request = &QueryPointsInternal {
-            collection_name: self.collection_id.clone(),
-            query_points,
-            shard_id: Some(__self.id),
-            timeout: timeout.map(|t| t.as_secs()),
-        };
+        let request = request.as_ref();
 
         let query_response = self
             .with_points_client(|mut client| async move {
-                let mut request = tonic::Request::new(request.clone());
+                let query_points = Some(QueryShardPoints::from(request.to_owned()));
+
+                let request = QueryPointsInternal {
+                    collection_name: self.collection_id.clone(),
+                    query_points,
+                    shard_id: Some(self.id),
+                    timeout: timeout.map(|t| t.as_secs()),
+                };
+
+                let mut request = tonic::Request::new(request);
 
                 if let Some(timeout) = timeout {
                     request.set_timeout(timeout);
@@ -883,11 +887,63 @@ impl ShardOperation for RemoteShard {
 
     async fn query_batch(
         &self,
-        _request: Arc<Vec<ShardQueryRequest>>,
+        batch_request: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
-        _timeout: Option<Duration>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        // TODO(universal-query): implement remote query batch
-        todo!()
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
+        timer.set_success(false);
+
+        let batch_request = batch_request.as_ref();
+
+        let search_batch_response = self
+            .with_points_client(|mut client| async move {
+                let query_points = batch_request
+                    .iter()
+                    .map(|request| QueryShardPoints::from(request.clone()))
+                    .collect();
+
+                let request = &QueryBatchPointsInternal {
+                    collection_name: self.collection_id.clone(),
+                    query_points,
+                    shard_id: Some(self.id),
+                    timeout: timeout.map(|t| t.as_secs()),
+                };
+
+                let mut request = tonic::Request::new(request.clone());
+
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+
+                client.query_batch(request).await
+            })
+            .await?
+            .into_inner();
+
+        let result = search_batch_response
+            .batch_results
+            .into_iter()
+            .zip(batch_request.iter())
+            .map(|(query_result, request)| {
+                let is_payload_required = request.with_payload.is_required();
+
+                query_result
+                    .result
+                    .into_iter()
+                    .map(|intermediate| {
+                        intermediate
+                            .result
+                            .into_iter()
+                            .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                            .collect()
+                    })
+                    .collect()
+            })
+            .try_collect()?;
+
+        timer.set_success(true);
+
+        Ok(result)
     }
 }

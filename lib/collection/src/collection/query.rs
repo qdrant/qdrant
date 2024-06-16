@@ -27,6 +27,7 @@ struct IntermediateQueryInfo<'a> {
 
 impl Collection {
     /// Returns a vector of shard responses for the given query.
+    // TODO(universal-query): remove in favor of batch version
     async fn query_shards_concurrently(
         &self,
         request: Arc<ShardQueryRequest>,
@@ -56,6 +57,42 @@ impl Collection {
                         }
                     }
                     Ok(records)
+                })
+        });
+        future::try_join_all(all_searches).await
+    }
+
+    /// Returns a shape of [shard_id, batch_id, intermediate_response, points]
+    async fn batch_query_shards_concurrently(
+        &self,
+        batch_request: Arc<Vec<ShardQueryRequest>>,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
+        // query all shards concurrently
+        let shard_holder = self.shards_holder.read().await;
+        let target_shards = shard_holder.select_shards(shard_selection)?;
+        let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+            let shard_key = shard_key.cloned();
+            shard
+                .query_batch(
+                    Arc::clone(&batch_request),
+                    read_consistency,
+                    shard_selection.is_shard_id(),
+                    timeout,
+                )
+                .and_then(move |mut shard_responses| async move {
+                    if shard_key.is_none() {
+                        return Ok(shard_responses);
+                    }
+                    shard_responses
+                        .iter_mut()
+                        .flatten()
+                        .flatten()
+                        .for_each(|point| point.shard_key.clone_from(&shard_key));
+
+                    Ok(shard_responses)
                 })
         });
         future::try_join_all(all_searches).await
@@ -123,6 +160,7 @@ impl Collection {
     ///
     /// If the root query is a Fusion, the returned results correspond to each the prefetches.
     /// Otherwise, it will be a list with a single list of scored points.
+    // TODO(universal-query): Remove in favor of batch version
     pub async fn query_internal(
         &self,
         request: ShardQueryRequest,
@@ -132,7 +170,7 @@ impl Collection {
         let request = Arc::new(request);
 
         // Results from all shards
-        // Shape: [num_shards, num_internal_queries, num_scored_points]
+        // Shape: [num_shards, num_intermediate_results, num_points]
         let all_shards_results = self
             .query_shards_concurrently(Arc::clone(&request), None, shard_selection, timeout)
             .await?;
@@ -140,6 +178,41 @@ impl Collection {
         let merged = self
             .merge_intermediate_results_from_shards(request.as_ref(), all_shards_results)
             .await?;
+
+        Ok(merged)
+    }
+
+    /// To be called on the remote instance. Only used for the internal service.
+    ///
+    /// If the root query is a Fusion, the returned results correspond to each the prefetches.
+    /// Otherwise, it will be a list with a single list of scored points.
+    pub async fn query_batch_internal(
+        &self,
+        requests: Vec<ShardQueryRequest>,
+        shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        let requests_arc = Arc::new(requests);
+
+        // Results from all shards
+        // Shape: [num_shards, batch_size, num_intermediate_results, num_points]
+        let all_shards_results = self
+            .batch_query_shards_concurrently(
+                Arc::clone(&requests_arc),
+                None,
+                shard_selection,
+                timeout,
+            )
+            .await?;
+
+        let merged_f = transposed_iter(all_shards_results)
+            .zip(requests_arc.iter())
+            .map(|(shards_results, request)| async {
+                // shards_results shape: [num_shards, num_intermediate_results, num_points]
+                self.merge_intermediate_results_from_shards(request, shards_results)
+                    .await
+            });
+        let merged = futures::future::try_join_all(merged_f).await?;
 
         Ok(merged)
     }
