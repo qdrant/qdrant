@@ -6,14 +6,16 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
-    GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryPointsInternal,
-    QueryResponse, QueryShardPoints, RecommendPointsInternal, RecommendResponse,
-    ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
-    SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
+    GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryBatchPointsInternal,
+    QueryBatchResponse, QueryPointsInternal, QueryResponse, QueryResult, QueryShardPoints,
+    RecommendPointsInternal, RecommendResponse, ScrollPointsInternal, ScrollResponse,
+    SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal,
+    UpsertPointsInternal,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
+use itertools::Itertools;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -40,7 +42,8 @@ impl PointsInternalService {
     }
 }
 
-pub async fn query(
+// TODO(universal-query): remove in favor of batch version
+pub async fn query_internal(
     toc: &TableOfContent,
     collection_name: String,
     query_points: QueryShardPoints,
@@ -71,6 +74,53 @@ pub async fn query(
             .into_iter()
             .map(|points| IntermediateResult {
                 result: points.into_iter().map(From::from).collect::<Vec<_>>(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn query_batch_internal(
+    toc: &TableOfContent,
+    collection_name: String,
+    query_points: Vec<QueryShardPoints>,
+    shard_selection: Option<ShardId>,
+    timeout: Option<Duration>,
+) -> Result<Response<QueryBatchResponse>, Status> {
+    let batch_requests: Vec<_> = query_points
+        .into_iter()
+        .map(ShardQueryRequest::try_from)
+        .try_collect()?;
+
+    let timing = Instant::now();
+
+    // As this function is handling an internal request,
+    // we can assume that shard_key is already resolved
+    let shard_selection = match shard_selection {
+        None => {
+            debug_assert!(false, "Shard selection is expected for internal request");
+            ShardSelectorInternal::All
+        }
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+    };
+
+    let batch_response = toc
+        .query_batch_internal(&collection_name, batch_requests, shard_selection, timeout)
+        .await
+        .map_err(error_to_status)?;
+
+    let response = QueryBatchResponse {
+        batch_results: batch_response
+            .into_iter()
+            .map(|response| QueryResult {
+                result: response
+                    .into_iter()
+                    .map(|intermediate| IntermediateResult {
+                        result: intermediate.into_iter().map(From::from).collect_vec(),
+                    })
+                    .collect_vec(),
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
@@ -493,7 +543,33 @@ impl PointsInternal for PointsInternalService {
 
         // Individual `read_consistency` values are ignored
 
-        query(
+        query_internal(
+            self.toc.as_ref(),
+            collection_name,
+            query_points,
+            shard_id,
+            timeout,
+        )
+        .await
+    }
+
+    async fn query_batch(
+        &self,
+        request: Request<QueryBatchPointsInternal>,
+    ) -> Result<Response<QueryBatchResponse>, Status> {
+        // TODO(universal-query): validate
+        // validate_and_log(request.get_ref());
+
+        let QueryBatchPointsInternal {
+            collection_name,
+            shard_id,
+            query_points,
+            timeout,
+        } = request.into_inner();
+
+        let timeout = timeout.map(Duration::from_secs);
+
+        query_batch_internal(
             self.toc.as_ref(),
             collection_name,
             query_points,
