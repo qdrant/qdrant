@@ -3,7 +3,9 @@ use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
+use collection::operations::types::{
+    PointRequest, PointRequestInternal, Record, ScrollRequest, ScrollRequestInternal,
+};
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
@@ -128,7 +130,12 @@ async fn scroll_points(
     let timing = Instant::now();
 
     let ScrollRequest {
-        scroll_request,
+        offset,
+        limit,
+        filter,
+        with_payload,
+        with_vector,
+        order_by,
         shard_key,
     } = request.into_inner();
 
@@ -141,7 +148,14 @@ async fn scroll_points(
         .toc(&access)
         .scroll(
             &collection.name,
-            scroll_request,
+            ScrollRequestInternal {
+                offset,
+                limit,
+                filter,
+                with_payload,
+                with_vector,
+                order_by,
+            },
             params.consistency,
             // TODO: handle params.timeout
             shard_selection,
