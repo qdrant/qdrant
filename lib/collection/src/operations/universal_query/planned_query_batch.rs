@@ -1,5 +1,3 @@
-use segment::types::{WithPayloadInterface, WithVector};
-
 use super::planned_query::{MergePlan, PlannedQuery, Source};
 use crate::operations::types::{CoreSearchRequest, ScrollRequestInternal};
 
@@ -15,12 +13,6 @@ pub struct WeakPlannedQuery {
     ///
     /// This is not used inside of local shard, as this part acts at collection level, but we keep it here for completeness
     pub offset: usize,
-
-    /// The vector(s) to return
-    pub with_vector: WithVector,
-
-    /// The payload to return
-    pub with_payload: WithPayloadInterface,
 }
 
 #[derive(Debug)]
@@ -65,8 +57,6 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
                 searches,
                 scrolls,
                 offset,
-                with_vector,
-                with_payload,
             } = planned_query;
 
             // Offset the indices of the sources in the merge plan.
@@ -82,8 +72,6 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
             batch.root_queries.push(WeakPlannedQuery {
                 merge_plan: merge_sources,
                 offset,
-                with_vector,
-                with_payload,
             });
         }
 
@@ -94,6 +82,7 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
 #[cfg(test)]
 mod tests {
     use segment::data_types::vectors::NamedVectorStruct;
+    use segment::types::{WithPayloadInterface, WithVector};
 
     use super::*;
     use crate::operations::query_enum::QueryEnum;
@@ -136,8 +125,6 @@ mod tests {
                     rescore_params: None,
                 },
                 offset: 0,
-                with_vector: WithVector::Bool(true),
-                with_payload: WithPayloadInterface::Bool(false),
             },
             // A no-prefetch scroll query
             PlannedQuery {
@@ -148,8 +135,6 @@ mod tests {
                     rescore_params: None,
                 },
                 offset: 0,
-                with_vector: WithVector::Bool(false),
-                with_payload: WithPayloadInterface::Bool(true),
             },
             // A double fusion query
             PlannedQuery {
@@ -163,6 +148,8 @@ mod tests {
                                 rescore: ScoringQuery::Fusion(Fusion::Rrf),
                                 limit: 10,
                                 score_threshold: None,
+                                with_vector: WithVector::Bool(true),
+                                with_payload: WithPayloadInterface::Bool(true),
                             }),
                         }),
                         Source::ScrollsIdx(0),
@@ -171,11 +158,11 @@ mod tests {
                         rescore: ScoringQuery::Fusion(Fusion::Rrf),
                         limit: 10,
                         score_threshold: None,
+                        with_vector: WithVector::Bool(true),
+                        with_payload: WithPayloadInterface::Bool(true),
                     }),
                 },
                 offset: 0,
-                with_vector: WithVector::Bool(true),
-                with_payload: WithPayloadInterface::Bool(true),
             },
         ];
 
@@ -193,8 +180,6 @@ mod tests {
                         rescore_params: None,
                     },
                     offset: 0,
-                    with_vector: WithVector::Bool(true),
-                    with_payload: WithPayloadInterface::Bool(false),
                 },
                 WeakPlannedQuery {
                     merge_plan: MergePlan {
@@ -202,8 +187,6 @@ mod tests {
                         rescore_params: None,
                     },
                     offset: 0,
-                    with_vector: WithVector::Bool(false),
-                    with_payload: WithPayloadInterface::Bool(true),
                 },
                 WeakPlannedQuery {
                     merge_plan: MergePlan {
@@ -214,6 +197,8 @@ mod tests {
                                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
                                     limit: 10,
                                     score_threshold: None,
+                                    with_vector: WithVector::Bool(true),
+                                    with_payload: WithPayloadInterface::Bool(true),
                                 }),
                             }),
                             Source::ScrollsIdx(1),
@@ -222,11 +207,11 @@ mod tests {
                             rescore: ScoringQuery::Fusion(Fusion::Rrf),
                             limit: 10,
                             score_threshold: None,
+                            with_vector: WithVector::Bool(true),
+                            with_payload: WithPayloadInterface::Bool(true),
                         }),
                     },
                     offset: 0,
-                    with_vector: WithVector::Bool(true),
-                    with_payload: WithPayloadInterface::Bool(true),
                 }
             ]
         );

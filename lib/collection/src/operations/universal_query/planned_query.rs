@@ -29,12 +29,6 @@ pub struct PlannedQuery {
     ///
     /// This is not used inside of local shard, as this part acts at collection level, but we keep it here for completeness
     pub offset: usize,
-
-    /// The vector(s) to return
-    pub with_vector: WithVector,
-
-    /// The payload to return
-    pub with_payload: WithPayloadInterface,
 }
 
 /// Defines how to merge multiple [sources](Source)
@@ -48,6 +42,12 @@ pub struct RescoreParams {
 
     /// Keep only points with better score than this threshold
     pub score_threshold: Option<ScoreType>,
+
+    /// The vector(s) to return
+    pub with_vector: WithVector,
+
+    /// The payload to return
+    pub with_payload: WithPayloadInterface,
 }
 
 #[derive(Debug, PartialEq)]
@@ -94,8 +94,6 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let mut core_searches = Vec::new();
         let mut scrolls = Vec::new();
         let offset;
-        let with_vector;
-        let with_payload;
 
         let merge_sources = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
@@ -116,15 +114,14 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
 
-            with_vector = req_with_vector;
-            with_payload = req_with_payload;
-
             MergePlan {
                 sources,
                 rescore_params: Some(RescoreParams {
                     rescore,
                     limit,
                     score_threshold: req_score_threshold,
+                    with_vector: req_with_vector,
+                    with_payload: req_with_payload,
                 }),
             }
         } else {
@@ -189,9 +186,6 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 }
             };
 
-            with_vector = WithVector::Bool(false);
-            with_payload = WithPayloadInterface::Bool(false);
-
             // Root-level query without prefetches is the only case where merge is `None`
             MergePlan {
                 sources,
@@ -204,12 +198,11 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             searches: core_searches,
             scrolls,
             offset,
-            with_vector,
-            with_payload,
         })
     }
 }
 
+/// Recursively construct a merge_plan for prefetches
 fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<ScrollRequestInternal>,
@@ -306,6 +299,9 @@ fn recurse_prefetches(
                     rescore,
                     limit,
                     score_threshold,
+                    // We never need payloads and vectors for prefetch queries with re-scores
+                    with_vector: WithVector::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false),
                 }),
             };
 
@@ -420,7 +416,9 @@ mod tests {
                             )
                         )),
                         limit: 100,
-                        score_threshold: None
+                        score_threshold: None,
+                        with_vector: WithVector::Bool(false),
+                        with_payload: WithPayloadInterface::Bool(false),
                     })
                 })],
                 rescore_params: Some(RescoreParams {
@@ -434,13 +432,13 @@ mod tests {
                     )),
                     limit: 10,
                     score_threshold: None,
+                    with_vector: WithVector::Bool(true),
+                    with_payload: WithPayloadInterface::Bool(true),
                 })
             }
         );
 
         assert_eq!(planned_query.offset, 0);
-        assert_eq!(planned_query.with_vector, WithVector::Bool(true));
-        assert_eq!(planned_query.with_payload, WithPayloadInterface::Bool(true));
     }
 
     #[test]
@@ -488,11 +486,6 @@ mod tests {
         );
 
         assert_eq!(planned_query.offset, 0);
-        assert_eq!(planned_query.with_vector, WithVector::Bool(false));
-        assert_eq!(
-            planned_query.with_payload,
-            WithPayloadInterface::Bool(false)
-        );
     }
 
     #[test]
@@ -593,17 +586,14 @@ mod tests {
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
                     limit: 50,
-                    score_threshold: None
+                    score_threshold: None,
+                    with_vector: WithVector::Bool(true),
+                    with_payload: WithPayloadInterface::Bool(false),
                 })
             }
         );
 
         assert_eq!(planned_query.offset, 0);
-        assert_eq!(planned_query.with_vector, WithVector::Bool(true));
-        assert_eq!(
-            planned_query.with_payload,
-            WithPayloadInterface::Bool(false)
-        );
     }
 
     #[test]
@@ -671,11 +661,6 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(planned_query.offset, 49);
-        assert_eq!(
-            planned_query.with_payload,
-            WithPayloadInterface::Bool(false)
-        );
-        assert_eq!(planned_query.with_vector, WithVector::Bool(true));
 
         assert_eq!(
             planned_query.merge_plan,
@@ -684,7 +669,9 @@ mod tests {
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
                     limit: 50,
-                    score_threshold: Some(0.666)
+                    score_threshold: Some(0.666),
+                    with_vector: WithVector::Bool(true),
+                    with_payload: WithPayloadInterface::Bool(false),
                 })
             }
         );

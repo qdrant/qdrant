@@ -1,16 +1,13 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use itertools::{Itertools, PeekingNext};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::types::{
-    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
 
 use super::LocalShard;
@@ -75,16 +72,11 @@ impl LocalShard {
         let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
         let prefetch_holder = PrefetchResults::new(search_results, scroll_results);
 
-        let (all_merge_plans, all_with_payloads_or_vectors): (Vec<_>, Vec<_>) = request
+        let all_merge_plans: Vec<_> = request
             .root_queries
             .into_iter()
-            .map(|query_plan| {
-                (
-                    query_plan.merge_plan,
-                    (query_plan.with_payload, query_plan.with_vector),
-                )
-            })
-            .unzip();
+            .map(|query_plan| query_plan.merge_plan)
+            .collect();
 
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
@@ -101,87 +93,51 @@ impl LocalShard {
 
         let batched_scored_points = futures::future::try_join_all(merge_futures).await?;
 
-        // fetch payload and/or vector for scored points if necessary
-        //
-        // TODO(universal-query): it might make sense to change this approach to fetch payload and vector at the collection level
-        // after the shard results merge, but it requires careful benchmarking
-        let fill_futures = batched_scored_points
-            .into_iter()
-            .zip(all_with_payloads_or_vectors)
-            .map(|(query_response, (with_payload, with_vector))| {
-                self.fill_with_payload_or_vectors(query_response, with_payload, with_vector)
-            });
-
-        let batched_scored_points = futures::future::try_join_all(fill_futures).await?;
-
         Ok(batched_scored_points)
     }
 
     /// Fetches the payload and/or vector if required. This will filter out points if they are deleted between search and retrieve.
     async fn fill_with_payload_or_vectors(
         &self,
-        query_response: ShardQueryResponse,
+        query_response: Vec<ScoredPoint>,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
-    ) -> CollectionResult<ShardQueryResponse> {
-        let filled = if with_payload.is_required() || with_vector.is_enabled() {
-            // ids to retrieve (deduplication happens in the searcher)
-            let point_ids = query_response
-                .iter()
-                .flatten()
-                .map(|scored_point| scored_point.id)
-                .collect::<Vec<PointIdType>>();
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        if !with_payload.is_required() && !with_vector.is_enabled() {
+            return Ok(query_response);
+        }
 
-            // Assert that the flattened list is in the same order as iterating over each of the inner lists.
-            debug_assert!({
-                let mut point_ids_iter = point_ids.iter();
-                query_response.iter().all(|intermediate| {
-                    intermediate.iter().all(|point| {
-                        point_ids_iter
-                            .next()
-                            .map(|id| *id == point.id)
-                            .unwrap_or(false)
-                    })
-                })
-            });
+        // ids to retrieve (deduplication happens in the searcher)
+        let point_ids: Vec<_> = query_response
+            .iter()
+            .map(|scored_point| scored_point.id)
+            .collect();
 
-            let mut records_iter = SegmentsSearcher::retrieve(
-                self.segments(),
-                &point_ids,
-                &(&with_payload).into(),
-                &with_vector,
-            )?
+        // Collect retrieved records into a hashmap for fast lookup
+        let records_iter: HashMap<_, _> = SegmentsSearcher::retrieve(
+            self.segments(),
+            &point_ids,
+            &(&with_payload).into(),
+            &with_vector,
+        )?
+        .into_iter()
+        .map(|record| (record.id, record))
+        .collect();
+
+        // It might be possible, that we won't find all records,
+        // so we need to re-collect the results
+        let query_response: Vec<_> = query_response
             .into_iter()
-            .peekable();
-
-            query_response
-                .into_iter()
-                .map(|intermediate| {
-                    intermediate
-                        .into_iter()
-                        // Points might get deleted between search and retrieve.
-                        // But it's not a problem, because we just filter them out.
-                        .filter_map(|mut scored_point| {
-                            match records_iter.peeking_next(|record| record.id == scored_point.id) {
-                                Some(mut record) => {
-                                    scored_point.payload = record.payload.take();
-                                    scored_point.vector = record.vector.take();
-                                    Some(scored_point)
-                                }
-                                None => {
-                                    // The record was not found, skip this scored point
-                                    None
-                                }
-                            }
-                        })
-                        .collect_vec()
+            .filter_map(|mut point| {
+                records_iter.get(&point.id).map(|record| {
+                    point.payload.clone_from(&record.payload);
+                    point.vector.clone_from(&record.vector);
+                    point
                 })
-                .collect_vec()
-        } else {
-            query_response
-        };
+            })
+            .collect();
 
-        Ok(filled)
+        Ok(query_response)
     }
 
     fn recurse_prefetch<'shard, 'query>(
@@ -266,6 +222,8 @@ impl LocalShard {
             rescore,
             score_threshold,
             limit,
+            with_vector,
+            with_payload,
         } = rescore_params;
 
         match rescore {
@@ -284,7 +242,11 @@ impl LocalShard {
                     top_rrf.truncate(limit);
                 };
 
-                Ok(top_rrf)
+                let filled_top_rrf = self
+                    .fill_with_payload_or_vectors(top_rrf, with_payload, with_vector)
+                    .await?;
+
+                Ok(filled_top_rrf)
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
@@ -296,8 +258,8 @@ impl LocalShard {
                     offset: None,
                     limit: Some(limit),
                     filter: Some(filter),
-                    with_payload: Some(WithPayloadInterface::Bool(false)),
-                    with_vector: WithVector::Bool(false),
+                    with_payload: Some(with_payload),
+                    with_vector,
                     order_by: Some(OrderByInterface::Struct(order_by)),
                 };
 
@@ -324,8 +286,8 @@ impl LocalShard {
                     params: None,
                     limit,
                     offset: 0,
-                    with_payload: None, // the payload is fetched separately
-                    with_vector: None,  // the vector is fetched separately
+                    with_payload: Some(with_payload),
+                    with_vector: Some(with_vector),
                     score_threshold,
                 };
 
