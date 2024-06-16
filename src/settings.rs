@@ -124,6 +124,7 @@ pub struct TlsConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Validate)]
+#[allow(dead_code)]
 pub struct GpuConfig {
     #[serde(default)]
     pub indexing: bool,
@@ -131,7 +132,7 @@ pub struct GpuConfig {
     pub force_half_precision: bool,
     #[serde(default)]
     #[validate(range(min = 1))]
-    pub max_memory_mb: Option<usize>,
+    pub max_groups: Option<usize>,
     #[serde(default)]
     pub device_index: usize,
     #[serde(default)]

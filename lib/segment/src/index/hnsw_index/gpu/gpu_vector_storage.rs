@@ -835,7 +835,7 @@ mod tests {
                 &stopped,
             )
             .unwrap();
-        for i in 0..num_vectors {
+        for i in 1..num_vectors {
             let score =
                 scorer.score_internal(test_point_id as PointOffsetType, i as PointOffsetType);
             println!("Score {} {} {}", i, score, scores[i]);

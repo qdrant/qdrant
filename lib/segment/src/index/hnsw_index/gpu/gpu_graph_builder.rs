@@ -79,7 +79,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         // To stop, theese conditions must be passed
         // 1. Minimum points `self.min_cpu_points_count` must be processed
         let min_cpu_points_achived = index > self.min_cpu_points_count;
-        // 2. The whole chunk is processed
+        // 2. The whole chunk is processed - obsolete
         let is_new_chunk = index + 1 >= self.chunks[*locked_finished_chunks].end;
         // 3. GPU is ready to work
         while index >= self.gpu_processed.load(Ordering::Relaxed) {
@@ -88,7 +88,7 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         let is_gpu_ready = self.gpu_processed.load(Ordering::Relaxed) == self.points_count;
-        if min_cpu_points_achived && is_new_chunk && is_gpu_ready {
+        if min_cpu_points_achived && is_gpu_ready {
             return None;
         }
 
@@ -110,9 +110,10 @@ impl<'a> CpuBuilderIndexSynchronizer<'a> {
         all_point_ids_from_prev_chunks.contains(&point_id)
     }
 
-    fn into_finished_chunks_count(self) -> usize {
+    fn into_finished_chunks_count(self) -> (usize, usize) {
         let finished_chunks = *self.finished_chunks.lock();
-        finished_chunks
+        let last_index = *self.index.lock();
+        (finished_chunks, last_index)
     }
 }
 
@@ -319,7 +320,7 @@ impl GpuGraphBuilder {
                 self.graph_layers_builder.m0
             };
 
-            let start_gpu_chunk_index = self.build_level_on_cpu(
+            let (start_gpu_chunk_index, start_gpu_index) = self.build_level_on_cpu(
                 level,
                 pool,
                 gpu_processed.clone(),
@@ -342,6 +343,7 @@ impl GpuGraphBuilder {
                     level,
                     level_m,
                     start_gpu_chunk_index,
+                    start_gpu_index,
                     gpu_processed.clone(),
                 )
             } else {
@@ -393,7 +395,7 @@ impl GpuGraphBuilder {
                 -> OperationResult<(Box<dyn RawScorer + 'a>, Option<Box<dyn FilterContext + 'a>>)>
             + Send
             + Sync,
-    ) -> OperationResult<usize> {
+    ) -> OperationResult<(usize, usize)> {
         log::info!("CPU start build level: {}", level);
         let layer_build_timer = std::time::Instant::now();
         let retry_mutex: Mutex<()> = Default::default();
@@ -500,6 +502,7 @@ impl GpuGraphBuilder {
         level: usize,
         level_m: usize,
         start_chunk_index: usize,
+        start_gpu_index: usize,
         gpu_processed: Arc<AtomicUsize>,
     ) -> Option<std::thread::JoinHandle<OperationResult<()>>> {
         log::info!(
@@ -519,7 +522,7 @@ impl GpuGraphBuilder {
         let points = self.points.clone();
         let first_point_id = self.first_point_id;
 
-        gpu_processed.store(chunks[start_chunk_index].start, Ordering::Relaxed);
+        gpu_processed.store(start_gpu_index, Ordering::Relaxed);
 
         Some(std::thread::spawn(move || {
             let mut gpu_search_context = gpu_search_context.lock();
@@ -527,7 +530,7 @@ impl GpuGraphBuilder {
             gpu_search_context.clear(level_m)?;
 
             let mut ids_to_upload = {
-                (0..chunks[start_chunk_index].start)
+                (0..start_gpu_index)
                     .map(|index| points[index].point_id)
                     .collect_vec()
             };
@@ -546,10 +549,14 @@ impl GpuGraphBuilder {
             }
             println!("Upload links on level {level} time: {:?}", timer.elapsed());
 
-            let mut linked_points_count = chunks[start_chunk_index].start;
+            let mut linked_points_count = start_gpu_index;
             let mut prev_chunk = None;
             for chunk_index in start_chunk_index..chunks.len() {
-                let chunk = chunks[chunk_index].clone();
+                let chunk = if chunk_index == start_chunk_index {
+                    start_gpu_index..chunks[chunk_index].end
+                } else {
+                    chunks[chunk_index].clone()
+                };
                 let chunk_level = points[chunk.start].level;
                 if level > chunk_level {
                     Self::gpu_update_entries_chunk(

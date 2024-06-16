@@ -30,7 +30,7 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::GpuGraphBuilder;
 use crate::index::hnsw_index::gpu::{
-    get_gpu_force_half_precision, get_gpu_indexing, get_gpu_max_groups_count,
+    get_gpu_force_half_precision, get_gpu_indexing, get_gpu_max_groups,
 };
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -776,13 +776,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     &pool,
                     &graph_layers_builder,
                     None,
-                    get_gpu_max_groups_count(
-                        vector_storage.available_size_in_bytes(),
-                        quantized_vectors.is_some(),
-                        total_vector_count,
-                        self.config.m0,
-                        self.config.ef_construct,
-                    ),
+                    get_gpu_max_groups(),
                     &vector_storage,
                     quantized_vectors.as_ref(),
                     num_entries,

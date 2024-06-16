@@ -34,10 +34,14 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
 
+float xorpopcnt(uint a, uint b) {
+    return float(bitCount((a | b) - (a & b)));
+}
+
 // uint = 4 * uint8_t, vec4 analogue for BQ
 #define VECTOR_STORAGE_ELEMENT_TYPE uint
 // TODO(gpu): find glsl function for XOR
-#define VECTOR_STORAGE_SCORE_ELEMENT(i, j) float(bitCount((a | b) - (a & b)))
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) xorpopcnt(a, b)
 
 #endif
 
