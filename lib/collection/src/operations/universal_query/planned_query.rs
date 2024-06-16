@@ -92,7 +92,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let mut searches = Vec::new();
         let mut scrolls = Vec::new();
 
-        let merge_sources = if !prefetches.is_empty() {
+        let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
                 return Err(CollectionError::bad_request(format!(
                     "prefetches depth {} exceeds max depth {}",
@@ -186,7 +186,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         };
 
         Ok(Self {
-            merge_plan: merge_sources,
+            merge_plan,
             searches,
             scrolls,
         })
