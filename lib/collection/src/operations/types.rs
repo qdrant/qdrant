@@ -282,6 +282,18 @@ pub struct UpdateResult {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
+    #[serde(flatten)]
+    #[validate]
+    pub scroll_request: ScrollRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+/// Scroll request - paginate over all points which matches given condition
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
 
@@ -298,31 +310,6 @@ pub struct ScrollRequest {
 
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
-    pub with_vector: WithVector,
-
-    /// Order the records by a payload field.
-    pub order_by: Option<OrderByInterface>,
-    /// Specify in which shards to look for the points, if not specified - look in all shards
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
-}
-
-/// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScrollRequestInternal {
-    /// Start ID to read points from.
-    pub offset: Option<PointIdType>,
-
-    /// Page size. Default: 10
-    pub limit: Option<usize>,
-
-    /// Look only for points which satisfies this conditions. If not provided - all points.
-    pub filter: Option<Filter>,
-
-    /// Select which payload to return with the response. Default: All
-    pub with_payload: Option<WithPayloadInterface>,
-
-    /// Whether to return the point vector with the result?
     pub with_vector: WithVector,
 
     /// Order the records by a payload field.
