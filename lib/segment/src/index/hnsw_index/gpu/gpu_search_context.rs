@@ -10,6 +10,7 @@ use super::gpu_vector_storage::{GpuVectorStorage, GpuVectorStorageElementType};
 use super::gpu_visited_flags::GpuVisitedFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Clone, Copy, Debug)]
@@ -68,6 +69,7 @@ impl GpuSearchContext {
         debug_messenger: Option<&dyn gpu::DebugMessenger>,
         groups_count: usize,
         vector_storage: &VectorStorageEnum,
+        quantized_storage: Option<&QuantizedVectors>,
         m: usize,
         m0: usize,
         ef: usize,
@@ -79,10 +81,14 @@ impl GpuSearchContext {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let context = gpu::Context::new(device.clone());
         let points_count = vector_storage.total_vector_count();
-        let candidates_capacity = points_count;
+        let candidates_capacity = 10_000; //points_count;
 
-        let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), vector_storage, force_half_precision)?;
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
+            vector_storage,
+            quantized_storage,
+            force_half_precision,
+        )?;
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count, max_patched_points)?;
         let gpu_nearest_heap =
             GpuNearestHeap::new(device.clone(), groups_count, ef, std::cmp::max(ef, m0 + 1))?;
@@ -737,6 +743,7 @@ mod tests {
             Some(&debug_messenger),
             groups_count,
             &storage.borrow(),
+            None,
             m,
             m,
             ef,

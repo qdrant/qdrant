@@ -95,11 +95,11 @@ pub enum QuantizedVectorStorage {
 }
 
 pub struct QuantizedVectors {
-    storage_impl: QuantizedVectorStorage,
-    config: QuantizedVectorsConfig,
-    path: PathBuf,
-    distance: Distance,
-    datatype: VectorStorageDatatype,
+    pub storage_impl: QuantizedVectorStorage,
+    pub config: QuantizedVectorsConfig,
+    pub path: PathBuf,
+    pub distance: Distance,
+    pub datatype: VectorStorageDatatype,
 }
 
 impl QuantizedVectors {

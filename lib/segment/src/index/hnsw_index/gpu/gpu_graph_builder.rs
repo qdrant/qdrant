@@ -16,6 +16,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::payload_storage::FilterContext;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 
 pub struct GpuGraphBuilder {
@@ -134,6 +135,7 @@ impl GpuGraphBuilder {
         debug_messenger: Option<&dyn gpu::DebugMessenger>,
         groups_count: usize,
         vector_storage: &VectorStorageEnum,
+        quantized_storage: Option<&QuantizedVectors>,
         entry_points_num: usize,
         force_half_precision: bool,
         min_cpu_linked_points_count: usize,
@@ -184,6 +186,7 @@ impl GpuGraphBuilder {
             debug_messenger,
             groups_count,
             vector_storage,
+            quantized_storage,
             m,
             m0,
             ef,
@@ -391,6 +394,8 @@ impl GpuGraphBuilder {
             + Send
             + Sync,
     ) -> OperationResult<usize> {
+        log::info!("CPU start build level: {}", level);
+        let layer_build_timer = std::time::Instant::now();
         let retry_mutex: Mutex<()> = Default::default();
 
         let index_iter = CpuBuilderIndexSynchronizer::new(
@@ -438,6 +443,11 @@ impl GpuGraphBuilder {
             return Err(err);
         }
 
+        log::info!(
+            "CPU finish build level: {} in time {:?}",
+            level,
+            layer_build_timer.elapsed()
+        );
         Ok(index_iter.into_finished_chunks_count())
     }
 
@@ -492,12 +502,13 @@ impl GpuGraphBuilder {
         start_chunk_index: usize,
         gpu_processed: Arc<AtomicUsize>,
     ) -> Option<std::thread::JoinHandle<OperationResult<()>>> {
-        println!(
+        log::info!(
             "GPU build level: {} from chunk {} of {}",
             level,
             start_chunk_index,
             self.chunks.len()
         );
+        let layer_build_timer = std::time::Instant::now();
         if start_chunk_index >= self.chunks.len() {
             return None;
         }
@@ -567,16 +578,18 @@ impl GpuGraphBuilder {
 
             let mut download_ids = vec![first_point_id];
             download_ids.extend(points[0..linked_points_count].iter().map(|p| p.point_id));
-            println!(
-                "Linked points at level {level} count: {}",
-                download_ids.len()
-            );
 
             gpu_search_context.download_links(
                 level,
                 &download_ids,
                 graph_layers_builder.as_ref(),
             )?;
+
+            log::info!(
+                "GPU level {level} finished (time = {:?}) with linked points: {}",
+                layer_build_timer.elapsed(),
+                download_ids.len()
+            );
 
             Ok(())
         }))
@@ -761,6 +774,7 @@ mod tests {
             Some(&debug_messenger),
             groups_count,
             &test.vector_storage.borrow(),
+            None,
             1,
             false,
             cpu_first_points,
@@ -850,6 +864,7 @@ mod tests {
             Some(&debug_messenger),
             groups_count,
             &test.vector_storage.borrow(),
+            None,
             1,
             false,
             cpu_first_points,

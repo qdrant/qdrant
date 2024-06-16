@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::types::ScoredPointOffset;
+use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 
@@ -15,7 +15,8 @@ pub struct GpuNearestHeap {
     pub capacity: usize,
     pub device: Arc<gpu::Device>,
     pub params_buffer: Arc<gpu::Buffer>,
-    pub nearest_buffer: Arc<gpu::Buffer>,
+    pub nearest_score_buffer: Arc<gpu::Buffer>,
+    pub nearest_id_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
 }
@@ -31,10 +32,15 @@ impl GpuNearestHeap {
         let capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
         let buffers_elements_count = capacity * groups_count;
 
-        let nearest_buffer = Arc::new(gpu::Buffer::new(
+        let nearest_score_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            buffers_elements_count * std::mem::size_of::<ScoredPointOffset>(),
+            buffers_elements_count * std::mem::size_of::<f32>(),
+        ));
+        let nearest_id_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            buffers_elements_count * std::mem::size_of::<PointOffsetType>(),
         ));
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -68,11 +74,13 @@ impl GpuNearestHeap {
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_uniform_buffer(0)
             .add_storage_buffer(1)
+            .add_storage_buffer(2)
             .build(device.clone());
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, params_buffer.clone())
-            .add_storage_buffer(1, nearest_buffer.clone())
+            .add_storage_buffer(1, nearest_score_buffer.clone())
+            .add_storage_buffer(2, nearest_id_buffer.clone())
             .build();
 
         Ok(Self {
@@ -80,7 +88,8 @@ impl GpuNearestHeap {
             capacity,
             device,
             params_buffer,
-            nearest_buffer,
+            nearest_score_buffer,
+            nearest_id_buffer,
             descriptor_set_layout,
             descriptor_set,
         })
@@ -90,7 +99,7 @@ impl GpuNearestHeap {
 #[cfg(test)]
 mod tests {
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-    use common::types::PointOffsetType;
+    use common::types::{PointOffsetType, ScoredPointOffset};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -213,7 +222,7 @@ mod tests {
             gpu::BufferType::GpuToCpu,
             std::cmp::max(
                 scores_output_buffer.size,
-                gpu_nearest_heap.nearest_buffer.size,
+                gpu_nearest_heap.nearest_score_buffer.size,
             ),
         ));
         context.copy_gpu_buffer(
@@ -229,8 +238,7 @@ mod tests {
         download_staging_buffer.download_slice(&mut scores_output, 0);
 
         let mut scores_output_cpu = vec![0.0; inputs_count * groups_count];
-        let mut sorted_output_cpu =
-            vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
+        let mut sorted_output_cpu = vec![PointOffsetType::default(); ef * groups_count];
         for group in 0..groups_count {
             let mut queue = FixedLengthPriorityQueue::<ScoredPointOffset>::new(ef);
             for i in 0..inputs_count {
@@ -240,18 +248,18 @@ mod tests {
             }
             let sorted = queue.into_vec();
             for i in 0..ef {
-                sorted_output_cpu[group * ef + i] = sorted[i];
+                sorted_output_cpu[group * ef + i] = sorted[i].idx;
             }
         }
 
-        let mut nearest_gpu: Vec<ScoredPointOffset> =
+        let mut nearest_gpu: Vec<PointOffsetType> =
             vec![Default::default(); gpu_nearest_heap.capacity * groups_count];
         context.copy_gpu_buffer(
-            gpu_nearest_heap.nearest_buffer.clone(),
+            gpu_nearest_heap.nearest_id_buffer.clone(),
             download_staging_buffer.clone(),
             0,
             0,
-            nearest_gpu.len() * std::mem::size_of::<ScoredPointOffset>(),
+            nearest_gpu.len() * std::mem::size_of::<PointOffsetType>(),
         );
         context.run();
         context.wait_finish();

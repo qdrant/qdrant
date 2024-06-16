@@ -71,8 +71,7 @@ impl DebugMessenger for PanicIfErrorMessenger {
     }
 
     fn get_severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT {
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
-            | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
+        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
     }
 
     fn get_message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT {
@@ -100,7 +99,6 @@ unsafe extern "system" fn vulkan_debug_callback_panic(
         _ => "Unknown",
     };
     let severity = match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => "warning",
         vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => "error",
         _ => "info",
     };

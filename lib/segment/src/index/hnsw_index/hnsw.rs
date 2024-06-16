@@ -778,11 +778,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     None,
                     get_gpu_max_groups_count(
                         vector_storage.available_size_in_bytes(),
+                        quantized_vectors.is_some(),
                         total_vector_count,
                         self.config.m0,
                         self.config.ef_construct,
                     ),
                     &vector_storage,
+                    quantized_vectors.as_ref(),
                     num_entries,
                     get_gpu_force_half_precision(),
                     SINGLE_THREADED_HNSW_BUILD_THRESHOLD,

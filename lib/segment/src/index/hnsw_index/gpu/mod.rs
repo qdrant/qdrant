@@ -41,6 +41,7 @@ pub fn get_gpu_max_memory_mb() -> usize {
 
 pub fn get_gpu_max_groups_count(
     vector_storage_size: usize,
+    has_bq: bool,
     num_vectors: usize,
     m0: usize,
     ef: usize,
@@ -50,11 +51,21 @@ pub fn get_gpu_max_groups_count(
         let nearest_heap_size = ef * std::mem::size_of::<ScoredPointOffset>();
         let candidates_heap_size = 10_000 * std::mem::size_of::<ScoredPointOffset>();
         let visited_flags_size = num_vectors * std::mem::size_of::<u8>();
+        let vector_storage_size = if has_bq {
+            vector_storage_size.div_ceil(32)
+        } else {
+            vector_storage_size
+        };
 
         let left_memory =
             (get_gpu_max_memory_mb() * 1024 * 1024).checked_sub(links_size + vector_storage_size);
         if let Some(left_memory) = left_memory {
-            left_memory / (nearest_heap_size + candidates_heap_size + visited_flags_size)
+            std::cmp::min(
+                (left_memory / (nearest_heap_size + candidates_heap_size + visited_flags_size))
+                    .div_ceil(32)
+                    * 32,
+                1024 * 32,
+            )
         } else {
             128
         }

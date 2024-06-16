@@ -6,6 +6,9 @@ use common::types::PointOffsetType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectorStorage, QuantizedVectors,
+};
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 pub const ALIGNMENT: usize = 32 * 4;
@@ -39,6 +42,92 @@ pub struct GpuVectorStorage {
 
 impl GpuVectorStorage {
     pub fn new(
+        device: Arc<gpu::Device>,
+        vector_storage: &VectorStorageEnum,
+        quantized_storage: Option<&QuantizedVectors>,
+        force_half_precision: bool,
+    ) -> OperationResult<Self> {
+        if let Some(quantized_storage) = quantized_storage {
+            Self::new_from_vector_quantization(
+                device,
+                vector_storage,
+                &quantized_storage.storage_impl,
+                force_half_precision,
+            )
+        } else {
+            Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+        }
+    }
+
+    fn new_from_vector_quantization(
+        device: Arc<gpu::Device>,
+        vector_storage: &VectorStorageEnum,
+        quantized_storage: &QuantizedVectorStorage,
+        force_half_precision: bool,
+    ) -> OperationResult<Self> {
+        match quantized_storage {
+            QuantizedVectorStorage::ScalarRam(_) => {
+                log::warn!("GPU does not support scalar quantization, use original vector data");
+                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+            }
+            QuantizedVectorStorage::ScalarMmap(_) => {
+                log::warn!("GPU does not support scalar quantization, use original vector data");
+                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+            }
+            QuantizedVectorStorage::PQRam(_) => {
+                log::warn!("GPU does not support product quantization, use original vector data");
+                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+            }
+            QuantizedVectorStorage::PQMmap(_) => {
+                log::warn!("GPU does not support product quantization, use original vector data");
+                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+            }
+            QuantizedVectorStorage::BinaryRam(_) => {
+                let first_vector = vector_storage.get_vector(0);
+                let first_dense: &[VectorElementType] = first_vector.as_vec_ref().try_into()?;
+                let dim = first_dense.len();
+                Self::new_typed::<VectorElementTypeByte>(
+                    device,
+                    GpuVectorStorageElementType::Binary,
+                    vector_storage.total_vector_count(),
+                    |id| {
+                        let dense: &[VectorElementType] = vector_storage
+                            .get_vector(id)
+                            .as_vec_ref()
+                            .try_into()
+                            .unwrap();
+                        let mut binary = vec![0u8; dim];
+                        // TODO(gpu)
+                        Cow::Owned(binary)
+                    },
+                )
+            }
+            QuantizedVectorStorage::BinaryMmap(_) => {
+                log::warn!("GPU does not support binary quantization, use original vector data");
+                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+            }
+            QuantizedVectorStorage::ScalarRamMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            QuantizedVectorStorage::ScalarMmapMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            QuantizedVectorStorage::PQRamMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            QuantizedVectorStorage::PQMmapMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            QuantizedVectorStorage::BinaryRamMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+            QuantizedVectorStorage::BinaryMmapMulti(_) => Err(OperationError::service_error(
+                "GPU does not support multivectors",
+            )),
+        }
+    }
+
+    fn new_from_vector_storage(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,
         force_half_precision: bool,
@@ -437,8 +526,13 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), &storage.borrow(), force_half_precision).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
+            &storage.borrow(),
+            None,
+            force_half_precision,
+        )
+        .unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
