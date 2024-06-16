@@ -34,8 +34,9 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
 
+// uint = 4 * uint8_t, vec4 analogue for BQ
 #define VECTOR_STORAGE_ELEMENT_TYPE uint
-// TODO: find glsl function for XOR
+// TODO(gpu): find glsl function for XOR
 #define VECTOR_STORAGE_SCORE_ELEMENT(i, j) float(bitCount((a | b) - (a & b)))
 
 #endif
@@ -156,11 +157,11 @@ float similarity(uint a, uint b) {
     }
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
-    return subgroupAdd(result);
-#else
     float xor_product = result;
     float zeros_count = float(d * 32) - xor_product;
     return zeros_count - xor_product;
+#else
+    return subgroupAdd(result);
 #endif
 }
 
