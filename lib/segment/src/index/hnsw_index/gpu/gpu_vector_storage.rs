@@ -85,26 +85,53 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::BinaryRam(_) => {
                 let first_vector = vector_storage.get_vector(0);
                 let first_dense: &[VectorElementType] = first_vector.as_vec_ref().try_into()?;
-                let dim = first_dense.len();
+                let bits_per_read = device.subgroup_size() * std::mem::size_of::<u32>() * 8;
+                let bits_count = first_dense.len().div_ceil(bits_per_read) * bits_per_read;
+                let u32_count = bits_count / 32;
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
                     GpuVectorStorageElementType::Binary,
                     vector_storage.total_vector_count(),
                     |id| {
-                        let dense: &[VectorElementType] = vector_storage
-                            .get_vector(id)
-                            .as_vec_ref()
-                            .try_into()
-                            .unwrap();
-                        let mut binary = vec![0u8; dim];
-                        // TODO(gpu)
+                        let vector = vector_storage.get_vector(id);
+                        let dense: &[VectorElementType] = vector.as_vec_ref().try_into().unwrap();
+                        let mut binary = vec![0u8; u32_count * std::mem::size_of::<u32>()];
+                        for (i, v) in dense.iter().enumerate() {
+                            if *v > 0.0 {
+                                binary[i / 8] |= 1u8 << (i % 8);
+                            }
+                        }
+                        println!(
+                            "Binary vector {},{}: {:?}",
+                            binary.len(),
+                            dense.len(),
+                            binary
+                        );
                         Cow::Owned(binary)
                     },
                 )
             }
             QuantizedVectorStorage::BinaryMmap(_) => {
-                log::warn!("GPU does not support binary quantization, use original vector data");
-                Self::new_from_vector_storage(device, vector_storage, force_half_precision)
+                let first_vector = vector_storage.get_vector(0);
+                let first_dense: &[VectorElementType] = first_vector.as_vec_ref().try_into()?;
+                let bits_per_read = device.subgroup_size() * std::mem::size_of::<u32>() * 8;
+                let bits_count = first_dense.len().div_ceil(bits_per_read) * bits_per_read;
+                let u32_count = bits_count / 32;
+                Self::new_typed::<VectorElementTypeByte>(
+                    device,
+                    GpuVectorStorageElementType::Binary,
+                    vector_storage.total_vector_count(),
+                    |id| {
+                        let vector = vector_storage.get_vector(id);
+                        let dense: &[VectorElementType] = vector.as_vec_ref().try_into().unwrap();
+                        let mut binary = vec![0u8; u32_count * std::mem::size_of::<u32>()];
+                        for (i, v) in dense.iter().enumerate() {
+                            let bit = if *v > 0.0 { 1 } else { 0 };
+                            binary[i / 8] |= bit << (i % 8);
+                        }
+                        Cow::Owned(binary)
+                    },
+                )
             }
             QuantizedVectorStorage::ScalarRamMulti(_) => Err(OperationError::service_error(
                 "GPU does not support multivectors",
@@ -435,6 +462,7 @@ mod tests {
     use std::path::Path;
 
     use atomic_refcell::AtomicRefCell;
+    use bitvec::vec::BitVec;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
@@ -444,7 +472,9 @@ mod tests {
     use crate::fixtures::payload_fixtures::random_dense_byte_vector;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
-    use crate::types::Distance;
+    use crate::types::{
+        BinaryQuantization, BinaryQuantizationConfig, Distance, QuantizationConfig,
+    };
     use crate::vector_storage::dense::simple_dense_vector_storage::{
         open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
         open_simple_dense_vector_storage,
@@ -653,5 +683,167 @@ mod tests {
     fn test_gpu_vector_storage_force_half_precision() {
         let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float32, true);
         assert_eq!(element, GpuVectorStorageElementType::Float16);
+    }
+
+    #[test]
+    fn test_gpu_vector_storage_binary_quantization() {
+        let num_vectors = 16;
+        let dim = 1024;
+        let capacity = 128;
+        let test_point_id = 0usize;
+
+        let mut rnd = StdRng::seed_from_u64(42);
+        let points = (0..num_vectors)
+            .map(|_| random_vector(&mut rnd, dim))
+            .collect::<Vec<_>>();
+
+        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage =
+            open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
+                .unwrap();
+
+        let quantized_vectors = {
+            let mut borrowed_storage = storage.borrow_mut();
+            points.iter().enumerate().for_each(|(i, vec)| {
+                borrowed_storage
+                    .insert_vector(i as PointOffsetType, vec.into())
+                    .unwrap();
+            });
+
+            QuantizedVectors::create(
+                &borrowed_storage,
+                &QuantizationConfig::Binary(BinaryQuantization {
+                    binary: BinaryQuantizationConfig {
+                        always_ram: Some(true),
+                    },
+                }),
+                dir.path(),
+                1,
+                &false.into(),
+            )
+            .unwrap()
+        };
+
+        let debug_messenger = gpu::PanicIfErrorMessenger {};
+        let instance =
+            Arc::new(gpu::Instance::new("qdrant", Some(&debug_messenger), false).unwrap());
+        let device =
+            Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
+
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
+            &storage.borrow(),
+            Some(&quantized_vectors),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            gpu_vector_storage.element_type,
+            GpuVectorStorageElementType::Binary
+        );
+
+        let scores_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            num_vectors * std::mem::size_of::<f32>(),
+        ));
+
+        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+            .add_storage_buffer(0)
+            .build(device.clone());
+
+        let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
+            .add_storage_buffer(0, scores_buffer.clone())
+            .build();
+
+        let shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    println!("Float32 shader");
+                    include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    println!("Float16 shader");
+                    include_bytes!("./shaders/compiled/test_vector_storage_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    println!("Uint8 shader");
+                    include_bytes!("./shaders/compiled/test_vector_storage_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    println!("Binary shader");
+                    include_bytes!("./shaders/compiled/test_vector_storage_binary.spv")
+                }
+            },
+        ));
+
+        let pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
+            .add_shader(shader.clone())
+            .build(device.clone());
+
+        let mut context = gpu::Context::new(device.clone());
+        context.bind_pipeline(
+            pipeline,
+            &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
+        );
+        context.dispatch(num_vectors, 1, 1);
+
+        let timer = std::time::Instant::now();
+        context.run();
+        context.wait_finish();
+        println!("GPU scoring time = {:?}", timer.elapsed());
+
+        let staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            num_vectors * std::mem::size_of::<f32>(),
+        ));
+        context.copy_gpu_buffer(
+            scores_buffer,
+            staging_buffer.clone(),
+            0,
+            0,
+            num_vectors * std::mem::size_of::<f32>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut scores = vec![0.0f32; num_vectors];
+        staging_buffer.download_slice(&mut scores, 0);
+
+        context.copy_gpu_buffer(
+            gpu_vector_storage.params_buffer.clone(),
+            staging_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of::<GpuVectorParamsBuffer>(),
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
+        staging_buffer.download(&mut vector_storage_params, 0);
+        assert_eq!(vector_storage_params.dim, capacity as u32);
+        assert_eq!(vector_storage_params.count, num_vectors as u32);
+
+        let stopped = false.into();
+        let point_deleted = BitVec::repeat(false, num_vectors);
+        let scorer = quantized_vectors
+            .raw_scorer(
+                points[test_point_id].clone().into(),
+                &point_deleted,
+                &point_deleted,
+                &stopped,
+            )
+            .unwrap();
+        for i in 0..num_vectors {
+            let score =
+                scorer.score_internal(test_point_id as PointOffsetType, i as PointOffsetType);
+            assert_eq!(score, scores[i]);
+        }
     }
 }
