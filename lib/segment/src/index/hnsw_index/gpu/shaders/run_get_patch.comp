@@ -45,11 +45,11 @@ layout(set = 0, binding = 2) buffer NewEntries {
 } new_entries;
 
 void clear_patches() {
-    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    uint subgroup_index = SUBGROUP_ID;
     uint patch_size = LEVEL_M + 2; // id + links_count + links
     uint all_patches_size = (LEVEL_M + 1) * patch_size;
     uint patches_offset = subgroup_index * all_patches_size;
-    for (uint i = SUBGROUP_INVOKATION_ID; i < all_patches_size; i += SUBGROUP_SIZE) {
+    for (uint i = SUBGROUP_INVOCATION_ID; i < all_patches_size; i += SUBGROUP_SIZE) {
         patches.data[patches_offset + i] = UINT_MAX;
     }
     groupMemoryBarrier();
@@ -58,7 +58,7 @@ void clear_patches() {
 void main() {
     clear_patches();
     search_context_init();
-    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    uint subgroup_index = SUBGROUP_ID;
     Request request = requests.data[subgroup_index];
 
     float entry_score = similarity(request.id, request.entry);

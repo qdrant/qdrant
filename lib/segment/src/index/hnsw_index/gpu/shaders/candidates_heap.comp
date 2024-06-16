@@ -20,7 +20,7 @@ buffer CandidatesScores {
 uint candidates_count;
 
 #define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
-#define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
+#define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * SUBGROUP_ID)
 
 ScoredPoint preprocess_candidates_heap_value(ScoredPoint scored_point) {
     scored_point.score = -scored_point.score; // TODO: revert direction
@@ -29,7 +29,7 @@ ScoredPoint preprocess_candidates_heap_value(ScoredPoint scored_point) {
 
 ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_change = scored_point.score > node_value.score;
-    uint invocation = SUBGROUP_INVOKATION_ID;
+    uint invocation = SUBGROUP_INVOCATION_ID;
     uint first_invocation = 0;
     if (invocation == first_invocation) {
         need_change = true;
@@ -59,7 +59,7 @@ ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint sc
 
 ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_change = scored_point.score < node_value.score;
-    uint invocation = SUBGROUP_INVOKATION_ID;
+    uint invocation = SUBGROUP_INVOCATION_ID;
     uint last_invocation = SUBGROUP_SIZE - 1;
     if (invocation == last_invocation) {
         need_change = true;
@@ -88,12 +88,12 @@ ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint sco
 }
 
 ScoredPoint candidates_heap_read(uint buffer_offset, uint node_index) {
-    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOKATION_ID;
+    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOCATION_ID;
     return candidates.data[buffer_index];
 }
 
 void candidates_heap_write(uint buffer_offset, uint node_index, ScoredPoint value) {
-    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOKATION_ID;
+    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOCATION_ID;
     candidates.data[buffer_index] = value;
 }
 
@@ -102,7 +102,7 @@ void candidates_heap_init() {
 
     uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
     uint capacity = CANDIDATES_HEAP_CAPACITY;
-    for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+    for (uint i = SUBGROUP_INVOCATION_ID; i < capacity; i += SUBGROUP_SIZE) {
         uint buffer_index = buffer_offset + i;
         candidates.data[buffer_index] = ScoredPoint(0, positive_infinity);
     }

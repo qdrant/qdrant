@@ -101,12 +101,6 @@ impl GpuVectorStorage {
                                 binary[i / 8] |= 1u8 << (i % 8);
                             }
                         }
-                        println!(
-                            "Binary vector {},{}: {:?}",
-                            binary.len(),
-                            dense.len(),
-                            binary
-                        );
                         Cow::Owned(binary)
                     },
                 )
@@ -336,6 +330,7 @@ impl GpuVectorStorage {
             staging_buffer.size, upload_points_count
         );
 
+        println!("capacity = {}, count = {}", capacity, count);
         let params = GpuVectorParamsBuffer {
             dim: capacity as u32,
             count: count as u32,

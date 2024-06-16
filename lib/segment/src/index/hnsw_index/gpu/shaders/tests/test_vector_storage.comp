@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) buffer ScoresData {
 } scores;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    uint idx = SUBGROUP_ID;
     float score = similarity(0, idx);
     if (subgroupElect()) {
         scores.data[idx] = score;

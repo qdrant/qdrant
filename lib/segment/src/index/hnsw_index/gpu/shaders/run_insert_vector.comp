@@ -42,7 +42,7 @@ layout(set = 0, binding = 1) buffer NewEntries {
 
 void main() {
     search_context_init();
-    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    uint subgroup_index = SUBGROUP_ID;
     Request request = requests.data[subgroup_index];
 
     float entry_score = similarity(request.id, request.entry);
@@ -66,7 +66,7 @@ void main() {
     barrier();
 
     // update request.id links
-    for (uint i = SUBGROUP_INVOKATION_ID; i < count; i += SUBGROUP_SIZE) {
+    for (uint i = SUBGROUP_INVOCATION_ID; i < count; i += SUBGROUP_SIZE) {
         GET_LINK(request.id, i) = get_nearest(i).id;
     }
     if (subgroupElect()) {
@@ -105,7 +105,7 @@ void main() {
             sort_nearest();
             uint other_new_links_count = run_heuristic();
 
-            for (uint j = SUBGROUP_INVOKATION_ID; j < other_new_links_count; j += SUBGROUP_SIZE) {
+            for (uint j = SUBGROUP_INVOCATION_ID; j < other_new_links_count; j += SUBGROUP_SIZE) {
                 GET_LINK(other_id, j) = get_nearest(j).id;
             }
             if (subgroupElect()) {

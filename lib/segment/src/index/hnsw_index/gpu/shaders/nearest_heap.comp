@@ -29,7 +29,7 @@ uint nearest_count;
 
 #define NEAREST_HEAP_CAPACITY nearest_heap_params.capacity
 #define NEAREST_HEAP_EF nearest_heap_params.ef
-#define NEAREST_BUFFER_OFFSET (NEAREST_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
+#define NEAREST_BUFFER_OFFSET (NEAREST_HEAP_CAPACITY * SUBGROUP_ID)
 
 void nearest_heap_init() {
     nearest_count = 0;
@@ -38,7 +38,7 @@ void nearest_heap_init() {
 
     uint buffer_offset = NEAREST_BUFFER_OFFSET;
     uint capacity = NEAREST_HEAP_CAPACITY;
-    for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+    for (uint i = SUBGROUP_INVOCATION_ID; i < capacity; i += SUBGROUP_SIZE) {
         uint buffer_index = buffer_offset + i;
         nearest_score.data[buffer_index] = negative_infinity;
         nearest_id.data[buffer_index] = UINT_MAX;
@@ -61,7 +61,7 @@ bool push_nearest(ScoredPoint scored_point) {
 
             nearest_smaller_index = 0;
             nearest_smaller.score = positive_infinity;
-            for (uint i = SUBGROUP_INVOKATION_ID; i < ef; i += SUBGROUP_SIZE) {
+            for (uint i = SUBGROUP_INVOCATION_ID; i < ef; i += SUBGROUP_SIZE) {
                 uint buffer_index = buffer_offset + i;
                 float score = nearest_score.data[buffer_index];
                 if (score < nearest_smaller.score) {
@@ -100,7 +100,7 @@ bool push_nearest(ScoredPoint scored_point) {
 }
 
 uint subgroup_bubble_sort(float score) {
-    uint invocation = SUBGROUP_INVOKATION_ID;
+    uint invocation = SUBGROUP_INVOCATION_ID;
     bool is_even = invocation % 2 == 0;
     uint invocation_forward = is_even ? invocation + 1 : invocation - 1;
     uint invocation_backward = invocation;
@@ -110,7 +110,7 @@ uint subgroup_bubble_sort(float score) {
 
     uint index = invocation;
     for (uint j = 0; j < SUBGROUP_SIZE / 2; j++) {
-        bool is_even = SUBGROUP_INVOKATION_ID % 2 == 0;
+        bool is_even = SUBGROUP_INVOCATION_ID % 2 == 0;
         bool was_changed = false;
 
         // step one: compare with the next element
@@ -150,7 +150,7 @@ void sort_nearest() {
     uint iterations_count = nearest_count / (SUBGROUP_SIZE / 2) + uint(sign(float(nearest_count % (SUBGROUP_SIZE / 2))));
     for (uint _cnt = 0; _cnt < iterations_count; _cnt++) {
         // do bubble sort in each subgroup to reduce the number of memory accesses
-        for (uint i = SUBGROUP_INVOKATION_ID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
+        for (uint i = SUBGROUP_INVOCATION_ID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
             ScoredPoint scored_point = ScoredPoint(
                 nearest_id.data[buffer_offset + i],
                 nearest_score.data[buffer_offset + i]
@@ -169,7 +169,7 @@ void sort_nearest() {
 
         if (NEAREST_HEAP_CAPACITY > SUBGROUP_SIZE) {
             // do bubble sort in each subgroup to reduce the number of memory accesses
-            for (uint i = SUBGROUP_INVOKATION_ID + (SUBGROUP_SIZE / 2); i < NEAREST_HEAP_CAPACITY - (SUBGROUP_SIZE / 2); i += SUBGROUP_SIZE) {
+            for (uint i = SUBGROUP_INVOCATION_ID + (SUBGROUP_SIZE / 2); i < NEAREST_HEAP_CAPACITY - (SUBGROUP_SIZE / 2); i += SUBGROUP_SIZE) {
                 ScoredPoint scored_point = ScoredPoint(
                     nearest_id.data[buffer_offset + i],
                     nearest_score.data[buffer_offset + i]

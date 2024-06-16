@@ -23,7 +23,7 @@ POINT_ID heap_data[16];
 void main() {
     BHEAP(LINKS_BHEAP, init)(0, 16, 0);
 
-    POINT_ID point_id = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    POINT_ID point_id = SUBGROUP_ID;
     
     LINKS_FOREACH(point_id) {
         BHEAP(LINKS_BHEAP, push)(LINKS_FOREACH_VALUE);
