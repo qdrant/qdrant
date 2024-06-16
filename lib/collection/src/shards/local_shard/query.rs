@@ -19,7 +19,7 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     ScrollRequestInternal,
 };
-use crate::operations::universal_query::planned_query::{MergeSources, RescoreParams, Source};
+use crate::operations::universal_query::planned_query::{MergePlan, RescoreParams, Source};
 use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
@@ -80,7 +80,7 @@ impl LocalShard {
             .into_iter()
             .map(|query_plan| {
                 (
-                    query_plan.merge_sources,
+                    query_plan.merge_plan,
                     (query_plan.with_payload, query_plan.with_vector),
                 )
             })
@@ -186,7 +186,7 @@ impl LocalShard {
 
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
-        merge_sources: MergeSources,
+        merge_plan: MergePlan,
         prefetch_holder: &'query PrefetchResults,
         search_runtime_handle: &'shard Handle,
         timeout: Duration,
@@ -196,11 +196,11 @@ impl LocalShard {
         'shard: 'query,
     {
         async move {
-            let max_len = merge_sources.sources.len();
+            let max_len = merge_plan.sources.len();
             let mut cow_sources = Vec::with_capacity(max_len);
 
             // We need to preserve the order of the sources for some fusion strategies
-            for source in merge_sources.sources.into_iter() {
+            for source in merge_plan.sources.into_iter() {
                 match source {
                     Source::SearchesIdx(idx) => {
                         cow_sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)
@@ -226,7 +226,7 @@ impl LocalShard {
             }
 
             let root_query_needs_intermediate_results = || {
-                merge_sources
+                merge_plan
                     .rescore_params
                     .as_ref()
                     .map(|params| params.rescore.needs_intermediate_results())
@@ -242,7 +242,7 @@ impl LocalShard {
                 let merged = self
                     .merge_sources(
                         cow_sources,
-                        merge_sources.rescore_params,
+                        merge_plan.rescore_params,
                         search_runtime_handle,
                         timeout,
                     )

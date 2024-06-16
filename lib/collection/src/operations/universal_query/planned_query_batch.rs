@@ -1,6 +1,6 @@
 use segment::types::{WithPayloadInterface, WithVector};
 
-use super::planned_query::{MergeSources, PlannedQuery, Source};
+use super::planned_query::{MergePlan, PlannedQuery, Source};
 use crate::operations::types::{CoreSearchRequest, ScrollRequestInternal};
 
 /// Same as a [PlannedQuery], but without the scrolls and searches.
@@ -9,7 +9,7 @@ use crate::operations::types::{CoreSearchRequest, ScrollRequestInternal};
 pub struct WeakPlannedQuery {
     /// References to the searches and scrolls in the batch, and how to merge them.
     /// This retains the recursive structure of the original query.
-    pub merge_sources: MergeSources,
+    pub merge_plan: MergePlan,
 
     /// The offset into the final results. Skip this many points before returning
     ///
@@ -30,7 +30,7 @@ pub struct PlannedQueryBatch {
     pub root_queries: Vec<WeakPlannedQuery>,
 }
 
-impl MergeSources {
+impl MergePlan {
     /// Offsets the sources of the merge plan by the given offsets.
     fn offset_sources(&mut self, searches_idx_offset: usize, scrolls_idx_offset: usize) {
         self.sources.iter_mut().for_each(|source| match source {
@@ -61,7 +61,7 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
 
         for planned_query in planned_queries {
             let PlannedQuery {
-                mut merge_sources,
+                merge_plan: mut merge_sources,
                 searches,
                 scrolls,
                 offset,
@@ -80,7 +80,7 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
             batch.scrolls.extend(scrolls);
 
             batch.root_queries.push(WeakPlannedQuery {
-                merge_sources,
+                merge_plan: merge_sources,
                 offset,
                 with_vector,
                 with_payload,
@@ -131,7 +131,7 @@ mod tests {
             PlannedQuery {
                 searches: vec![dummy_core_search(10)],
                 scrolls: vec![],
-                merge_sources: MergeSources {
+                merge_plan: MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: None,
                 },
@@ -143,7 +143,7 @@ mod tests {
             PlannedQuery {
                 searches: vec![],
                 scrolls: vec![dummy_scroll(20)],
-                merge_sources: MergeSources {
+                merge_plan: MergePlan {
                     sources: vec![Source::ScrollsIdx(0)],
                     rescore_params: None,
                 },
@@ -155,9 +155,9 @@ mod tests {
             PlannedQuery {
                 searches: vec![dummy_core_search(30), dummy_core_search(40)],
                 scrolls: vec![dummy_scroll(50)],
-                merge_sources: MergeSources {
+                merge_plan: MergePlan {
                     sources: vec![
-                        Source::Prefetch(MergeSources {
+                        Source::Prefetch(MergePlan {
                             sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
                             rescore_params: Some(RescoreParams {
                                 rescore: ScoringQuery::Fusion(Fusion::Rrf),
@@ -188,7 +188,7 @@ mod tests {
             planned_batch_query.root_queries,
             vec![
                 WeakPlannedQuery {
-                    merge_sources: MergeSources {
+                    merge_plan: MergePlan {
                         sources: vec![Source::SearchesIdx(0)],
                         rescore_params: None,
                     },
@@ -197,7 +197,7 @@ mod tests {
                     with_payload: WithPayloadInterface::Bool(false),
                 },
                 WeakPlannedQuery {
-                    merge_sources: MergeSources {
+                    merge_plan: MergePlan {
                         sources: vec![Source::ScrollsIdx(0)],
                         rescore_params: None,
                     },
@@ -206,9 +206,9 @@ mod tests {
                     with_payload: WithPayloadInterface::Bool(true),
                 },
                 WeakPlannedQuery {
-                    merge_sources: MergeSources {
+                    merge_plan: MergePlan {
                         sources: vec![
-                            Source::Prefetch(MergeSources {
+                            Source::Prefetch(MergePlan {
                                 sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
                                 rescore_params: Some(RescoreParams {
                                     rescore: ScoringQuery::Fusion(Fusion::Rrf),

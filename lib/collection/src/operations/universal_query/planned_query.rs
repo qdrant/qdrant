@@ -17,7 +17,7 @@ const MAX_PREFETCH_DEPTH: usize = 64;
 pub struct PlannedQuery {
     /// References to the searches and scrolls, and how to merge them.
     /// This retains the recursive structure of the original query.
-    pub merge_sources: MergeSources,
+    pub merge_plan: MergePlan,
 
     /// All the leaf core searches
     pub searches: Vec<CoreSearchRequest>,
@@ -59,11 +59,11 @@ pub enum Source {
     ScrollsIdx(usize),
 
     /// A nested prefetch
-    Prefetch(MergeSources),
+    Prefetch(MergePlan),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct MergeSources {
+pub struct MergePlan {
     /// Gather all these sources
     pub sources: Vec<Source>,
 
@@ -119,7 +119,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             with_vector = req_with_vector;
             with_payload = req_with_payload;
 
-            MergeSources {
+            MergePlan {
                 sources,
                 rescore_params: Some(RescoreParams {
                     rescore,
@@ -193,14 +193,14 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             with_payload = WithPayloadInterface::Bool(false);
 
             // Root-level query without prefetches is the only case where merge is `None`
-            MergeSources {
+            MergePlan {
                 sources,
                 rescore_params: None,
             }
         };
 
         Ok(Self {
-            merge_sources,
+            merge_plan: merge_sources,
             searches: core_searches,
             scrolls,
             offset,
@@ -300,7 +300,7 @@ fn recurse_prefetches(
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
 
-            let merge_sources = MergeSources {
+            let merge_plan = MergePlan {
                 sources: inner_sources,
                 rescore_params: Some(RescoreParams {
                     rescore,
@@ -309,7 +309,7 @@ fn recurse_prefetches(
                 }),
             };
 
-            Source::Prefetch(merge_sources)
+            Source::Prefetch(merge_plan)
         };
         sources.push(source);
     }
@@ -408,9 +408,9 @@ mod tests {
         );
 
         assert_eq!(
-            planned_query.merge_sources,
-            MergeSources {
-                sources: vec![Source::Prefetch(MergeSources {
+            planned_query.merge_plan,
+            MergePlan {
+                sources: vec![Source::Prefetch(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: Some(RescoreParams {
                         rescore: ScoringQuery::Vector(QueryEnum::Nearest(
@@ -480,8 +480,8 @@ mod tests {
         );
 
         assert_eq!(
-            planned_query.merge_sources,
-            MergeSources {
+            planned_query.merge_plan,
+            MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
                 rescore_params: None,
             }
@@ -587,8 +587,8 @@ mod tests {
         );
 
         assert_eq!(
-            planned_query.merge_sources,
-            MergeSources {
+            planned_query.merge_plan,
+            MergePlan {
                 sources: vec![Source::SearchesIdx(0), Source::SearchesIdx(1)],
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
@@ -678,8 +678,8 @@ mod tests {
         assert_eq!(planned_query.with_vector, WithVector::Bool(true));
 
         assert_eq!(
-            planned_query.merge_sources,
-            MergeSources {
+            planned_query.merge_plan,
+            MergePlan {
                 sources: vec![Source::SearchesIdx(0)],
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Fusion(Fusion::Rrf),
