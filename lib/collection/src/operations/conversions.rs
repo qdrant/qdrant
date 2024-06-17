@@ -54,8 +54,8 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequestInternal, Record,
-    RemoteShardInfo, ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
+    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, Record, RemoteShardInfo,
+    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
@@ -1304,16 +1304,6 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
             lookup: group
                 .lookup
                 .map(|record| api::grpc::qdrant::RetrievedPoint::from(Record::from(record))),
-        }
-    }
-}
-
-impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
-    fn from(value: api::grpc::qdrant::LookupLocation) -> Self {
-        Self {
-            collection: value.collection_name,
-            vector: value.vector_name,
-            shard_key: value.shard_key_selector.map(ShardKeySelector::from),
         }
     }
 }

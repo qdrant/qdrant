@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use api::rest::RecommendStrategy;
+use api::rest::{LookupLocation, RecommendStrategy};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
@@ -16,7 +16,6 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::common::fetch_vectors::ReferencedVectors;
 use crate::common::retrieve_request_trait::RetrieveRequest;
-use crate::lookup::types::WithLookupInterface;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
@@ -34,7 +33,7 @@ pub struct CollectionQueryRequest {
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
-    pub with_lookup: Option<WithLookupInterface>,
+    pub lookup_from: Option<LookupLocation>,
 }
 
 impl CollectionQueryRequest {
@@ -269,6 +268,7 @@ pub struct CollectionPrefetch {
     pub limit: usize,
     /// Search params for when there is no prefetch
     pub params: Option<SearchParams>,
+    pub lookup_from: Option<LookupLocation>,
 }
 
 /// Exclude the referenced ids by editing the filter.
@@ -400,7 +400,7 @@ impl CollectionQueryRequest {
 }
 
 mod from_rest {
-    use api::rest::schema as rest;
+    use api::rest::{schema as rest, LookupLocation};
 
     use super::*;
 
@@ -417,7 +417,7 @@ mod from_rest {
                 offset,
                 with_vector,
                 with_payload,
-                with_lookup,
+                lookup_from,
             } = value;
 
             Self {
@@ -431,7 +431,7 @@ mod from_rest {
                 params,
                 with_vector: with_vector.unwrap_or(Self::DEFAULT_WITH_VECTOR),
                 with_payload: with_payload.unwrap_or(Self::DEFAULT_WITH_PAYLOAD),
-                with_lookup: with_lookup.map(WithLookupInterface::from),
+                lookup_from: lookup_from.map(LookupLocation::from),
             }
         }
     }
@@ -446,6 +446,7 @@ mod from_rest {
                 score_threshold,
                 params,
                 limit,
+                lookup_from,
             } = value;
 
             Self {
@@ -456,6 +457,7 @@ mod from_rest {
                 score_threshold,
                 limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 params,
+                lookup_from,
             }
         }
     }
@@ -600,7 +602,7 @@ mod from_grpc {
                 with_vectors,
                 read_consistency,
                 shard_key_selector,
-                with_lookup,
+                lookup_from,
             } = value;
 
             let request = CollectionQueryRequest {
@@ -626,7 +628,7 @@ mod from_grpc {
                     .map(TryFrom::try_from)
                     .transpose()?
                     .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-                with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
+                lookup_from: lookup_from.map(From::from),
             };
 
             let shard_key =
@@ -655,6 +657,7 @@ mod from_grpc {
                 search_params,
                 score_threshold,
                 limit,
+                lookup_from,
             } = value;
 
             let collection_query = Self {
@@ -670,6 +673,7 @@ mod from_grpc {
                     .map(|l| l as usize)
                     .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 params: search_params.map(From::from),
+                lookup_from: lookup_from.map(From::from),
             };
 
             Ok(collection_query)

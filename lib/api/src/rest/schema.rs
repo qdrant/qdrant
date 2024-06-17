@@ -208,8 +208,10 @@ pub struct QueryRequestInternal {
     /// Options for specifying which payload to include or not. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Options for specifying where to lookup vector ids from during recommendation
-    pub with_lookup: Option<WithLookupInterface>,
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -276,6 +278,11 @@ pub struct Prefetch {
 
     /// Max number of points to return. Default is 10.
     pub limit: Option<usize>,
+
+    /// The location used to lookup vectors. If not specified - use current collection.
+    /// Note: the other collection should have the same vector size as the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
 }
 
 /// How to use positive and negative examples to find the results, default is `average_vector`:
@@ -379,6 +386,23 @@ const fn default_with_payload() -> Option<WithPayloadInterface> {
 pub enum WithLookupInterface {
     Collection(String),
     WithLookup(WithLookup),
+}
+
+/// Defines a location to use for looking up the vector.
+/// Specifies collection and vector field name.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct LookupLocation {
+    /// Name of the collection used for lookup
+    pub collection: String,
+    /// Optional name of the vector field within the collection.
+    /// If not provided, the default vector field will be used.
+    #[serde(default)]
+    pub vector: Option<String>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]

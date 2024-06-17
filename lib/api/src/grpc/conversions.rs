@@ -17,9 +17,9 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
-    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
-    RawVector, RecommendStrategy, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices,
-    StartFrom, WithLookup,
+    GeoLineString, GroupId, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
+    OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups, SearchPoints,
+    ShardKeySelector, SparseIndices, StartFrom, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1999,5 +1999,15 @@ impl TryFrom<WithLookup> for rest::WithLookup {
                 .or_else(with_default_payload),
             with_vectors: value.with_vectors.map(|wv| wv.into()),
         })
+    }
+}
+
+impl From<LookupLocation> for rest::LookupLocation {
+    fn from(value: LookupLocation) -> Self {
+        Self {
+            collection: value.collection_name,
+            vector: value.vector_name,
+            shard_key: value.shard_key_selector.map(rest::ShardKeySelector::from),
+        }
     }
 }

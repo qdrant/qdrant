@@ -2,14 +2,14 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::mem::take;
 
+use api::rest::LookupLocation;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::lookup::WithLookup;
 use collection::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{PointIdsList, PointOperations};
 use collection::operations::types::{
     ContextExamplePair, CoreSearchRequest, CountRequestInternal, DiscoverRequestInternal,
-    LookupLocation, PointRequestInternal, RecommendExample, RecommendRequestInternal,
-    ScrollRequestInternal,
+    PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest, Query, VectorInput, VectorQuery,
@@ -613,7 +613,8 @@ mod tests_ops {
     use std::fmt::Debug;
 
     use api::rest::{
-        BatchVectorStruct, OrderByInterface, RecommendStrategy, SearchRequestInternal, VectorStruct,
+        BatchVectorStruct, LookupLocation, OrderByInterface, RecommendStrategy,
+        SearchRequestInternal, VectorStruct,
     };
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{

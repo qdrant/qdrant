@@ -8,8 +8,8 @@ use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
-    BaseGroupRequest, OrderByInterface, RecommendStrategy, SearchGroupsRequestInternal,
-    SearchRequestInternal, ShardKeySelector,
+    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
+    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector,
 };
 use common::defaults;
 use common::types::ScoreType;
@@ -459,23 +459,6 @@ impl From<String> for UsingVector {
     fn from(name: String) -> Self {
         UsingVector::Name(name)
     }
-}
-
-/// Defines a location to use for looking up the vector.
-/// Specifies collection and vector field name.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct LookupLocation {
-    /// Name of the collection used for lookup
-    pub collection: String,
-    /// Optional name of the vector field within the collection.
-    /// If not provided, the default vector field will be used.
-    #[serde(default)]
-    pub vector: Option<String>,
-
-    /// Specify in which shards to look for the points, if not specified - look in all shards
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
