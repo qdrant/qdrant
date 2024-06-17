@@ -13,7 +13,7 @@ use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
-    CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollRequestInternal,
+    CollectionError, CollectionResult, QueryScrollRequestInternal, Record,
 };
 
 impl LocalShard {
@@ -56,15 +56,9 @@ impl LocalShard {
             with_payload,
         } = request;
 
-        let offset = offset.unwrap_or(0);
-        let limit = limit.unwrap_or(ScrollRequestInternal::default_limit()) + offset;
+        let limit = limit + offset;
 
         let offset_id = None;
-
-        let with_payload = with_payload
-            .as_ref()
-            .cloned()
-            .unwrap_or(ScrollRequestInternal::default_with_payload());
 
         let order_by = order_by.clone().map(OrderBy::from);
 
@@ -80,7 +74,7 @@ impl LocalShard {
                 )
                 .await?
                 .into_iter()
-                .skip(offset)
+                .skip(*offset)
                 .map(|record| ScoredPoint {
                     id: record.id,
                     version: 0,
@@ -106,7 +100,7 @@ impl LocalShard {
                 records
                     .into_iter()
                     .zip(values)
-                    .skip(offset)
+                    .skip(*offset)
                     .map(|(record, value)| ScoredPoint {
                         id: record.id,
                         version: 0,

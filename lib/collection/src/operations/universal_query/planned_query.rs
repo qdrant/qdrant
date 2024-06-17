@@ -80,12 +80,12 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let ShardQueryRequest {
             prefetches,
             query,
-            filter: req_filter,
-            score_threshold: req_score_threshold,
+            filter,
+            score_threshold,
             limit,
-            offset: req_offset,
-            with_vector: req_with_vector,
-            with_payload: req_with_payload,
+            offset,
+            with_vector,
+            with_payload,
             params,
         } = request;
 
@@ -100,13 +100,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 )));
             }
 
-            let sources = recurse_prefetches(
-                &mut searches,
-                &mut scrolls,
-                prefetches,
-                req_offset,
-                req_filter,
-            )?;
+            let sources =
+                recurse_prefetches(&mut searches, &mut scrolls, prefetches, offset, filter)?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
@@ -116,10 +111,10 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 rescore_params: Some(RescoreParams {
                     rescore,
                     limit,
-                    offset: req_offset,
-                    score_threshold: req_score_threshold,
-                    with_vector: req_with_vector,
-                    with_payload: req_with_payload,
+                    offset,
+                    score_threshold,
+                    with_vector,
+                    with_payload,
                 }),
             }
         } else {
@@ -128,11 +123,11 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                     // Everything should come from 1 core search
                     let core_search = CoreSearchRequest {
                         query,
-                        filter: req_filter,
-                        score_threshold: req_score_threshold,
-                        with_vector: Some(req_with_vector),
-                        with_payload: Some(req_with_payload),
-                        offset: req_offset,
+                        filter,
+                        score_threshold,
+                        with_vector: Some(with_vector),
+                        with_payload: Some(with_payload),
+                        offset,
                         params,
                         limit,
                     };
@@ -150,11 +145,11 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
                         order_by: Some(OrderByInterface::Struct(order_by)),
-                        filter: req_filter,
-                        with_vector: req_with_vector,
-                        with_payload: Some(req_with_payload),
-                        limit: Some(limit),
-                        offset: Some(req_offset),
+                        limit,
+                        filter,
+                        offset,
+                        with_vector,
+                        with_payload,
                     };
 
                     scrolls.push(scroll);
@@ -165,11 +160,11 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
                         order_by: None,
-                        filter: req_filter,
-                        with_vector: req_with_vector,
-                        with_payload: Some(req_with_payload),
-                        limit: Some(limit),
-                        offset: Some(req_offset),
+                        limit,
+                        filter,
+                        offset,
+                        with_vector,
+                        with_payload,
                     };
 
                     scrolls.push(scroll);
@@ -219,7 +214,30 @@ fn recurse_prefetches(
         // Filters are propagated into the leaves
         let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
-        let source = if prefetches.is_empty() {
+        let source = if !prefetches.is_empty() {
+            // This has nested prefetches. Recurse into them
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, prefetches, offset, filter)?;
+
+            let rescore = query.ok_or_else(|| {
+                CollectionError::bad_request("cannot have prefetches without a query".to_string())
+            })?;
+
+            let merge_plan = MergePlan {
+                sources: inner_sources,
+                rescore_params: Some(RescoreParams {
+                    rescore,
+                    limit,
+                    score_threshold,
+                    offset: 0, // Only apply offset at the root
+                    // We never need payloads and vectors for prefetch queries with re-scores
+                    with_vector: WithVector::Bool(false),
+                    with_payload: WithPayloadInterface::Bool(false),
+                }),
+            };
+
+            Source::Prefetch(merge_plan)
+        } else {
             // This is a leaf prefetch. Fetch this info from the segments
             match query {
                 Some(ScoringQuery::Vector(query_enum)) => {
@@ -249,9 +267,9 @@ fn recurse_prefetches(
                         order_by: Some(OrderByInterface::Struct(order_by)),
                         filter,
                         with_vector: WithVector::Bool(false),
-                        with_payload: Some(WithPayloadInterface::Bool(false)),
-                        limit: Some(limit),
-                        offset: None,
+                        with_payload: WithPayloadInterface::Bool(false),
+                        limit,
+                        offset: 0,
                     };
 
                     let idx = scrolls.len();
@@ -264,9 +282,9 @@ fn recurse_prefetches(
                         order_by: None,
                         filter,
                         with_vector: WithVector::Bool(false),
-                        with_payload: Some(WithPayloadInterface::Bool(false)),
-                        limit: Some(limit),
-                        offset: None,
+                        with_payload: WithPayloadInterface::Bool(false),
+                        limit,
+                        offset: 0,
                     };
 
                     let idx = scrolls.len();
@@ -275,29 +293,6 @@ fn recurse_prefetches(
                     Source::ScrollsIdx(idx)
                 }
             }
-        } else {
-            // This has nested prefetches. Recurse into them
-            let inner_sources =
-                recurse_prefetches(core_searches, scrolls, prefetches, offset, filter)?;
-
-            let rescore = query.ok_or_else(|| {
-                CollectionError::bad_request("cannot have prefetches without a query".to_string())
-            })?;
-
-            let merge_plan = MergePlan {
-                sources: inner_sources,
-                rescore_params: Some(RescoreParams {
-                    rescore,
-                    limit,
-                    offset: 0, // Only apply offset at the root
-                    score_threshold,
-                    // We never need payloads and vectors for prefetch queries with re-scores
-                    with_vector: WithVector::Bool(false),
-                    with_payload: WithPayloadInterface::Bool(false),
-                }),
-            };
-
-            Source::Prefetch(merge_plan)
         };
         sources.push(source);
     }

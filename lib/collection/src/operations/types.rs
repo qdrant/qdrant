@@ -321,16 +321,16 @@ pub struct ScrollRequestInternal {
 pub struct QueryScrollRequestInternal {
     /// Number of points to skip from the beginning of the result list
     /// Warning: this is different from the offset in the regular scroll request
-    pub offset: Option<usize>,
+    pub offset: usize,
 
     /// Page size. Default: 10
-    pub limit: Option<usize>,
+    pub limit: usize,
 
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
 
     /// Select which payload to return with the response. Default: All
-    pub with_payload: Option<WithPayloadInterface>,
+    pub with_payload: WithPayloadInterface,
 
     /// Whether to return the point vector with the result?
     pub with_vector: WithVector,

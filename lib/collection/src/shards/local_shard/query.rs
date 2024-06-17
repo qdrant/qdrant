@@ -72,16 +72,10 @@ impl LocalShard {
         let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
         let prefetch_holder = PrefetchResults::new(search_results, scroll_results);
 
-        let all_merge_plans: Vec<_> = request
-            .root_queries
-            .into_iter()
-            .map(|query_plan| query_plan.merge_plan)
-            .collect();
-
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
 
-        let merge_futures = all_merge_plans.into_iter().map(|merge_plan| {
+        let merge_futures = request.root_plans.into_iter().map(|merge_plan| {
             self.recurse_prefetch(
                 merge_plan,
                 &prefetch_holder,
@@ -256,10 +250,10 @@ impl LocalShard {
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
                 let scroll_request = QueryScrollRequestInternal {
-                    offset: Some(offset),
-                    limit: Some(limit),
+                    offset,
+                    limit,
                     filter: Some(filter),
-                    with_payload: Some(with_payload),
+                    with_payload,
                     with_vector,
                     order_by: Some(OrderByInterface::Struct(order_by)),
                 };

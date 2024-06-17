@@ -1,20 +1,13 @@
 use super::planned_query::{MergePlan, PlannedQuery, Source};
 use crate::operations::types::{CoreSearchRequest, QueryScrollRequestInternal};
 
-/// Same as a [PlannedQuery], but without the scrolls and searches.
-/// The sources in merge_sources have been updated to point to the scrolls and searches in the batch.
-#[derive(Debug, PartialEq)]
-pub struct WeakPlannedQuery {
-    /// References to the searches and scrolls in the batch, and how to merge them.
-    /// This retains the recursive structure of the original query.
-    pub merge_plan: MergePlan,
-}
-
 #[derive(Debug)]
 pub struct PlannedQueryBatch {
     pub searches: Vec<CoreSearchRequest>,
     pub scrolls: Vec<QueryScrollRequestInternal>,
-    pub root_queries: Vec<WeakPlannedQuery>,
+
+    /// One per query in the batch.
+    pub root_plans: Vec<MergePlan>,
 }
 
 impl MergePlan {
@@ -43,12 +36,12 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
         let mut batch = Self {
             searches: Vec::with_capacity(searches_capacity),
             scrolls: Vec::with_capacity(scrolls_capacity),
-            root_queries: Vec::with_capacity(planned_queries.len()),
+            root_plans: Vec::with_capacity(planned_queries.len()),
         };
 
         for planned_query in planned_queries {
             let PlannedQuery {
-                merge_plan: mut merge_sources,
+                mut merge_plan,
                 searches,
                 scrolls,
             } = planned_query;
@@ -57,15 +50,13 @@ impl From<Vec<PlannedQuery>> for PlannedQueryBatch {
             let searches_idx_offset = batch.searches.len();
             let scrolls_idx_offset = batch.scrolls.len();
 
-            merge_sources.offset_sources(searches_idx_offset, scrolls_idx_offset);
+            merge_plan.offset_sources(searches_idx_offset, scrolls_idx_offset);
 
             // Extend the searches and scrolls with the ones from the planned query.
             batch.searches.extend(searches);
             batch.scrolls.extend(scrolls);
 
-            batch.root_queries.push(WeakPlannedQuery {
-                merge_plan: merge_sources,
-            });
+            batch.root_plans.push(merge_plan);
         }
 
         batch
@@ -97,10 +88,10 @@ mod tests {
 
     fn dummy_scroll(limit: usize) -> QueryScrollRequestInternal {
         QueryScrollRequestInternal {
-            offset: None,
-            limit: Some(limit),
+            offset: 0,
+            limit,
             filter: None,
-            with_payload: Some(WithPayloadInterface::Bool(false)),
+            with_payload: WithPayloadInterface::Bool(false),
             with_vector: WithVector::Bool(false),
             order_by: None,
         }
@@ -161,49 +152,43 @@ mod tests {
         let planned_batch_query = PlannedQueryBatch::from(planned_queries);
         assert_eq!(planned_batch_query.searches.len(), 3);
         assert_eq!(planned_batch_query.scrolls.len(), 2);
-        assert_eq!(planned_batch_query.root_queries.len(), 3);
+        assert_eq!(planned_batch_query.root_plans.len(), 3);
 
         assert_eq!(
-            planned_batch_query.root_queries,
+            planned_batch_query.root_plans,
             vec![
-                WeakPlannedQuery {
-                    merge_plan: MergePlan {
-                        sources: vec![Source::SearchesIdx(0)],
-                        rescore_params: None,
-                    },
+                MergePlan {
+                    sources: vec![Source::SearchesIdx(0)],
+                    rescore_params: None,
                 },
-                WeakPlannedQuery {
-                    merge_plan: MergePlan {
-                        sources: vec![Source::ScrollsIdx(0)],
-                        rescore_params: None,
-                    },
+                MergePlan {
+                    sources: vec![Source::ScrollsIdx(0)],
+                    rescore_params: None,
                 },
-                WeakPlannedQuery {
-                    merge_plan: MergePlan {
-                        sources: vec![
-                            Source::Prefetch(MergePlan {
-                                sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
-                                rescore_params: Some(RescoreParams {
-                                    rescore: ScoringQuery::Fusion(Fusion::Rrf),
-                                    limit: 10,
-                                    offset: 0,
-                                    score_threshold: None,
-                                    with_vector: WithVector::Bool(true),
-                                    with_payload: WithPayloadInterface::Bool(true),
-                                }),
+                MergePlan {
+                    sources: vec![
+                        Source::Prefetch(MergePlan {
+                            sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
+                            rescore_params: Some(RescoreParams {
+                                rescore: ScoringQuery::Fusion(Fusion::Rrf),
+                                limit: 10,
+                                offset: 0,
+                                score_threshold: None,
+                                with_vector: WithVector::Bool(true),
+                                with_payload: WithPayloadInterface::Bool(true),
                             }),
-                            Source::ScrollsIdx(1),
-                        ],
-                        rescore_params: Some(RescoreParams {
-                            rescore: ScoringQuery::Fusion(Fusion::Rrf),
-                            limit: 10,
-                            offset: 0,
-                            score_threshold: None,
-                            with_vector: WithVector::Bool(true),
-                            with_payload: WithPayloadInterface::Bool(true),
                         }),
-                    },
-                }
+                        Source::ScrollsIdx(1),
+                    ],
+                    rescore_params: Some(RescoreParams {
+                        rescore: ScoringQuery::Fusion(Fusion::Rrf),
+                        limit: 10,
+                        offset: 0,
+                        score_threshold: None,
+                        with_vector: WithVector::Bool(true),
+                        with_payload: WithPayloadInterface::Bool(true),
+                    }),
+                },
             ]
         );
 
@@ -211,7 +196,7 @@ mod tests {
         assert_eq!(planned_batch_query.searches[1].limit, 30);
         assert_eq!(planned_batch_query.searches[2].limit, 40);
 
-        assert_eq!(planned_batch_query.scrolls[0].limit, Some(20));
-        assert_eq!(planned_batch_query.scrolls[1].limit, Some(50));
+        assert_eq!(planned_batch_query.scrolls[0].limit, 20);
+        assert_eq!(planned_batch_query.scrolls[1].limit, 50);
     }
 }
