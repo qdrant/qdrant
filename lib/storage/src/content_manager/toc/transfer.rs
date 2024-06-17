@@ -80,11 +80,11 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     async fn start_shard_transfer(
         &self,
         transfer_config: ShardTransfer,
-        collection_name: CollectionId,
+        collection_id: CollectionId,
     ) -> CollectionResult<()> {
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
-                collection_name,
+                collection_id,
                 ShardTransferOperations::Start(transfer_config),
             )));
         self

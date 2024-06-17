@@ -230,7 +230,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn start_shard_transfer(
         &self,
         transfer_config: ShardTransfer,
-        collection_name: CollectionId,
+        collection_id: CollectionId,
     ) -> CollectionResult<()>;
 
     /// Propose to start a shard transfer
@@ -240,7 +240,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn start_shard_transfer_confirm_and_retry(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: &str,
+        collection_id: &str,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
             "`start_shard_transfer_confirm_and_retry` exit without attempting any work, \
@@ -254,7 +254,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             log::trace!("Propose and confirm shard transfer start operation");
             result = self
-                .start_shard_transfer(transfer_config.clone(), collection_name.into())
+                .start_shard_transfer(transfer_config.clone(), collection_id.into())
                 .await;
 
             match &result {
