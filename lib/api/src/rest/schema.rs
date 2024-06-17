@@ -208,8 +208,8 @@ pub struct QueryRequestInternal {
     /// Options for specifying which payload to include or not. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// The location used to lookup vectors. If not specified - use collection from 'using' field.
-    /// Note: the other collection should have the same vector size as the 'using' collection
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
 }
@@ -279,8 +279,8 @@ pub struct Prefetch {
     /// Max number of points to return. Default is 10.
     pub limit: Option<usize>,
 
-    /// The location used to lookup vectors. If not specified - use collection from 'using' field.
-    /// Note: the other collection should have the same vector size as the 'using' collection
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
     #[serde(default)]
     pub lookup_from: Option<LookupLocation>,
 }
