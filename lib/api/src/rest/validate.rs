@@ -11,6 +11,7 @@ impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             VectorStruct::Single(_) => Ok(()),
+            VectorStruct::MultiDense(v) => validate_multi_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
         }
     }

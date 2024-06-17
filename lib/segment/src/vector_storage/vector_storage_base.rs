@@ -15,8 +15,8 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVectorRef, Vector, VectorElementType, VectorElementTypeByte,
-    VectorElementTypeHalf, VectorRef,
+    MultiDenseVectorInternal, TypedMultiDenseVectorRef, Vector, VectorElementType,
+    VectorElementTypeByte, VectorElementTypeHalf, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -180,22 +180,22 @@ impl VectorStorageEnum {
             }
             VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
             VectorStorageEnum::MultiDenseSimple(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
             VectorStorageEnum::MultiDenseSimpleByte(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
             VectorStorageEnum::MultiDenseSimpleHalf(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                Vector::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
         }
     }

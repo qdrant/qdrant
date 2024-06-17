@@ -26,7 +26,7 @@ impl From<Vector> for segment::data_types::vectors::Vector {
                 // the REST vectors have been validated already
                 // we can use an internal constructor
                 segment::data_types::vectors::Vector::MultiDense(
-                    segment::data_types::vectors::MultiDenseVector::new_unchecked(vector),
+                    segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
                 )
             }
         }
@@ -38,6 +38,9 @@ impl From<segment::data_types::vectors::VectorStruct> for VectorStruct {
         match value {
             segment::data_types::vectors::VectorStruct::Single(vector) => {
                 VectorStruct::Single(vector)
+            }
+            segment::data_types::vectors::VectorStruct::MultiDense(vector) => {
+                VectorStruct::MultiDense(vector.into_multi_vectors())
             }
             segment::data_types::vectors::VectorStruct::Named(vectors) => {
                 VectorStruct::Named(vectors.into_iter().map(|(k, v)| (k, v.into())).collect())
@@ -51,6 +54,11 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
         match value {
             VectorStruct::Single(vector) => {
                 segment::data_types::vectors::VectorStruct::Single(vector)
+            }
+            VectorStruct::MultiDense(vector) => {
+                segment::data_types::vectors::VectorStruct::MultiDense(
+                    segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
+                )
             }
             VectorStruct::Named(vectors) => segment::data_types::vectors::VectorStruct::Named(
                 vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
@@ -67,6 +75,17 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
                     DEFAULT_VECTOR_NAME.to_string(),
                     vector,
                 )])
+            }
+            VectorStruct::MultiDense(vector) => {
+                let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();
+                let multivec =
+                    segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector);
+
+                named_vector.insert(
+                    DEFAULT_VECTOR_NAME.to_string(),
+                    segment::data_types::vectors::Vector::from(multivec),
+                );
+                named_vector
             }
             VectorStruct::Named(vectors) => {
                 let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();

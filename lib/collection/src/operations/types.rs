@@ -1131,6 +1131,7 @@ impl Record {
             None => vec![],
             Some(vectors) => match vectors {
                 VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStruct::MultiDense(_) => vec![DEFAULT_VECTOR_NAME],
                 VectorStruct::Named(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
             },
         }
@@ -1139,7 +1140,10 @@ impl Record {
     pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vector))
+            }
+            Some(VectorStruct::MultiDense(vectors)) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vectors))
             }
             Some(VectorStruct::Named(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,

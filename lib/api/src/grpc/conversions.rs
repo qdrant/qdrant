@@ -548,7 +548,7 @@ impl TryFrom<Vector> for segment_vectors::Vector {
                 ));
             }
             let dim = vector.data.len() / vector_count as usize;
-            let multi = segment_vectors::MultiDenseVector::new(vector.data, dim);
+            let multi = segment_vectors::MultiDenseVectorInternal::new(vector.data, dim);
             return Ok(segment_vectors::Vector::MultiDense(multi));
         }
 
@@ -572,7 +572,13 @@ impl From<segment_vectors::VectorStruct> for Vectors {
     fn from(vector_struct: segment_vectors::VectorStruct) -> Self {
         match vector_struct {
             segment_vectors::VectorStruct::Single(vector) => {
-                let vector: segment_vectors::Vector = vector.into();
+                let vector = segment_vectors::Vector::from(vector);
+                Self {
+                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
+                }
+            }
+            segment_vectors::VectorStruct::MultiDense(vector) => {
+                let vector = segment_vectors::Vector::from(vector);
                 Self {
                     vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
@@ -1681,8 +1687,8 @@ impl From<SparseVector> for sparse::common::sparse_vector::SparseVector {
     }
 }
 
-impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
-    fn from(value: segment_vectors::MultiDenseVector) -> Self {
+impl From<segment_vectors::MultiDenseVectorInternal> for MultiDenseVector {
+    fn from(value: segment_vectors::MultiDenseVectorInternal) -> Self {
         let vectors = value
             .flattened_vectors
             .into_iter()
@@ -1695,8 +1701,8 @@ impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
     }
 }
 
-impl From<MultiDenseVector> for segment_vectors::MultiDenseVector {
-    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVector::new_unchecked), but rewritten to avoid collecting twice
+impl From<MultiDenseVector> for segment_vectors::MultiDenseVectorInternal {
+    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVectorInternal::new_unchecked), but rewritten to avoid collecting twice
     fn from(value: MultiDenseVector) -> Self {
         let dim = value.vectors[0].data.len();
         let inner_vector = value
@@ -1747,7 +1753,7 @@ impl TryFrom<RawVector> for segment_vectors::Vector {
                 sparse::common::sparse_vector::SparseVector::from(sparse),
             ),
             Variant::MultiDense(multi_dense) => segment_vectors::Vector::MultiDense(
-                segment_vectors::MultiDenseVector::from(multi_dense),
+                segment_vectors::MultiDenseVectorInternal::from(multi_dense),
             ),
         };
 

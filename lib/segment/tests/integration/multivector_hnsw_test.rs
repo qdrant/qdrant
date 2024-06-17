@@ -8,7 +8,7 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
-    only_default_vector, MultiDenseVector, QueryVector, TypedMultiDenseVectorRef,
+    only_default_vector, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
@@ -95,7 +95,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector.clone())
             }
         };
-        let vector_multi = MultiDenseVector::new(preprocessed_vector, vector.len());
+        let vector_multi = MultiDenseVectorInternal::new(preprocessed_vector, vector.len());
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();

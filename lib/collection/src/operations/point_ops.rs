@@ -6,7 +6,7 @@ use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{Vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{MultiDenseVectorInternal, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
@@ -530,6 +530,10 @@ impl PointStruct {
             VectorStruct::Single(vector) => named_vectors.insert(
                 DEFAULT_VECTOR_NAME.to_string(),
                 Vector::from(vector.clone()),
+            ),
+            VectorStruct::MultiDense(vector) => named_vectors.insert(
+                DEFAULT_VECTOR_NAME.to_string(),
+                Vector::from(MultiDenseVectorInternal::new_unchecked(vector.clone())),
             ),
             VectorStruct::Named(vectors) => {
                 for (name, vector) in vectors {

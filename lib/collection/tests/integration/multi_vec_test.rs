@@ -132,6 +132,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     for hit in result {
         match hit.vector.unwrap() {
             VectorStruct::Single(_) => panic!("expected multi vector"),
+            VectorStruct::MultiDense(_) => panic!("expected multi vector"),
             VectorStruct::Named(vectors) => {
                 assert!(vectors.contains_key(VEC_NAME1));
                 assert!(vectors.contains_key(VEC_NAME2));
@@ -194,6 +195,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     for hit in result {
         match hit.vector.unwrap() {
             VectorStruct::Single(_) => panic!("expected multi vector"),
+            VectorStruct::MultiDense(_) => panic!("expected multi vector"),
             VectorStruct::Named(vectors) => {
                 assert!(vectors.contains_key(VEC_NAME1));
                 assert!(vectors.contains_key(VEC_NAME2));
@@ -217,6 +219,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     assert_eq!(retrieve.len(), 1);
     match retrieve[0].vector.as_ref().unwrap() {
         VectorStruct::Single(_) => panic!("expected multi vector"),
+        VectorStruct::MultiDense(_) => panic!("expected multi vector"),
         VectorStruct::Named(vectors) => {
             assert!(vectors.contains_key(VEC_NAME1));
             assert!(!vectors.contains_key(VEC_NAME2));
@@ -270,6 +273,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     for hit in recommend_result {
         match hit.vector.as_ref().unwrap() {
             VectorStruct::Single(_) => panic!("expected multi vector"),
+            VectorStruct::MultiDense(_) => panic!("expected multi vector"),
             VectorStruct::Named(vectors) => {
                 assert!(!vectors.contains_key(VEC_NAME1));
                 assert!(vectors.contains_key(VEC_NAME2));

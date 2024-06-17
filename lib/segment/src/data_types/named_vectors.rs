@@ -6,7 +6,7 @@ use sparse::common::sparse_vector::SparseVector;
 use super::primitive::PrimitiveVectorElement;
 use super::tiny_map;
 use super::vectors::{
-    DenseVector, MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, Vector,
+    DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef, Vector,
     VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorRef,
 };
 use crate::common::operation_error::OperationError;
@@ -114,14 +114,14 @@ impl<'a> From<DenseVector> for CowVector<'a> {
     }
 }
 
-impl<'a> From<MultiDenseVector> for CowVector<'a> {
-    fn from(v: MultiDenseVector) -> Self {
+impl<'a> From<MultiDenseVectorInternal> for CowVector<'a> {
+    fn from(v: MultiDenseVectorInternal) -> Self {
         CowVector::MultiDense(CowMultiVector::Owned(v))
     }
 }
 
-impl<'a> From<Cow<'a, MultiDenseVector>> for CowVector<'a> {
-    fn from(v: Cow<'a, MultiDenseVector>) -> Self {
+impl<'a> From<Cow<'a, MultiDenseVectorInternal>> for CowVector<'a> {
+    fn from(v: Cow<'a, MultiDenseVectorInternal>) -> Self {
         match v {
             Cow::Borrowed(v) => {
                 CowVector::MultiDense(CowMultiVector::Borrowed(TypedMultiDenseVectorRef::from(v)))
@@ -143,8 +143,8 @@ impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
     }
 }
 
-impl<'a> From<&'a MultiDenseVector> for CowVector<'a> {
-    fn from(v: &'a MultiDenseVector) -> Self {
+impl<'a> From<&'a MultiDenseVectorInternal> for CowVector<'a> {
+    fn from(v: &'a MultiDenseVectorInternal) -> Self {
         CowVector::MultiDense(CowMultiVector::Borrowed(TypedMultiDenseVectorRef::from(v)))
     }
 }
