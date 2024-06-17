@@ -29,7 +29,7 @@ pub enum Vector {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     Single(DenseVector),
-    Multi(HashMap<String, Vector>),
+    Named(HashMap<String, Vector>),
 }
 
 impl VectorStruct {
@@ -37,7 +37,7 @@ impl VectorStruct {
     pub fn is_empty(&self) -> bool {
         match self {
             VectorStruct::Single(vector) => vector.is_empty(),
-            VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
+            VectorStruct::Named(vectors) => vectors.values().all(|v| match v {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),

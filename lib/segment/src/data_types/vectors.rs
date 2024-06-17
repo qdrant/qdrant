@@ -410,7 +410,7 @@ pub fn only_default_multi_vector(vec: &MultiDenseVector) -> NamedVectors {
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorStruct {
     Single(DenseVector),
-    Multi(HashMap<String, Vector>),
+    Named(HashMap<String, Vector>),
 }
 
 impl From<DenseVector> for VectorStruct {
@@ -431,7 +431,7 @@ impl<'a> From<NamedVectors<'a>> for VectorStruct {
             let vector: &[_] = v.get(DEFAULT_VECTOR_NAME).unwrap().try_into().unwrap();
             VectorStruct::Single(vector.to_owned())
         } else {
-            VectorStruct::Multi(v.into_owned_map())
+            VectorStruct::Named(v.into_owned_map())
         }
     }
 }
@@ -440,14 +440,14 @@ impl VectorStruct {
     pub fn get(&self, name: &str) -> Option<VectorRef> {
         match self {
             VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(v.into()),
-            VectorStruct::Multi(v) => v.get(name).map(|v| v.into()),
+            VectorStruct::Named(v) => v.get(name).map(|v| v.into()),
         }
     }
 
     pub fn into_all_vectors(self) -> NamedVectors<'static> {
         match self {
             VectorStruct::Single(v) => default_vector(v),
-            VectorStruct::Multi(v) => NamedVectors::from_map(v),
+            VectorStruct::Named(v) => NamedVectors::from_map(v),
         }
     }
 }

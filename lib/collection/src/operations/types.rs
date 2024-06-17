@@ -1131,7 +1131,7 @@ impl Record {
             None => vec![],
             Some(vectors) => match vectors {
                 VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
-                VectorStruct::Multi(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
+                VectorStruct::Named(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
             },
         }
     }
@@ -1141,7 +1141,7 @@ impl Record {
             Some(VectorStruct::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(VectorRef::from),
+            Some(VectorStruct::Named(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,
         }
     }

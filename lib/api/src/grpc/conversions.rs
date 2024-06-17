@@ -577,7 +577,7 @@ impl From<segment_vectors::VectorStruct> for Vectors {
                     vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
             }
-            segment_vectors::VectorStruct::Multi(vectors) => Self {
+            segment_vectors::VectorStruct::Named(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
                         vectors
@@ -690,7 +690,7 @@ impl TryFrom<Vectors> for segment_vectors::VectorStruct {
                     segment_vectors::VectorStruct::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
-                    segment_vectors::VectorStruct::Multi(vectors.try_into()?)
+                    segment_vectors::VectorStruct::Named(vectors.try_into()?)
                 }
             }),
             None => Err(Status::invalid_argument("No Provided")),

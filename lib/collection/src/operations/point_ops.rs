@@ -531,7 +531,7 @@ impl PointStruct {
                 DEFAULT_VECTOR_NAME.to_string(),
                 Vector::from(vector.clone()),
             ),
-            VectorStruct::Multi(vectors) => {
+            VectorStruct::Named(vectors) => {
                 for (name, vector) in vectors {
                     named_vectors.insert(name.clone(), Vector::from(vector.clone()));
                 }

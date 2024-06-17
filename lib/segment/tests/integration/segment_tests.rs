@@ -282,7 +282,7 @@ fn test_update_named_vector() {
         Some(VectorStruct::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStruct::Multi(v)) => {
+        Some(VectorStruct::Named(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
@@ -317,7 +317,7 @@ fn test_update_named_vector() {
         Some(VectorStruct::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStruct::Multi(v)) => {
+        Some(VectorStruct::Named(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);

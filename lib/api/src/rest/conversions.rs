@@ -39,8 +39,8 @@ impl From<segment::data_types::vectors::VectorStruct> for VectorStruct {
             segment::data_types::vectors::VectorStruct::Single(vector) => {
                 VectorStruct::Single(vector)
             }
-            segment::data_types::vectors::VectorStruct::Multi(vectors) => {
-                VectorStruct::Multi(vectors.into_iter().map(|(k, v)| (k, v.into())).collect())
+            segment::data_types::vectors::VectorStruct::Named(vectors) => {
+                VectorStruct::Named(vectors.into_iter().map(|(k, v)| (k, v.into())).collect())
             }
         }
     }
@@ -52,7 +52,7 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
             VectorStruct::Single(vector) => {
                 segment::data_types::vectors::VectorStruct::Single(vector)
             }
-            VectorStruct::Multi(vectors) => segment::data_types::vectors::VectorStruct::Multi(
+            VectorStruct::Named(vectors) => segment::data_types::vectors::VectorStruct::Named(
                 vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
             ),
         }
@@ -68,7 +68,7 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
                     vector,
                 )])
             }
-            VectorStruct::Multi(vectors) => {
+            VectorStruct::Named(vectors) => {
                 let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();
                 for (name, vector) in vectors {
                     named_vector.insert(name, segment::data_types::vectors::Vector::from(vector));
