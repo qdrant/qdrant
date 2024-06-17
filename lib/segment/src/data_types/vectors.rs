@@ -589,6 +589,7 @@ impl NamedVectorStruct {
 #[derive(Clone, Debug, PartialEq)]
 pub enum BatchVectorStructInternal {
     Single(Vec<DenseVector>),
+    MultiDense(Vec<MultiDenseVectorInternal>),
     Named(HashMap<String, Vec<Vector>>),
 }
 
@@ -603,6 +604,9 @@ impl BatchVectorStructInternal {
         match self {
             BatchVectorStructInternal::Single(vectors) => {
                 vectors.into_iter().map(default_vector).collect()
+            }
+            BatchVectorStructInternal::MultiDense(vectors) => {
+                vectors.into_iter().map(default_multi_vector).collect()
             }
             BatchVectorStructInternal::Named(named_vectors) => {
                 if named_vectors.is_empty() {

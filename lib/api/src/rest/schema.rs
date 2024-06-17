@@ -52,6 +52,7 @@ impl VectorStruct {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
+    MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<String, Vec<Vector>>),
 }
 

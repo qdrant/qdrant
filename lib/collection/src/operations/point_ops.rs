@@ -269,6 +269,14 @@ impl Validate for Batch {
                     )));
                 }
             }
+            BatchVectorStruct::MultiDense(vectors) => {
+                if batch.ids.len() != vectors.len() {
+                    return Err(create_error(bad_input_description(
+                        batch.ids.len(),
+                        vectors.len(),
+                    )));
+                }
+            }
             BatchVectorStruct::Named(named_vectors) => {
                 for vectors in named_vectors.values() {
                     if batch.ids.len() != vectors.len() {
@@ -401,6 +409,25 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
+                BatchVectorStruct::MultiDense(vectors) => {
+                    for (id, vector, payload) in izip!(ids, vectors, payloads) {
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::MultiDense(vec![]),
+                                payloads: Some(vec![]),
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::MultiDense(vectors) => {
+                                    vectors.push(vector.clone())
+                                }
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
+                            batch.payloads.as_mut().unwrap().push(payload.clone());
+                        }
+                    }
+                }
                 BatchVectorStruct::Named(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
                         transpose_map_into_named_vector(named_vectors)
@@ -444,6 +471,24 @@ impl SplitByShard for Batch {
                             batch.ids.push(id);
                             match &mut batch.vectors {
                                 BatchVectorStruct::Single(vectors) => vectors.push(vector.clone()),
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
+                        }
+                    }
+                }
+                BatchVectorStruct::MultiDense(vectors) => {
+                    for (id, vector) in izip!(ids, vectors) {
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::MultiDense(vec![]),
+                                payloads: None,
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::MultiDense(vectors) => {
+                                    vectors.push(vector.clone())
+                                }
                                 _ => unreachable!(), // TODO(sparse) propagate error
                             }
                         }

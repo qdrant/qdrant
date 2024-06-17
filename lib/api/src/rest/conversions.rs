@@ -103,8 +103,16 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
 impl From<segment::data_types::vectors::BatchVectorStructInternal> for BatchVectorStruct {
     fn from(value: segment::data_types::vectors::BatchVectorStructInternal) -> Self {
         match value {
-            segment::data_types::vectors::BatchVectorStructInternal::Single(vector) => {
-                BatchVectorStruct::Single(vector)
+            segment::data_types::vectors::BatchVectorStructInternal::Single(vectors) => {
+                BatchVectorStruct::Single(vectors)
+            }
+            segment::data_types::vectors::BatchVectorStructInternal::MultiDense(vectors) => {
+                BatchVectorStruct::MultiDense(
+                    vectors
+                        .into_iter()
+                        .map(|v| v.into_multi_vectors())
+                        .collect(),
+                )
             }
             segment::data_types::vectors::BatchVectorStructInternal::Named(vectors) => {
                 BatchVectorStruct::Named(
@@ -123,6 +131,16 @@ impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStruct
         match value {
             BatchVectorStruct::Single(vector) => {
                 segment::data_types::vectors::BatchVectorStructInternal::Single(vector)
+            }
+            BatchVectorStruct::MultiDense(vectors) => {
+                segment::data_types::vectors::BatchVectorStructInternal::MultiDense(
+                    vectors
+                        .into_iter()
+                        .map(|v| {
+                            segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(v)
+                        })
+                        .collect(),
+                )
             }
             BatchVectorStruct::Named(vectors) => {
                 segment::data_types::vectors::BatchVectorStructInternal::Named(
