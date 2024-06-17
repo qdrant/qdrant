@@ -11416,6 +11416,17 @@
                 "nullable": true
               }
             ]
+          },
+          "with_lookup": {
+            "description": "Options for specifying where to lookup vector ids from during recommendation",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLookupInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
