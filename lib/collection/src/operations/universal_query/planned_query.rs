@@ -70,7 +70,7 @@ pub struct MergePlan {
     /// How to merge the sources
     ///
     /// If this is [None], then it means one of two things:
-    /// 1. It is a top-level query without prefetches, so sources must be of lenght 1.
+    /// 1. It is a top-level query without prefetches, so sources must be of length 1.
     /// 2. It is a top-level fusion query, so sources will be returned as-is. They will be merged later at collection level
     pub rescore_params: Option<RescoreParams>,
 }
