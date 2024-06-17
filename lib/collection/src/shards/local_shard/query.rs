@@ -191,7 +191,7 @@ impl LocalShard {
             } else {
                 // The sources here are passed to the next layer without any extra processing.
                 // It is either a query without prefetches, or a fusion request and the intermediate results are passed to the next layer.
-
+                debug_assert_eq!(depth, 0);
                 // TODO(universal-query): maybe there's a way to pass ownership of the prefetch_holder to avoid cloning with Cow::into_owned here
                 Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
             }
