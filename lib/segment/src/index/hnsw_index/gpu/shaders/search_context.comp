@@ -83,10 +83,11 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     while (changed) {
         changed = false;
 
-        uint links_count = LINKS_COUNT(result.id);
+        uint current = result.id;
+        uint links_count = LINKS_COUNT(current);
         for (uint i = 0; i < links_count; i++) {
             if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-                subgroup_link = GET_LINK(result.id, i + invocation);
+                subgroup_link = GET_LINK(current, i + invocation);
             }
             uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
 
