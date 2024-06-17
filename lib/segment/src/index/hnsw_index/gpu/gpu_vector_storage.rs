@@ -456,7 +456,6 @@ impl GpuVectorStorage {
 mod tests {
     use std::path::Path;
 
-    use atomic_refcell::AtomicRefCell;
     use bitvec::vec::BitVec;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -485,7 +484,7 @@ mod tests {
         path: &Path,
         dim: usize,
         element_type: TestElementType,
-    ) -> Arc<AtomicRefCell<VectorStorageEnum>> {
+    ) -> VectorStorageEnum {
         let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
 
         match element_type {
@@ -535,15 +534,12 @@ mod tests {
             .collect::<Vec<_>>();
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-        let storage = open_vector_storage(dir.path(), dim, element_type);
-        {
-            let mut borrowed_storage = storage.borrow_mut();
-            points.iter().enumerate().for_each(|(i, vec)| {
-                borrowed_storage
-                    .insert_vector(i as PointOffsetType, vec.into())
-                    .unwrap();
-            });
-        }
+        let mut storage = open_vector_storage(dir.path(), dim, element_type);
+        points.iter().enumerate().for_each(|(i, vec)| {
+            storage
+                .insert_vector(i as PointOffsetType, vec.into())
+                .unwrap();
+        });
 
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let instance =
@@ -551,13 +547,8 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage = GpuVectorStorage::new(
-            device.clone(),
-            &storage.borrow(),
-            None,
-            force_half_precision,
-        )
-        .unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), &storage, None, force_half_precision).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -694,31 +685,28 @@ mod tests {
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
+        let mut storage =
             open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
                 .unwrap();
 
-        let quantized_vectors = {
-            let mut borrowed_storage = storage.borrow_mut();
-            points.iter().enumerate().for_each(|(i, vec)| {
-                borrowed_storage
-                    .insert_vector(i as PointOffsetType, vec.into())
-                    .unwrap();
-            });
+        points.iter().enumerate().for_each(|(i, vec)| {
+            storage
+                .insert_vector(i as PointOffsetType, vec.into())
+                .unwrap();
+        });
 
-            QuantizedVectors::create(
-                &borrowed_storage,
-                &QuantizationConfig::Binary(BinaryQuantization {
-                    binary: BinaryQuantizationConfig {
-                        always_ram: Some(true),
-                    },
-                }),
-                dir.path(),
-                1,
-                &false.into(),
-            )
-            .unwrap()
-        };
+        let quantized_vectors = QuantizedVectors::create(
+            &storage,
+            &QuantizationConfig::Binary(BinaryQuantization {
+                binary: BinaryQuantizationConfig {
+                    always_ram: Some(true),
+                },
+            }),
+            dir.path(),
+            1,
+            &false.into(),
+        )
+        .unwrap();
 
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let instance =
@@ -726,13 +714,9 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage = GpuVectorStorage::new(
-            device.clone(),
-            &storage.borrow(),
-            Some(&quantized_vectors),
-            false,
-        )
-        .unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), &storage, Some(&quantized_vectors), false)
+                .unwrap();
         assert_eq!(
             gpu_vector_storage.element_type,
             GpuVectorStorageElementType::Binary

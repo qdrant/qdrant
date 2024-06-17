@@ -710,17 +710,14 @@ mod tests {
         // upload vectors to storage
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
+        let mut storage =
             open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
                 .unwrap();
-        {
-            let mut borrowed_storage = storage.borrow_mut();
-            for idx in 0..(num_vectors + groups_count) {
-                let v = vector_holder.get_vector(idx as PointOffsetType);
-                borrowed_storage
-                    .insert_vector(idx as PointOffsetType, v.as_vec_ref())
-                    .unwrap();
-            }
+        for idx in 0..(num_vectors + groups_count) {
+            let v = vector_holder.get_vector(idx as PointOffsetType);
+            storage
+                .insert_vector(idx as PointOffsetType, v.as_vec_ref())
+                .unwrap();
         }
 
         // Build HNSW index
@@ -742,7 +739,7 @@ mod tests {
         let mut gpu_search_context = GpuSearchContext::new(
             Some(&debug_messenger),
             groups_count,
-            &storage.borrow(),
+            &storage,
             None,
             m,
             m,

@@ -669,11 +669,10 @@ impl GpuGraphBuilder {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::sync::Arc;
 
-    use atomic_refcell::AtomicRefCell;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use tempfile::TempDir;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
@@ -685,11 +684,14 @@ mod tests {
     use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::DotProductMetric;
-    use crate::types::Distance;
+    use crate::types::{
+        BinaryQuantization, BinaryQuantizationConfig, Distance, QuantizationConfig,
+    };
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 
     struct TestData {
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        dir: TempDir,
+        vector_storage: VectorStorageEnum,
         vector_holder: TestRawScorerProducer<DotProductMetric>,
         graph_layers_builder: GraphLayersBuilder,
         search_vectors: Vec<DenseVector>,
@@ -711,17 +713,14 @@ mod tests {
         // upload vectors to storage
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
+        let mut storage =
             open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
                 .unwrap();
-        {
-            let mut borrowed_storage = storage.borrow_mut();
-            for idx in 0..num_vectors {
-                let v = vector_holder.get_vector(idx as PointOffsetType);
-                borrowed_storage
-                    .insert_vector(idx as PointOffsetType, v.as_vec_ref())
-                    .unwrap();
-            }
+        for idx in 0..num_vectors {
+            let v = vector_holder.get_vector(idx as PointOffsetType);
+            storage
+                .insert_vector(idx as PointOffsetType, v.as_vec_ref())
+                .unwrap();
         }
 
         // Build HNSW index
@@ -748,6 +747,7 @@ mod tests {
             .collect();
 
         TestData {
+            dir,
             vector_storage: storage,
             vector_holder,
             graph_layers_builder,
@@ -755,8 +755,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_gpu_hnsw_quality() {
+    fn test_gpu_hnsw_quality_impl(bq: bool) {
         let num_vectors = 512;
         let groups_count = 4;
         let dim = 64;
@@ -774,14 +773,33 @@ mod tests {
             .build()
             .unwrap();
 
+        let quantization = if bq {
+            Some(
+                QuantizedVectors::create(
+                    &test.vector_storage,
+                    &QuantizationConfig::Binary(BinaryQuantization {
+                        binary: BinaryQuantizationConfig {
+                            always_ram: Some(true),
+                        },
+                    }),
+                    test.dir.path(),
+                    1,
+                    &false.into(),
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let gpu_graph = GpuGraphBuilder::build(
             &pool,
             &test.graph_layers_builder,
             Some(&debug_messenger),
             groups_count,
-            &test.vector_storage.borrow(),
-            None,
+            &test.vector_storage,
+            quantization.as_ref(),
             1,
             false,
             cpu_first_points,
@@ -848,6 +866,16 @@ mod tests {
     }
 
     #[test]
+    fn test_gpu_hnsw_quality() {
+        test_gpu_hnsw_quality_impl(false);
+    }
+
+    #[test]
+    fn test_gpu_hnsw_quality_bq() {
+        test_gpu_hnsw_quality_impl(true);
+    }
+
+    #[test]
     fn test_gpu_hnsw_equivalency() {
         let num_vectors = 1024;
         let groups_count = 1;
@@ -870,7 +898,7 @@ mod tests {
             &test.graph_layers_builder,
             Some(&debug_messenger),
             groups_count,
-            &test.vector_storage.borrow(),
+            &test.vector_storage,
             None,
             1,
             false,
