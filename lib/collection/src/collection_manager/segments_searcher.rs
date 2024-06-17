@@ -621,6 +621,7 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<us
 mod tests {
     use std::collections::HashSet;
 
+    use api::rest::SearchRequestInternal;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
     use segment::types::{Condition, HasIdCondition};
@@ -628,7 +629,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::{build_test_holder, random_segment};
-    use crate::operations::types::{CoreSearchRequest, SearchRequestInternal};
+    use crate::operations::types::CoreSearchRequest;
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
     #[test]

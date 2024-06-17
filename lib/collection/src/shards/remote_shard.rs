@@ -17,6 +17,7 @@ use api::grpc::qdrant::{
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
+use api::rest::SearchRequestInternal;
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
@@ -45,8 +46,7 @@ use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, SearchRequestInternal,
-    UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;

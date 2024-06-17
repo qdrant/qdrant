@@ -16,6 +16,7 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::common::fetch_vectors::ReferencedVectors;
 use crate::common::retrieve_request_trait::RetrieveRequest;
+use crate::lookup::types::WithLookupInterface;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
@@ -33,6 +34,7 @@ pub struct CollectionQueryRequest {
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
+    pub with_lookup: Option<WithLookupInterface>,
 }
 
 impl CollectionQueryRequest {
@@ -415,6 +417,7 @@ mod from_rest {
                 offset,
                 with_vector,
                 with_payload,
+                with_lookup,
             } = value;
 
             Self {
@@ -428,6 +431,7 @@ mod from_rest {
                 params,
                 with_vector: with_vector.unwrap_or(Self::DEFAULT_WITH_VECTOR),
                 with_payload: with_payload.unwrap_or(Self::DEFAULT_WITH_PAYLOAD),
+                with_lookup: with_lookup.map(WithLookupInterface::from),
             }
         }
     }
@@ -596,6 +600,7 @@ mod from_grpc {
                 with_vectors,
                 read_consistency,
                 shard_key_selector,
+                with_lookup,
             } = value;
 
             let request = CollectionQueryRequest {
@@ -621,6 +626,7 @@ mod from_grpc {
                     .map(TryFrom::try_from)
                     .transpose()?
                     .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+                with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
             };
 
             let shard_key =

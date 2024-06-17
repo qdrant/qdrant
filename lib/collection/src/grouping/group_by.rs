@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 
+use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
@@ -19,8 +20,7 @@ use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    BaseGroupRequest, CollectionResult, PointGroup, RecommendGroupsRequestInternal,
-    RecommendRequestInternal, SearchGroupsRequestInternal, SearchRequestInternal,
+    CollectionResult, PointGroup, RecommendGroupsRequestInternal, RecommendRequestInternal,
 };
 use crate::recommendations::recommend_into_core_search;
 

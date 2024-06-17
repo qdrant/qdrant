@@ -541,6 +541,7 @@ message QueryPoints {
   optional WithPayloadSelector with_payload = 11; // Options for specifying which payload to include or not.
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees.
   optional ShardKeySelector shard_key_selector = 13; // Specify in which shards to look for the points, if not specified - look in all shards.
+  optional WithLookup with_lookup = 14; // Options for specifying how to use the group id to lookup points in another collection
 }
 
 message PointsUpdateOperation {

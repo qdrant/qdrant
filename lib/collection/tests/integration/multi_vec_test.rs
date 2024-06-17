@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::Path;
 
+use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
@@ -9,8 +10,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CollectionError, PointRequestInternal, RecommendRequestInternal, SearchRequestInternal,
-    VectorsConfig,
+    CollectionError, PointRequestInternal, RecommendRequestInternal, VectorsConfig,
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;

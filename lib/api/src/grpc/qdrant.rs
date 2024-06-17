@@ -4870,6 +4870,9 @@ pub struct QueryPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards.
     #[prost(message, optional, tag = "13")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "14")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

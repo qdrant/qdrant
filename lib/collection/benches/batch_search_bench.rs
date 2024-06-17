@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use api::rest::SearchRequestInternal;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct,
 };
-use collection::operations::types::{CoreSearchRequestBatch, SearchRequestInternal};
+use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
