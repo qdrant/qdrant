@@ -8322,6 +8322,19 @@
             }
           },
           {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
+              }
+            }
+          },
+          {
             "type": "object",
             "additionalProperties": {
               "type": "array",
