@@ -145,6 +145,7 @@ pub async fn drive_resharding(
         DriverState::new(reshard_key.clone())
     })?;
 
+    // TODO(resharding): sync list of peers more often throughout resharding in case peers change
     state.write(|data| {
         data.sync_peers(&consensus.peers());
     })?;
@@ -219,10 +220,13 @@ fn completed_init(state: &PersistedState) -> bool {
 fn stage_init(state: &PersistedState) -> CollectionResult<()> {
     log::debug!("Resharding stage: init");
 
+    // TODO(reshard): do any necessary initialisation here
+
     state.write(|data| {
         data.bump_all_peers_to(Stage::S1_InitEnd);
     })?;
-    todo!();
+
+    Ok(())
 }
 
 /// Stage 2: migrate points
