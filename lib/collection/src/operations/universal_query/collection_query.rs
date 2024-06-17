@@ -400,7 +400,7 @@ impl CollectionQueryRequest {
 }
 
 mod from_rest {
-    use api::rest::{schema as rest, LookupLocation};
+    use api::rest::schema as rest;
 
     use super::*;
 
