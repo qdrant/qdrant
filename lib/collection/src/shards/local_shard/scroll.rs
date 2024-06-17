@@ -67,7 +67,7 @@ impl LocalShard {
                 .scroll_by_id(
                     offset_id,
                     limit,
-                    &with_payload,
+                    with_payload,
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
@@ -89,7 +89,7 @@ impl LocalShard {
                 let (records, values) = self
                     .scroll_by_field(
                         limit,
-                        &with_payload,
+                        with_payload,
                         with_vector,
                         filter.as_ref(),
                         search_runtime_handle,
