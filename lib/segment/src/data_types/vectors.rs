@@ -414,51 +414,53 @@ pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors
 /// Full vector data per point separator with single and multiple vector modes
 /// TODO(colbert) try to remove this enum and use NamedVectors instead
 #[derive(Clone, Debug, PartialEq)]
-pub enum VectorStruct {
+pub enum VectorStructInternal {
     Single(DenseVector),
     MultiDense(MultiDenseVectorInternal),
     Named(HashMap<String, Vector>),
 }
 
-impl From<DenseVector> for VectorStruct {
+impl From<DenseVector> for VectorStructInternal {
     fn from(v: DenseVector) -> Self {
-        VectorStruct::Single(v)
+        VectorStructInternal::Single(v)
     }
 }
 
-impl From<&[VectorElementType]> for VectorStruct {
+impl From<&[VectorElementType]> for VectorStructInternal {
     fn from(v: &[VectorElementType]) -> Self {
-        VectorStruct::Single(v.to_vec())
+        VectorStructInternal::Single(v.to_vec())
     }
 }
 
-impl<'a> From<NamedVectors<'a>> for VectorStruct {
+impl<'a> From<NamedVectors<'a>> for VectorStructInternal {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
             let vector: &[_] = v.get(DEFAULT_VECTOR_NAME).unwrap().try_into().unwrap();
-            VectorStruct::Single(vector.to_owned())
+            VectorStructInternal::Single(vector.to_owned())
         } else {
-            VectorStruct::Named(v.into_owned_map())
+            VectorStructInternal::Named(v.into_owned_map())
         }
     }
 }
 
-impl VectorStruct {
+impl VectorStructInternal {
     pub fn get(&self, name: &str) -> Option<VectorRef> {
         match self {
-            VectorStruct::Single(v) => (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v)),
-            VectorStruct::MultiDense(v) => {
+            VectorStructInternal::Single(v) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
             }
-            VectorStruct::Named(v) => v.get(name).map(VectorRef::from),
+            VectorStructInternal::MultiDense(v) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
+            }
+            VectorStructInternal::Named(v) => v.get(name).map(VectorRef::from),
         }
     }
 
     pub fn into_all_vectors(self) -> NamedVectors<'static> {
         match self {
-            VectorStruct::Single(v) => default_vector(v),
-            VectorStruct::MultiDense(v) => default_multi_vector(v),
-            VectorStruct::Named(v) => NamedVectors::from_map(v),
+            VectorStructInternal::Single(v) => default_vector(v),
+            VectorStructInternal::MultiDense(v) => default_multi_vector(v),
+            VectorStructInternal::Named(v) => NamedVectors::from_map(v),
         }
     }
 }

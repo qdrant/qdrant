@@ -1,4 +1,4 @@
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::VectorStructInternal;
 
 use super::types::Record;
 
@@ -18,7 +18,7 @@ impl From<api::rest::Record> for Record {
         Self {
             id: value.id,
             payload: value.payload,
-            vector: value.vector.map(VectorStruct::from),
+            vector: value.vector.map(VectorStructInternal::from),
             shard_key: value.shard_key,
         }
     }

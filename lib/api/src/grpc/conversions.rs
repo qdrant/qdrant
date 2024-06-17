@@ -568,22 +568,22 @@ impl From<HashMap<String, segment_vectors::Vector>> for NamedVectors {
     }
 }
 
-impl From<segment_vectors::VectorStruct> for Vectors {
-    fn from(vector_struct: segment_vectors::VectorStruct) -> Self {
+impl From<segment_vectors::VectorStructInternal> for Vectors {
+    fn from(vector_struct: segment_vectors::VectorStructInternal) -> Self {
         match vector_struct {
-            segment_vectors::VectorStruct::Single(vector) => {
+            segment_vectors::VectorStructInternal::Single(vector) => {
                 let vector = segment_vectors::Vector::from(vector);
                 Self {
                     vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
             }
-            segment_vectors::VectorStruct::MultiDense(vector) => {
+            segment_vectors::VectorStructInternal::MultiDense(vector) => {
                 let vector = segment_vectors::Vector::from(vector);
                 Self {
                     vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
             }
-            segment_vectors::VectorStruct::Named(vectors) => Self {
+            segment_vectors::VectorStructInternal::Named(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
                         vectors
@@ -681,7 +681,7 @@ impl TryFrom<NamedVectors> for HashMap<String, segment_vectors::Vector> {
     }
 }
 
-impl TryFrom<Vectors> for segment_vectors::VectorStruct {
+impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
     type Error = Status;
 
     fn try_from(vectors: Vectors) -> Result<Self, Self::Error> {
@@ -693,10 +693,10 @@ impl TryFrom<Vectors> for segment_vectors::VectorStruct {
                             "Sparse vector must be named".to_string(),
                         ));
                     }
-                    segment_vectors::VectorStruct::Single(vector.data)
+                    segment_vectors::VectorStructInternal::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
-                    segment_vectors::VectorStruct::Named(vectors.try_into()?)
+                    segment_vectors::VectorStructInternal::Named(vectors.try_into()?)
                 }
             }),
             None => Err(Status::invalid_argument("No Provided")),

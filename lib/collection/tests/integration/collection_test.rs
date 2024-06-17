@@ -14,7 +14,7 @@ use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
+use segment::data_types::vectors::{BatchVectorStruct, VectorStructInternal};
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
@@ -160,7 +160,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             assert_eq!(res[0].payload.as_ref().unwrap().len(), 1);
             let vec = vec![1.0, 0.0, 1.0, 1.0];
             match &res[0].vector {
-                Some(VectorStruct::Single(v)) => assert_eq!(v.clone(), vec),
+                Some(VectorStructInternal::Single(v)) => assert_eq!(v.clone(), vec),
                 _ => panic!("vector is not returned"),
             }
         }
@@ -294,12 +294,12 @@ fn test_deserialization2() {
         vec![
             PointStruct {
                 id: 0.into(),
-                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 1.0]).into(),
+                vector: VectorStructInternal::from(vec![1.0, 0.0, 1.0, 1.0]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 1.into(),
-                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 0.0]).into(),
+                vector: VectorStructInternal::from(vec![1.0, 0.0, 1.0, 0.0]).into(),
                 payload: None,
             },
         ]

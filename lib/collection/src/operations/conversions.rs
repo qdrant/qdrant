@@ -16,7 +16,7 @@ use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
+    BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStructInternal,
     DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
@@ -131,7 +131,7 @@ pub fn try_record_from_grpc(
         None
     };
 
-    let vector: Option<VectorStruct> = point
+    let vector: Option<VectorStructInternal> = point
         .vectors
         .map(|vectors| vectors.try_into())
         .transpose()?;
@@ -437,7 +437,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
-        let vectors = record.vector.map(VectorStruct::from);
+        let vectors = record.vector.map(VectorStructInternal::from);
 
         Self {
             id: Some(record.id.into()),
@@ -815,7 +815,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             Some(proto_to_payloads(payload)?)
         };
 
-        let vector_struct: VectorStruct = match vectors {
+        let vector_struct: VectorStructInternal = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
             Some(vectors) => vectors.try_into()?,
         };
@@ -834,7 +834,7 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let vectors = VectorStruct::from(value.vector);
+        let vectors = VectorStructInternal::from(value.vector);
         let vectors = api::grpc::qdrant::Vectors::from(vectors);
 
         let id = value.id;
@@ -869,7 +869,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
                     Some(payload) => payload_to_proto(payload.clone()),
                 })
             });
-            let vectors: Option<VectorStruct> = vector.map(|v| v.into());
+            let vectors: Option<VectorStructInternal> = vector.map(|v| v.into());
 
             let point = api::grpc::qdrant::PointStruct {
                 id,

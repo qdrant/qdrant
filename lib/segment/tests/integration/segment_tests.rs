@@ -6,7 +6,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
+    only_default_vector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -279,10 +279,10 @@ fn test_update_named_vector() {
 
     // check if nearest_upsert is normalized
     match &nearest_upsert.vector {
-        Some(VectorStruct::Single(v)) => {
+        Some(VectorStructInternal::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStruct::Named(v)) => {
+        Some(VectorStructInternal::Named(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
@@ -314,10 +314,10 @@ fn test_update_named_vector() {
 
     // check that nearest_upsert is normalized
     match &nearest_update.vector {
-        Some(VectorStruct::Single(v)) => {
+        Some(VectorStructInternal::Single(v)) => {
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);
         }
-        Some(VectorStruct::Named(v)) => {
+        Some(VectorStructInternal::Named(v)) => {
             let v: VectorRef = (&v[DEFAULT_VECTOR_NAME]).into();
             let v: &[_] = v.try_into().unwrap();
             assert!((sqrt_distance(v) - 1.).abs() < 1e-5);

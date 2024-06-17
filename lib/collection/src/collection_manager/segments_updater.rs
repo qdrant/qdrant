@@ -6,7 +6,7 @@ use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
+use segment::data_types::vectors::{BatchVectorStruct, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -459,7 +459,7 @@ pub(crate) fn process_point_operation(
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector: VectorStruct::from(vectors).into(),
+                                vector: VectorStructInternal::from(vectors).into(),
                                 payload: None,
                             })
                             .collect(),
@@ -467,7 +467,7 @@ pub(crate) fn process_point_operation(
                             .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector: VectorStruct::from(vectors).into(),
+                                vector: VectorStructInternal::from(vectors).into(),
                                 payload,
                             })
                             .collect(),

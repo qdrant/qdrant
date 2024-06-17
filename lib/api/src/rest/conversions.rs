@@ -33,36 +33,38 @@ impl From<Vector> for segment::data_types::vectors::Vector {
     }
 }
 
-impl From<segment::data_types::vectors::VectorStruct> for VectorStruct {
-    fn from(value: segment::data_types::vectors::VectorStruct) -> Self {
+impl From<segment::data_types::vectors::VectorStructInternal> for VectorStruct {
+    fn from(value: segment::data_types::vectors::VectorStructInternal) -> Self {
         match value {
-            segment::data_types::vectors::VectorStruct::Single(vector) => {
+            segment::data_types::vectors::VectorStructInternal::Single(vector) => {
                 VectorStruct::Single(vector)
             }
-            segment::data_types::vectors::VectorStruct::MultiDense(vector) => {
+            segment::data_types::vectors::VectorStructInternal::MultiDense(vector) => {
                 VectorStruct::MultiDense(vector.into_multi_vectors())
             }
-            segment::data_types::vectors::VectorStruct::Named(vectors) => {
+            segment::data_types::vectors::VectorStructInternal::Named(vectors) => {
                 VectorStruct::Named(vectors.into_iter().map(|(k, v)| (k, v.into())).collect())
             }
         }
     }
 }
 
-impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
+impl From<VectorStruct> for segment::data_types::vectors::VectorStructInternal {
     fn from(value: VectorStruct) -> Self {
         match value {
             VectorStruct::Single(vector) => {
-                segment::data_types::vectors::VectorStruct::Single(vector)
+                segment::data_types::vectors::VectorStructInternal::Single(vector)
             }
             VectorStruct::MultiDense(vector) => {
-                segment::data_types::vectors::VectorStruct::MultiDense(
+                segment::data_types::vectors::VectorStructInternal::MultiDense(
                     segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
                 )
             }
-            VectorStruct::Named(vectors) => segment::data_types::vectors::VectorStruct::Named(
-                vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
-            ),
+            VectorStruct::Named(vectors) => {
+                segment::data_types::vectors::VectorStructInternal::Named(
+                    vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                )
+            }
         }
     }
 }

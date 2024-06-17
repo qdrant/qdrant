@@ -14,7 +14,7 @@ use collection::shards::shard_trait::ShardOperation;
 use common::cpu::CpuBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
-use segment::data_types::vectors::{only_default_vector, VectorStruct};
+use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{Condition, Distance, FieldCondition, Filter, Payload, Range};
 use serde_json::Map;
@@ -37,7 +37,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         let vectors = only_default_vector(&vector);
         let point = PointStruct {
             id: (i as u64).into(),
-            vector: VectorStruct::from(vectors).into(),
+            vector: VectorStructInternal::from(vectors).into(),
             payload: Some(Payload(payload_map)),
         };
         points.push(point);

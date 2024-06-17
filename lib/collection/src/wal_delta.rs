@@ -267,7 +267,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
     use rstest::rstest;
-    use segment::data_types::vectors::VectorStruct;
+    use segment::data_types::vectors::VectorStructInternal;
     use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
@@ -301,7 +301,7 @@ mod tests {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: id.into(),
-                vector: VectorStruct::from(vec![1.0, 2.0, 3.0]).into(),
+                vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0]).into(),
                 payload: None,
             }]),
         ))
@@ -1271,7 +1271,7 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: VectorStruct::from(
+                            vector: VectorStructInternal::from(
                                 std::iter::repeat_with(|| rng.gen::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),
@@ -1317,7 +1317,7 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: VectorStruct::from(
+                            vector: VectorStructInternal::from(
                                 std::iter::repeat_with(|| rng.gen::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),
