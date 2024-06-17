@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 
 // chunk size in bytes
-const CHUNK_SIZE: usize = 32 * 1024 * 1024;
+pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 
 // if dimension is too high, use this capacity
 const MIN_CHUNK_CAPACITY: usize = 16;

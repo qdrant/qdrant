@@ -4,14 +4,18 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
+use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
 use rstest::rstest;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::{MultiDenseVector, QueryVector, TypedMultiDenseVectorRef};
+use crate::data_types::vectors::{
+    MultiDenseVector, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, MultiVectorConfig};
+use crate::vector_storage::chunked_vectors::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::{new_raw_scorer, MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -309,5 +313,34 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
     // retrieve all vectors from storage
     for id in 0..total_vector_count {
         assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+    }
+}
+
+#[rstest]
+fn test_large_multi_dense_vector_storage(
+    #[values(
+        MultiDenseStorageType::SimpleRamFloat,
+        MultiDenseStorageType::AppendableMmapFloat
+    )]
+    storage_type: MultiDenseStorageType,
+) {
+    assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);
+
+    let vec_dim = 100_000;
+    let vec_count = 100;
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
+
+    let vectors = vec![vec![0.0; vec_dim]; vec_count];
+    let multivec = MultiDenseVector::try_from(vectors).unwrap();
+
+    let result = storage.insert_vector(0, VectorRef::from(&multivec));
+    match result {
+        Ok(_) => {
+            panic!("Inserting vector should fail");
+        }
+        Err(e) => {
+            assert!(e.to_string().contains("too large"));
+        }
     }
 }

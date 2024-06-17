@@ -17,7 +17,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::chunked_vectors::{ChunkedVectors, CHUNK_SIZE};
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
@@ -220,6 +220,10 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.dim);
+        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
+        if multivector_size_in_bytes >= CHUNK_SIZE {
+            return Err(OperationError::service_error(format!("Cannot insert multi vector of size {multivector_size_in_bytes} to the vector storage. It's too large, maximum size is {CHUNK_SIZE}.")));
+        }
 
         let key_usize = key as usize;
         if key_usize >= self.vectors_metadata.len() {
