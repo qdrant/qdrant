@@ -62,9 +62,12 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
 impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors<'a> {
     fn from(value: VectorStruct) -> Self {
         match value {
-            VectorStruct::Single(vector) => segment::data_types::named_vectors::NamedVectors::from_pairs(
-                [(DEFAULT_VECTOR_NAME.to_string(), vector)],
-            ),
+            VectorStruct::Single(vector) => {
+                segment::data_types::named_vectors::NamedVectors::from_pairs([(
+                    DEFAULT_VECTOR_NAME.to_string(),
+                    vector,
+                )])
+            }
             VectorStruct::Multi(vectors) => {
                 let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();
                 for (name, vector) in vectors {

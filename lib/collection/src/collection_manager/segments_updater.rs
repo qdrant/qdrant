@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
-
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
@@ -16,11 +15,11 @@ use segment::types::{
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
-use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::vector_ops::{PointVectors, VectorOperations};
+use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],

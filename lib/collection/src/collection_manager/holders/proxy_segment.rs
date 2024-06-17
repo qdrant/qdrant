@@ -1596,7 +1596,11 @@ mod tests {
 
         // Insert point ID 8 and 10 partially, assert counts
         proxy_segment
-            .upsert_point(102, 8.into(), NamedVectors::from_pairs([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         proxy_segment
             .upsert_point(
@@ -1635,7 +1639,11 @@ mod tests {
 
         // Replace vector 'a' for point 8, counts should remain the same
         proxy_segment
-            .upsert_point(108, 8.into(), NamedVectors::from_pairs([("a".into(), vec![0.0])]))
+            .upsert_point(
+                108,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);

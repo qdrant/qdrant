@@ -2381,7 +2381,11 @@ mod tests {
             )
             .unwrap();
         segment
-            .upsert_point(102, 8.into(), NamedVectors::from_pairs([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         segment
             .upsert_point(
@@ -2421,7 +2425,10 @@ mod tests {
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
         segment
-            .replace_all_vectors(internal_8, NamedVectors::from_pairs([("a".into(), vec![0.1])]))
+            .replace_all_vectors(
+                internal_8,
+                NamedVectors::from_pairs([("a".into(), vec![0.1])]),
+            )
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
