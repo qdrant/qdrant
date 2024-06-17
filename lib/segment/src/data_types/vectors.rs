@@ -206,6 +206,25 @@ pub struct TypedMultiDenseVector<T> {
     pub dim: usize,                             // dimension of each vector
 }
 
+impl<T> TypedMultiDenseVector<T> {
+    pub fn try_from_flatten(vectors: Vec<T>, dim: usize) -> Result<Self, OperationError> {
+        if vectors.len() % dim != 0 || vectors.is_empty() {
+            return Err(OperationError::ValidationError {
+                description: format!(
+                    "Invalid multi-vector length: {}, expected multiple of {}",
+                    vectors.len(),
+                    dim
+                ),
+            });
+        }
+
+        Ok(TypedMultiDenseVector {
+            flattened_vectors: vectors,
+            dim,
+        })
+    }
+}
+
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {

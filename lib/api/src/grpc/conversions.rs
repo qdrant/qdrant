@@ -688,12 +688,29 @@ impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
-                    if vector.indices.is_some() {
+                    let Vector {
+                        data,
+                        indices,
+                        vectors_count,
+                    } = vector;
+
+                    if indices.is_some() {
                         return Err(Status::invalid_argument(
                             "Sparse vector must be named".to_string(),
                         ));
                     }
-                    segment_vectors::VectorStructInternal::Single(vector.data)
+                    if let Some(vectors_count) = vectors_count {
+                        segment_vectors::VectorStructInternal::MultiDense(
+                            segment::data_types::vectors::MultiDenseVectorInternal::try_from_flatten(
+                                data,
+                                vectors_count as usize,
+                            ).map_err(|err| {
+                                Status::invalid_argument(format!("Unable to convert to multi-dense vector: {err}"))
+                            })?,
+                        )
+                    } else {
+                        segment_vectors::VectorStructInternal::Single(data)
+                    }
                 }
                 VectorsOptions::Vectors(vectors) => {
                     segment_vectors::VectorStructInternal::Named(vectors.try_into()?)
