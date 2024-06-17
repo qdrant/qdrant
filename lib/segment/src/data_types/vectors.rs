@@ -454,8 +454,18 @@ impl From<&[VectorElementType]> for VectorStructInternal {
 impl<'a> From<NamedVectors<'a>> for VectorStructInternal {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
-            let vector: &[_] = v.get(DEFAULT_VECTOR_NAME).unwrap().try_into().unwrap();
-            VectorStructInternal::Single(vector.to_owned())
+            let vector_ref = v.get(DEFAULT_VECTOR_NAME).unwrap();
+
+            match vector_ref {
+                VectorRef::Dense(v) => VectorStructInternal::Single(v.to_owned()),
+                VectorRef::Sparse(v) => {
+                    debug_assert!(false, "Sparse vector cannot be default");
+                    let mut map = HashMap::new();
+                    map.insert(DEFAULT_VECTOR_NAME.to_owned(), Vector::Sparse(v.to_owned()));
+                    VectorStructInternal::Named(map)
+                }
+                VectorRef::MultiDense(v) => VectorStructInternal::MultiDense(v.to_owned()),
+            }
         } else {
             VectorStructInternal::Named(v.into_owned_map())
         }
