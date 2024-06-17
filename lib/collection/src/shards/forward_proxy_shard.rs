@@ -129,17 +129,18 @@ impl ForwardProxyShard {
         let points = points?;
 
         // Use sync API to leverage potentially existing points
-        let insert_points_operation = {
-            CollectionUpdateOperations::PointOperation(if !merge_points {
-                PointOperations::SyncPoints(PointSyncOperation {
-                    from_id: offset,
-                    to_id: next_page_offset,
-                    points,
-                })
-            } else {
-                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+        // Normally use SyncPoints, to completely replace everything in the target shard
+        // For resharding we need to merge points from multiple transfers, requiring a different operation
+        let point_operation = if !merge_points {
+            PointOperations::SyncPoints(PointSyncOperation {
+                from_id: offset,
+                to_id: next_page_offset,
+                points,
             })
+        } else {
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
         };
+        let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();

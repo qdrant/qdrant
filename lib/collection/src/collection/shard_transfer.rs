@@ -202,6 +202,9 @@ impl Collection {
         // Unwrap forward proxy into local shard, or replace it with remote shard
         // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
+            // Normally we promote the shard to become active, in case of resharding we do not.
+            // For resharding we have multiple transfers in sequence, during which the shard should
+            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
             let activate_shard = transfer
                 .method
                 .map_or(true, |method| !method.is_resharding());
@@ -218,6 +221,7 @@ impl Collection {
 
         // Should happen on receiving side
         // Promote partial shard to active shard
+        // In case of resharding we manually promote the shard, and there are no partial shards
         if self.this_peer_id == transfer.to
             && !transfer
                 .method
@@ -235,6 +239,9 @@ impl Collection {
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
+            // Normally we promote the shard to become active, in case of resharding we do not.
+            // For resharding we have multiple transfers in sequence, during which the shard should
+            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
             let state = if transfer
                 .method
                 .map_or(false, |method| method.is_resharding())
