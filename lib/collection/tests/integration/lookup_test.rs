@@ -9,7 +9,7 @@ use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
 use rstest::*;
-use segment::data_types::vectors::{BatchVectorStruct, VectorStructInternal};
+use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
 use segment::types::{Payload, PointIdType};
 use serde_json::json;
 use tempfile::Builder;
@@ -58,7 +58,7 @@ async fn setup() -> Resources {
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
         Batch {
             ids,
-            vectors: BatchVectorStruct::from(vectors).into(),
+            vectors: BatchVectorStructInternal::from(vectors).into(),
             payloads: Some(payloads),
         }
         .into(),

@@ -16,7 +16,7 @@ use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStructInternal,
+    BatchVectorStructInternal, Named, NamedQuery, NamedVectorStruct, Vector, VectorStructInternal,
     DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
@@ -858,7 +858,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
     fn try_from(batch: Batch) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
-        let batch_vectors = BatchVectorStruct::from(batch.vectors);
+        let batch_vectors = BatchVectorStructInternal::from(batch.vectors);
         let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
         for (i, p_id) in batch.ids.into_iter().enumerate() {
             let id = Some(p_id.into());

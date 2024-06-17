@@ -587,22 +587,24 @@ impl NamedVectorStruct {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum BatchVectorStruct {
+pub enum BatchVectorStructInternal {
     Single(Vec<DenseVector>),
-    Multi(HashMap<String, Vec<Vector>>),
+    Named(HashMap<String, Vec<Vector>>),
 }
 
-impl From<Vec<DenseVector>> for BatchVectorStruct {
+impl From<Vec<DenseVector>> for BatchVectorStructInternal {
     fn from(v: Vec<DenseVector>) -> Self {
-        BatchVectorStruct::Single(v)
+        BatchVectorStructInternal::Single(v)
     }
 }
 
-impl BatchVectorStruct {
+impl BatchVectorStructInternal {
     pub fn into_all_vectors(self, num_records: usize) -> Vec<NamedVectors<'static>> {
         match self {
-            BatchVectorStruct::Single(vectors) => vectors.into_iter().map(default_vector).collect(),
-            BatchVectorStruct::Multi(named_vectors) => {
+            BatchVectorStructInternal::Single(vectors) => {
+                vectors.into_iter().map(default_vector).collect()
+            }
+            BatchVectorStructInternal::Named(named_vectors) => {
                 if named_vectors.is_empty() {
                     vec![NamedVectors::default(); num_records]
                 } else {

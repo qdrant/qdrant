@@ -83,7 +83,7 @@ impl Batch {
     pub fn empty() -> Self {
         Self {
             ids: vec![],
-            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            vectors: BatchVectorStruct::Named(HashMap::new()),
             payloads: Some(vec![]),
         }
     }
@@ -91,7 +91,7 @@ impl Batch {
     pub fn empty_no_payload() -> Self {
         Self {
             ids: vec![],
-            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            vectors: BatchVectorStruct::Named(HashMap::new()),
             payloads: None,
         }
     }
@@ -269,7 +269,7 @@ impl Validate for Batch {
                     )));
                 }
             }
-            BatchVectorStruct::Multi(named_vectors) => {
+            BatchVectorStruct::Named(named_vectors) => {
                 for vectors in named_vectors.values() {
                     if batch.ids.len() != vectors.len() {
                         return Err(create_error(bad_input_description(
@@ -401,7 +401,7 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Multi(named_vectors) => {
+                BatchVectorStruct::Named(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
                         transpose_map_into_named_vector(named_vectors)
                     } else {
@@ -411,7 +411,7 @@ impl SplitByShard for Batch {
                         for shard_id in point_to_shards(&id, ring) {
                             let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
                                 ids: vec![],
-                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                vectors: BatchVectorStruct::Named(HashMap::new()),
                                 payloads: Some(vec![]),
                             });
                             batch.ids.push(id);
@@ -419,7 +419,7 @@ impl SplitByShard for Batch {
                                 let name = name.into_owned();
                                 let vector: Vector = vector.to_owned();
                                 match &mut batch.vectors {
-                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    BatchVectorStruct::Named(batch_vectors) => batch_vectors
                                         .entry(name)
                                         .or_default()
                                         .push(api::rest::Vector::from(vector)),
@@ -449,7 +449,7 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Multi(named_vectors) => {
+                BatchVectorStruct::Named(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
                         transpose_map_into_named_vector(named_vectors)
                     } else {
@@ -459,7 +459,7 @@ impl SplitByShard for Batch {
                         for shard_id in point_to_shards(&id, ring) {
                             let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
                                 ids: vec![],
-                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                vectors: BatchVectorStruct::Named(HashMap::new()),
                                 payloads: None,
                             });
                             batch.ids.push(id);
@@ -467,7 +467,7 @@ impl SplitByShard for Batch {
                                 let name = name.into_owned();
                                 let vector: Vector = vector.to_owned();
                                 match &mut batch.vectors {
-                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    BatchVectorStruct::Named(batch_vectors) => batch_vectors
                                         .entry(name)
                                         .or_default()
                                         .push(api::rest::Vector::from(vector)),
@@ -547,7 +547,7 @@ impl PointStruct {
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::BatchVectorStruct;
+    use segment::data_types::vectors::BatchVectorStructInternal;
 
     use super::*;
 
@@ -555,7 +555,7 @@ mod tests {
     fn validate_batch() {
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![]).into(),
+            vectors: BatchVectorStructInternal::from(vec![]).into(),
             payloads: None,
         }
         .into();
@@ -563,7 +563,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStructInternal::from(vec![vec![0.1]]).into(),
             payloads: None,
         }
         .into();
@@ -571,7 +571,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStructInternal::from(vec![vec![0.1]]).into(),
             payloads: Some(vec![]),
         }
         .into();

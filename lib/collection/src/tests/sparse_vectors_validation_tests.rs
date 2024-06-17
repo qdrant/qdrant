@@ -61,7 +61,8 @@ fn validate_error_sparse_vector_points_batch() {
     check_validation_error(PointsBatch {
         batch: Batch {
             ids: vec![1.into()],
-            vectors: segment::data_types::vectors::BatchVectorStruct::Multi(vector_data).into(),
+            vectors: segment::data_types::vectors::BatchVectorStructInternal::Named(vector_data)
+                .into(),
             payloads: None,
         },
         shard_key: None,

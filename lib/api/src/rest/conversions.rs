@@ -100,14 +100,14 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
     }
 }
 
-impl From<segment::data_types::vectors::BatchVectorStruct> for BatchVectorStruct {
-    fn from(value: segment::data_types::vectors::BatchVectorStruct) -> Self {
+impl From<segment::data_types::vectors::BatchVectorStructInternal> for BatchVectorStruct {
+    fn from(value: segment::data_types::vectors::BatchVectorStructInternal) -> Self {
         match value {
-            segment::data_types::vectors::BatchVectorStruct::Single(vector) => {
+            segment::data_types::vectors::BatchVectorStructInternal::Single(vector) => {
                 BatchVectorStruct::Single(vector)
             }
-            segment::data_types::vectors::BatchVectorStruct::Multi(vectors) => {
-                BatchVectorStruct::Multi(
+            segment::data_types::vectors::BatchVectorStructInternal::Named(vectors) => {
+                BatchVectorStruct::Named(
                     vectors
                         .into_iter()
                         .map(|(k, v)| (k, v.into_iter().map(|v| v.into()).collect()))
@@ -118,14 +118,14 @@ impl From<segment::data_types::vectors::BatchVectorStruct> for BatchVectorStruct
     }
 }
 
-impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStruct {
+impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStructInternal {
     fn from(value: BatchVectorStruct) -> Self {
         match value {
             BatchVectorStruct::Single(vector) => {
-                segment::data_types::vectors::BatchVectorStruct::Single(vector)
+                segment::data_types::vectors::BatchVectorStructInternal::Single(vector)
             }
-            BatchVectorStruct::Multi(vectors) => {
-                segment::data_types::vectors::BatchVectorStruct::Multi(
+            BatchVectorStruct::Named(vectors) => {
+                segment::data_types::vectors::BatchVectorStructInternal::Named(
                     vectors
                         .into_iter()
                         .map(|(k, v)| (k, v.into_iter().map(|v| v.into()).collect()))

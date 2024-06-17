@@ -21,7 +21,7 @@ impl Validate for BatchVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
             BatchVectorStruct::Single(_) => Ok(()),
-            BatchVectorStruct::Multi(v) => {
+            BatchVectorStruct::Named(v) => {
                 common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
             }
         }

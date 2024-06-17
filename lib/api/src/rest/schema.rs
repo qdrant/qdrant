@@ -52,7 +52,7 @@ impl VectorStruct {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
-    Multi(HashMap<String, Vec<Vector>>),
+    Named(HashMap<String, Vec<Vector>>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]

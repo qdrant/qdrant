@@ -6,7 +6,7 @@ use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{BatchVectorStruct, VectorStructInternal};
+use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -452,7 +452,7 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperationsInternal::PointsBatch(batch) => {
-                    let batch_vectors: BatchVectorStruct = batch.vectors.into();
+                    let batch_vectors: BatchVectorStructInternal = batch.vectors.into();
                     let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
