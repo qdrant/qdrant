@@ -14,7 +14,9 @@ use tokio::sync::Mutex;
 
 use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRing;
-use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
+use crate::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStruct, PointSyncOperation,
+};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
@@ -87,6 +89,7 @@ impl ForwardProxyShard {
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: Option<&HashRing>,
+        merge_points: bool,
         runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
@@ -127,13 +130,15 @@ impl ForwardProxyShard {
 
         // Use sync API to leverage potentially existing points
         let insert_points_operation = {
-            CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
-                PointSyncOperation {
+            CollectionUpdateOperations::PointOperation(if !merge_points {
+                PointOperations::SyncPoints(PointSyncOperation {
                     from_id: offset,
                     to_id: next_page_offset,
                     points,
-                },
-            ))
+                })
+            } else {
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+            })
         };
 
         // We only need to wait for the last batch.

@@ -92,7 +92,7 @@ pub(super) async fn transfer_resharding_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring))
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
             .await?;
 
         {
