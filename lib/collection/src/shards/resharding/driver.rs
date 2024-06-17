@@ -50,6 +50,17 @@ impl DriverState {
         }
     }
 
+    /// Sync the peers we know about with this state.
+    ///
+    /// This will update this driver state to have exactly the peers given in the list. New peers
+    /// are initialized with the default stage, now unknown peers are removed.
+    fn sync_peers(&mut self, peers: &[PeerId]) {
+        self.peers.retain(|peer_id, _| peers.contains(peer_id));
+        for peer_id in peers {
+            self.peers.entry(*peer_id).or_default();
+        }
+    }
+
     /// Check whether all peers have reached at least the given stage
     fn all_peers_reached(&self, stage: Stage) -> bool {
         self.peers.values().all(|peer_stage| peer_stage >= &stage)
@@ -80,10 +91,11 @@ impl DriverState {
 /// Defines the state each node has reached and completed.
 ///
 /// Important: the states in this enum are ordered, from beginning to end!
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 #[allow(non_camel_case_types)]
 enum Stage {
+    #[default]
     #[serde(rename = "init_start")]
     S1_InitStart,
     #[serde(rename = "init_end")]
@@ -130,6 +142,10 @@ pub async fn drive_resharding(
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
     let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
         DriverState::new(reshard_key.clone())
+    })?;
+
+    state.write(|data| {
+        data.sync_peers(&consensus.peers());
     })?;
 
     // Stage 1: init
