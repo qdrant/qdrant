@@ -186,7 +186,7 @@ impl GpuLinks {
             let start = chunk_index * self.max_patched_points;
             let end = (start + self.max_patched_points).min(points.len());
             let chunk_size = end - start;
-            for (i, &point_id) in points.iter().skip(start).take(end).enumerate() {
+            for (i, &point_id) in points[start..end].iter().enumerate() {
                 let links_size = (self.links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
                 context.copy_gpu_buffer(
                     self.links_buffer.clone(),
