@@ -48,6 +48,7 @@ impl ShardTransfer {
     pub fn key(&self) -> ShardTransferKey {
         ShardTransferKey {
             shard_id: self.shard_id,
+            to_shard_id: self.to_shard_id,
             from: self.from,
             to: self.to,
         }
@@ -60,12 +61,15 @@ pub struct ShardTransferRestart {
     pub from: PeerId,
     pub to: PeerId,
     pub method: ShardTransferMethod,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl ShardTransferRestart {
     pub fn key(&self) -> ShardTransferKey {
         ShardTransferKey {
             shard_id: self.shard_id,
+            to_shard_id: self.to_shard_id,
             from: self.from,
             to: self.to,
         }
@@ -79,6 +83,7 @@ impl From<ShardTransfer> for ShardTransferRestart {
             from: transfer.from,
             to: transfer.to,
             method: transfer.method.unwrap_or_default(),
+            to_shard_id: transfer.to_shard_id,
         }
     }
 }
@@ -87,6 +92,8 @@ impl From<ShardTransfer> for ShardTransferRestart {
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
 }

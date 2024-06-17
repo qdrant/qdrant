@@ -96,6 +96,8 @@ pub struct RestartTransfer {
     pub from_peer_id: PeerId,
     pub to_peer_id: PeerId,
     pub method: ShardTransferMethod,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for ClusterOperations {
@@ -164,6 +166,8 @@ pub struct ReplicateShard {
     pub from_peer_id: PeerId,
     /// Method for transferring the shard from one node to another
     pub method: Option<ShardTransferMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for ReplicateShard {
@@ -180,6 +184,8 @@ pub struct MoveShard {
     pub from_peer_id: PeerId,
     /// Method for transferring the shard from one node to another
     pub method: Option<ShardTransferMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for MoveShard {
@@ -207,6 +213,8 @@ pub struct AbortShardTransfer {
     pub shard_id: ShardId,
     pub to_peer_id: PeerId,
     pub from_peer_id: PeerId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]

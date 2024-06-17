@@ -1697,6 +1697,7 @@ impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
             from: value.from,
             to: value.to,
             sync: value.sync,
+            to_shard_id: value.to_shard_id,
         }
     }
 }
@@ -1735,6 +1736,7 @@ impl TryFrom<api::grpc::qdrant::ReplicateShard> for ReplicateShard {
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
             method,
+            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1749,6 +1751,7 @@ impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
             method,
+            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1761,6 +1764,7 @@ impl TryFrom<api::grpc::qdrant::AbortShardTransfer> for AbortShardTransfer {
             shard_id: value.shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
+            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1785,6 +1789,9 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
             }
             api::grpc::qdrant::ShardTransferMethod::Snapshot => ShardTransferMethod::Snapshot,
             api::grpc::qdrant::ShardTransferMethod::WalDelta => ShardTransferMethod::WalDelta,
+            api::grpc::qdrant::ShardTransferMethod::ReshardingStreamRecords => {
+                ShardTransferMethod::ReshardingStreamRecords
+            }
         }
     }
 }
@@ -1880,6 +1887,7 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                         from_peer_id: op.from_peer_id,
                         to_peer_id: op.to_peer_id,
                         method: op.method.try_into()?,
+                        to_shard_id: op.to_shard_id,
                     },
                 })
             }

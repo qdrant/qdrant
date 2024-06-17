@@ -904,6 +904,8 @@ pub struct ShardTransferInfo {
     /// If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
     #[prost(bool, tag = "4")]
     pub sync: bool,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -938,6 +940,8 @@ pub struct MoveShard {
     pub to_peer_id: u64,
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
     pub method: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -952,6 +956,8 @@ pub struct ReplicateShard {
     pub to_peer_id: u64,
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
     pub method: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -964,6 +970,8 @@ pub struct AbortShardTransfer {
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
     pub to_peer_id: u64,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -978,6 +986,8 @@ pub struct RestartTransfer {
     pub to_peer_id: u64,
     #[prost(enumeration = "ShardTransferMethod", tag = "4")]
     pub method: i32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1503,6 +1513,8 @@ pub enum ShardTransferMethod {
     Snapshot = 1,
     /// Resolve WAL delta between peers and transfer the difference
     WalDelta = 2,
+    /// Stream shard records in batches for resharding
+    ReshardingStreamRecords = 3,
 }
 impl ShardTransferMethod {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1514,6 +1526,7 @@ impl ShardTransferMethod {
             ShardTransferMethod::StreamRecords => "StreamRecords",
             ShardTransferMethod::Snapshot => "Snapshot",
             ShardTransferMethod::WalDelta => "WalDelta",
+            ShardTransferMethod::ReshardingStreamRecords => "ReshardingStreamRecords",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1522,6 +1535,7 @@ impl ShardTransferMethod {
             "StreamRecords" => Some(Self::StreamRecords),
             "Snapshot" => Some(Self::Snapshot),
             "WalDelta" => Some(Self::WalDelta),
+            "ReshardingStreamRecords" => Some(Self::ReshardingStreamRecords),
             _ => None,
         }
     }
