@@ -391,7 +391,7 @@ impl<'a> TryInto<&'a MultiDenseVector> for &'a Vector {
 }
 
 pub fn default_vector(vec: DenseVector) -> NamedVectors<'static> {
-    NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
+    NamedVectors::from_pairs([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
 
 pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {

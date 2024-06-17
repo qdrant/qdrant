@@ -1,4 +1,5 @@
 use segment::data_types::order_by::OrderBy;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
 use super::{OrderByInterface, Query, QueryInterface};
@@ -54,6 +55,23 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStruct {
             VectorStruct::Multi(vectors) => segment::data_types::vectors::VectorStruct::Multi(
                 vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
             ),
+        }
+    }
+}
+
+impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors<'a> {
+    fn from(value: VectorStruct) -> Self {
+        match value {
+            VectorStruct::Single(vector) => segment::data_types::named_vectors::NamedVectors::from_pairs(
+                [(DEFAULT_VECTOR_NAME.to_string(), vector)],
+            ),
+            VectorStruct::Multi(vectors) => {
+                let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();
+                for (name, vector) in vectors {
+                    named_vector.insert(name, segment::data_types::vectors::Vector::from(vector));
+                }
+                named_vector
+            }
         }
     }
 }

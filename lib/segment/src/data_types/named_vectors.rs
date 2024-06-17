@@ -202,7 +202,7 @@ impl<'a> NamedVectors<'a> {
         Self { map }
     }
 
-    pub fn from<const N: usize>(arr: [(String, DenseVector); N]) -> Self {
+    pub fn from_pairs<const N: usize>(arr: [(String, DenseVector); N]) -> Self {
         NamedVectors {
             map: arr
                 .into_iter()
@@ -226,6 +226,12 @@ impl<'a> NamedVectors<'a> {
                 .iter()
                 .map(|(k, v)| (CowKey::from(k), CowVector::Dense(Cow::Borrowed(v))))
                 .collect(),
+        }
+    }
+
+    pub fn merge(&mut self, other: NamedVectors<'a>) {
+        for (key, value) in other.into_iter() {
+            self.map.insert(key, value);
         }
     }
 
