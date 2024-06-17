@@ -75,11 +75,11 @@ pub struct MergePlan {
 }
 
 impl PlannedQuery {
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            root_plans: Vec::with_capacity(capacity),
-            searches: Vec::with_capacity(capacity),
-            scrolls: Vec::with_capacity(capacity),
+            root_plans: Vec::new(),
+            searches: Vec::new(),
+            scrolls: Vec::new(),
         }
     }
 
@@ -315,7 +315,7 @@ impl TryFrom<Vec<ShardQueryRequest>> for PlannedQuery {
     type Error = CollectionError;
 
     fn try_from(requests: Vec<ShardQueryRequest>) -> Result<Self, Self::Error> {
-        let mut planned_query = Self::with_capacity(requests.len());
+        let mut planned_query = Self::new();
         for request in requests {
             planned_query.add(request)?;
         }
