@@ -311,7 +311,7 @@ async fn stage_migrate_points(
         .map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to migrate points from shard {source_shard_id} to {} for resharding: {err}",
-                reshard_key.shard_id
+                reshard_key.shard_id,
             ))
         })?;
         log::debug!(

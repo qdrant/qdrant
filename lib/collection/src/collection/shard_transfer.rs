@@ -273,7 +273,7 @@ impl Collection {
         let Some(replica_set) = shard_holder.get_shard(&transfer_key.shard_id) else {
             return Err(CollectionError::bad_request(format!(
                 "Shard {} doesn't exist",
-                transfer_key.shard_id
+                transfer_key.shard_id,
             )));
         };
 
