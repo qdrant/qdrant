@@ -285,6 +285,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_id | [uint32](#uint32) |  | Local shard id |
+| to_shard_id | [uint32](#uint32) | optional |  |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 
@@ -908,6 +909,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_id | [uint32](#uint32) |  | Local shard id |
+| to_shard_id | [uint32](#uint32) | optional |  |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 | method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
@@ -1131,6 +1133,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_id | [uint32](#uint32) |  | Local shard id |
+| to_shard_id | [uint32](#uint32) | optional |  |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 | method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
@@ -1149,6 +1152,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_id | [uint32](#uint32) |  | Local shard id |
+| to_shard_id | [uint32](#uint32) | optional |  |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 | method | [ShardTransferMethod](#qdrant-ShardTransferMethod) |  |  |
@@ -1200,6 +1204,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | shard_id | [uint32](#uint32) |  | Local shard id |
+| to_shard_id | [uint32](#uint32) | optional |  |
 | from | [uint64](#uint64) |  |  |
 | to | [uint64](#uint64) |  |  |
 | sync | [bool](#bool) |  | If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another |
@@ -1640,6 +1645,7 @@ Note: 1kB = 1 vector of size 256. |
 | StreamRecords | 0 | Stream shard records in batches |
 | Snapshot | 1 | Snapshot the shard and recover it on the target peer |
 | WalDelta | 2 | Resolve WAL delta between peers and transfer the difference |
+| ReshardingStreamRecords | 3 | Stream shard records in batches for resharding |
 
 
 
