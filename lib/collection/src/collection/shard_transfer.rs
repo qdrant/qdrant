@@ -58,8 +58,18 @@ impl Collection {
         }
 
         let do_transfer = {
+            let this_peer_id = consensus.this_peer_id();
+            let is_receiver = this_peer_id == shard_transfer.to;
+            let is_sender = this_peer_id == shard_transfer.from;
+
             // Set state of target shard, in the case of resharding this will be a different shard
-            let shard_id = shard_transfer.to_shard_id.unwrap_or(shard_transfer.shard_id);
+            let shard_id = if is_receiver {
+                shard_transfer
+                    .to_shard_id
+                    .unwrap_or(shard_transfer.shard_id)
+            } else {
+                shard_transfer.shard_id
+            };
 
             let shards_holder = self.shards_holder.read().await;
             let _was_not_transferred =
@@ -78,8 +88,6 @@ impl Collection {
             };
 
             let is_local = replica_set.is_local().await;
-            let is_receiver = replica_set.this_peer_id() == shard_transfer.to;
-            let is_sender = replica_set.this_peer_id() == shard_transfer.from;
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
