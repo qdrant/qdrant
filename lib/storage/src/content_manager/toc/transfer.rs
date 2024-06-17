@@ -89,7 +89,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
@@ -109,7 +109,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
@@ -133,7 +133,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
