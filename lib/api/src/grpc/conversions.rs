@@ -574,15 +574,15 @@ impl From<segment_vectors::VectorStruct> for Vectors {
             segment_vectors::VectorStruct::Single(vector) => {
                 let vector: segment_vectors::Vector = vector.into();
                 Self {
-                    vectors_options: Some(VectorsOptions::Vector(vector.into())),
+                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
             }
             segment_vectors::VectorStruct::Multi(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
                         vectors
-                            .iter()
-                            .map(|(name, vector)| (name.clone(), vector.clone().into())),
+                            .into_iter()
+                            .map(|(name, vector)| (name, Vector::from(vector))),
                     ),
                 })),
             },
