@@ -8368,19 +8368,6 @@ pub mod query_shard_points {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QueryPointsInternal {
-    #[prost(string, tag = "1")]
-    pub collection_name: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "2")]
-    pub query_points: ::core::option::Option<QueryShardPoints>,
-    #[prost(uint32, optional, tag = "3")]
-    pub shard_id: ::core::option::Option<u32>,
-    #[prost(uint64, optional, tag = "4")]
-    pub timeout: ::core::option::Option<u64>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchPointsInternal {
     #[prost(string, tag = "1")]
     pub collection_name: ::prost::alloc::string::String,
@@ -8397,16 +8384,6 @@ pub struct QueryBatchPointsInternal {
 pub struct IntermediateResult {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
-}
-#[derive(serde::Serialize)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QueryResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<IntermediateResult>,
-    /// Time spent to process
-    #[prost(double, tag = "2")]
-    pub time: f64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -8900,28 +8877,6 @@ pub mod points_internal_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.PointsInternal", "Get"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn query(
-            &mut self,
-            request: impl tonic::IntoRequest<super::QueryPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.PointsInternal/Query",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.PointsInternal", "Query"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn query_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryBatchPointsInternal>,
@@ -9059,10 +9014,6 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::GetPointsInternal>,
         ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
-        async fn query(
-            &self,
-            request: tonic::Request<super::QueryPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status>;
         async fn query_batch(
             &self,
             request: tonic::Request<super::QueryBatchPointsInternal>,
@@ -9881,52 +9832,6 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.PointsInternal/Query" => {
-                    #[allow(non_camel_case_types)]
-                    struct QuerySvc<T: PointsInternal>(pub Arc<T>);
-                    impl<
-                        T: PointsInternal,
-                    > tonic::server::UnaryService<super::QueryPointsInternal>
-                    for QuerySvc<T> {
-                        type Response = super::QueryResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::QueryPointsInternal>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PointsInternal>::query(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = QuerySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

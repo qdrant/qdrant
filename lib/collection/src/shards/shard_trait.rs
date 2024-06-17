@@ -48,16 +48,9 @@ pub trait ShardOperation {
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
 
-    async fn query(
-        &self,
-        request: Arc<ShardQueryRequest>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<ShardQueryResponse>;
-
     async fn query_batch(
         &self,
-        request: Arc<Vec<ShardQueryRequest>>,
+        requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;

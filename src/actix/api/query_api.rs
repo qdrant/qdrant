@@ -3,6 +3,7 @@ use actix_web_validator::{Json, Path, Query};
 use api::rest::QueryRequest;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
+use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 
 use super::read_params::ReadParams;
@@ -29,23 +30,25 @@ async fn query_points(
             Some(shard_keys) => shard_keys.into(),
         };
 
-        dispatcher
+        let res = dispatcher
             .toc(&access)
-            .query(
+            .query_batch(
                 &collection.name,
-                query_request.into(),
+                vec![(query_request.into(), shard_selection)],
                 params.consistency,
-                shard_selection,
                 access,
                 params.timeout(),
             )
-            .await
-            .map(|scored_points| {
-                scored_points
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
-            })
+            .await?
+            .pop()
+            .ok_or_else(|| {
+                StorageError::service_error("Expected at least one response for one query")
+            })?
+            .into_iter()
+            .map(api::rest::ScoredPoint::from)
+            .collect_vec();
+
+        Ok(res)
     })
     .await
 }
