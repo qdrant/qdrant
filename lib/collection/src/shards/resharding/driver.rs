@@ -13,6 +13,7 @@ use tokio::task::block_in_place;
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::config::CollectionConfig;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -137,6 +138,7 @@ pub async fn drive_resharding(
     collection_id: CollectionId,
     collection_path: PathBuf,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    shared_storage_config: &SharedStorageConfig,
     _channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
@@ -176,6 +178,7 @@ pub async fn drive_resharding(
             consensus,
             &collection_id,
             collection_config.clone(),
+            shared_storage_config,
         )
         .await?;
     }
@@ -413,14 +416,13 @@ async fn stage_replicate(
     consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
     log::debug!("Resharding stage: replicate");
 
     state.write(|data| {
         data.bump_all_peers_to(Stage::S3_ReplicateStart);
     })?;
-
-    //shard_holder.read().await.shard_transfers.wait_for(check, timeout)
 
     while !has_enough_replicas(reshard_key, &shard_holder, &collection_config).await? {
         // Select a peer to replicate to, not having a replica yet
@@ -448,8 +450,11 @@ async fn stage_replicate(
             from: consensus.this_peer_id(),
             to: target_peer,
             sync: true,
-            // TODO(resharding): define preferred shard transfer method here!
-            method: Some(ShardTransferMethod::default()),
+            method: Some(
+                shared_storage_config
+                    .default_shard_transfer_method
+                    .unwrap_or_default(),
+            ),
         };
 
         // Create listener for transfer end before proposing to start the transfer
