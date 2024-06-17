@@ -391,34 +391,34 @@ mod tests {
     use crate::common::scores_memory_pool::ScoresMemoryPool;
     use crate::common::sparse_vector::SparseVector;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
+    use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
+    use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
+    use crate::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
+    use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-    use crate::index::inverted_index::{
-        inverted_index_compressed_immutable_ram, inverted_index_compressed_mmap,
-        inverted_index_immutable_ram, inverted_index_mmap,
-    };
 
     // ---- Test instantiations ----
 
     #[instantiate_tests(<InvertedIndexRam>)]
     mod ram {}
 
-    #[instantiate_tests(<inverted_index_mmap::InvertedIndexMmap>)]
+    #[instantiate_tests(<InvertedIndexMmap>)]
     mod mmap {}
 
-    #[instantiate_tests(<inverted_index_immutable_ram::InvertedIndexImmutableRam>)]
+    #[instantiate_tests(<InvertedIndexImmutableRam>)]
     mod iram {}
 
-    #[instantiate_tests(<inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam<f32>>)]
+    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<f32>>)]
     mod iram_f32 {}
 
-    #[instantiate_tests(<inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam<half::f16>>)]
+    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<half::f16>>)]
     mod iram_f16 {}
 
-    #[instantiate_tests(<inverted_index_compressed_mmap::InvertedIndexMmap<f32>>)]
+    #[instantiate_tests(<InvertedIndexCompressedMmap<f32>>)]
     mod mmap_f32 {}
 
-    #[instantiate_tests(<inverted_index_compressed_mmap::InvertedIndexMmap<half::f16>>)]
+    #[instantiate_tests(<InvertedIndexCompressedMmap<half::f16>>)]
     mod mmap_f16 {}
 
     // --- End of test instantiations ---
