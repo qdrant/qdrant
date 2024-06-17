@@ -1694,10 +1694,10 @@ impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
     fn from(value: ShardTransferInfo) -> Self {
         Self {
             shard_id: value.shard_id,
+            to_shard_id: value.to_shard_id,
             from: value.from,
             to: value.to,
             sync: value.sync,
-            to_shard_id: value.to_shard_id,
         }
     }
 }
@@ -1733,10 +1733,10 @@ impl TryFrom<api::grpc::qdrant::ReplicateShard> for ReplicateShard {
         let method = value.method.map(TryInto::try_into).transpose()?;
         Ok(Self {
             shard_id: value.shard_id,
+            to_shard_id: value.to_shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
             method,
-            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1748,10 +1748,10 @@ impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
         let method = value.method.map(TryInto::try_into).transpose()?;
         Ok(Self {
             shard_id: value.shard_id,
+            to_shard_id: value.to_shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
             method,
-            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1762,9 +1762,9 @@ impl TryFrom<api::grpc::qdrant::AbortShardTransfer> for AbortShardTransfer {
     fn try_from(value: api::grpc::qdrant::AbortShardTransfer) -> Result<Self, Self::Error> {
         Ok(Self {
             shard_id: value.shard_id,
+            to_shard_id: value.to_shard_id,
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
-            to_shard_id: value.to_shard_id,
         })
     }
 }
@@ -1884,10 +1884,10 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 ClusterOperations::RestartTransfer(RestartTransferOperation {
                     restart_transfer: RestartTransfer {
                         shard_id: op.shard_id,
+                        to_shard_id: op.to_shard_id,
                         from_peer_id: op.from_peer_id,
                         to_peer_id: op.to_peer_id,
                         method: op.method.try_into()?,
-                        to_shard_id: op.to_shard_id,
                     },
                 })
             }

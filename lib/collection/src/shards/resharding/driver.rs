@@ -275,11 +275,11 @@ async fn stage_migrate_points(
 
                 let transfer = ShardTransfer {
                     shard_id: source_shard_id,
+                    to_shard_id: Some(reshard_key.shard_id),
                     from: source_peer_id,
                     to: consensus.this_peer_id(),
                     sync: true,
                     method: Some(ShardTransferMethod::ReshardingStreamRecords),
-                    to_shard_id: Some(reshard_key.shard_id),
                 };
                 (transfer, true)
             }
@@ -411,12 +411,12 @@ async fn stage_replicate(
 
         let transfer = ShardTransfer {
             shard_id: reshard_key.shard_id,
+            to_shard_id: None,
             from: consensus.this_peer_id(),
             to: target_peer,
             sync: true,
             // TODO(resharding): define preferred shard transfer method here!
             method: Some(ShardTransferMethod::default()),
-            to_shard_id: None,
         };
 
         // Create listener for transfer end before proposing to start the transfer

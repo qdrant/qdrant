@@ -93,11 +93,11 @@ pub struct DropShardingKey {
 #[serde(rename_all = "snake_case")]
 pub struct RestartTransfer {
     pub shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub from_peer_id: PeerId,
     pub to_peer_id: PeerId,
     pub method: ShardTransferMethod,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for ClusterOperations {
@@ -162,12 +162,12 @@ pub struct AbortReshardingOperation {
 #[serde(rename_all = "snake_case")]
 pub struct ReplicateShard {
     pub shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub to_peer_id: PeerId,
     pub from_peer_id: PeerId,
     /// Method for transferring the shard from one node to another
     pub method: Option<ShardTransferMethod>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for ReplicateShard {
@@ -180,12 +180,12 @@ impl Validate for ReplicateShard {
 #[serde(rename_all = "snake_case")]
 pub struct MoveShard {
     pub shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub to_peer_id: PeerId,
     pub from_peer_id: PeerId,
     /// Method for transferring the shard from one node to another
     pub method: Option<ShardTransferMethod>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 }
 
 impl Validate for MoveShard {
@@ -211,10 +211,10 @@ pub struct Replica {
 #[serde(rename_all = "snake_case")]
 pub struct AbortShardTransfer {
     pub shard_id: ShardId,
-    pub to_peer_id: PeerId,
-    pub from_peer_id: PeerId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_shard_id: Option<ShardId>,
+    pub to_peer_id: PeerId,
+    pub from_peer_id: PeerId,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]

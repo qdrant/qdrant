@@ -205,6 +205,9 @@ pub struct CollectionClusterInfo {
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
+
     /// Source peer id
     pub from: PeerId,
 
@@ -217,9 +220,6 @@ pub struct ShardTransferInfo {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method: Option<ShardTransferMethod>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 
     /// A human-readable report of the transfer progress. Available only on the source peer.
     #[serde(skip_serializing_if = "Option::is_none")]

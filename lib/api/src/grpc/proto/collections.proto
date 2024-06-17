@@ -501,10 +501,10 @@ message RemoteShardInfo {
 
 message ShardTransferInfo {
   uint32 shard_id = 1; // Local shard id
+  optional uint32 to_shard_id = 5;
   uint64 from = 2;
   uint64 to = 3;
   bool sync = 4; // If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
-  optional uint32 to_shard_id = 5;
 }
 
 message CollectionClusterInfoResponse {
@@ -517,33 +517,33 @@ message CollectionClusterInfoResponse {
 
 message MoveShard {
   uint32 shard_id = 1; // Local shard id
+  optional uint32 to_shard_id = 5;
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
   optional ShardTransferMethod method = 4;
-  optional uint32 to_shard_id = 5;
 }
 
 message ReplicateShard {
   uint32 shard_id = 1; // Local shard id
+  optional uint32 to_shard_id = 5;
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
   optional ShardTransferMethod method = 4;
-  optional uint32 to_shard_id = 5;
 }
 
 message AbortShardTransfer {
   uint32 shard_id = 1; // Local shard id
+  optional uint32 to_shard_id = 5;
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
-  optional uint32 to_shard_id = 5;
 }
 
 message RestartTransfer {
   uint32 shard_id = 1; // Local shard id
+  optional uint32 to_shard_id = 5;
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
   ShardTransferMethod method = 4;
-  optional uint32 to_shard_id = 5;
 }
 
 enum ShardTransferMethod {

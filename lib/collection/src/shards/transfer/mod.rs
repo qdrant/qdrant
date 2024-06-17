@@ -30,6 +30,10 @@ const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
     pub shard_id: ShardId,
+    /// For resharding, a different target shard ID may be configured
+    /// By default the shard ID on the target peer is the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
     /// If this flag is true, this is a replication related transfer of shard from 1 peer to another
@@ -38,10 +42,6 @@ pub struct ShardTransfer {
     /// Method to transfer shard with. `None` to choose automatically.
     #[serde(default)]
     pub method: Option<ShardTransferMethod>,
-    /// For resharding, a different target shard ID may be configured
-    /// By default the shard ID on the target peer is the same.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 }
 
 impl ShardTransfer {
@@ -58,11 +58,11 @@ impl ShardTransfer {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
     pub method: ShardTransferMethod,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_shard_id: Option<ShardId>,
 }
 
 impl ShardTransferRestart {
@@ -80,10 +80,10 @@ impl From<ShardTransfer> for ShardTransferRestart {
     fn from(transfer: ShardTransfer) -> Self {
         Self {
             shard_id: transfer.shard_id,
+            to_shard_id: transfer.to_shard_id,
             from: transfer.from,
             to: transfer.to,
             method: transfer.method.unwrap_or_default(),
-            to_shard_id: transfer.to_shard_id,
         }
     }
 }

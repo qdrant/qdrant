@@ -473,11 +473,11 @@ impl TableOfContent {
 
                 let new_transfer = ShardTransfer {
                     shard_id: transfer_restart.shard_id,
+                    to_shard_id: None,
                     from: transfer_restart.from,
                     to: transfer_restart.to,
                     sync: old_transfer.sync, // Preserve sync flag from the old transfer
                     method: Some(transfer_restart.method),
-                    to_shard_id: None,
                 };
 
                 Box::pin(

@@ -480,10 +480,10 @@ pub async fn do_update_collection_cluster(
         ClusterOperations::RestartTransfer(RestartTransferOperation { restart_transfer }) => {
             let RestartTransfer {
                 shard_id,
+                to_shard_id,
                 from_peer_id,
                 to_peer_id,
                 method,
-                to_shard_id,
             } = restart_transfer;
 
             let transfer_key = ShardTransferKey {
@@ -508,10 +508,10 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         ShardTransferOperations::Restart(ShardTransferRestart {
                             shard_id,
+                            to_shard_id,
                             to: to_peer_id,
                             from: from_peer_id,
                             method,
-                            to_shard_id,
                         }),
                     ),
                     access,
