@@ -2,7 +2,8 @@ use std::sync::Weak;
 
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
-use collection::shards::shard::PeerId;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
 
@@ -138,6 +139,30 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             .map(|_| ())
             .map_err(|err| {
                 CollectionError::service_error(format!("Failed to propose and confirm shard transfer abort operation through consensus: {err}"))
+            })
+    }
+
+    async fn set_shard_replica_set_state(
+        &self,
+        collection_id: CollectionId,
+        shard_id: ShardId,
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> CollectionResult<()> {
+        let operation = ConsensusOperations::set_replica_state(
+            collection_id,
+            shard_id,
+            self.this_peer_id(),
+            state,
+            from_state,
+        );
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation.clone(), None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm set replica set state operation through consensus: {err}"))
             })
     }
 }
