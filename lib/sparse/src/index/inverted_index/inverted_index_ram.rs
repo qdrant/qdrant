@@ -2,12 +2,21 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
+use io::storage_version::StorageVersion;
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimId;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::{PostingList, PostingListIterator};
 use crate::index::posting_list_common::PostingElementEx;
+
+pub struct Version;
+
+impl StorageVersion for Version {
+    fn current_raw() -> &'static str {
+        panic!("InvertedIndexRam is not supposed to be versioned");
+    }
+}
 
 /// Inverted flatten index from dimension id to posting list
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +31,8 @@ pub struct InvertedIndexRam {
 
 impl InvertedIndex for InvertedIndexRam {
     type Iter<'a> = PostingListIterator<'a>;
+
+    type Version = Version;
 
     fn open(_path: &Path) -> std::io::Result<Self> {
         panic!("InvertedIndexRam is not supposed to be loaded");

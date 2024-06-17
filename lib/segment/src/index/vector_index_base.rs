@@ -1,9 +1,14 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use half::f16;
+use sparse::common::types::DimId;
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -73,6 +78,10 @@ pub enum VectorIndexEnum {
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
     SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam>),
     SparseMmap(SparseVectorIndex<InvertedIndexMmap>),
+    SparseCompressedImmutableRamF32(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>>),
+    SparseCompressedImmutableRamF16(SparseVectorIndex<InvertedIndexCompressedImmutableRam<f16>>),
+    SparseCompressedMmapF32(SparseVectorIndex<InvertedIndexCompressedMmap<f32>>),
+    SparseCompressedMmapF16(SparseVectorIndex<InvertedIndexCompressedMmap<f16>>),
 }
 
 impl VectorIndexEnum {
@@ -84,6 +93,23 @@ impl VectorIndexEnum {
             Self::SparseRam(_) => true,
             Self::SparseImmutableRam(_) => true,
             Self::SparseMmap(_) => true,
+            Self::SparseCompressedImmutableRamF32(_) => true,
+            Self::SparseCompressedImmutableRamF16(_) => true,
+            Self::SparseCompressedMmapF32(_) => true,
+            Self::SparseCompressedMmapF16(_) => true,
+        }
+    }
+
+    pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
+        match self {
+            Self::Plain(_) | Self::HnswRam(_) | Self::HnswMmap(_) => (),
+            Self::SparseRam(index) => index.fill_idf_statistics(idf),
+            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf),
+            Self::SparseMmap(index) => index.fill_idf_statistics(idf),
+            Self::SparseCompressedImmutableRamF32(index) => index.fill_idf_statistics(idf),
+            Self::SparseCompressedImmutableRamF16(index) => index.fill_idf_statistics(idf),
+            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf),
+            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf),
         }
     }
 }
@@ -116,6 +142,18 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::SparseMmap(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedMmapF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedMmapF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
         }
     }
 
@@ -144,6 +182,18 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::SparseMmap(index) => {
                 index.build_index_with_progress(permit, stopped, tick_progress)
             }
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
+                index.build_index_with_progress(permit, stopped, tick_progress)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
+                index.build_index_with_progress(permit, stopped, tick_progress)
+            }
+            VectorIndexEnum::SparseCompressedMmapF32(index) => {
+                index.build_index_with_progress(permit, stopped, tick_progress)
+            }
+            VectorIndexEnum::SparseCompressedMmapF16(index) => {
+                index.build_index_with_progress(permit, stopped, tick_progress)
+            }
         }
     }
 
@@ -155,6 +205,14 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseImmutableRam(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
+                index.get_telemetry_data(detail)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
+                index.get_telemetry_data(detail)
+            }
+            VectorIndexEnum::SparseCompressedMmapF32(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::SparseCompressedMmapF16(index) => index.get_telemetry_data(detail),
         }
     }
 
@@ -166,6 +224,10 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::SparseRam(index) => index.files(),
             VectorIndexEnum::SparseImmutableRam(index) => index.files(),
             VectorIndexEnum::SparseMmap(index) => index.files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.files(),
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.files(),
+            VectorIndexEnum::SparseCompressedMmapF32(index) => index.files(),
+            VectorIndexEnum::SparseCompressedMmapF16(index) => index.files(),
         }
     }
 
@@ -177,6 +239,10 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseRam(index) => index.indexed_vector_count(),
             Self::SparseImmutableRam(index) => index.indexed_vector_count(),
             Self::SparseMmap(index) => index.indexed_vector_count(),
+            Self::SparseCompressedImmutableRamF32(index) => index.indexed_vector_count(),
+            Self::SparseCompressedImmutableRamF16(index) => index.indexed_vector_count(),
+            Self::SparseCompressedMmapF32(index) => index.indexed_vector_count(),
+            Self::SparseCompressedMmapF16(index) => index.indexed_vector_count(),
         }
     }
 
@@ -192,6 +258,10 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseRam(index) => index.update_vector(id, vector),
             Self::SparseImmutableRam(index) => index.update_vector(id, vector),
             Self::SparseMmap(index) => index.update_vector(id, vector),
+            Self::SparseCompressedImmutableRamF32(index) => index.update_vector(id, vector),
+            Self::SparseCompressedImmutableRamF16(index) => index.update_vector(id, vector),
+            Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector),
+            Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector),
         }
     }
 }

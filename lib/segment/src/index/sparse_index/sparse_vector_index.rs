@@ -14,9 +14,9 @@ use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::inverted_index::{InvertedIndex, INDEX_FILE_NAME, OLD_INDEX_FILE_NAME};
-use sparse::index::migrate::SparseVectorIndexVersion;
 use sparse::index::search_context::SearchContext;
 
 use super::indices_tracker::IndicesTracker;
@@ -80,16 +80,27 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 }
 
+pub struct SparseVectorIndexOpenArgs<'a> {
+    pub config: SparseIndexConfig,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub path: &'a Path,
+    pub stopped: &'a AtomicBool,
+}
+
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
-    pub fn open(
-        config: SparseIndexConfig,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        path: &Path,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
+    pub fn open(args: SparseVectorIndexOpenArgs) -> OperationResult<Self> {
+        let SparseVectorIndexOpenArgs {
+            config,
+            id_tracker,
+            vector_storage,
+            payload_index,
+            path,
+            stopped,
+        } = args;
+
         // create directory if it does not exist
         create_dir_all(path)?;
 
@@ -105,12 +116,16 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 || (),
             )?;
             (config, inverted_index, indices_tracker)
+        } else if path.read_dir()?.next().is_none() {
+            // Newly created directory - initialize empty inverted index
+            (
+                config,
+                TInvertedIndex::from_ram_index(Cow::Owned(InvertedIndexRam::empty()), path)?,
+                IndicesTracker::default(),
+            )
         } else {
             Self::try_load(path).or_else(|e| {
-                // Avoid noisy warning for newly created segments
-                if vector_storage.borrow().total_vector_count() != 0 {
-                    log::warn!("Failed to load, rebuilding: {}", e.to_string());
-                }
+                log::warn!("Failed to load, rebuilding: {}", e.to_string());
 
                 let (inverted_index, indices_tracker) = Self::build_inverted_index(
                     id_tracker.clone(),
@@ -133,11 +148,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 // version file. To distinguish between index in original format and partially
                 // written index in the current format, the index file name is changed from
                 // `inverted_index.data` to `inverted_index.dat`.
-                SparseVectorIndexVersion::save(path)?;
+                TInvertedIndex::Version::save(path)?;
 
-                if vector_storage.borrow().total_vector_count() != 0 {
-                    log::info!("Successfully rebuilt");
-                }
+                log::info!("Successfully rebuilt");
 
                 OperationResult::Ok((config, inverted_index, indices_tracker))
             })?
@@ -162,22 +175,23 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     fn try_load(
         path: &Path,
     ) -> OperationResult<(SparseIndexConfig, TInvertedIndex, IndicesTracker)> {
-        let mut stored_version = SparseVectorIndexVersion::load(path)?;
+        let mut stored_version = TInvertedIndex::Version::load(path)?;
 
         // Simple migration mechanism for 0.1.0.
-        // TODO: Drop this code on the next version bump.
         let old_path = path.join(OLD_INDEX_FILE_NAME);
-        assert_eq!(SparseVectorIndexVersion::current(), Version::new(0, 1, 0));
-        if stored_version.is_none() && old_path.exists() {
+        if TInvertedIndex::Version::current() == Version::new(0, 1, 0)
+            && stored_version.is_none()
+            && old_path.exists()
+        {
             rename(old_path, path.join(INDEX_FILE_NAME))?;
-            SparseVectorIndexVersion::save(path)?;
-            stored_version = Some(SparseVectorIndexVersion::current());
+            TInvertedIndex::Version::save(path)?;
+            stored_version = Some(TInvertedIndex::Version::current());
         }
 
-        if stored_version != Some(SparseVectorIndexVersion::current()) {
+        if stored_version != Some(TInvertedIndex::Version::current()) {
             return Err(OperationError::service_error(format!(
                 "Index version mismatch, expected {}, found {}",
-                SparseVectorIndexVersion::current(),
+                TInvertedIndex::Version::current(),
                 stored_version.map_or_else(|| "none".to_string(), |v| v.to_string()),
             )));
         }
@@ -550,7 +564,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
 
         // save inverted index
         if self.config.index_type.is_persisted() {
-            SparseVectorIndexVersion::save(&self.path)?;
+            TInvertedIndex::Version::save(&self.path)?;
             self.indices_tracker.save(&self.path)?;
             self.inverted_index.save(&self.path)?;
         }
