@@ -16,6 +16,7 @@ use crate::config::CollectionConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
@@ -289,6 +290,8 @@ async fn stage_migrate_points(
                     ))
                 })?;
 
+                debug_assert_ne!(source_peer_id, consensus.this_peer_id());
+                debug_assert_ne!(source_shard_id, reshard_key.shard_id);
                 let transfer = ShardTransfer {
                     shard_id: source_shard_id,
                     to_shard_id: Some(reshard_key.shard_id),
@@ -339,6 +342,16 @@ async fn stage_migrate_points(
             data.migrated_shards.push(source_shard_id);
         })?;
     }
+
+    // Switch new shard on this node into active state
+    consensus
+        .set_shard_replica_set_state_confirm_and_retry(
+            collection_id,
+            reshard_key.shard_id,
+            ReplicaState::Active,
+            Some(ReplicaState::Resharding),
+        )
+        .await?;
 
     state.write(|data| {
         data.bump_all_peers_to(Stage::S2_MigratePointsEnd);

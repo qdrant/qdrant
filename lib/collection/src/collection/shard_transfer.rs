@@ -211,10 +211,14 @@ impl Collection {
         // Unwrap forward proxy into local shard, or replace it with remote shard
         // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
+            let activate_shard = transfer
+                .method
+                .map_or(true, |method| !method.is_resharding());
             let proxy_promoted = transfer::driver::handle_transferred_shard_proxy(
                 shard_holder,
                 transfer.shard_id,
                 transfer.to,
+                activate_shard,
                 transfer.sync,
             )
             .await?;
@@ -223,7 +227,11 @@ impl Collection {
 
         // Should happen on receiving side
         // Promote partial shard to active shard
-        if self.this_peer_id == transfer.to {
+        if self.this_peer_id == transfer.to
+            && !transfer
+                .method
+                .map_or(false, |method| method.is_resharding())
+        {
             let shard_promoted =
                 transfer::driver::finalize_partial_shard(shard_holder, transfer.shard_id).await?;
             log::debug!(
@@ -236,11 +244,21 @@ impl Collection {
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
+            let state = if transfer
+                .method
+                .map_or(false, |method| method.is_resharding())
+            {
+                ReplicaState::Resharding
+            } else {
+                ReplicaState::Active
+            };
             let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
                 shard_holder,
                 transfer.shard_id,
+                transfer.to_shard_id.unwrap_or(transfer.shard_id),
                 transfer.from,
                 transfer.to,
+                state,
                 transfer.sync,
             )
             .await?;
@@ -278,7 +296,8 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let Some(replica_set) = shard_holder.get_shard(&transfer_key.shard_id) else {
+        let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
             return Err(CollectionError::bad_request(format!(
                 "Shard {} doesn't exist",
                 transfer_key.shard_id,

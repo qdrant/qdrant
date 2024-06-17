@@ -122,6 +122,12 @@ pub enum ShardTransferMethod {
     ReshardingStreamRecords,
 }
 
+impl ShardTransferMethod {
+    pub fn is_resharding(&self) -> bool {
+        matches!(self, Self::ReshardingStreamRecords)
+    }
+}
+
 /// Interface to consensus for shard transfer operations.
 #[async_trait]
 pub trait ShardTransferConsensus: Send + Sync {

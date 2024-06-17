@@ -183,25 +183,29 @@ pub async fn revert_proxy_shard_to_local(
 
 pub async fn change_remote_shard_route(
     shard_holder: &ShardHolder,
-    shard_id: ShardId,
+    from_shard_id: ShardId,
+    to_shard_id: ShardId,
     old_peer_id: PeerId,
     new_peer_id: PeerId,
+    state: ReplicaState,
     sync: bool,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
+    let from_replica_set = match shard_holder.get_shard(&from_shard_id) {
+        None => return Ok(false),
+        Some(replica_set) => replica_set,
+    };
+    let to_replica_set = match shard_holder.get_shard(&to_shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
 
-    if replica_set.this_peer_id() != new_peer_id {
-        replica_set
-            .add_remote(new_peer_id, ReplicaState::Active)
-            .await?;
+    if to_replica_set.this_peer_id() != new_peer_id {
+        to_replica_set.add_remote(new_peer_id, state).await?;
     }
 
     if !sync {
         // Transfer was a move, we need to remove the old peer
-        replica_set.remove_remote(old_peer_id).await?;
+        from_replica_set.remove_remote(old_peer_id).await?;
     }
     Ok(true)
 }
@@ -233,6 +237,7 @@ pub async fn handle_transferred_shard_proxy(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
     to: PeerId,
+    activate_shard: bool,
     sync: bool,
 ) -> CollectionResult<bool> {
     // TODO: Ensure cancel safety!
@@ -242,7 +247,9 @@ pub async fn handle_transferred_shard_proxy(
         Some(replica_set) => replica_set,
     };
 
-    replica_set.add_remote(to, ReplicaState::Active).await?;
+    if activate_shard {
+        replica_set.add_remote(to, ReplicaState::Active).await?;
+    }
 
     if sync {
         // Keep local shard in the replica set
