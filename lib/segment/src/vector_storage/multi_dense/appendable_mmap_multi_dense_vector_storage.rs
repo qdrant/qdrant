@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
-use crate::common::operation_error::{check_process_stopped, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -219,6 +219,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.vectors.dim());
+        let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
+        let chunk_size = self.vectors.get_chunk_size_in_bytes();
+        if multivector_size_in_bytes >= chunk_size {
+            return Err(OperationError::service_error(format!("Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage. It's too large, maximum size is {chunk_size}.")));
+        }
 
         let mut offset = self
             .offsets

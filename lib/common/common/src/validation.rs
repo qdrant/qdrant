@@ -3,6 +3,9 @@ use std::borrow::Cow;
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors};
 
+// Multivector sholud be small enough to fir the chunk of vector storage
+pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 1024 * 1024;
+
 #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
 pub fn validate_iter<T: Validate>(iter: impl Iterator<Item = T>) -> Result<(), ValidationErrors> {
     let errors = iter
@@ -161,6 +164,16 @@ pub fn validate_multi_vector<T>(multivec: &[Vec<T>]) -> Result<(), ValidationErr
         return Err(errors);
     }
 
+    // total size of all vectors must be less than MAX_MULTIVECTOR_FLATTENED_LEN
+    let flattened_len = multivec.iter().map(|v| v.len()).sum::<usize>();
+    if flattened_len >= MAX_MULTIVECTOR_FLATTENED_LEN {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("multi_vector_too_large");
+        err.add_param(Cow::from("message"), &format!("Total size of all vectors ({flattened_len}) must be less than {MAX_MULTIVECTOR_FLATTENED_LEN}"));
+        errors.add("data", err);
+        return Err(errors);
+    }
+
     // all vectors must have the same length
     let dim = multivec[0].len();
     if let Some(bad_vec) = multivec.iter().find(|v| v.len() != dim) {
@@ -194,7 +207,17 @@ pub fn validate_multi_vector_len(
         errors.add("data", err);
         return Err(errors);
     }
+
     let dense_vector_len = flatten_dense_vector.len();
+    if dense_vector_len >= MAX_MULTIVECTOR_FLATTENED_LEN {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("Vector size is too large");
+        err.add_param(Cow::from("vector_len"), &dense_vector_len);
+        err.add_param(Cow::from("vectors_count"), &vectors_count);
+        errors.add("data", err);
+        return Err(errors);
+    }
+
     if dense_vector_len % vectors_count as usize != 0 {
         let mut errors = ValidationErrors::default();
         let mut err = ValidationError::new("invalid dense vector length for vectors count");
