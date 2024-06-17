@@ -62,32 +62,23 @@ impl Collection {
             let is_receiver = this_peer_id == shard_transfer.to;
             let is_sender = this_peer_id == shard_transfer.from;
 
-            // Set state of target shard, in the case of resharding this will be a different shard
-            let shard_id = if is_receiver {
-                shard_transfer
-                    .to_shard_id
-                    .unwrap_or(shard_transfer.shard_id)
-            } else {
-                shard_transfer.shard_id
-            };
+            // Get the source and target shards, in case of resharding the target shard is different
+            let from_shard_id = shard_transfer.shard_id;
+            let to_shard_id = shard_transfer
+                .to_shard_id
+                .unwrap_or(shard_transfer.shard_id);
 
             let shards_holder = self.shards_holder.read().await;
+            let from_replica_set = shards_holder.get_shard(&from_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!("Shard {from_shard_id} doesn't exist"))
+            })?;
+            let to_replica_set = shards_holder.get_shard(&to_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!("Shard {to_shard_id} doesn't exist"))
+            })?;
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
-            let replica_set_opt = shards_holder.get_shard(&shard_id);
 
-            // Check if current node owns the shard which should be transferred
-            // and therefore able to transfer
-            let replica_set = if let Some(replica_set) = replica_set_opt {
-                replica_set
-            } else {
-                // Service error, because it means the validation was incorrect
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist"
-                )));
-            };
-
-            let is_local = replica_set.is_local().await;
+            let is_local = from_replica_set.is_local().await;
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
@@ -105,9 +96,9 @@ impl Collection {
                 let effective_optimizers_config = self.effective_optimizers_config().await?;
 
                 let shard = LocalShard::build(
-                    shard_id,
+                    to_shard_id,
                     self.name(),
-                    &replica_set.shard_path,
+                    &to_replica_set.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
@@ -116,9 +107,9 @@ impl Collection {
                 )
                 .await?;
 
-                replica_set.set_local(shard, Some(initial_state)).await?;
+                to_replica_set.set_local(shard, Some(initial_state)).await?;
             } else {
-                replica_set
+                to_replica_set
                     .ensure_replica_with_state(&shard_transfer.to, initial_state)
                     .await?;
             }
