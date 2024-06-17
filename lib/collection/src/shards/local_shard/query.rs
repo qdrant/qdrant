@@ -176,29 +176,24 @@ impl LocalShard {
                 }
             }
 
-            let root_query_needs_intermediate_results = || {
-                merge_plan
-                    .rescore_params
-                    .as_ref()
-                    .map(|params| params.rescore.needs_intermediate_results())
-                    .unwrap_or(false)
-            };
-
-            if depth == 0 && root_query_needs_intermediate_results() {
-                // TODO(universal-query): maybe there's a way to pass ownership of the prefetch_holder to avoid cloning with Cow::into_owned here
-
-                // in case of top level RRF, we need to propagate intermediate results
-                Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
-            } else {
-                let merged = self
-                    .merge_sources(
-                        cow_sources,
-                        merge_plan.rescore_params,
+            // Rescore or return plain sources
+            if let Some(rescore_params) = merge_plan.rescore_params {
+                let rescored = self
+                    .rescore(
+                        cow_sources.into_iter(),
+                        rescore_params,
                         search_runtime_handle,
                         timeout,
                     )
                     .await?;
-                Ok(vec![merged])
+
+                Ok(vec![rescored])
+            } else {
+                // The sources here are passed to the next layer without any extra processing.
+                // It is either a query without prefetches, or a fusion request and the intermediate results are passed to the next layer.
+
+                // TODO(universal-query): maybe there's a way to pass ownership of the prefetch_holder to avoid cloning with Cow::into_owned here
+                Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
             }
         }
         .boxed()
@@ -305,38 +300,6 @@ impl LocalShard {
                     )
                 })
             }
-        }
-    }
-
-    /// Merge multiple prefetches into a single result up to the limit.
-    /// Rescores if required.
-    async fn merge_sources<'a>(
-        &self,
-        mut sources: Vec<Cow<'a, Vec<ScoredPoint>>>,
-        rescore_params: Option<RescoreParams>,
-        search_runtime_handle: &Handle,
-        timeout: Duration,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
-        if let Some(rescore_params) = rescore_params {
-            self.rescore(
-                sources.into_iter(),
-                rescore_params,
-                search_runtime_handle,
-                timeout,
-            )
-            .await
-        } else {
-            // The whole query request has no prefetches, and everything comes directly from a single source
-            debug_assert_eq!(sources.len(), 1, "No prefetches, but multiple sources");
-
-            let top = sources
-                .pop()
-                .ok_or_else(|| {
-                    CollectionError::service_error("No sources to merge in the query request")
-                })?
-                .into_owned();
-
-            Ok(top)
         }
     }
 }
