@@ -16,8 +16,9 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     QueryScrollRequestInternal,
 };
-use crate::operations::universal_query::planned_query::{MergePlan, RescoreParams, Source};
-use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
+use crate::operations::universal_query::planned_query::{
+    MergePlan, PlannedQuery, RescoreParams, Source,
+};
 use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
 
 pub enum FetchedSource {
@@ -48,9 +49,9 @@ impl PrefetchResults {
 }
 
 impl LocalShard {
-    pub async fn do_planned_query_batch(
+    pub async fn do_planned_query(
         &self,
-        request: PlannedQueryBatch,
+        request: PlannedQuery,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
