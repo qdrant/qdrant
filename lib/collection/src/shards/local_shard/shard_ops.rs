@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -16,7 +15,6 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
-use crate::operations::universal_query::planned_query_batch::PlannedQueryBatch;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
@@ -193,12 +191,10 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let planned_query = PlannedQuery::try_from(request.as_ref().to_owned())?;
-
-        let planned_query_batch = PlannedQueryBatch::from(vec![planned_query]);
+        let planned_query = PlannedQuery::try_from(vec![request.as_ref().to_owned()])?;
 
         let mut batch_result = self
-            .do_planned_query_batch(planned_query_batch, search_runtime_handle, timeout)
+            .do_planned_query(planned_query, search_runtime_handle, timeout)
             .await?;
 
         debug_assert_eq!(batch_result.len(), 1);
@@ -214,14 +210,9 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        let planned_queries: Vec<_> = request
-            .iter()
-            .map(|shard_req| PlannedQuery::try_from(shard_req.clone()))
-            .try_collect()?;
+        let planned_query = PlannedQuery::try_from(request.as_ref().to_owned())?;
 
-        let planned_query_batch = PlannedQueryBatch::from(planned_queries);
-
-        self.do_planned_query_batch(planned_query_batch, search_runtime_handle, timeout)
+        self.do_planned_query(planned_query, search_runtime_handle, timeout)
             .await
     }
 }

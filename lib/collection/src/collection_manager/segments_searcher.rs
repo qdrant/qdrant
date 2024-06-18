@@ -395,6 +395,7 @@ impl SegmentsSearcher {
             Ok(true)
         })?;
 
+        // TODO(luis): remove this property of returning the records in the same order as the input, return the hashmap instead
         // Restore the order the ids came in
         let ordered_records = points
             .iter()
