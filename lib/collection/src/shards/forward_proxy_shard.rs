@@ -283,27 +283,15 @@ impl ShardOperation for ForwardProxyShard {
             .await
     }
 
-    async fn query(
-        &self,
-        request: Arc<ShardQueryRequest>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<ShardQueryResponse> {
-        let local_shard = &self.wrapped_shard;
-        local_shard
-            .query(request, search_runtime_handle, timeout)
-            .await
-    }
-
     async fn query_batch(
         &self,
-        request: Arc<Vec<ShardQueryRequest>>,
+        requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(request, search_runtime_handle, timeout)
+            .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
 }

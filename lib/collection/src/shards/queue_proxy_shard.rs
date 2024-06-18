@@ -293,23 +293,9 @@ impl ShardOperation for QueueProxyShard {
     }
 
     /// Forward read-only `query` to `wrapped_shard`
-    async fn query(
-        &self,
-        request: Arc<ShardQueryRequest>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<ShardQueryResponse> {
-        self.inner
-            .as_ref()
-            .expect("Queue proxy has been finalized")
-            .wrapped_shard
-            .query(request, search_runtime_handle, timeout)
-            .await
-    }
-
     async fn query_batch(
         &self,
-        request: Arc<Vec<ShardQueryRequest>>,
+        requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
@@ -317,7 +303,7 @@ impl ShardOperation for QueueProxyShard {
             .as_ref()
             .expect("Queue proxy has been finalized")
             .wrapped_shard
-            .query_batch(request, search_runtime_handle, timeout)
+            .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
 }
@@ -594,17 +580,6 @@ impl ShardOperation for Inner {
     }
 
     /// Forward read-only `query` to `wrapped_shard`
-    async fn query(
-        &self,
-        request: Arc<ShardQueryRequest>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.wrapped_shard
-            .query(request, search_runtime_handle, timeout)
-            .await
-    }
-
     async fn query_batch(
         &self,
         request: Arc<Vec<ShardQueryRequest>>,

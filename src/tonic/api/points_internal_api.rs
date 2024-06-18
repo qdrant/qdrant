@@ -7,10 +7,9 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryBatchPointsInternal,
-    QueryBatchResponse, QueryPointsInternal, QueryResponse, QueryResult, QueryShardPoints,
-    RecommendPointsInternal, RecommendResponse, ScrollPointsInternal, ScrollResponse,
-    SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal,
-    UpsertPointsInternal,
+    QueryBatchResponse, QueryResultInternal, QueryShardPoints, RecommendPointsInternal,
+    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchBatchResponse,
+    SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
@@ -40,46 +39,6 @@ impl PointsInternalService {
     pub fn new(toc: Arc<TableOfContent>) -> Self {
         Self { toc }
     }
-}
-
-// TODO(universal-query): remove in favor of batch version
-pub async fn query_internal(
-    toc: &TableOfContent,
-    collection_name: String,
-    query_points: QueryShardPoints,
-    shard_selection: Option<ShardId>,
-    timeout: Option<Duration>,
-) -> Result<Response<QueryResponse>, Status> {
-    let request = ShardQueryRequest::try_from(query_points)?;
-
-    let timing = Instant::now();
-
-    // As this function is handling an internal request,
-    // we can assume that shard_key is already resolved
-    let shard_selection = match shard_selection {
-        None => {
-            debug_assert!(false, "Shard selection is expected for internal request");
-            ShardSelectorInternal::All
-        }
-        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
-    };
-
-    let scored_points = toc
-        .query_internal(&collection_name, request, shard_selection, timeout)
-        .await
-        .map_err(error_to_status)?;
-
-    let response = QueryResponse {
-        result: scored_points
-            .into_iter()
-            .map(|points| IntermediateResult {
-                result: points.into_iter().map(From::from).collect::<Vec<_>>(),
-            })
-            .collect(),
-        time: timing.elapsed().as_secs_f64(),
-    };
-
-    Ok(Response::new(response))
 }
 
 pub async fn query_batch_internal(
@@ -112,10 +71,10 @@ pub async fn query_batch_internal(
         .map_err(error_to_status)?;
 
     let response = QueryBatchResponse {
-        batch_results: batch_response
+        results: batch_response
             .into_iter()
-            .map(|response| QueryResult {
-                result: response
+            .map(|response| QueryResultInternal {
+                intermediate_results: response
                     .into_iter()
                     .map(|intermediate| IntermediateResult {
                         result: intermediate.into_iter().map(From::from).collect_vec(),
@@ -518,37 +477,6 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-        )
-        .await
-    }
-
-    async fn query(
-        &self,
-        request: Request<QueryPointsInternal>,
-    ) -> Result<Response<QueryResponse>, Status> {
-        // TODO(universal-query): validate
-        // validate_and_log(request.get_ref());
-
-        let QueryPointsInternal {
-            collection_name,
-            shard_id,
-            query_points,
-            timeout,
-        } = request.into_inner();
-
-        let query_points =
-            query_points.ok_or_else(|| Status::invalid_argument("QueryPoints is missing"))?;
-
-        let timeout = timeout.map(Duration::from_secs);
-
-        // Individual `read_consistency` values are ignored
-
-        query_internal(
-            self.toc.as_ref(),
-            collection_name,
-            query_points,
-            shard_id,
-            timeout,
         )
         .await
     }
