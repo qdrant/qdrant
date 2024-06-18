@@ -44,7 +44,7 @@ def test_payload_selectors():
     )
     assert response.ok
     assert len(response.json()['result']['points']) == 1
-    assert response.json()['result']['points'][0]['payload'] is None
+    assert response.json()['result']['points'][0].get('payload') is None
 
     # Search with payload selector ALL
     response = request_with_validation(
