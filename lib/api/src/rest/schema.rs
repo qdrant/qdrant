@@ -203,6 +203,12 @@ pub struct QueryRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct QueryRequestBatch {
+    #[validate]
+    pub searches: Vec<QueryRequest>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum QueryInterface {

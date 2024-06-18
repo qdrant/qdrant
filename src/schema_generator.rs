@@ -1,5 +1,5 @@
 use api::grpc::models::{CollectionsResponse, VersionInfo};
-use api::rest::{QueryRequest, Record, ScoredPoint};
+use api::rest::{QueryRequest, QueryRequestBatch, Record, ScoredPoint};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -82,6 +82,7 @@ struct AllDefinitions {
     bc: VersionInfo,
     bd: CollectionExistence,
     be: QueryRequest,
+    bf: QueryRequestBatch,
 }
 
 fn save_schema<T: JsonSchema>() {
