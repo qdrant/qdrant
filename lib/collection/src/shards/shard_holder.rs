@@ -197,13 +197,13 @@ impl ShardHolder {
             ..
         } = resharding_key;
 
-        let ring = get_ring(&mut self.rings, &shard_key)?;
+        let ring = get_ring(&mut self.rings, shard_key)?;
 
         let state = self.resharding_state.read();
         assert_resharding_state_consistency(&state, ring, &resharding_key.shard_key);
 
         match state.deref() {
-            Some(state) if state.matches(&resharding_key) => {
+            Some(state) if state.matches(resharding_key) => {
                 check_state(state)?;
             }
 
@@ -221,7 +221,7 @@ impl ShardHolder {
         }
 
         debug_assert!(
-            self.shards.contains_key(&shard_id),
+            self.shards.contains_key(shard_id),
             "shard holder does not contain shard {shard_id} replica set"
         );
 
