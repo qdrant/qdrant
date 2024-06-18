@@ -4878,6 +4878,7 @@ pub struct QueryPoints {
     pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10.
     #[prost(uint64, optional, tag = "8")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub limit: ::core::option::Option<u64>,
     /// Offset of the result. Skip this many points. Default is 0.
     #[prost(uint64, optional, tag = "9")]

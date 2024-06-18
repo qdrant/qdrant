@@ -260,6 +260,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DatetimeRange.lte", "custom = \"crate::grpc::validate::validate_timestamp\""),
             ("DatetimeRange.gte", "custom = \"crate::grpc::validate::validate_timestamp\""),
             ("QueryPoints.collection_name", "length(min = 1, max = 255)"),
+            ("QueryPoints.limit", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("QueryPoints.filter", ""),
             ("QueryPoints.params", ""),
             ("QueryPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
