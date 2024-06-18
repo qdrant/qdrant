@@ -17,9 +17,12 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::transfer::resharding_stream_records::transfer_resharding_stream_records;
+use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::shards::CollectionId;
 
@@ -138,7 +141,7 @@ pub async fn drive_resharding(
     collection_path: PathBuf,
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
-    _channel_service: ChannelService,
+    channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
@@ -163,6 +166,7 @@ pub async fn drive_resharding(
             &state,
             shard_holder.clone(),
             consensus,
+            &channel_service,
             &collection_id,
         )
         .await?;
@@ -250,6 +254,7 @@ async fn stage_migrate_points(
     state: &PersistedState,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     log::debug!("Resharding stage: migrate points");
@@ -273,28 +278,48 @@ async fn stage_migrate_points(
         let (transfer, start_transfer) = match ongoing_transfer {
             Some(transfer) => (transfer, false),
             None => {
-                // TODO(resharding): also support local (direct) transfers without consensus
                 // TODO(resharding): do not just pick random source, consider transfer limits
-                let active_remote_shards = {
+                let active_shards = {
                     let shard_holder = shard_holder.read().await;
 
                     let replica_set =
                         shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
                             CollectionError::service_error(format!(
-                        "Shard {source_shard_id} not found in the shard holder for resharding",
-                    ))
+                                "Source shard {source_shard_id} not found in the shard holder for resharding",
+                            ))
                         })?;
 
-                    replica_set.active_remote_shards().await
+                    replica_set.active_shards().await
                 };
-                let source_peer_id = active_remote_shards
-                .choose(&mut rand::thread_rng())
-                .cloned()
-                .ok_or_else(|| {
-                    CollectionError::service_error(format!(
-                        "No remote peer with shard {source_shard_id} in active state for resharding",
-                    ))
-                })?;
+                let source_peer_id = active_shards
+                    .choose(&mut rand::thread_rng())
+                    .cloned()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(format!(
+                            "No remote peer with shard {source_shard_id} in active state for resharding",
+                        ))
+                    })?;
+
+                // If transferring from/to the same node, do a local transfer
+                if source_peer_id == consensus.this_peer_id() {
+                    migrate_local(
+                        reshard_key,
+                        shard_holder.clone(),
+                        consensus,
+                        channel_service.clone(),
+                        collection_id,
+                        source_shard_id,
+                    )
+                    .await?;
+                    state.write(|data| {
+                        data.migrated_shards.push(source_shard_id);
+                    })?;
+                    log::debug!(
+                        "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
+                        reshard_key.shard_id,
+                    );
+                    continue;
+                }
 
                 debug_assert_ne!(source_peer_id, consensus.this_peer_id());
                 debug_assert_ne!(source_shard_id, reshard_key.shard_id);
@@ -339,14 +364,15 @@ async fn stage_migrate_points(
                 reshard_key.shard_id,
             ))
         })?;
-        log::debug!(
-            "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
-            reshard_key.shard_id,
-        );
 
         state.write(|data| {
             data.migrated_shards.push(source_shard_id);
         })?;
+
+        log::debug!(
+            "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
+            reshard_key.shard_id,
+        );
     }
 
     // Switch new shard on this node into active state
@@ -362,6 +388,41 @@ async fn stage_migrate_points(
     state.write(|data| {
         data.bump_all_peers_to(Stage::S2_MigratePointsEnd);
     })?;
+
+    Ok(())
+}
+
+/// Migrate a shard locally, within the same node.
+///
+/// This is a special case for migration transfers, because normal shard transfer don't support the
+/// same source and target node.
+// TODO(resharding): improve this, don't rely on shard transfers and remote shards, copy directly
+// between the two local shard replica
+async fn migrate_local(
+    reshard_key: &ReshardKey,
+    shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: ChannelService,
+    collection_id: &CollectionId,
+    source_shard_id: ShardId,
+) -> CollectionResult<()> {
+    // Target shard is on the same node, but has a different shard ID
+    let target_shard = RemoteShard::new(
+        reshard_key.shard_id,
+        collection_id.clone(),
+        consensus.this_peer_id(),
+        channel_service,
+    );
+
+    let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
+    transfer_resharding_stream_records(
+        shard_holder,
+        progress,
+        source_shard_id,
+        target_shard,
+        collection_id,
+    )
+    .await?;
 
     Ok(())
 }

@@ -22,7 +22,7 @@ use crate::shards::CollectionId;
 /// # Cancel safety
 ///
 /// This function is cancel safe.
-pub(super) async fn transfer_resharding_stream_records(
+pub(crate) async fn transfer_resharding_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
