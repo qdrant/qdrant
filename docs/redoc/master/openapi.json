@@ -5879,6 +5879,17 @@
             "description": "Store index on disk. If set to false, the index will be stored in RAM. Default: false",
             "type": "boolean",
             "nullable": true
+          },
+          "datatype": {
+            "description": "Datatype used to store weights in the index.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Datatype"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -9537,6 +9548,17 @@
           },
           "index_type": {
             "$ref": "#/components/schemas/SparseIndexType"
+          },
+          "datatype": {
+            "description": "Datatype used to store weights in the index.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SparseVectorIndexDatatype"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -9564,6 +9586,14 @@
               "Mmap"
             ]
           }
+        ]
+      },
+      "SparseVectorIndexDatatype": {
+        "description": "Storage types for vectors",
+        "type": "string",
+        "enum": [
+          "float32",
+          "float16"
         ]
       },
       "PayloadStorageType": {
