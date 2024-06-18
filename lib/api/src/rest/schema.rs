@@ -235,25 +235,61 @@ pub enum QueryInterface {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum Query {
     /// Find the nearest neighbors to this vector.
-    Nearest(VectorInput),
+    Nearest(NearestQuery),
 
     /// Use multiple positive and negative vectors to find the results.
-    Recommend(RecommendInput),
+    Recommend(RecommendQuery),
 
     /// Search for nearest points, but constrain the search space with context
-    Discover(DiscoverInput),
+    Discover(DiscoverQuery),
 
     /// Return points that live in positive areas.
-    Context(ContextInput),
+    Context(ContextQuery),
 
     /// Order the points by a payload field.
-    OrderBy(OrderByInterface),
+    OrderBy(OrderByQuery),
 
     /// Fuse the results of multiple prefetches.
-    Fusion(Fusion),
+    Fusion(FusionQuery),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct NearestQuery {
+    pub nearest: VectorInput,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RecommendQuery {
+    pub recommend: RecommendInput,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct DiscoverQuery {
+    pub discover: DiscoverInput,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ContextQuery {
+    pub context: ContextInput,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct OrderByQuery {
+    pub order_by: OrderByInterface,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct FusionQuery {
+    pub fusion: Fusion,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

@@ -472,13 +472,13 @@ mod from_rest {
         fn from(value: rest::Query) -> Self {
             match value {
                 rest::Query::Nearest(nearest) => {
-                    Query::Vector(VectorQuery::Nearest(From::from(nearest)))
+                    Query::Vector(VectorQuery::Nearest(From::from(nearest.nearest)))
                 }
-                rest::Query::Recommend(recommend) => Query::Vector(From::from(recommend)),
-                rest::Query::Discover(discover) => Query::Vector(From::from(discover)),
-                rest::Query::Context(context) => Query::Vector(From::from(context)),
-                rest::Query::OrderBy(order_by) => Query::OrderBy(OrderBy::from(order_by)),
-                rest::Query::Fusion(fusion) => Query::Fusion(Fusion::from(fusion)),
+                rest::Query::Recommend(recommend) => Query::Vector(From::from(recommend.recommend)),
+                rest::Query::Discover(discover) => Query::Vector(From::from(discover.discover)),
+                rest::Query::Context(context) => Query::Vector(From::from(context.context)),
+                rest::Query::OrderBy(order_by) => Query::OrderBy(OrderBy::from(order_by.order_by)),
+                rest::Query::Fusion(fusion) => Query::Fusion(Fusion::from(fusion.fusion)),
             }
         }
     }
