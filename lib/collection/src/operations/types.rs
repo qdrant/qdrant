@@ -24,6 +24,7 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
+use segment::index::sparse_index::sparse_index_config::SparseVectorIndexDatatype;
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
@@ -1207,6 +1208,20 @@ impl From<Datatype> for VectorStorageDatatype {
     }
 }
 
+impl TryFrom<Datatype> for SparseVectorIndexDatatype {
+    type Error = CollectionError;
+
+    fn try_from(value: Datatype) -> Result<Self, Self::Error> {
+        match value {
+            Datatype::Float32 => Ok(Self::Float32),
+            Datatype::Float16 => Ok(Self::Float16),
+            Datatype::Uint8 => Err(CollectionError::BadInput {
+                description: "Uint8 datatype is not supported for sparse vectors".to_string(),
+            }),
+        }
+    }
+}
+
 /// Params of single vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1307,6 +1322,9 @@ pub struct SparseIndexParams {
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+    /// Datatype used to store weights in the index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datatype: Option<Datatype>,
 }
 
 impl Anonymize for SparseIndexParams {
@@ -1314,25 +1332,24 @@ impl Anonymize for SparseIndexParams {
         SparseIndexParams {
             full_scan_threshold: self.full_scan_threshold,
             on_disk: self.on_disk,
+            datatype: self.datatype,
         }
     }
 }
 
 impl SparseIndexParams {
-    pub fn new(full_scan_threshold: Option<usize>, on_disk: Option<bool>) -> Self {
-        SparseIndexParams {
+    pub fn update_from_other(&mut self, other: &SparseIndexParams) {
+        let SparseIndexParams {
             full_scan_threshold,
             on_disk,
-        }
-    }
+            datatype,
+        } = other;
 
-    pub fn update_from_other(&mut self, other: &SparseIndexParams) {
-        if let Some(full_scan_threshold) = other.full_scan_threshold {
-            self.full_scan_threshold = Some(full_scan_threshold);
-        }
-        if let Some(on_disk) = other.on_disk {
-            self.on_disk = Some(on_disk);
-        }
+        *self = SparseIndexParams {
+            full_scan_threshold: full_scan_threshold.or(self.full_scan_threshold),
+            on_disk: on_disk.or(self.on_disk),
+            datatype: datatype.or(self.datatype),
+        };
     }
 }
 

@@ -9,7 +9,9 @@ use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
     default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
@@ -375,10 +377,10 @@ impl CollectionParams {
         &self,
     ) -> CollectionResult<HashMap<String, SparseVectorDataConfig>> {
         if let Some(sparse_vectors) = &self.sparse_vectors {
-            Ok(sparse_vectors
+            sparse_vectors
                 .iter()
                 .map(|(name, params)| {
-                    (
+                    Ok((
                         name.into(),
                         SparseVectorDataConfig {
                             index: SparseIndexConfig {
@@ -386,11 +388,16 @@ impl CollectionParams {
                                     .index
                                     .and_then(|index| index.full_scan_threshold),
                                 index_type: SparseIndexType::MutableRam,
+                                datatype: params
+                                    .index
+                                    .and_then(|index| index.datatype)
+                                    .map(SparseVectorIndexDatatype::try_from)
+                                    .transpose()?,
                             },
                         },
-                    )
+                    ))
                 })
-                .collect())
+                .collect()
         } else {
             Ok(Default::default())
         }

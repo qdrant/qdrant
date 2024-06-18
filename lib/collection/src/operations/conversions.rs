@@ -28,7 +28,7 @@ use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
     Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal, SparseIndexParams,
-    SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -600,20 +600,28 @@ impl From<api::grpc::qdrant::Modifier> for Modifier {
     }
 }
 
-impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
-    fn from(sparse_vector_params: api::grpc::qdrant::SparseVectorParams) -> Self {
-        Self {
+impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
+    type Error = Status;
+
+    fn try_from(
+        sparse_vector_params: api::grpc::qdrant::SparseVectorParams,
+    ) -> Result<Self, Self::Error> {
+        Ok(Self {
             index: sparse_vector_params
                 .index
-                .map(|index_config| SparseIndexParams {
-                    full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
-                    on_disk: index_config.on_disk,
-                }),
+                .map(|index_config| -> Result<_, Status> {
+                    Ok(SparseIndexParams {
+                        full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
+                        on_disk: index_config.on_disk,
+                        datatype: convert_datatype_from_proto(index_config.datatype)?,
+                    })
+                })
+                .transpose()?,
             modifier: sparse_vector_params
                 .modifier
                 .and_then(api::grpc::qdrant::Modifier::from_i32)
                 .map(Modifier::from),
-        }
+        })
     }
 }
 
@@ -633,6 +641,9 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
                 api::grpc::qdrant::SparseIndexConfig {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as u64),
                     on_disk: index_config.on_disk,
+                    datatype: index_config
+                        .datatype
+                        .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
                 }
             }),
             modifier: sparse_vector_params
@@ -695,13 +706,10 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             ),
                         },
                     },
-                    sparse_vectors: params.sparse_vectors_config.map(|sparse_vectors| {
-                        sparse_vectors
-                            .map
-                            .into_iter()
-                            .map(|(name, sparse_vector_params)| (name, sparse_vector_params.into()))
-                            .collect()
-                    }),
+                    sparse_vectors: params
+                        .sparse_vectors_config
+                        .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
+                        .transpose()?,
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
@@ -1803,5 +1811,17 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::SparseVectorConfig> for SparseVectorsConfig {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::SparseVectorConfig) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::SparseVectorConfig { map } = value;
+        map.into_iter()
+            .map(|(k, v)| Ok((k, v.try_into()?)))
+            .collect::<Result<_, Status>>()
+            .map(SparseVectorsConfig)
     }
 }

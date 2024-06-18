@@ -39,8 +39,19 @@ impl SparseIndexType {
     }
 }
 
+/// Storage types for vectors
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SparseVectorIndexDatatype {
+    // Single-precision floating point
+    #[default]
+    Float32,
+    // Half-precision floating point
+    Float16,
+}
+
 /// Configuration for sparse inverted index.
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexConfig {
     /// We prefer a full scan search upto (excluding) this number of vectors.
@@ -49,6 +60,10 @@ pub struct SparseIndexConfig {
     pub full_scan_threshold: Option<usize>,
     /// Type of sparse index
     pub index_type: SparseIndexType,
+    /// Datatype used to store weights in the index.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub datatype: Option<SparseVectorIndexDatatype>,
 }
 
 impl Anonymize for SparseIndexConfig {
@@ -56,15 +71,21 @@ impl Anonymize for SparseIndexConfig {
         SparseIndexConfig {
             full_scan_threshold: self.full_scan_threshold,
             index_type: self.index_type,
+            datatype: self.datatype,
         }
     }
 }
 
 impl SparseIndexConfig {
-    pub fn new(full_scan_threshold: Option<usize>, index_type: SparseIndexType) -> Self {
+    pub fn new(
+        full_scan_threshold: Option<usize>,
+        index_type: SparseIndexType,
+        datatype: Option<SparseVectorIndexDatatype>,
+    ) -> Self {
         SparseIndexConfig {
             full_scan_threshold,
             index_type,
+            datatype,
         }
     }
 
