@@ -525,7 +525,7 @@ ACTION_ACCESS = {
         True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
     ),
     "query_points": EndpointAccess(
-        True, True, True, "POST /collections/{collection_name}/points/query", # "qdrant.Points/Query"
+        True, True, True, "POST /collections/{collection_name}/points/query", "qdrant.Points/Query"
     ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
