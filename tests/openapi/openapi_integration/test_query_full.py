@@ -472,7 +472,7 @@ def test_rrf():
     # rrf order is not deterministic with same scores, so we need to sort by id
     for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_result, key=get_id)):
         assert expected["id"] == result["id"]
-        assert expected["payload"] == result["payload"]
+        assert expected.get("payload") == result.get("payload")
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
 
     # test with inner filters instead of root filter
@@ -515,7 +515,7 @@ def test_rrf():
 
     for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_inner_filter_result, key=get_id)):
         assert expected["id"] == result["id"]
-        assert expected["payload"] == result["payload"]
+        assert expected.get("payload") == result.get("payload")
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
 
 def test_sparse_dense_rerank_colbert():
