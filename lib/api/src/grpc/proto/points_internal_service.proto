@@ -278,11 +278,11 @@ message IntermediateResult {
   repeated ScoredPoint result = 1;
 }
 
-message QueryResult {
-    repeated IntermediateResult result = 1;
+message QueryResultInternal {
+    repeated IntermediateResult intermediate_results = 1;
 }
 
 message QueryBatchResponse {
-  repeated QueryResult batch_results = 1;
+  repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
 }

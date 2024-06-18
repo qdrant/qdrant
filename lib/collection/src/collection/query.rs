@@ -64,7 +64,7 @@ impl Collection {
     }
 
     /// This function is used to query the collection. It will return a list of scored points.
-    pub async fn do_query_batch(
+    async fn do_query_batch(
         &self,
         requests_batch: Vec<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,

@@ -849,7 +849,7 @@ impl ShardOperation for RemoteShard {
 
         let requests = requests.as_ref();
 
-        let search_batch_response = self
+        let batch_response = self
             .with_points_client(|mut client| async move {
                 let query_points = requests
                     .iter()
@@ -874,15 +874,15 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        let result = search_batch_response
-            .batch_results
+        let result = batch_response
+            .results
             .into_iter()
             .zip(requests.iter())
             .map(|(query_result, request)| {
                 let is_payload_required = request.with_payload.is_required();
 
                 query_result
-                    .result
+                    .intermediate_results
                     .into_iter()
                     .map(|intermediate| {
                         intermediate

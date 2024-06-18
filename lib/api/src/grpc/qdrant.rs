@@ -8388,16 +8388,16 @@ pub struct IntermediateResult {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QueryResult {
+pub struct QueryResultInternal {
     #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<IntermediateResult>,
+    pub intermediate_results: ::prost::alloc::vec::Vec<IntermediateResult>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchResponse {
     #[prost(message, repeated, tag = "1")]
-    pub batch_results: ::prost::alloc::vec::Vec<QueryResult>,
+    pub results: ::prost::alloc::vec::Vec<QueryResultInternal>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,

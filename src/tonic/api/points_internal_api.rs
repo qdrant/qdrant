@@ -7,9 +7,9 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryBatchPointsInternal,
-    QueryBatchResponse, QueryResult, QueryShardPoints, RecommendPointsInternal, RecommendResponse,
-    ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
-    SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
+    QueryBatchResponse, QueryResultInternal, QueryShardPoints, RecommendPointsInternal,
+    RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchBatchResponse,
+    SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
@@ -71,10 +71,10 @@ pub async fn query_batch_internal(
         .map_err(error_to_status)?;
 
     let response = QueryBatchResponse {
-        batch_results: batch_response
+        results: batch_response
             .into_iter()
-            .map(|response| QueryResult {
-                result: response
+            .map(|response| QueryResultInternal {
+                intermediate_results: response
                     .into_iter()
                     .map(|intermediate| IntermediateResult {
                         result: intermediate.into_iter().map(From::from).collect_vec(),
