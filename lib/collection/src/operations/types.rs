@@ -317,14 +317,51 @@ pub struct ScrollRequestInternal {
     pub order_by: Option<OrderByInterface>,
 }
 
+/// Scroll request, used as a part of query request
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueryScrollRequestInternal {
+    /// Number of points to skip from the beginning of the result list
+    /// Warning: this is different from the offset in the regular scroll request
+    pub offset: usize,
+
+    /// Page size. Default: 10
+    pub limit: usize,
+
+    /// Look only for points which satisfies this conditions. If not provided - all points.
+    pub filter: Option<Filter>,
+
+    /// Select which payload to return with the response. Default: All
+    pub with_payload: WithPayloadInterface,
+
+    /// Whether to return the point vector with the result?
+    pub with_vector: WithVector,
+
+    /// Order the records by a payload field.
+    pub order_by: Option<OrderByInterface>,
+}
+
+impl ScrollRequestInternal {
+    pub(crate) fn default_limit() -> usize {
+        10
+    }
+
+    pub(crate) fn default_with_payload() -> WithPayloadInterface {
+        WithPayloadInterface::Bool(true)
+    }
+
+    pub(crate) fn default_with_vector() -> WithVector {
+        WithVector::Bool(false)
+    }
+}
+
 impl Default for ScrollRequestInternal {
     fn default() -> Self {
         ScrollRequestInternal {
             offset: None,
-            limit: Some(10),
+            limit: Some(Self::default_limit()),
             filter: None,
-            with_payload: Some(WithPayloadInterface::Bool(true)),
-            with_vector: WithVector::Bool(false),
+            with_payload: Some(Self::default_with_payload()),
+            with_vector: Self::default_with_vector(),
             order_by: None,
         }
     }
