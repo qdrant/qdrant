@@ -346,7 +346,7 @@ pub(crate) fn create_sparse_vector_index(
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match (
         args.config.index_type,
-        args.config.datatype,
+        args.config.datatype.unwrap_or_default(),
         sparse_vector_index::USE_COMPRESSED,
     ) {
         (_, SparseVectorIndexDatatype::Float16, false) => Err(OperationError::ValidationError {

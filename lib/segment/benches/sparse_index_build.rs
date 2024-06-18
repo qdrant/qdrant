@@ -74,7 +74,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let index_config = SparseIndexConfig::new(
         Some(10_000),
         SparseIndexType::ImmutableRam,
-        SparseVectorIndexDatatype::Float32,
+        Some(SparseVectorIndexDatatype::Float32),
     );
 
     let permit_cpu_count = num_rayon_threads(0);

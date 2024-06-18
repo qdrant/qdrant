@@ -1324,7 +1324,6 @@ pub struct SparseIndexParams {
     pub on_disk: Option<bool>,
     /// Datatype used to store weights in the index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip) /* TODO(1.10): remove this in the next minor release to expose the compressed sparse index */]
     pub datatype: Option<Datatype>,
 }
 

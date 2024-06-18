@@ -15,9 +15,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::index::hnsw_index::num_rayon_threads;
-use crate::index::sparse_index::sparse_index_config::{
-    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
-};
+use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -75,11 +73,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
         num_vectors,
     );
 
-    let sparse_index_config = SparseIndexConfig::new(
-        Some(full_scan_threshold),
-        index_type,
-        SparseVectorIndexDatatype::Float32,
-    );
+    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type, None);
     let sparse_vector_index: SparseVectorIndex<I> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,

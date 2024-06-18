@@ -4,9 +4,7 @@ use std::path::Path;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, DenseVector, VectorRef};
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::sparse_index::sparse_index_config::{
-    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
-};
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -256,11 +254,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
             sparse_vector_data: HashMap::from([(
                 "sparse".to_owned(),
                 SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(
-                        None,
-                        SparseIndexType::MutableRam,
-                        SparseVectorIndexDatatype::Float32,
-                    ),
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                 },
             )]),
             payload_storage_type: Default::default(),
@@ -345,11 +339,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
             sparse_vector_data: HashMap::from([(
                 "sparse".to_owned(),
                 SparseVectorDataConfig {
-                    index: SparseIndexConfig::new(
-                        None,
-                        SparseIndexType::MutableRam,
-                        SparseVectorIndexDatatype::Float32,
-                    ),
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                 },
             )]),
             payload_storage_type: Default::default(),

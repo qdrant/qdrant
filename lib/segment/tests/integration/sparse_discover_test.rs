@@ -124,7 +124,7 @@ fn sparse_index_discover_test() {
                 index: SparseIndexConfig {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
-                    datatype: SparseVectorIndexDatatype::Float32,
+                    datatype: Some(SparseVectorIndexDatatype::Float32),
                 },
             },
         )]),
@@ -172,7 +172,7 @@ fn sparse_index_discover_test() {
         config: SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
-            datatype: SparseVectorIndexDatatype::Float32,
+            datatype: Some(SparseVectorIndexDatatype::Float32),
         },
         id_tracker: sparse_segment.id_tracker.clone(),
         vector_storage: vector_storage.clone(),

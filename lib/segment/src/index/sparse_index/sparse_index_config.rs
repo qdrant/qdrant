@@ -4,7 +4,6 @@ use io::file_operations::{atomic_save_json, read_json};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::sparse_vector_index::USE_COMPRESSED;
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::OperationResult;
 
@@ -51,13 +50,6 @@ pub enum SparseVectorIndexDatatype {
     Float16,
 }
 
-impl SparseVectorIndexDatatype {
-    fn should_hide(&self) -> bool {
-        // Hide default value until the feature is released
-        !USE_COMPRESSED && *self == Self::Float32
-    }
-}
-
 /// Configuration for sparse inverted index.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -70,9 +62,8 @@ pub struct SparseIndexConfig {
     pub index_type: SparseIndexType,
     /// Datatype used to store weights in the index.
     #[serde(default)]
-    #[serde(skip_serializing_if = "SparseVectorIndexDatatype::should_hide")]
-    #[schemars(skip) /* TODO(1.10): remove this in the next minor release to expose the compressed sparse index */]
-    pub datatype: SparseVectorIndexDatatype,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub datatype: Option<SparseVectorIndexDatatype>,
 }
 
 impl Anonymize for SparseIndexConfig {
@@ -89,7 +80,7 @@ impl SparseIndexConfig {
     pub fn new(
         full_scan_threshold: Option<usize>,
         index_type: SparseIndexType,
-        datatype: SparseVectorIndexDatatype,
+        datatype: Option<SparseVectorIndexDatatype>,
     ) -> Self {
         SparseIndexConfig {
             full_scan_threshold,
