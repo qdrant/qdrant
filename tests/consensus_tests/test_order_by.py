@@ -141,7 +141,7 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     assert_http_ok(res)
 
     for point in res.json()["result"]["points"]:
-        assert point["payload"] is not None
+        assert point.get("payload") is not None
 
     values = [point["payload"]["index"] for point in res.json()["result"]["points"]]
 
@@ -160,4 +160,4 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     assert ids == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     for point in res.json()["result"]["points"]:
-        assert point["payload"] is None
+        assert point.get("payload") is None

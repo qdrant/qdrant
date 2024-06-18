@@ -332,7 +332,7 @@ def assert_group_with_default_lookup(group, group_size=3):
 
     lookup = group["lookup"]
     assert lookup["payload"]
-    assert not lookup["vector"]
+    assert not lookup.get("vector")
 
 
 @pytest.mark.parametrize("with_lookup", lookup_params)
@@ -434,8 +434,8 @@ def test_search_groups_with_lookup_without_payload_nor_vectors(with_lookup):
         assert group["id"] == group["lookup"]["id"]
 
         lookup = group["lookup"]
-        assert not lookup["payload"]
-        assert not lookup["vector"]
+        assert not lookup.get("payload")
+        assert not lookup.get("vector")
 
 
 def test_search_groups_lookup_with_non_existing_collection():
