@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-// Multivector sholud be small enough to fir the chunk of vector storage
+// Multivector should be small enough to fit the chunk of vector storage
 pub const MAX_MULTIVECTOR_FLATTENED_LEN: usize = 1024 * 1024;
 
 #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
