@@ -624,19 +624,29 @@ async fn stage_replicate(
             };
             let occupied_peers = replica_set.peers().into_keys().collect();
             let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
-            let candidate_peers: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
+            let candidate_peers: Vec<_> = all_peers
+                .difference(&occupied_peers)
+                .map(|peer_id| (*peer_id, shard_holder.count_peer_shards(*peer_id)))
+                .collect();
             if candidate_peers.is_empty() {
                 log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
                 break;
             };
 
+            // To balance, only keep candidates with lowest number of shards
             // Peers must have room for an incoming transfer
+            let lowest_shard_count = *candidate_peers
+                .iter()
+                .map(|(_, count)| count)
+                .min()
+                .unwrap();
             let candidate_peers: Vec<_> = candidate_peers
                 .into_iter()
-                .filter(|peer_id| {
+                .filter(|(peer_id, shard_count)| {
                     let (incoming, _) = shard_holder.count_shard_transfer_io(peer_id);
-                    incoming < incoming_limit
+                    lowest_shard_count == *shard_count && incoming < incoming_limit
                 })
+                .map(|(peer_id, _)| peer_id)
                 .collect();
             if candidate_peers.is_empty() {
                 log::trace!("Postponing resharding replication transfer to stay below transfer limit on peers");
