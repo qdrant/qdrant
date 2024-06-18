@@ -2,7 +2,8 @@ use std::sync::Weak;
 
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
-use collection::shards::shard::PeerId;
+use collection::shards::replica_set::ReplicaState;
+use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
 
@@ -80,16 +81,16 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     async fn start_shard_transfer(
         &self,
         transfer_config: ShardTransfer,
-        collection_name: CollectionId,
+        collection_id: CollectionId,
     ) -> CollectionResult<()> {
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
-                collection_name,
+                collection_id,
                 ShardTransferOperations::Start(transfer_config),
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
@@ -109,7 +110,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
@@ -133,11 +134,35 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             )));
         self
             .consensus_state
-            .propose_consensus_op_with_await(operation.clone(), None)
+            .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
             .map_err(|err| {
                 CollectionError::service_error(format!("Failed to propose and confirm shard transfer abort operation through consensus: {err}"))
+            })
+    }
+
+    async fn set_shard_replica_set_state(
+        &self,
+        collection_id: CollectionId,
+        shard_id: ShardId,
+        state: ReplicaState,
+        from_state: Option<ReplicaState>,
+    ) -> CollectionResult<()> {
+        let operation = ConsensusOperations::set_replica_state(
+            collection_id,
+            shard_id,
+            self.this_peer_id(),
+            state,
+            from_state,
+        );
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation.clone(), None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm set replica set state operation through consensus: {err}"))
             })
     }
 }

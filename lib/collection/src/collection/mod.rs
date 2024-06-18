@@ -543,7 +543,7 @@ impl Collection {
                 None => {
                     log::debug!(
                         "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
-                        transfer.key()
+                        transfer.key(),
                     );
                     on_transfer_failure(transfer, self.name(), "transfer task does not exist");
                 }
@@ -551,14 +551,14 @@ impl Collection {
                 Some(TaskResult::Finished) => {
                     log::debug!(
                         "Transfer {:?} is finished successfully, but not reported. Reporting now.",
-                        transfer.key()
+                        transfer.key(),
                     );
                     on_transfer_success(transfer, self.name());
                 }
                 Some(TaskResult::Failed) => {
                     log::debug!(
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
-                        transfer.key()
+                        transfer.key(),
                     );
                     on_transfer_failure(transfer, self.name(), "transfer failed");
                 }

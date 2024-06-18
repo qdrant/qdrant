@@ -333,6 +333,7 @@ impl ShardReplicaSet {
         offset: Option<PointIdType>,
         batch_size: usize,
         hashring_filter: Option<&HashRing>,
+        merge_points: bool,
     ) -> CollectionResult<Option<PointIdType>> {
         let local = self.local.read().await;
 
@@ -344,7 +345,13 @@ impl ShardReplicaSet {
         };
 
         proxy
-            .transfer_batch(offset, batch_size, hashring_filter, &self.search_runtime)
+            .transfer_batch(
+                offset,
+                batch_size,
+                hashring_filter,
+                merge_points,
+                &self.search_runtime,
+            )
             .await
     }
 

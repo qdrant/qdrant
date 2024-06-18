@@ -260,7 +260,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: move_shard.shard_id,
-                            to_shard_id: None,
+                            to_shard_id: move_shard.to_shard_id,
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
@@ -296,7 +296,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: replicate_shard.shard_id,
-                            to_shard_id: None,
+                            to_shard_id: replicate_shard.to_shard_id,
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
@@ -311,6 +311,7 @@ pub async fn do_update_collection_cluster(
         ClusterOperations::AbortTransfer(AbortTransferOperation { abort_transfer }) => {
             let transfer = ShardTransferKey {
                 shard_id: abort_transfer.shard_id,
+                to_shard_id: abort_transfer.to_shard_id,
                 to: abort_transfer.to_peer_id,
                 from: abort_transfer.from_peer_id,
             };
@@ -479,6 +480,7 @@ pub async fn do_update_collection_cluster(
         ClusterOperations::RestartTransfer(RestartTransferOperation { restart_transfer }) => {
             let RestartTransfer {
                 shard_id,
+                to_shard_id,
                 from_peer_id,
                 to_peer_id,
                 method,
@@ -486,6 +488,7 @@ pub async fn do_update_collection_cluster(
 
             let transfer_key = ShardTransferKey {
                 shard_id,
+                to_shard_id,
                 to: to_peer_id,
                 from: from_peer_id,
             };
@@ -505,6 +508,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         ShardTransferOperations::Restart(ShardTransferRestart {
                             shard_id,
+                            to_shard_id,
                             to: to_peer_id,
                             from: from_peer_id,
                             method,
