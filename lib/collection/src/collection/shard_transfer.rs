@@ -78,7 +78,8 @@ impl Collection {
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
 
-            let is_local = from_replica_set.is_local().await;
+            let from_is_local = from_replica_set.is_local().await;
+            let to_is_local = to_replica_set.is_local().await;
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
@@ -92,7 +93,7 @@ impl Collection {
             // (on all peers, regardless if shard is local or remote on that peer).
             //
             // This should disable queries to receiver replica even if it was active before.
-            if !is_local && is_receiver {
+            if !to_is_local && is_receiver {
                 let effective_optimizers_config = self.effective_optimizers_config().await?;
 
                 let shard = LocalShard::build(
@@ -115,7 +116,7 @@ impl Collection {
                     .await?;
             }
 
-            is_local && is_sender
+            from_is_local && is_sender
         };
         if do_transfer {
             self.send_shard(shard_transfer, consensus, temp_dir, on_finish, on_error)
