@@ -595,30 +595,64 @@ async fn stage_replicate(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
+    let this_peer_id = consensus.this_peer_id();
+
     while !has_enough_replicas(reshard_key, &shard_holder, &collection_config).await? {
-        // Select a peer to replicate to, not having a replica yet
-        let occupied_peers = {
-            let shard_holder_read = shard_holder.read().await;
-            let Some(replica_set) = shard_holder_read.get_shard(&reshard_key.shard_id) else {
+        // Find peer candidates to replicate to
+        let candidate_peers = {
+            let incoming_limit = shared_storage_config
+                .incoming_shard_transfers_limit
+                .unwrap_or(usize::MAX);
+            let outgoing_limit = shared_storage_config
+                .outgoing_shard_transfers_limit
+                .unwrap_or(usize::MAX);
+
+            // Ensure we don't exceed the outgoing transfer limits
+            let shard_holder = shard_holder.read().await;
+            let (_, outgoing) = shard_holder.count_shard_transfer_io(&this_peer_id);
+            if outgoing + 1 <= outgoing_limit {
+                log::trace!("Postponing resharding replication transfer to stay below transfer limit (outgoing: {outgoing})");
+                sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                continue;
+            }
+
+            // Select peers that don't have this replica yet
+            let Some(replica_set) = shard_holder.get_shard(&reshard_key.shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {} not found in the shard holder for resharding",
                     reshard_key.shard_id,
                 )));
             };
-            replica_set.peers().into_keys().collect()
-        };
-        let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
-        let candidate_peers: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
-        // TODO(resharding): do not just pick random source, consider shard distribution
-        let Some(target_peer) = candidate_peers.choose(&mut rand::thread_rng()).cloned() else {
-            log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
-            break;
+            let occupied_peers = replica_set.peers().into_keys().collect();
+            let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
+            let candidate_peers: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
+            if candidate_peers.is_empty() {
+                log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
+                break;
+            };
+
+            // Peers must have room for an incoming transfer
+            let candidate_peers: Vec<_> = candidate_peers
+                .into_iter()
+                .filter(|peer_id| {
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(peer_id);
+                    incoming + 1 <= incoming_limit
+                })
+                .collect();
+            if candidate_peers.is_empty() {
+                log::trace!("Postponing resharding replication transfer to stay below transfer limit on peers");
+                sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                continue;
+            };
+
+            candidate_peers
         };
 
+        let target_peer = *candidate_peers.choose(&mut rand::thread_rng()).unwrap();
         let transfer = ShardTransfer {
             shard_id: reshard_key.shard_id,
             to_shard_id: None,
-            from: consensus.this_peer_id(),
+            from: this_peer_id,
             to: target_peer,
             sync: true,
             method: Some(
