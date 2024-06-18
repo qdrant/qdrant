@@ -367,7 +367,6 @@ async fn stage_migrate_points(
                     .outgoing_shard_transfers_limit
                     .unwrap_or(usize::MAX);
 
-                #[allow(clippy::int_plus_one)]
                 let source_peer_ids = {
                     let shard_holder = shard_holder.read().await;
                     let replica_set =
@@ -386,12 +385,12 @@ async fn stage_migrate_points(
 
                     // Respect shard transfer limits, always allow local transfers
                     let (incoming, _) = shard_holder.count_shard_transfer_io(&this_peer_id);
-                    if incoming + 1 <= incoming_limit {
+                    if incoming < incoming_limit {
                         active_peer_ids
                             .into_iter()
                             .filter(|peer_id| {
                                 let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
-                                outgoing + 1 <= outgoing_limit || peer_id == &this_peer_id
+                                outgoing < outgoing_limit || peer_id == &this_peer_id
                             })
                             .collect()
                     } else if active_peer_ids.contains(&this_peer_id) {
@@ -610,7 +609,7 @@ async fn stage_replicate(
             // Ensure we don't exceed the outgoing transfer limits
             let shard_holder = shard_holder.read().await;
             let (_, outgoing) = shard_holder.count_shard_transfer_io(&this_peer_id);
-            if outgoing + 1 <= outgoing_limit {
+            if outgoing < outgoing_limit {
                 log::trace!("Postponing resharding replication transfer to stay below transfer limit (outgoing: {outgoing})");
                 sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
                 continue;
@@ -636,7 +635,7 @@ async fn stage_replicate(
                 .into_iter()
                 .filter(|peer_id| {
                     let (incoming, _) = shard_holder.count_shard_transfer_io(peer_id);
-                    incoming + 1 <= incoming_limit
+                    incoming < incoming_limit
                 })
                 .collect();
             if candidate_peers.is_empty() {
