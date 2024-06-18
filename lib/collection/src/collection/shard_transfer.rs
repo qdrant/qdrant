@@ -369,9 +369,10 @@ impl Collection {
                 let shard_transfer_registered = shards_holder.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers.iter().any(|shard_transfer| {
-                            (shard_transfer.shard_id == shard_id
-                                || shard_transfer.to_shard_id == Some(shard_id))
-                                && shard_transfer.to == this_peer_id
+                            let to_shard_id = shard_transfer
+                                .to_shard_id
+                                .unwrap_or(shard_transfer.shard_id);
+                            to_shard_id == shard_id && shard_transfer.to == this_peer_id
                         })
                     },
                     Duration::from_secs(60),
