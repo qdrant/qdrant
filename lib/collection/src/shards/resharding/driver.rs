@@ -47,10 +47,10 @@ struct DriverState {
 }
 
 impl DriverState {
-    pub fn new(key: ReshardKey) -> Self {
+    pub fn new(key: ReshardKey, peers: &[PeerId]) -> Self {
         Self {
             key,
-            peers: HashMap::new(),
+            peers: HashMap::from_iter(peers.iter().map(|peer_id| (*peer_id, Stage::default()))),
             migrated_shards: vec![],
         }
     }
@@ -147,7 +147,7 @@ pub async fn drive_resharding(
     let to_shard_id = reshard_key.shard_id;
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
     let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
-        DriverState::new(reshard_key.clone())
+        DriverState::new(reshard_key.clone(), &consensus.peers())
     })?;
 
     // TODO(resharding): sync list of peers more often throughout resharding in case peers change
