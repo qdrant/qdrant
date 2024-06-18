@@ -543,6 +543,7 @@ message QueryPoints {
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees.
   optional ShardKeySelector shard_key_selector = 13; // Specify in which shards to look for the points, if not specified - look in all shards.
   optional LookupLocation lookup_from = 14; // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+  optional uint64 timeout = 15; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message PointsUpdateOperation {
@@ -667,6 +668,11 @@ message GroupsResult {
 }
 
 message SearchResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message QueryResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
 }

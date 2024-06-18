@@ -37,13 +37,13 @@ pub struct CollectionQueryRequest {
 }
 
 impl CollectionQueryRequest {
-    const DEFAULT_LIMIT: usize = 10;
+    pub const DEFAULT_LIMIT: usize = 10;
 
-    const DEFAULT_OFFSET: usize = 0;
+    pub const DEFAULT_OFFSET: usize = 0;
 
-    const DEFAULT_WITH_VECTOR: WithVector = WithVector::Bool(false);
+    pub const DEFAULT_WITH_VECTOR: WithVector = WithVector::Bool(false);
 
-    const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);
+    pub const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);
 }
 
 pub enum Query {
@@ -569,81 +569,9 @@ mod from_rest {
 
 mod from_grpc {
     use api::grpc::qdrant::{self as grpc};
-    use api::rest::ShardKeySelector;
     use tonic::Status;
 
     use super::*;
-    use crate::operations::consistency_params::ReadConsistency;
-    use crate::operations::shard_selector_internal::ShardSelectorInternal;
-
-    #[allow(dead_code)]
-    pub struct IntoCollectionQueryRequest {
-        pub request: CollectionQueryRequest,
-        pub collection_name: String,
-        pub shard_key: ShardSelectorInternal,
-        pub read_consistency: Option<ReadConsistency>,
-    }
-
-    impl TryFrom<grpc::QueryPoints> for IntoCollectionQueryRequest {
-        type Error = Status;
-
-        fn try_from(value: grpc::QueryPoints) -> Result<Self, Self::Error> {
-            let grpc::QueryPoints {
-                collection_name,
-                prefetch,
-                query,
-                using,
-                filter,
-                search_params,
-                score_threshold,
-                limit,
-                offset,
-                with_payload,
-                with_vectors,
-                read_consistency,
-                shard_key_selector,
-                lookup_from,
-            } = value;
-
-            let request = CollectionQueryRequest {
-                prefetch: prefetch
-                    .into_iter()
-                    .map(TryFrom::try_from)
-                    .collect::<Result<_, _>>()?,
-                query: query.map(TryFrom::try_from).transpose()?,
-                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
-                filter: filter.map(TryFrom::try_from).transpose()?,
-                score_threshold,
-                limit: limit
-                    .map(|l| l as usize)
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-                offset: offset
-                    .map(|o| o as usize)
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
-                params: search_params.map(From::from),
-                with_vector: with_vectors
-                    .map(From::from)
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
-                with_payload: with_payload
-                    .map(TryFrom::try_from)
-                    .transpose()?
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-                lookup_from: lookup_from.map(From::from),
-            };
-
-            let shard_key =
-                ShardSelectorInternal::from(shard_key_selector.map(ShardKeySelector::from));
-
-            let read_consistency = read_consistency.map(TryFrom::try_from).transpose()?;
-
-            Ok(IntoCollectionQueryRequest {
-                request,
-                collection_name,
-                shard_key,
-                read_consistency,
-            })
-        }
-    }
 
     impl TryFrom<grpc::PrefetchQuery> for CollectionPrefetch {
         type Error = Status;
