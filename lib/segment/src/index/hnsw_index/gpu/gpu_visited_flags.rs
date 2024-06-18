@@ -3,14 +3,14 @@ use std::sync::Arc;
 use crate::common::operation_error::OperationResult;
 
 #[repr(C)]
-struct GpuVisitedFlagsParamsBuffer {
-    capacity: u32,
-    generation: u32,
+pub struct GpuVisitedFlagsParamsBuffer {
+    pub capacity: u32,
+    pub generation: u32,
 }
 
 pub struct GpuVisitedFlags {
     pub device: Arc<gpu::Device>,
-    params: GpuVisitedFlagsParamsBuffer,
+    pub params: GpuVisitedFlagsParamsBuffer,
     pub params_buffer: Arc<gpu::Buffer>,
     pub params_staging_buffer: Arc<gpu::Buffer>,
     pub visited_flags_buffer: Arc<gpu::Buffer>,

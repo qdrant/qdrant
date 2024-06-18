@@ -54,6 +54,7 @@ pub struct GpuSearchContext {
     pub patches_descriptor_set: Arc<gpu::DescriptorSet>,
     pub patches_pipeline: Arc<gpu::Pipeline>,
 
+    pub insert_atomics_buffer: Arc<gpu::Buffer>,
     pub insert_descriptor_set: Arc<gpu::DescriptorSet>,
     pub insert_pipeline: Arc<gpu::Pipeline>,
 
@@ -254,15 +255,23 @@ impl GpuSearchContext {
             },
         ));
 
+        let insert_atomics_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * std::mem::size_of::<PointOffsetType>(),
+        ));
+
         let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
+            .add_storage_buffer(2)
             .build(device.clone());
 
         let insert_descriptor_set =
             gpu::DescriptorSet::builder(insert_descriptor_set_layout.clone())
                 .add_storage_buffer(0, requests_buffer.clone())
                 .add_storage_buffer(1, responses_buffer.clone())
+                .add_storage_buffer(2, insert_atomics_buffer.clone())
                 .build();
 
         let insert_pipeline = gpu::Pipeline::builder()
@@ -308,6 +317,7 @@ impl GpuSearchContext {
             patches_responses_buffer,
             patches_descriptor_set,
             patches_pipeline,
+            insert_atomics_buffer,
             insert_descriptor_set,
             insert_pipeline,
             updates_timer: Default::default(),
@@ -476,6 +486,12 @@ impl GpuSearchContext {
             self.apply_links_patch().unwrap();
         }
         self.gpu_visited_flags.clear(&mut self.context);
+
+        // clear atomics
+        if self.gpu_visited_flags.params.generation == 1 {
+            self.context
+                .clear_buffer(self.insert_atomics_buffer.clone());
+        }
 
         // upload requests
         self.upload_staging_buffer.upload_slice(requests, 0);

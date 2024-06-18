@@ -40,6 +40,10 @@ layout(set = 0, binding = 1) buffer NewEntries {
     uint data[];
 } new_entries;
 
+layout(set = 0, binding = 2) buffer Atomics {
+    uint data[];
+} atomics;
+
 void main() {
     search_context_init();
     uint subgroup_index = SUBGROUP_ID;
@@ -75,8 +79,21 @@ void main() {
 
     groupMemoryBarrier();
 
+    uint generation = VISITED_GENERATION;
+
     for (uint i = 0; i < count; i++) {
         uint other_id = GET_LINK(request.id, i);
+
+        bool is_changed = false;
+        if (subgroupElect()) {
+            uint other_atomic = atomicExchange(atomics.data[other_id], generation);
+            is_changed = other_atomic == generation;
+        }
+        if (subgroupAny(is_changed)) {
+            // other_id is already being processed by another subgroup
+            continue;
+        }
+
         uint other_links_count = LINKS_COUNT(other_id);
         if (other_links_count < LEVEL_M) {
             if (subgroupElect()) {
