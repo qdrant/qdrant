@@ -109,4 +109,8 @@ service Points {
   Perform multiple update operations in one request
   */
   rpc UpdateBatch (UpdateBatchPoints) returns (UpdateBatchResponse) {}
+  /*
+  Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+  */
+  rpc Query (QueryPoints) returns (QueryResponse) {}
 }

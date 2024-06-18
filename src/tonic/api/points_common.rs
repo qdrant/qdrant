@@ -9,11 +9,11 @@ use api::grpc::qdrant::{
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
     FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponseInternal,
-    PointsSelector, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
-    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
-    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    PointsSelector, QueryPoints, QueryResponse, ReadConsistency as ReadConsistencyGrpc,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use api::rest::{OrderByInterface, ShardKeySelector};
 use collection::operations::consistency_params::ReadConsistency;
@@ -30,12 +30,13 @@ use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
     RecommendExample, Record, ScrollRequestInternal,
 };
+use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -48,8 +49,9 @@ use tonic::{Response, Status};
 use crate::common::points::{
     do_clear_payload, do_core_search_points, do_count_points, do_create_index,
     do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
+    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_query_points,
+    do_scroll_points, do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points,
+    CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -1551,6 +1553,85 @@ pub async fn get(
 
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn query(
+    toc: &TableOfContent,
+    query_points: QueryPoints,
+    shard_selection: Option<ShardId>,
+    access: Access,
+) -> Result<Response<QueryResponse>, Status> {
+    let QueryPoints {
+        collection_name,
+        prefetch,
+        query,
+        using,
+        filter,
+        search_params,
+        score_threshold,
+        limit,
+        offset,
+        with_payload,
+        with_vectors,
+        read_consistency,
+        shard_key_selector,
+        lookup_from,
+        timeout,
+    } = query_points;
+
+    let request = CollectionQueryRequest {
+        prefetch: prefetch
+            .into_iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<_, _>>()?,
+        query: query.map(TryFrom::try_from).transpose()?,
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        filter: filter.map(TryFrom::try_from).transpose()?,
+        score_threshold,
+        limit: limit
+            .map(|l| l as usize)
+            .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+        offset: offset
+            .map(|o| o as usize)
+            .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
+        params: search_params.map(From::from),
+        with_vector: with_vectors
+            .map(From::from)
+            .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+        with_payload: with_payload
+            .map(TryFrom::try_from)
+            .transpose()?
+            .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+        lookup_from: lookup_from.map(From::from),
+    };
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+
+    let read_consistency = read_consistency.map(TryFrom::try_from).transpose()?;
+
+    let timeout = timeout.map(Duration::from_secs);
+    let timing = Instant::now();
+    let scored_points = do_query_points(
+        toc,
+        &collection_name,
+        request,
+        read_consistency,
+        shard_selector,
+        access,
+        timeout,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = QueryResponse {
+        result: scored_points
+            .into_iter()
+            .map(|point| point.into())
+            .collect(),
         time: timing.elapsed().as_secs_f64(),
     };
 
