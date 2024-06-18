@@ -265,6 +265,10 @@ pub struct SparseIndexConfig {
     /// Store inverted index on disk. If set to false, the index will be stored in RAM.
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
+    ///
+    /// Datatype used to store weights in the index.
+    #[prost(enumeration = "Datatype", optional, tag = "3")]
+    pub datatype: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

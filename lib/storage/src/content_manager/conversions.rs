@@ -40,7 +40,8 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 },
                 sparse_vectors: value
                     .sparse_vectors_config
-                    .map(|config| config.map.into_iter().map(|(k, v)| (k, v.into())).collect()),
+                    .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
+                    .transpose()?,
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
                 optimizers_config: value.optimizers_config.map(|v| v.into()),
@@ -83,11 +84,10 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .quantization_config
                     .map(TryInto::try_into)
                     .transpose()?,
-                sparse_vectors: value.sparse_vectors_config.map(|config| {
-                    SparseVectorsConfig(
-                        config.map.into_iter().map(|(k, v)| (k, v.into())).collect(),
-                    )
-                }),
+                sparse_vectors: value
+                    .sparse_vectors_config
+                    .map(TryInto::try_into)
+                    .transpose()?,
             },
         )))
     }

@@ -73,7 +73,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
         num_vectors,
     );
 
-    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type);
+    let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type, None);
     let sparse_vector_index: SparseVectorIndex<I> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,

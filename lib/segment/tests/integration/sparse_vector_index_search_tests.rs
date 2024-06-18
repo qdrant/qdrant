@@ -17,7 +17,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -624,6 +626,7 @@ fn sparse_vector_index_persistence_test() {
                 index: SparseIndexConfig {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
+                    datatype: Some(SparseVectorIndexDatatype::Float32),
                 },
             },
         )]),
@@ -712,6 +715,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             config: SparseIndexConfig {
                 full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                 index_type: SparseIndexType::Mmap,
+                datatype: Some(SparseVectorIndexDatatype::Float32),
             },
             id_tracker: segment.id_tracker.clone(),
             vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
@@ -826,6 +830,7 @@ fn sparse_vector_test_large_index() {
                 index: SparseIndexConfig {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
+                    datatype: Some(SparseVectorIndexDatatype::Float32),
                 },
             },
         )]),
