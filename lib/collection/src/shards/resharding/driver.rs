@@ -144,6 +144,7 @@ pub async fn drive_resharding(
     channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
+    let to_shard_id = reshard_key.shard_id;
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
     let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
         DriverState::new(reshard_key.clone())
@@ -156,11 +157,13 @@ pub async fn drive_resharding(
 
     // Stage 1: init
     if !completed_init(&state) {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: init");
         stage_init(&state)?;
     }
 
     // Stage 2: init
     if !completed_migrate_points(&state) {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: migrate points");
         stage_migrate_points(
             &reshard_key,
             &state,
@@ -174,6 +177,7 @@ pub async fn drive_resharding(
 
     // Stage 3: replicate to match replication factor
     if !completed_replicate(&reshard_key, &state, &shard_holder, &collection_config).await? {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: replicate");
         stage_replicate(
             &reshard_key,
             &state,
@@ -188,15 +192,18 @@ pub async fn drive_resharding(
 
     // Stage 4: commit new hashring
     if !completed_commit_hashring() {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit hashring");
         stage_commit_hashring()?;
     }
 
     // Stage 5: propagate deletes
     if !completed_propagate_deletes() {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
         stage_propagate_deletes()?;
     }
 
     // Stage 6: finalize
+    log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
     stage_finalize()?;
 
     // Remove the state file after successful resharding
@@ -224,8 +231,6 @@ fn completed_init(state: &PersistedState) -> bool {
 ///
 /// Do initialize the resharding process.
 fn stage_init(state: &PersistedState) -> CollectionResult<()> {
-    log::debug!("Resharding stage: init");
-
     // TODO(reshard): do any necessary initialisation here
 
     state.write(|data| {
@@ -257,8 +262,6 @@ async fn stage_migrate_points(
     channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    log::debug!("Resharding stage: migrate points");
-
     state.write(|data| {
         data.bump_all_peers_to(Stage::S2_MigratePointsStart);
     })?;
@@ -480,8 +483,6 @@ async fn stage_replicate(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
-    log::debug!("Resharding stage: replicate");
-
     state.write(|data| {
         data.bump_all_peers_to(Stage::S3_ReplicateStart);
     })?;
@@ -570,7 +571,6 @@ fn completed_commit_hashring() -> bool {
 ///
 /// Do commit the new hashring.
 fn stage_commit_hashring() -> CollectionResult<()> {
-    log::debug!("Resharding stage: commit hashring");
     todo!()
 }
 
@@ -585,7 +585,6 @@ fn completed_propagate_deletes() -> bool {
 ///
 /// Do delete migrated points from their old shards.
 fn stage_propagate_deletes() -> CollectionResult<()> {
-    log::debug!("Resharding stage: propagate deletes");
     todo!()
 }
 
@@ -593,7 +592,6 @@ fn stage_propagate_deletes() -> CollectionResult<()> {
 ///
 /// Finalize the resharding operation.
 fn stage_finalize() -> CollectionResult<()> {
-    log::debug!("Resharding stage: finalize");
     todo!()
 }
 
