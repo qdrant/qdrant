@@ -1324,7 +1324,7 @@ pub struct SparseIndexParams {
     pub on_disk: Option<bool>,
     /// Datatype used to store weights in the index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)] // TODO(compressed_sparse_index): remove this once feature is released
+    #[schemars(skip) /* TODO(1.10): remove this in the next minor release to expose the compressed sparse index */]
     pub datatype: Option<Datatype>,
 }
 
@@ -1339,14 +1339,6 @@ impl Anonymize for SparseIndexParams {
 }
 
 impl SparseIndexParams {
-    pub fn new(full_scan_threshold: Option<usize>, on_disk: Option<bool>) -> Self {
-        SparseIndexParams {
-            full_scan_threshold,
-            on_disk,
-            datatype: None, // TODO
-        }
-    }
-
     pub fn update_from_other(&mut self, other: &SparseIndexParams) {
         let SparseIndexParams {
             full_scan_threshold,

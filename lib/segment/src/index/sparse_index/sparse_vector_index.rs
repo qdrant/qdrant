@@ -40,7 +40,7 @@ use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
 
-// TODO(compressed_sparse_index): remove this once feature is released
+// TODO(1.10): remove this in the next minor release to expose the compressed sparse index
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = false;
 

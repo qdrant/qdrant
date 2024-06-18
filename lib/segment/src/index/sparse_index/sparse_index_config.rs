@@ -42,6 +42,7 @@ impl SparseIndexType {
 
 /// Storage types for vectors
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum SparseVectorIndexDatatype {
     // Single-precision floating point
     #[default]
@@ -70,7 +71,7 @@ pub struct SparseIndexConfig {
     /// Datatype used to store weights in the index.
     #[serde(default)]
     #[serde(skip_serializing_if = "SparseVectorIndexDatatype::should_hide")]
-    #[schemars(skip)] // TODO(compressed_sparse_index): remove this once feature is released
+    #[schemars(skip) /* TODO(1.10): remove this in the next minor release to expose the compressed sparse index */]
     pub datatype: SparseVectorIndexDatatype,
 }
 
