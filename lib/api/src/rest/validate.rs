@@ -59,12 +59,12 @@ impl Validate for QueryInterface {
 impl Validate for Query {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Query::Nearest(vector) => vector.validate(),
-            Query::Recommend(recommend) => recommend.validate(),
-            Query::Discover(discover) => discover.validate(),
-            Query::Context(context) => context.validate(),
-            Query::Fusion(fusion) => fusion.validate(),
-            Query::OrderBy(order_by) => order_by.validate(),
+            Query::Nearest(vector) => vector.nearest.validate(),
+            Query::Recommend(recommend) => recommend.recommend.validate(),
+            Query::Discover(discover) => discover.discover.validate(),
+            Query::Context(context) => context.context.validate(),
+            Query::Fusion(fusion) => fusion.fusion.validate(),
+            Query::OrderBy(order_by) => order_by.order_by.validate(),
         }
     }
 }
