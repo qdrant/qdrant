@@ -9,6 +9,7 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::task::block_in_place;
+use tokio::time::sleep;
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
@@ -39,6 +40,9 @@ const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs
 
 /// Batch size for deleting migrated points in existing shards.
 const DELETE_BATCH_SIZE: usize = 500;
+
+/// If the shard transfer IO limit is reached, retry with this interval.
+const SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 type PersistedState = SaveOnDisk<DriverState>;
 
@@ -226,6 +230,7 @@ pub async fn drive_resharding(
             consensus,
             &channel_service,
             &collection_id,
+            shared_storage_config,
         )
         .await?;
     }
@@ -336,6 +341,7 @@ async fn stage_migrate_points(
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
     collection_id: &CollectionId,
+    shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
         let ongoing_transfer = shard_holder
@@ -352,8 +358,14 @@ async fn stage_migrate_points(
         let (transfer, start_transfer) = match ongoing_transfer {
             Some(transfer) => (Some(transfer), false),
             None => {
-                // TODO(resharding): do not just pick random source, consider transfer limits
-                let active_shards = {
+                let incoming_limit = shared_storage_config
+                    .incoming_shard_transfers_limit
+                    .unwrap_or(usize::MAX);
+                let outgoing_limit = shared_storage_config
+                    .outgoing_shard_transfers_limit
+                    .unwrap_or(usize::MAX);
+
+                let (source_peer_ids, has_active) = {
                     let shard_holder = shard_holder.read().await;
                     let replica_set =
                         shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
@@ -361,16 +373,44 @@ async fn stage_migrate_points(
                                 "Shard {source_shard_id} not found in the shard holder for resharding",
                             ))
                         })?;
-                    replica_set.active_shards().await
+
+                    // Current peer must have room to receive transfers
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(&consensus.this_peer_id());
+                    if incoming + 1 > incoming_limit {
+                        log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on this node (incoming: {incoming})");
+                        sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                        continue;
+                    }
+
+                    // Active peers must have room to receive transfers
+                    let active_peer_ids = replica_set.active_shards().await;
+                    let has_active = !active_peer_ids.is_empty();
+                    #[allow(clippy::int_plus_one)]
+                    let candidate_peer_ids = active_peer_ids
+                        .into_iter()
+                        .filter(|peer_id| {
+                            let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
+                            outgoing + 1 <= outgoing_limit
+                        })
+                        .collect::<Vec<_>>();
+                    (candidate_peer_ids, has_active)
                 };
-                let source_peer_id = active_shards
+
+                if source_peer_ids.is_empty() {
+                    if has_active {
+                        log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on peers");
+                        sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                        continue;
+                    } else {
+                        return Err(CollectionError::service_error(format!(
+                            "No peer with shard {source_shard_id} in active state for resharding",
+                        )));
+                    }
+                }
+
+                let source_peer_id = *source_peer_ids
                     .choose(&mut rand::thread_rng())
-                    .cloned()
-                    .ok_or_else(|| {
-                        CollectionError::service_error(format!(
-                            "No remote peer with shard {source_shard_id} in active state for resharding",
-                        ))
-                    })?;
+                    .unwrap();
 
                 // Configure shard transfer object, or use none if doing a local transfer
                 if source_peer_id != consensus.this_peer_id() {
@@ -833,11 +873,11 @@ async fn await_transfer_success(
             .await
             .check_transfer_exists(&transfer_key)
         {
-            tokio::time::sleep(AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL).await;
+            sleep(AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL).await;
         }
 
         // Give our normal logic time process the transfer end
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
     };
 
     tokio::select! {
