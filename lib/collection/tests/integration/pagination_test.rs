@@ -1,8 +1,8 @@
+use api::rest::SearchRequestInternal;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::SearchRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::WithPayloadInterface;

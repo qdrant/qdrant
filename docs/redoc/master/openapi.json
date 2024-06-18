@@ -11416,6 +11416,18 @@
                 "nullable": true
               }
             ]
+          },
+          "lookup_from": {
+            "description": "The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11490,6 +11502,18 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "lookup_from": {
+            "description": "The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LookupLocation"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

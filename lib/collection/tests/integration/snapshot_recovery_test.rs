@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
@@ -7,7 +8,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
-use collection::operations::types::{NodeType, SearchRequestInternal, VectorsConfig};
+use collection::operations::types::{NodeType, VectorsConfig};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;

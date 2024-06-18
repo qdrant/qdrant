@@ -7,7 +7,10 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
-use api::rest::{OrderByInterface, RecommendStrategy, ShardKeySelector};
+use api::rest::{
+    BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
+    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector,
+};
 use common::defaults;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -21,7 +24,6 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
-use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
@@ -42,7 +44,6 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use super::config_diff::{self};
 use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
-use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::operations::query_enum::QueryEnum;
 use crate::save_on_disk;
@@ -350,41 +351,6 @@ pub struct SearchRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-/// Search request.
-/// Holds all conditions and parameters for the search of most similar points by vector similarity
-/// given the filtering restrictions.
-#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct SearchRequestInternal {
-    /// Look for vectors closest to this
-    #[validate]
-    pub vector: api::rest::NamedVectorStruct,
-    /// Look only for points which satisfies this conditions
-    #[validate]
-    pub filter: Option<Filter>,
-    /// Additional search params
-    #[validate]
-    pub params: Option<SearchParams>,
-    /// Max number of result to return
-    #[serde(alias = "top")]
-    #[validate(range(min = 1))]
-    pub limit: usize,
-    /// Offset of the first result to return.
-    /// May be used to paginate results.
-    /// Note: large offset values may cause performance issues.
-    pub offset: Option<usize>,
-    /// Select which payload to return with the response. Default: None
-    pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
-    #[serde(default, alias = "with_vectors")]
-    pub with_vector: Option<WithVector>,
-    /// Define a minimal score threshold for the result.
-    /// If defined, less similar results will not be returned.
-    /// Score of the returned result might be higher or smaller than the threshold depending on the
-    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
-    pub score_threshold: Option<ScoreType>,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
@@ -426,38 +392,6 @@ pub struct SearchGroupsRequest {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
-pub struct SearchGroupsRequestInternal {
-    /// Look for vectors closest to this
-    #[validate]
-    pub vector: api::rest::NamedVectorStruct,
-
-    /// Look only for points which satisfies this conditions
-    #[validate]
-    pub filter: Option<Filter>,
-
-    /// Additional search params
-    #[validate]
-    pub params: Option<SearchParams>,
-
-    /// Select which payload to return with the response. Default: None
-    pub with_payload: Option<WithPayloadInterface>,
-
-    /// Whether to return the point vector with the result?
-    #[serde(default, alias = "with_vectors")]
-    pub with_vector: Option<WithVector>,
-
-    /// Define a minimal score threshold for the result.
-    /// If defined, less similar results will not be returned.
-    /// Score of the returned result might be higher or smaller than the threshold depending on the
-    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
-    pub score_threshold: Option<ScoreType>,
-
-    #[serde(flatten)]
-    #[validate]
-    pub group_request: BaseGroupRequest,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -525,23 +459,6 @@ impl From<String> for UsingVector {
     fn from(name: String) -> Self {
         UsingVector::Name(name)
     }
-}
-
-/// Defines a location to use for looking up the vector.
-/// Specifies collection and vector field name.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct LookupLocation {
-    /// Name of the collection used for lookup
-    pub collection: String,
-    /// Optional name of the vector field within the collection.
-    /// If not provided, the default vector field will be used.
-    #[serde(default)]
-    pub vector: Option<String>,
-
-    /// Specify in which shards to look for the points, if not specified - look in all shards
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
@@ -1741,27 +1658,6 @@ pub enum NodeType {
     /// This is useful for nodes that are only used for writing data
     /// and backup purposes
     Listener,
-}
-
-#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-pub struct BaseGroupRequest {
-    /// Payload field to group by, must be a string or number field.
-    /// If the field contains more than 1 value, all values will be used for grouping.
-    /// One point can be in multiple groups.
-    #[schemars(length(min = 1))]
-    #[validate(custom = "JsonPath::validate_not_empty")]
-    pub group_by: JsonPath,
-
-    /// Maximum amount of points to return per group
-    #[validate(range(min = 1))]
-    pub group_size: u32,
-
-    /// Maximum amount of groups to return
-    #[validate(range(min = 1))]
-    pub limit: u32,
-
-    /// Look for points in another collection using the group ids
-    pub with_lookup: Option<WithLookupInterface>,
 }
 
 impl From<SearchRequestInternal> for CoreSearchRequest {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::rest::ShardKeySelector;
+use api::rest::{SearchGroupsRequestInternal, ShardKeySelector};
 use collection::common::batching::batch_requests;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
@@ -15,8 +15,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
     DiscoverRequestBatch, DiscoverRequestInternal, GroupsResult, PointRequestInternal,
-    RecommendGroupsRequestInternal, Record, ScrollRequestInternal, ScrollResult,
-    SearchGroupsRequestInternal, UpdateResult,
+    RecommendGroupsRequestInternal, Record, ScrollRequestInternal, ScrollResult, UpdateResult,
 };
 use collection::operations::vector_ops::{
     DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,

@@ -1,29 +1,51 @@
 use std::fmt::Display;
 
-use schemars::JsonSchema;
 use segment::data_types::groups::GroupId;
 use segment::types::PointIdType;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::WithLookup;
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WithLookupInterface {
     Collection(String),
     WithLookup(WithLookup),
 }
 
-impl From<WithLookupInterface> for WithLookup {
-    fn from(with_lookup: WithLookupInterface) -> Self {
+impl From<api::rest::WithLookupInterface> for WithLookupInterface {
+    fn from(with_lookup: api::rest::WithLookupInterface) -> Self {
         match with_lookup {
-            WithLookupInterface::Collection(collection_name) => Self {
+            api::rest::WithLookupInterface::Collection(collection_name) => {
+                Self::Collection(collection_name)
+            }
+            api::rest::WithLookupInterface::WithLookup(with_lookup) => {
+                Self::WithLookup(WithLookup::from(with_lookup))
+            }
+        }
+    }
+}
+
+impl From<api::rest::WithLookupInterface> for WithLookup {
+    fn from(with_lookup: api::rest::WithLookupInterface) -> Self {
+        match with_lookup {
+            api::rest::WithLookupInterface::Collection(collection_name) => Self {
                 collection_name,
                 with_payload: Some(true.into()),
                 with_vectors: Some(false.into()),
             },
-            WithLookupInterface::WithLookup(with_lookup) => with_lookup,
+            api::rest::WithLookupInterface::WithLookup(with_lookup) => {
+                WithLookup::from(with_lookup)
+            }
+        }
+    }
+}
+
+impl From<api::rest::WithLookup> for WithLookup {
+    fn from(with_lookup: api::rest::WithLookup) -> Self {
+        WithLookup {
+            collection_name: with_lookup.collection_name,
+            with_payload: with_lookup.with_payload.map(Into::into),
+            with_vectors: with_lookup.with_vectors.map(Into::into),
         }
     }
 }

@@ -525,6 +525,7 @@ message PrefetchQuery {
   optional SearchParams search_params = 5; // Search params for when there is no prefetch.
   optional float score_threshold = 6; // Return points with scores better than this threshold.
   optional uint64 limit = 7; // Max number of points. Default is 10
+  optional LookupLocation lookup_from = 8; // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
 }
 
 message QueryPoints {
@@ -541,6 +542,7 @@ message QueryPoints {
   optional WithPayloadSelector with_payload = 11; // Options for specifying which payload to include or not.
   optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees.
   optional ShardKeySelector shard_key_selector = 13; // Specify in which shards to look for the points, if not specified - look in all shards.
+  optional LookupLocation lookup_from = 14; // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
 }
 
 message PointsUpdateOperation {

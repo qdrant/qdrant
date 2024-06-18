@@ -12,6 +12,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 };
 use api::grpc::qdrant::CreateShardKey;
 use api::rest::schema::ShardKeySelector;
+use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
@@ -25,10 +26,9 @@ use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
-    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
-    VectorsConfigDiff,
+    ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
+    Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal, SparseIndexParams,
+    SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -54,9 +54,8 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, LookupLocation, OptimizersStatus, RecommendRequestInternal, Record,
-    RemoteShardInfo, SearchRequestInternal, ShardTransferInfo, UpdateResult, UpdateStatus,
-    VectorParams, VectorsConfig,
+    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, Record, RemoteShardInfo,
+    ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
@@ -1292,92 +1291,6 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
-        Ok(SearchRequestInternal {
-            vector: api::grpc::conversions::into_named_vector_struct(
-                value.vector_name,
-                value.vector,
-                value.sparse_indices,
-            )?
-            .into(),
-            filter: value.filter.map(|f| f.try_into()).transpose()?,
-            params: value.params.map(|p| p.into()),
-            limit: value.limit as usize,
-            offset: value.offset.map(|x| x as usize),
-            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
-            with_vector: Some(
-                value
-                    .with_vectors
-                    .map(|with_vectors| with_vectors.into())
-                    .unwrap_or_default(),
-            ),
-            score_threshold: value.score_threshold,
-        })
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestInternal {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::SearchPointGroups) -> Result<Self, Self::Error> {
-        let search_points = api::grpc::qdrant::SearchPoints {
-            vector: value.vector,
-            filter: value.filter,
-            params: value.params,
-            with_payload: value.with_payload,
-            with_vectors: value.with_vectors,
-            score_threshold: value.score_threshold,
-            vector_name: value.vector_name,
-            limit: 0,
-            offset: None,
-            collection_name: String::new(),
-            read_consistency: None,
-            timeout: None,
-            shard_key_selector: None,
-            sparse_indices: value.sparse_indices,
-        };
-
-        if let Some(sparse_indices) = &search_points.sparse_indices {
-            validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
-                |_| {
-                    Status::invalid_argument(
-                        "Sparse indices does not match sparse vector conditions",
-                    )
-                },
-            )?;
-        }
-
-        let SearchRequestInternal {
-            vector,
-            filter,
-            params,
-            limit: _,
-            offset: _,
-            with_payload,
-            with_vector,
-            score_threshold,
-        } = search_points.try_into()?;
-
-        Ok(SearchGroupsRequestInternal {
-            vector,
-            filter,
-            params,
-            with_payload,
-            with_vector,
-            score_threshold,
-            group_request: BaseGroupRequest {
-                group_by: json_path_from_proto(&value.group_by)?,
-                limit: value.limit,
-                group_size: value.group_size,
-                with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
-            },
-        })
-    }
-}
-
 impl From<PointGroup> for api::grpc::qdrant::PointGroup {
     fn from(group: PointGroup) -> Self {
         Self {
@@ -1391,16 +1304,6 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
             lookup: group
                 .lookup
                 .map(|record| api::grpc::qdrant::RetrievedPoint::from(Record::from(record))),
-        }
-    }
-}
-
-impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
-    fn from(value: api::grpc::qdrant::LookupLocation) -> Self {
-        Self {
-            collection: value.collection_name,
-            vector: value.vector_name,
-            shard_key: value.shard_key_selector.map(ShardKeySelector::from),
         }
     }
 }

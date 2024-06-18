@@ -10,14 +10,16 @@ use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use segment::vector_storage::query as segment_query;
+use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
-    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
-    RawVector, RecommendStrategy, ShardKeySelector, SparseIndices, StartFrom,
+    GeoLineString, GroupId, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
+    OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups, SearchPoints,
+    ShardKeySelector, SparseIndices, StartFrom, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1882,5 +1884,130 @@ impl TryFrom<raw_query::Discovery> for segment_query::DiscoveryQuery<segment_vec
                 .map(segment_query::ContextPair::try_from)
                 .try_collect()?,
         })
+    }
+}
+
+impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
+    type Error = Status;
+
+    fn try_from(value: SearchPoints) -> Result<Self, Self::Error> {
+        Ok(Self {
+            vector: crate::grpc::conversions::into_named_vector_struct(
+                value.vector_name,
+                value.vector,
+                value.sparse_indices,
+            )?
+            .into(),
+            filter: value.filter.map(|f| f.try_into()).transpose()?,
+            params: value.params.map(|p| p.into()),
+            limit: value.limit as usize,
+            offset: value.offset.map(|x| x as usize),
+            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            with_vector: Some(
+                value
+                    .with_vectors
+                    .map(|with_vectors| with_vectors.into())
+                    .unwrap_or_default(),
+            ),
+            score_threshold: value.score_threshold,
+        })
+    }
+}
+
+impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
+    type Error = Status;
+
+    fn try_from(value: SearchPointGroups) -> Result<Self, Self::Error> {
+        let search_points = SearchPoints {
+            vector: value.vector,
+            filter: value.filter,
+            params: value.params,
+            with_payload: value.with_payload,
+            with_vectors: value.with_vectors,
+            score_threshold: value.score_threshold,
+            vector_name: value.vector_name,
+            limit: 0,
+            offset: None,
+            collection_name: String::new(),
+            read_consistency: None,
+            timeout: None,
+            shard_key_selector: None,
+            sparse_indices: value.sparse_indices,
+        };
+
+        if let Some(sparse_indices) = &search_points.sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
+                |_| {
+                    Status::invalid_argument(
+                        "Sparse indices does not match sparse vector conditions",
+                    )
+                },
+            )?;
+        }
+
+        let rest::SearchRequestInternal {
+            vector,
+            filter,
+            params,
+            limit: _,
+            offset: _,
+            with_payload,
+            with_vector,
+            score_threshold,
+        } = search_points.try_into()?;
+
+        Ok(Self {
+            vector,
+            filter,
+            params,
+            with_payload,
+            with_vector,
+            score_threshold,
+            group_request: rest::BaseGroupRequest {
+                group_by: json_path_from_proto(&value.group_by)?,
+                limit: value.limit,
+                group_size: value.group_size,
+                with_lookup: value
+                    .with_lookup
+                    .map(rest::WithLookupInterface::try_from)
+                    .transpose()?,
+            },
+        })
+    }
+}
+
+impl TryFrom<WithLookup> for rest::WithLookupInterface {
+    type Error = Status;
+
+    fn try_from(value: WithLookup) -> Result<Self, Self::Error> {
+        Ok(Self::WithLookup(value.try_into()?))
+    }
+}
+
+impl TryFrom<WithLookup> for rest::WithLookup {
+    type Error = Status;
+
+    fn try_from(value: WithLookup) -> Result<Self, Self::Error> {
+        let with_default_payload = || Some(segment::types::WithPayloadInterface::Bool(true));
+
+        Ok(Self {
+            collection_name: value.collection,
+            with_payload: value
+                .with_payload
+                .map(|wp| wp.try_into())
+                .transpose()?
+                .or_else(with_default_payload),
+            with_vectors: value.with_vectors.map(|wv| wv.into()),
+        })
+    }
+}
+
+impl From<LookupLocation> for rest::LookupLocation {
+    fn from(value: LookupLocation) -> Self {
+        Self {
+            collection: value.collection_name,
+            vector: value.vector_name,
+            shard_key: value.shard_key_selector.map(rest::ShardKeySelector::from),
+        }
     }
 }
