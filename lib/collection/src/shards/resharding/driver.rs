@@ -343,6 +343,8 @@ async fn stage_migrate_points(
     collection_id: &CollectionId,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
+    let this_peer_id = consensus.this_peer_id();
+
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
         let ongoing_transfer = shard_holder
             .read()
@@ -365,7 +367,8 @@ async fn stage_migrate_points(
                     .outgoing_shard_transfers_limit
                     .unwrap_or(usize::MAX);
 
-                let (source_peer_ids, has_active) = {
+                #[allow(clippy::int_plus_one)]
+                let source_peer_ids = {
                     let shard_holder = shard_holder.read().await;
                     let replica_set =
                         shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
@@ -374,53 +377,47 @@ async fn stage_migrate_points(
                             ))
                         })?;
 
-                    // Current peer must have room to receive transfers
-                    let (incoming, _) = shard_holder.count_shard_transfer_io(&consensus.this_peer_id());
-                    if incoming + 1 > incoming_limit {
-                        log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on this node (incoming: {incoming})");
-                        sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
-                        continue;
-                    }
-
-                    // Active peers must have room to receive transfers
                     let active_peer_ids = replica_set.active_shards().await;
-                    let has_active = !active_peer_ids.is_empty();
-                    #[allow(clippy::int_plus_one)]
-                    let candidate_peer_ids = active_peer_ids
-                        .into_iter()
-                        .filter(|peer_id| {
-                            let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
-                            outgoing + 1 <= outgoing_limit
-                        })
-                        .collect::<Vec<_>>();
-                    (candidate_peer_ids, has_active)
-                };
-
-                if source_peer_ids.is_empty() {
-                    if has_active {
-                        log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on peers");
-                        sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
-                        continue;
-                    } else {
+                    if active_peer_ids.is_empty() {
                         return Err(CollectionError::service_error(format!(
                             "No peer with shard {source_shard_id} in active state for resharding",
                         )));
                     }
+
+                    // Respect shard transfer limits, always allow local transfers
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(&this_peer_id);
+                    if incoming + 1 <= incoming_limit {
+                        active_peer_ids
+                            .into_iter()
+                            .filter(|peer_id| {
+                                let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
+                                outgoing + 1 <= outgoing_limit || peer_id == &this_peer_id
+                            })
+                            .collect()
+                    } else if active_peer_ids.contains(&this_peer_id) {
+                        vec![this_peer_id]
+                    } else {
+                        vec![]
+                    }
+                };
+
+                if source_peer_ids.is_empty() {
+                    log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on peers");
+                    sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                    continue;
                 }
 
-                let source_peer_id = *source_peer_ids
-                    .choose(&mut rand::thread_rng())
-                    .unwrap();
+                let source_peer_id = *source_peer_ids.choose(&mut rand::thread_rng()).unwrap();
 
                 // Configure shard transfer object, or use none if doing a local transfer
-                if source_peer_id != consensus.this_peer_id() {
-                    debug_assert_ne!(source_peer_id, consensus.this_peer_id());
+                if source_peer_id != this_peer_id {
+                    debug_assert_ne!(source_peer_id, this_peer_id);
                     debug_assert_ne!(source_shard_id, reshard_key.shard_id);
                     let transfer = ShardTransfer {
                         shard_id: source_shard_id,
                         to_shard_id: Some(reshard_key.shard_id),
                         from: source_peer_id,
-                        to: consensus.this_peer_id(),
+                        to: this_peer_id,
                         sync: true,
                         method: Some(ShardTransferMethod::ReshardingStreamRecords),
                     };
