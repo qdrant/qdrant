@@ -11,7 +11,7 @@ use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVector, QueryVector, VectorElementType, VectorElementTypeByte,
+    DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf,
 };
 use crate::spaces::metric::Metric;
@@ -586,7 +586,7 @@ fn new_multi_scorer_with_metric<
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => {
-            let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     reco_query,
@@ -598,7 +598,7 @@ fn new_multi_scorer_with_metric<
             )
         }
         QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<MultiDenseVector> =
+            let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
@@ -611,7 +611,8 @@ fn new_multi_scorer_with_metric<
             )
         }
         QueryVector::Context(context_query) => {
-            let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
+            let context_query: ContextQuery<MultiDenseVectorInternal> =
+                context_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     context_query,
@@ -681,7 +682,7 @@ fn new_multi_scorer_byte_with_metric<
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => {
-            let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     reco_query,
@@ -693,7 +694,7 @@ fn new_multi_scorer_byte_with_metric<
             )
         }
         QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<MultiDenseVector> =
+            let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
@@ -706,7 +707,8 @@ fn new_multi_scorer_byte_with_metric<
             )
         }
         QueryVector::Context(context_query) => {
-            let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
+            let context_query: ContextQuery<MultiDenseVectorInternal> =
+                context_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     context_query,
@@ -776,7 +778,7 @@ fn new_multi_scorer_half_with_metric<
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => {
-            let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     reco_query,
@@ -788,7 +790,7 @@ fn new_multi_scorer_half_with_metric<
             )
         }
         QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<MultiDenseVector> =
+            let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
@@ -801,7 +803,8 @@ fn new_multi_scorer_half_with_metric<
             )
         }
         QueryVector::Context(context_query) => {
-            let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
+            let context_query: ContextQuery<MultiDenseVectorInternal> =
+                context_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     context_query,

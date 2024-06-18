@@ -1561,14 +1561,14 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
             )
             .unwrap();
         original_segment
             .upsert_point(
                 101,
                 6.into(),
-                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
             )
             .unwrap();
 
@@ -1596,13 +1596,17 @@ mod tests {
 
         // Insert point ID 8 and 10 partially, assert counts
         proxy_segment
-            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         proxy_segment
             .upsert_point(
                 103,
                 10.into(),
-                NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from_pairs([("b".into(), vec![1.0])]),
             )
             .unwrap();
         let segment_info = proxy_segment.info();
@@ -1635,7 +1639,11 @@ mod tests {
 
         // Replace vector 'a' for point 8, counts should remain the same
         proxy_segment
-            .upsert_point(108, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .upsert_point(
+                108,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -1646,7 +1654,7 @@ mod tests {
             .upsert_point(
                 109,
                 8.into(),
-                NamedVectors::from([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
             )
             .unwrap();
         let segment_info = proxy_segment.info();

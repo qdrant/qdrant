@@ -548,7 +548,7 @@ impl TryFrom<Vector> for segment_vectors::Vector {
                 ));
             }
             let dim = vector.data.len() / vector_count as usize;
-            let multi = segment_vectors::MultiDenseVector::new(vector.data, dim);
+            let multi = segment_vectors::MultiDenseVectorInternal::new(vector.data, dim);
             return Ok(segment_vectors::Vector::MultiDense(multi));
         }
 
@@ -568,21 +568,27 @@ impl From<HashMap<String, segment_vectors::Vector>> for NamedVectors {
     }
 }
 
-impl From<segment_vectors::VectorStruct> for Vectors {
-    fn from(vector_struct: segment_vectors::VectorStruct) -> Self {
+impl From<segment_vectors::VectorStructInternal> for Vectors {
+    fn from(vector_struct: segment_vectors::VectorStructInternal) -> Self {
         match vector_struct {
-            segment_vectors::VectorStruct::Single(vector) => {
-                let vector: segment_vectors::Vector = vector.into();
+            segment_vectors::VectorStructInternal::Single(vector) => {
+                let vector = segment_vectors::Vector::from(vector);
                 Self {
-                    vectors_options: Some(VectorsOptions::Vector(vector.into())),
+                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
                 }
             }
-            segment_vectors::VectorStruct::Multi(vectors) => Self {
+            segment_vectors::VectorStructInternal::MultiDense(vector) => {
+                let vector = segment_vectors::Vector::from(vector);
+                Self {
+                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
+                }
+            }
+            segment_vectors::VectorStructInternal::Named(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
                         vectors
-                            .iter()
-                            .map(|(name, vector)| (name.clone(), vector.clone().into())),
+                            .into_iter()
+                            .map(|(name, vector)| (name, Vector::from(vector))),
                     ),
                 })),
             },
@@ -675,22 +681,39 @@ impl TryFrom<NamedVectors> for HashMap<String, segment_vectors::Vector> {
     }
 }
 
-impl TryFrom<Vectors> for segment_vectors::VectorStruct {
+impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
     type Error = Status;
 
     fn try_from(vectors: Vectors) -> Result<Self, Self::Error> {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
-                    if vector.indices.is_some() {
+                    let Vector {
+                        data,
+                        indices,
+                        vectors_count,
+                    } = vector;
+
+                    if indices.is_some() {
                         return Err(Status::invalid_argument(
                             "Sparse vector must be named".to_string(),
                         ));
                     }
-                    segment_vectors::VectorStruct::Single(vector.data)
+                    if let Some(vectors_count) = vectors_count {
+                        segment_vectors::VectorStructInternal::MultiDense(
+                            segment::data_types::vectors::MultiDenseVectorInternal::try_from_flatten(
+                                data,
+                                vectors_count as usize,
+                            ).map_err(|err| {
+                                Status::invalid_argument(format!("Unable to convert to multi-dense vector: {err}"))
+                            })?,
+                        )
+                    } else {
+                        segment_vectors::VectorStructInternal::Single(data)
+                    }
                 }
                 VectorsOptions::Vectors(vectors) => {
-                    segment_vectors::VectorStruct::Multi(vectors.try_into()?)
+                    segment_vectors::VectorStructInternal::Named(vectors.try_into()?)
                 }
             }),
             None => Err(Status::invalid_argument("No Provided")),
@@ -1681,8 +1704,8 @@ impl From<SparseVector> for sparse::common::sparse_vector::SparseVector {
     }
 }
 
-impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
-    fn from(value: segment_vectors::MultiDenseVector) -> Self {
+impl From<segment_vectors::MultiDenseVectorInternal> for MultiDenseVector {
+    fn from(value: segment_vectors::MultiDenseVectorInternal) -> Self {
         let vectors = value
             .flattened_vectors
             .into_iter()
@@ -1695,8 +1718,8 @@ impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
     }
 }
 
-impl From<MultiDenseVector> for segment_vectors::MultiDenseVector {
-    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVector::new_unchecked), but rewritten to avoid collecting twice
+impl From<MultiDenseVector> for segment_vectors::MultiDenseVectorInternal {
+    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVectorInternal::new_unchecked), but rewritten to avoid collecting twice
     fn from(value: MultiDenseVector) -> Self {
         let dim = value.vectors[0].data.len();
         let inner_vector = value
@@ -1747,7 +1770,7 @@ impl TryFrom<RawVector> for segment_vectors::Vector {
                 sparse::common::sparse_vector::SparseVector::from(sparse),
             ),
             Variant::MultiDense(multi_dense) => segment_vectors::Vector::MultiDense(
-                segment_vectors::MultiDenseVector::from(multi_dense),
+                segment_vectors::MultiDenseVectorInternal::from(multi_dense),
             ),
         };
 

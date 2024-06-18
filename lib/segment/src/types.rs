@@ -26,7 +26,7 @@ use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::VectorStruct;
+use crate::data_types::vectors::VectorStructInternal;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
@@ -207,7 +207,7 @@ pub struct ScoredPoint {
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
-    pub vector: Option<VectorStruct>,
+    pub vector: Option<VectorStructInternal>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
     /// Order-by value

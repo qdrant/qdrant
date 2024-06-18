@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
-use segment::data_types::vectors::{QueryVector, VectorStruct};
+use segment::data_types::vectors::{QueryVector, VectorStructInternal};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     WithPayload, WithPayloadInterface, WithVector,
@@ -372,7 +372,7 @@ impl SegmentsSearcher {
                             None
                         },
                         vector: {
-                            let vector: Option<VectorStruct> = match with_vector {
+                            let vector: Option<VectorStructInternal> = match with_vector {
                                 WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
                                 WithVector::Bool(false) => None,
                                 WithVector::Selector(vector_names) => {

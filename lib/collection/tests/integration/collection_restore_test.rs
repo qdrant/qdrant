@@ -5,7 +5,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
-use segment::data_types::vectors::BatchVectorStruct;
+use segment::data_types::vectors::BatchVectorStructInternal;
 use segment::json_path::path;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
@@ -35,7 +35,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: BatchVectorStruct::from(vec![
+                vectors: BatchVectorStructInternal::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])
@@ -79,7 +79,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: BatchVectorStruct::from(vec![
+                vectors: BatchVectorStructInternal::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])
@@ -154,7 +154,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0.into(), 1.into()],
-                vectors: BatchVectorStruct::from(vec![
+                vectors: BatchVectorStructInternal::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])

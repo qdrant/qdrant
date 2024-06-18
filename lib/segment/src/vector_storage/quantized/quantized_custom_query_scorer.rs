@@ -7,7 +7,7 @@ use itertools::Itertools;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVector, TypedDenseVector, TypedMultiDenseVector,
+    DenseVector, MultiDenseVectorInternal, TypedDenseVector, TypedMultiDenseVector,
 };
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
@@ -87,8 +87,8 @@ where
         TOriginalQuery: Query<TypedMultiDenseVector<TElement>>
             + TransformInto<TQuery, TypedMultiDenseVector<TElement>, TEncodedQuery>
             + Clone,
-        TInputQuery: Query<MultiDenseVector>
-            + TransformInto<TOriginalQuery, MultiDenseVector, TypedMultiDenseVector<TElement>>,
+        TInputQuery: Query<MultiDenseVectorInternal>
+            + TransformInto<TOriginalQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
     {
         let original_query: TOriginalQuery = raw_query
             .transform(|vector| {
@@ -97,7 +97,7 @@ where
                     .into_iter()
                     .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
                     .collect_vec();
-                let preprocessed = MultiDenseVector::new(preprocessed, vector.dim);
+                let preprocessed = MultiDenseVectorInternal::new(preprocessed, vector.dim);
                 let converted =
                     TElement::from_float_multivector(CowMultiVector::Owned(preprocessed))
                         .to_owned();

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
 };
@@ -53,35 +53,35 @@ pub fn upsert_operation() -> CollectionUpdateOperations {
         vec![
             PointStruct {
                 id: 1.into(),
-                vector: VectorStruct::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
+                vector: VectorStructInternal::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
                 payload: Some(
                     serde_json::from_str(r#"{ "location": { "lat": 10.12, "lon": 32.12  } }"#).unwrap(),
                 ),
             },
             PointStruct {
                 id: 2.into(),
-                vector: VectorStruct::from(vec![2.0, 1.0, 3.0, 4.0]).into(),
+                vector: VectorStructInternal::from(vec![2.0, 1.0, 3.0, 4.0]).into(),
                 payload: Some(
                     serde_json::from_str(r#"{ "location": { "lat": 11.12, "lon": 34.82  } }"#).unwrap(),
                 ),
             },
             PointStruct {
                 id: 3.into(),
-                vector: VectorStruct::from(vec![3.0, 2.0, 1.0, 4.0]).into(),
+                vector: VectorStructInternal::from(vec![3.0, 2.0, 1.0, 4.0]).into(),
                 payload: Some(
                     serde_json::from_str(r#"{ "location": [ { "lat": 12.12, "lon": 34.82  }, { "lat": 12.2, "lon": 12.82  }] }"#).unwrap(),
                 ),
             },
             PointStruct {
                 id: 4.into(),
-                vector: VectorStruct::from(vec![4.0, 2.0, 3.0, 1.0]).into(),
+                vector: VectorStructInternal::from(vec![4.0, 2.0, 3.0, 1.0]).into(),
                 payload: Some(
                     serde_json::from_str(r#"{ "location": { "lat": 13.12, "lon": 34.82  } }"#).unwrap(),
                 ),
             },
             PointStruct {
                 id: 5.into(),
-                vector: VectorStruct::from(vec![5.0, 2.0, 3.0, 4.0]).into(),
+                vector: VectorStructInternal::from(vec![5.0, 2.0, 3.0, 4.0]).into(),
                 payload: Some(
                     serde_json::from_str(r#"{ "location": { "lat": 14.12, "lon": 32.12  } }"#).unwrap(),
                 ),

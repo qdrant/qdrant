@@ -22,7 +22,7 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::vectors::{
-    DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
+    DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::index::sparse_index::sparse_index_config::SparseVectorIndexDatatype;
 use segment::types::{
@@ -95,7 +95,7 @@ pub struct Record {
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
-    pub vector: Option<VectorStruct>,
+    pub vector: Option<VectorStructInternal>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
 }
@@ -1171,18 +1171,24 @@ impl Record {
         match &self.vector {
             None => vec![],
             Some(vectors) => match vectors {
-                VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
-                VectorStruct::Multi(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
+                VectorStructInternal::Single(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStructInternal::MultiDense(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStructInternal::Named(vectors) => {
+                    vectors.keys().map(|x| x.as_str()).collect()
+                }
             },
         }
     }
 
     pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
-            Some(VectorStruct::Single(vector)) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
+            Some(VectorStructInternal::Single(vector)) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vector))
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(VectorRef::from),
+            Some(VectorStructInternal::MultiDense(vectors)) => {
+                (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vectors))
+            }
+            Some(VectorStructInternal::Named(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,
         }
     }

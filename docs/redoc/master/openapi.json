@@ -6381,6 +6381,16 @@
             }
           },
           {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/Vector"
@@ -8319,6 +8329,19 @@
               "items": {
                 "type": "number",
                 "format": "float"
+              }
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
               }
             }
           },

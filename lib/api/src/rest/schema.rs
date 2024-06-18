@@ -29,7 +29,8 @@ pub enum Vector {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     Single(DenseVector),
-    Multi(HashMap<String, Vector>),
+    MultiDense(MultiDenseVector),
+    Named(HashMap<String, Vector>),
 }
 
 impl VectorStruct {
@@ -37,38 +38,12 @@ impl VectorStruct {
     pub fn is_empty(&self) -> bool {
         match self {
             VectorStruct::Single(vector) => vector.is_empty(),
-            VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
+            VectorStruct::MultiDense(vector) => vector.is_empty(),
+            VectorStruct::Named(vectors) => vectors.values().all(|v| match v {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
             }),
-        }
-    }
-
-    /// TODO(colbert): remove this method and use `merge` from segment::VectorStruct
-    pub fn merge(&mut self, other: Self) {
-        match (self, other) {
-            // If other is empty, merge nothing
-            (_, VectorStruct::Multi(other)) if other.is_empty() => {}
-            // Single overwrites single
-            (VectorStruct::Single(this), VectorStruct::Single(other)) => {
-                *this = other;
-            }
-            // If multi into single, convert this to multi and merge
-            (this @ VectorStruct::Single(_), other @ VectorStruct::Multi(_)) => {
-                let VectorStruct::Single(single) = this.clone() else {
-                    unreachable!();
-                };
-                *this =
-                    VectorStruct::Multi(HashMap::from([(String::new(), Vector::Dense(single))]));
-                this.merge(other);
-            }
-            // Single into multi
-            (VectorStruct::Multi(this), VectorStruct::Single(other)) => {
-                this.insert(String::new(), Vector::Dense(other));
-            }
-            // Multi into multi
-            (VectorStruct::Multi(this), VectorStruct::Multi(other)) => this.extend(other),
         }
     }
 }
@@ -77,7 +52,8 @@ impl VectorStruct {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
-    Multi(HashMap<String, Vec<Vector>>),
+    MultiDense(Vec<MultiDenseVector>),
+    Named(HashMap<String, Vec<Vector>>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]

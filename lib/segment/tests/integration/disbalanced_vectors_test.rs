@@ -29,7 +29,7 @@ fn test_rebuild_with_removed_vectors() {
             .upsert_point(
                 1,
                 i.into(),
-                NamedVectors::from([
+                NamedVectors::from_pairs([
                     ("vector1".to_string(), vec![i as f32, 0., 0., 0.]),
                     ("vector2".to_string(), vec![0., i as f32, 0., 0., 0., 0.]),
                 ]),
@@ -39,9 +39,9 @@ fn test_rebuild_with_removed_vectors() {
 
     for i in 0..NUM_VECTORS_2 {
         let vectors = if i % 5 == 0 {
-            NamedVectors::from([("vector1".to_string(), vec![0., 0., i as f32, 0.])])
+            NamedVectors::from_pairs([("vector1".to_string(), vec![0., 0., i as f32, 0.])])
         } else {
-            NamedVectors::from([
+            NamedVectors::from_pairs([
                 ("vector1".to_string(), vec![0., 0., i as f32, 0.]),
                 ("vector2".to_string(), vec![0., 0., 0., i as f32, 0., 0.]),
             ])

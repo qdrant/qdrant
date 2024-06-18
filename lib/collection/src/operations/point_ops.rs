@@ -6,7 +6,7 @@ use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{Vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{MultiDenseVectorInternal, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
@@ -83,7 +83,7 @@ impl Batch {
     pub fn empty() -> Self {
         Self {
             ids: vec![],
-            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            vectors: BatchVectorStruct::Named(HashMap::new()),
             payloads: Some(vec![]),
         }
     }
@@ -91,7 +91,7 @@ impl Batch {
     pub fn empty_no_payload() -> Self {
         Self {
             ids: vec![],
-            vectors: BatchVectorStruct::Multi(HashMap::new()),
+            vectors: BatchVectorStruct::Named(HashMap::new()),
             payloads: None,
         }
     }
@@ -269,7 +269,15 @@ impl Validate for Batch {
                     )));
                 }
             }
-            BatchVectorStruct::Multi(named_vectors) => {
+            BatchVectorStruct::MultiDense(vectors) => {
+                if batch.ids.len() != vectors.len() {
+                    return Err(create_error(bad_input_description(
+                        batch.ids.len(),
+                        vectors.len(),
+                    )));
+                }
+            }
+            BatchVectorStruct::Named(named_vectors) => {
                 for vectors in named_vectors.values() {
                     if batch.ids.len() != vectors.len() {
                         return Err(create_error(bad_input_description(
@@ -401,7 +409,26 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Multi(named_vectors) => {
+                BatchVectorStruct::MultiDense(vectors) => {
+                    for (id, vector, payload) in izip!(ids, vectors, payloads) {
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::MultiDense(vec![]),
+                                payloads: Some(vec![]),
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::MultiDense(vectors) => {
+                                    vectors.push(vector.clone())
+                                }
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
+                            batch.payloads.as_mut().unwrap().push(payload.clone());
+                        }
+                    }
+                }
+                BatchVectorStruct::Named(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
                         transpose_map_into_named_vector(named_vectors)
                     } else {
@@ -411,7 +438,7 @@ impl SplitByShard for Batch {
                         for shard_id in point_to_shards(&id, ring) {
                             let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
                                 ids: vec![],
-                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                vectors: BatchVectorStruct::Named(HashMap::new()),
                                 payloads: Some(vec![]),
                             });
                             batch.ids.push(id);
@@ -419,7 +446,7 @@ impl SplitByShard for Batch {
                                 let name = name.into_owned();
                                 let vector: Vector = vector.to_owned();
                                 match &mut batch.vectors {
-                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    BatchVectorStruct::Named(batch_vectors) => batch_vectors
                                         .entry(name)
                                         .or_default()
                                         .push(api::rest::Vector::from(vector)),
@@ -449,7 +476,25 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Multi(named_vectors) => {
+                BatchVectorStruct::MultiDense(vectors) => {
+                    for (id, vector) in izip!(ids, vectors) {
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::MultiDense(vec![]),
+                                payloads: None,
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::MultiDense(vectors) => {
+                                    vectors.push(vector.clone())
+                                }
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
+                        }
+                    }
+                }
+                BatchVectorStruct::Named(named_vectors) => {
                     let named_vectors_list = if !named_vectors.is_empty() {
                         transpose_map_into_named_vector(named_vectors)
                     } else {
@@ -459,7 +504,7 @@ impl SplitByShard for Batch {
                         for shard_id in point_to_shards(&id, ring) {
                             let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
                                 ids: vec![],
-                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                vectors: BatchVectorStruct::Named(HashMap::new()),
                                 payloads: None,
                             });
                             batch.ids.push(id);
@@ -467,7 +512,7 @@ impl SplitByShard for Batch {
                                 let name = name.into_owned();
                                 let vector: Vector = vector.to_owned();
                                 match &mut batch.vectors {
-                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    BatchVectorStruct::Named(batch_vectors) => batch_vectors
                                         .entry(name)
                                         .or_default()
                                         .push(api::rest::Vector::from(vector)),
@@ -531,7 +576,11 @@ impl PointStruct {
                 DEFAULT_VECTOR_NAME.to_string(),
                 Vector::from(vector.clone()),
             ),
-            VectorStruct::Multi(vectors) => {
+            VectorStruct::MultiDense(vector) => named_vectors.insert(
+                DEFAULT_VECTOR_NAME.to_string(),
+                Vector::from(MultiDenseVectorInternal::new_unchecked(vector.clone())),
+            ),
+            VectorStruct::Named(vectors) => {
                 for (name, vector) in vectors {
                     named_vectors.insert(name.clone(), Vector::from(vector.clone()));
                 }
@@ -543,7 +592,7 @@ impl PointStruct {
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::BatchVectorStruct;
+    use segment::data_types::vectors::BatchVectorStructInternal;
 
     use super::*;
 
@@ -551,7 +600,7 @@ mod tests {
     fn validate_batch() {
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![]).into(),
+            vectors: BatchVectorStructInternal::from(vec![]).into(),
             payloads: None,
         }
         .into();
@@ -559,7 +608,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStructInternal::from(vec![vec![0.1]]).into(),
             payloads: None,
         }
         .into();
@@ -567,7 +616,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStructInternal::from(vec![vec![0.1]]).into(),
             payloads: Some(vec![]),
         }
         .into();

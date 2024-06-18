@@ -2370,24 +2370,28 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
             )
             .unwrap();
         segment
             .upsert_point(
                 101,
                 6.into(),
-                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
             )
             .unwrap();
         segment
-            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            )
             .unwrap();
         segment
             .upsert_point(
                 103,
                 10.into(),
-                NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from_pairs([("b".into(), vec![1.0])]),
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2421,7 +2425,10 @@ mod tests {
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
         segment
-            .replace_all_vectors(internal_8, NamedVectors::from([("a".into(), vec![0.1])]))
+            .replace_all_vectors(
+                internal_8,
+                NamedVectors::from_pairs([("a".into(), vec![0.1])]),
+            )
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -2431,7 +2438,7 @@ mod tests {
         segment
             .replace_all_vectors(
                 internal_8,
-                NamedVectors::from([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
+                NamedVectors::from_pairs([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2481,7 +2488,7 @@ mod tests {
             .upsert_point(
                 100,
                 point_id,
-                NamedVectors::from([
+                NamedVectors::from_pairs([
                     ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                     ("b".into(), vec![1.0, 0.9]),
                 ]),
@@ -2510,22 +2517,22 @@ mod tests {
             NamedVectors::from_ref("b", [].as_slice().into()),
             NamedVectors::from_ref("b", [0.5].as_slice().into()),
             NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
-            NamedVectors::from([
+            NamedVectors::from_pairs([
                 ("a".into(), vec![0.1, 0.2, 0.3]),
                 ("b".into(), vec![1.0, 0.9]),
             ]),
-            NamedVectors::from([
+            NamedVectors::from_pairs([
                 ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9, 0.0]),
             ]),
             // Incorrect names
             NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
             NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
-            NamedVectors::from([
+            NamedVectors::from_pairs([
                 ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9]),
             ]),
-            NamedVectors::from([
+            NamedVectors::from_pairs([
                 ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("bb".into(), vec![1.0, 0.9]),
             ]),

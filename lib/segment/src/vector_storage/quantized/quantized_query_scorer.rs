@@ -5,7 +5,7 @@ use common::types::{PointOffsetType, ScoreType};
 use itertools::Itertools;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{DenseVector, MultiDenseVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -52,7 +52,7 @@ where
     }
 
     pub fn new_multi(
-        raw_query: MultiDenseVector,
+        raw_query: MultiDenseVectorInternal,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
     ) -> Self {

@@ -10,7 +10,7 @@ use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
-    only_default_multi_vector, MultiDenseVector, QueryVector, DEFAULT_VECTOR_NAME,
+    only_default_multi_vector, MultiDenseVectorInternal, QueryVector, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
@@ -46,7 +46,7 @@ enum QuantizationVariant {
     Binary,
 }
 
-fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVector {
+fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVectorInternal {
     let count = rnd.gen_range(1..=MAX_VECTORS_COUNT);
     let mut vector = random_multi_vector(rnd, dim, count);
     // for BQ change range to [-0.5; 0.5]
