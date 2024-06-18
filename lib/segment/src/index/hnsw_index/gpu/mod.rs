@@ -6,6 +6,7 @@ pub mod gpu_search_context;
 pub mod gpu_vector_storage;
 pub mod gpu_visited_flags;
 pub mod graph_patches_dumper;
+pub mod cpu_build_iterator;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
