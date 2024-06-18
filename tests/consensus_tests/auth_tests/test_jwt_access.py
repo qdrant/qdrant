@@ -1731,7 +1731,7 @@ def test_query_points():
 
 def test_query_batch_points():
     check_access(
-        "query_points",
+        "query_batch_points",
         rest_request={ "searches": [{ "query": [0.1, 0.2, 0.3, 0.4] }] },
         path_params={"collection_name": COLL_NAME},
         grpc_request={
