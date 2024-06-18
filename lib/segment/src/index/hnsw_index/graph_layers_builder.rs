@@ -11,6 +11,7 @@ use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
+use super::gpu::graph_patches_dumper::GraphPatchesDumper;
 use super::graph_links::GraphLinks;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -42,6 +43,8 @@ pub struct GraphLayersBuilder {
 
     // List of bool flags, which defines if the point is already indexed or not
     pub ready_list: RwLock<BitVec>,
+
+    pub dumper: Option<GraphPatchesDumper>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -134,6 +137,7 @@ impl GraphLayersBuilder {
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
             ready_list,
+            dumper: None,
         }
     }
 
@@ -322,12 +326,16 @@ impl GraphLayersBuilder {
                     // Let's find closest one on same level
 
                     // greedy search for a single closest point
-                    self.search_entry(
+                    let new_entry = self.search_entry(
                         entry_point.point_id,
                         entry_point.level,
                         level,
                         &mut points_scorer,
-                    )
+                        point_id,
+                        self.dumper.as_ref(),
+                    );
+
+                    new_entry
                 } else {
                     ScoredPointOffset {
                         idx: entry_point.point_id,
@@ -382,6 +390,16 @@ impl GraphLayersBuilder {
                                 scorer,
                             );
                             existing_links.clone_from(&selected_nearest);
+
+                            if let Some(dumper) = self.dumper.as_ref() {
+                                dumper.update_links(
+                                    curr_level,
+                                    point_id,
+                                    point_id,
+                                    &selected_nearest,
+                                );
+                            }
+
                             selected_nearest
                         };
 
@@ -391,6 +409,14 @@ impl GraphLayersBuilder {
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
                                 other_point_links.push(point_id);
+                                if let Some(dumper) = self.dumper.as_ref() {
+                                    dumper.update_links(
+                                        curr_level,
+                                        point_id,
+                                        other_point,
+                                        &other_point_links,
+                                    );
+                                }
                             } else {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
@@ -414,6 +440,14 @@ impl GraphLayersBuilder {
                                 other_point_links.clear(); // this do not free memory, which is good
                                 for selected in selected_candidates.iter().copied() {
                                     other_point_links.push(selected);
+                                }
+                                if let Some(dumper) = self.dumper.as_ref() {
+                                    dumper.update_links(
+                                        curr_level,
+                                        point_id,
+                                        other_point,
+                                        &other_point_links,
+                                    );
                                 }
                             }
                         }
@@ -604,6 +638,10 @@ impl GraphLayersBuilder {
             let mut lock = self.links_layers[patch.id as usize][level].write();
             *lock = patch.links;
         }
+    }
+
+    pub fn enable_dumper(&mut self) {
+        self.dumper = Some(GraphPatchesDumper::new(None));
     }
 }
 

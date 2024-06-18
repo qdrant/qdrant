@@ -9,6 +9,7 @@ use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
+use super::gpu::graph_patches_dumper::GraphPatchesDumper;
 use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
@@ -113,6 +114,8 @@ pub trait GraphLayersBase {
         top_level: usize,
         target_level: usize,
         points_scorer: &mut FilteredScorer,
+        point_id: PointOffsetType,
+        dumper: Option<&GraphPatchesDumper>,
     ) -> ScoredPointOffset {
         let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
 
@@ -139,6 +142,10 @@ pub trait GraphLayersBase {
                         current_point = score_point;
                     }
                 });
+            }
+
+            if let Some(dumper) = dumper {
+                dumper.update_entry(level, point_id, current_point.idx);
             }
         }
         current_point
@@ -250,6 +257,8 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             entry_point.level,
             0,
             &mut points_scorer,
+            0,
+            None,
         );
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
         nearest.into_iter().take(top).collect_vec()
