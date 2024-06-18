@@ -1,9 +1,7 @@
 use collection::collection::Collection;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::point_ops::{Batch, WriteOrdering};
-use collection::operations::types::{
-    RecommendRequestInternal, SearchRequestInternal, UpdateStatus,
-};
+use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use rand::distributions::Uniform;
@@ -21,6 +19,7 @@ fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
 }
 
 mod group_by {
+    use api::rest::SearchRequestInternal;
     use collection::grouping::GroupBy;
     use segment::data_types::vectors::BatchVectorStruct;
 
@@ -435,6 +434,7 @@ mod group_by {
 /// Tests out the different features working together. The individual features are already tested in other places.
 mod group_by_builder {
 
+    use api::rest::SearchRequestInternal;
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;

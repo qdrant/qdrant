@@ -2,14 +2,14 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::mem::take;
 
+use api::rest::LookupLocation;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::lookup::WithLookup;
 use collection::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{PointIdsList, PointOperations};
 use collection::operations::types::{
     ContextExamplePair, CoreSearchRequest, CountRequestInternal, DiscoverRequestInternal,
-    LookupLocation, PointRequestInternal, RecommendExample, RecommendRequestInternal,
-    ScrollRequestInternal,
+    PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest, Query, VectorInput, VectorQuery,
@@ -612,14 +612,17 @@ mod tests {
 mod tests_ops {
     use std::fmt::Debug;
 
-    use api::rest::{BatchVectorStruct, OrderByInterface, RecommendStrategy, VectorStruct};
+    use api::rest::{
+        BatchVectorStruct, LookupLocation, OrderByInterface, RecommendStrategy,
+        SearchRequestInternal, VectorStruct,
+    };
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
         Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
     use collection::operations::query_enum::QueryEnum;
-    use collection::operations::types::{SearchRequestInternal, UsingVector};
+    use collection::operations::types::UsingVector;
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
     };

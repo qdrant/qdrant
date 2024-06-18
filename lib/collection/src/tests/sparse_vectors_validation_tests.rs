@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
+use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use segment::data_types::vectors::{NamedSparseVector, NamedVectorStruct, Vector, VectorStruct};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
 use crate::operations::point_ops::{Batch, PointStruct, PointsBatch, PointsList};
 use crate::operations::types::{
-    BaseGroupRequest, ContextExamplePair, DiscoverRequestInternal, RecommendExample,
-    RecommendRequestInternal, SearchGroupsRequestInternal, SearchRequestInternal,
+    ContextExamplePair, DiscoverRequestInternal, RecommendExample, RecommendRequestInternal,
 };
 use crate::operations::vector_ops::PointVectors;
 

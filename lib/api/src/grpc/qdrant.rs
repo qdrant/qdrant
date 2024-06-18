@@ -4826,6 +4826,9 @@ pub struct PrefetchQuery {
     /// Max number of points. Default is 10
     #[prost(uint64, optional, tag = "7")]
     pub limit: ::core::option::Option<u64>,
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    #[prost(message, optional, tag = "8")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4870,6 +4873,9 @@ pub struct QueryPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards.
     #[prost(message, optional, tag = "13")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    #[prost(message, optional, tag = "14")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

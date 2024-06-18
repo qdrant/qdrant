@@ -4,7 +4,7 @@ use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
-use segment::json_path::JsonPath;
+use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -207,6 +207,11 @@ pub struct QueryRequestInternal {
 
     /// Options for specifying which payload to include or not. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
+
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -273,6 +278,11 @@ pub struct Prefetch {
 
     /// Max number of points to return. Default is 10.
     pub limit: Option<usize>,
+
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
 }
 
 /// How to use positive and negative examples to find the results, default is `average_vector`:
@@ -349,4 +359,136 @@ impl ContextPair {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
         std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WithLookup {
+    /// Name of the collection to use for points lookup
+    #[serde(rename = "collection")]
+    pub collection_name: String,
+
+    /// Options for specifying which payload to include (or not)
+    #[serde(default = "default_with_payload")]
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Options for specifying which vectors to include (or not)
+    #[serde(alias = "with_vector")]
+    #[serde(default)]
+    pub with_vectors: Option<WithVector>,
+}
+
+const fn default_with_payload() -> Option<WithPayloadInterface> {
+    Some(WithPayloadInterface::Bool(true))
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum WithLookupInterface {
+    Collection(String),
+    WithLookup(WithLookup),
+}
+
+/// Defines a location to use for looking up the vector.
+/// Specifies collection and vector field name.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct LookupLocation {
+    /// Name of the collection used for lookup
+    pub collection: String,
+    /// Optional name of the vector field within the collection.
+    /// If not provided, the default vector field will be used.
+    #[serde(default)]
+    pub vector: Option<String>,
+
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+pub struct BaseGroupRequest {
+    /// Payload field to group by, must be a string or number field.
+    /// If the field contains more than 1 value, all values will be used for grouping.
+    /// One point can be in multiple groups.
+    #[schemars(length(min = 1))]
+    #[validate(custom = "JsonPath::validate_not_empty")]
+    pub group_by: JsonPath,
+
+    /// Maximum amount of points to return per group
+    #[validate(range(min = 1))]
+    pub group_size: u32,
+
+    /// Maximum amount of groups to return
+    #[validate(range(min = 1))]
+    pub limit: u32,
+
+    /// Look for points in another collection using the group ids
+    pub with_lookup: Option<WithLookupInterface>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct SearchGroupsRequestInternal {
+    /// Look for vectors closest to this
+    #[validate]
+    pub vector: NamedVectorStruct,
+
+    /// Look only for points which satisfies this conditions
+    #[validate]
+    pub filter: Option<Filter>,
+
+    /// Additional search params
+    #[validate]
+    pub params: Option<SearchParams>,
+
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
+
+    #[serde(flatten)]
+    #[validate]
+    pub group_request: BaseGroupRequest,
+}
+
+/// Search request.
+/// Holds all conditions and parameters for the search of most similar points by vector similarity
+/// given the filtering restrictions.
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchRequestInternal {
+    /// Look for vectors closest to this
+    #[validate]
+    pub vector: NamedVectorStruct,
+    /// Look only for points which satisfies this conditions
+    #[validate]
+    pub filter: Option<Filter>,
+    /// Additional search params
+    #[validate]
+    pub params: Option<SearchParams>,
+    /// Max number of result to return
+    #[serde(alias = "top")]
+    #[validate(range(min = 1))]
+    pub limit: usize,
+    /// Offset of the first result to return.
+    /// May be used to paginate results.
+    /// Note: large offset values may cause performance issues.
+    pub offset: Option<usize>,
+    /// Select which payload to return with the response. Default: None
+    pub with_payload: Option<WithPayloadInterface>,
+    /// Whether to return the point vector with the result?
+    #[serde(default, alias = "with_vectors")]
+    pub with_vector: Option<WithVector>,
+    /// Define a minimal score threshold for the result.
+    /// If defined, less similar results will not be returned.
+    /// Score of the returned result might be higher or smaller than the threshold depending on the
+    /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    pub score_threshold: Option<ScoreType>,
 }
