@@ -76,10 +76,9 @@ impl DriverState {
     }
 
     /// List the shard IDs we still need to migrate.
-    pub fn shards_to_migrate(&self) -> Vec<ShardId> {
+    pub fn shards_to_migrate(&self) -> impl Iterator<Item = ShardId> + '_ {
         self.source_shards()
             .filter(|shard_id| !self.migrated_shards.contains(shard_id))
-            .collect()
     }
 
     /// Get all the shard IDs which points are sourced from.
@@ -238,7 +237,7 @@ fn stage_init(state: &PersistedState) -> CollectionResult<()> {
 fn completed_migrate_points(state: &PersistedState) -> bool {
     let state_read = state.read();
     state_read.all_peers_reached(Stage::S2_MigratePointsEnd)
-        && state_read.shards_to_migrate().is_empty()
+        && state_read.shards_to_migrate().next().is_none()
 }
 
 /// Stage 2: migrate points
@@ -259,7 +258,7 @@ async fn stage_migrate_points(
         data.bump_all_peers_to(Stage::S2_MigratePointsStart);
     })?;
 
-    while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().pop()) {
+    while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
         let ongoing_transfer = shard_holder
             .read()
             .await
