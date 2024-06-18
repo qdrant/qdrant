@@ -78,18 +78,30 @@ struct HNSWSearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
+pub struct HnswIndexOpenArgs<'a> {
+    pub path: &'a Path,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub hnsw_config: HnswConfig,
+    pub permit: Option<Arc<CpuPermit>>,
+    pub stopped: &'a AtomicBool,
+}
+
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn open(
-        path: &Path,
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-        quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-        payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        hnsw_config: HnswConfig,
-        permit: Option<Arc<CpuPermit>>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Self> {
+    pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
+        let HnswIndexOpenArgs {
+            path,
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            hnsw_config,
+            permit,
+            stopped,
+        } = args;
+
         create_dir_all(path)?;
 
         let config_path = HnswGraphConfig::get_config_path(path);

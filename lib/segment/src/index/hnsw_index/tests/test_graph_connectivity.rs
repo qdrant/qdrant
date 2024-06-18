@@ -11,7 +11,7 @@ use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_links::{GraphLinks, GraphLinksRam};
-use crate::index::hnsw_index::hnsw::HNSWIndex;
+use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::hnsw_index::num_rayon_threads;
 use crate::segment_constructor::build_segment;
 use crate::types::{
@@ -76,18 +76,18 @@ fn test_graph_connectivity() {
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
-    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+        path: hnsw_dir.path(),
+        id_tracker: segment.id_tracker.clone(),
+        vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
-        Default::default(),
-        payload_index_ptr.clone(),
+        quantized_vectors: Default::default(),
+        payload_index: payload_index_ptr.clone(),
         hnsw_config,
-        Some(permit),
-        &stopped,
-    )
+        permit: Some(permit),
+        stopped: &stopped,
+    })
     .unwrap();
 
     let mut reverse_links = vec![vec![]; num_vectors as usize];
