@@ -36,7 +36,7 @@ use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWith
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorStructInternal};
+use segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };

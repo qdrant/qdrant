@@ -1714,7 +1714,16 @@ def test_query_points():
         "query_points",
         rest_request={"query": [0.1, 0.2, 0.3, 0.4]},
         path_params={"collection_name": COLL_NAME},
-        grpc_request={"collection_name": COLL_NAME, "query": {"vector": {"data": [0.1, 0.2, 0.3, 0.4]}}},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "query": {
+                "nearest": {
+                    "dense": {
+                        "data": [0.1,0.2,0.3,0.4]
+                    }
+                }
+            },
+        },
     )
     
 
