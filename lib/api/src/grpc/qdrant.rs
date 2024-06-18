@@ -6537,7 +6537,7 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// Universal query interface for search, query, scroll and rescoring.
+        /// Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
         pub async fn query(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryPoints>,
@@ -6767,7 +6767,7 @@ pub mod points_server {
             tonic::Status,
         >;
         ///
-        /// Universal query interface for search, query, scroll and rescoring.
+        /// Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
         async fn query(
             &self,
             request: tonic::Request<super::QueryPoints>,
@@ -8468,16 +8468,19 @@ pub mod query_shard_points {
     }
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryBatchPointsInternal {
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub query_points: ::prost::alloc::vec::Vec<QueryShardPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]

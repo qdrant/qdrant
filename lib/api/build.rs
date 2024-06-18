@@ -298,10 +298,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CountPointsInternal.count_points", ""),
             ("SyncPointsInternal.sync_points", ""),
             ("SyncPoints.collection_name", "length(min = 1, max = 255)"),
-            ("QueryPointsInternal.collection_name", "length(min = 1, max = 255)"),
-            ("QueryPointsInternal.filter", ""),
-            ("QueryPointsInternal.params", ""),
-            ("QueryPointsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("QueryBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
+            ("QueryBatchPointsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
         ], &[])
         // Service: raft_service.proto
         .validates(&[
