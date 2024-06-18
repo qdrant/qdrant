@@ -57,27 +57,29 @@ impl Collection {
             shard_transfer.method.replace(method);
         }
 
-        let shard_id = shard_transfer.shard_id;
         let do_transfer = {
+            let this_peer_id = consensus.this_peer_id();
+            let is_receiver = this_peer_id == shard_transfer.to;
+            let is_sender = this_peer_id == shard_transfer.from;
+
+            // Get the source and target shards, in case of resharding the target shard is different
+            let from_shard_id = shard_transfer.shard_id;
+            let to_shard_id = shard_transfer
+                .to_shard_id
+                .unwrap_or(shard_transfer.shard_id);
+
             let shards_holder = self.shards_holder.read().await;
+            let from_replica_set = shards_holder.get_shard(&from_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!("Shard {from_shard_id} doesn't exist"))
+            })?;
+            let to_replica_set = shards_holder.get_shard(&to_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!("Shard {to_shard_id} doesn't exist"))
+            })?;
             let _was_not_transferred =
                 shards_holder.register_start_shard_transfer(shard_transfer.clone())?;
-            let replica_set_opt = shards_holder.get_shard(&shard_id);
 
-            // Check if current node owns the shard which should be transferred
-            // and therefore able to transfer
-            let replica_set = if let Some(replica_set) = replica_set_opt {
-                replica_set
-            } else {
-                // Service error, because it means the validation was incorrect
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} doesn't exist"
-                )));
-            };
-
-            let is_local = replica_set.is_local().await;
-            let is_receiver = replica_set.this_peer_id() == shard_transfer.to;
-            let is_sender = replica_set.this_peer_id() == shard_transfer.from;
+            let from_is_local = from_replica_set.is_local().await;
+            let to_is_local = to_replica_set.is_local().await;
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
@@ -91,13 +93,13 @@ impl Collection {
             // (on all peers, regardless if shard is local or remote on that peer).
             //
             // This should disable queries to receiver replica even if it was active before.
-            if !is_local && is_receiver {
+            if !to_is_local && is_receiver {
                 let effective_optimizers_config = self.effective_optimizers_config().await?;
 
                 let shard = LocalShard::build(
-                    shard_id,
+                    to_shard_id,
                     self.name(),
-                    &replica_set.shard_path,
+                    &to_replica_set.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
@@ -106,14 +108,15 @@ impl Collection {
                 )
                 .await?;
 
-                replica_set.set_local(shard, Some(initial_state)).await?;
+                let old_shard = to_replica_set.set_local(shard, Some(initial_state)).await?;
+                debug_assert!(old_shard.is_none(), "We should not have a local shard yet");
             } else {
-                replica_set
+                to_replica_set
                     .ensure_replica_with_state(&shard_transfer.to, initial_state)
                     .await?;
             }
 
-            is_local && is_sender
+            from_is_local && is_sender
         };
         if do_transfer {
             self.send_shard(shard_transfer, consensus, temp_dir, on_finish, on_error)
@@ -201,10 +204,17 @@ impl Collection {
         // Unwrap forward proxy into local shard, or replace it with remote shard
         // depending on the `sync` flag.
         if self.this_peer_id == transfer.from {
+            // Normally we promote the shard to become active, in case of resharding we do not.
+            // For resharding we have multiple transfers in sequence, during which the shard should
+            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
+            let activate_shard = transfer
+                .method
+                .map_or(true, |method| !method.is_resharding());
             let proxy_promoted = transfer::driver::handle_transferred_shard_proxy(
                 shard_holder,
                 transfer.shard_id,
                 transfer.to,
+                activate_shard,
                 transfer.sync,
             )
             .await?;
@@ -213,7 +223,12 @@ impl Collection {
 
         // Should happen on receiving side
         // Promote partial shard to active shard
-        if self.this_peer_id == transfer.to {
+        // In case of resharding we manually promote the shard, and there are no partial shards
+        if self.this_peer_id == transfer.to
+            && !transfer
+                .method
+                .map_or(false, |method| method.is_resharding())
+        {
             let shard_promoted =
                 transfer::driver::finalize_partial_shard(shard_holder, transfer.shard_id).await?;
             log::debug!(
@@ -226,11 +241,24 @@ impl Collection {
         // Should happen on a third-party side
         // Change direction of the remote shards or add a new remote shard
         if self.this_peer_id != transfer.from {
+            // Normally we promote the shard to become active, in case of resharding we do not.
+            // For resharding we have multiple transfers in sequence, during which the shard should
+            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
+            let state = if transfer
+                .method
+                .map_or(false, |method| method.is_resharding())
+            {
+                ReplicaState::Resharding
+            } else {
+                ReplicaState::Active
+            };
             let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
                 shard_holder,
                 transfer.shard_id,
+                transfer.to_shard_id.unwrap_or(transfer.shard_id),
                 transfer.from,
                 transfer.to,
+                state,
                 transfer.sync,
             )
             .await?;
@@ -268,10 +296,11 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let Some(replica_set) = shard_holder.get_shard(&transfer_key.shard_id) else {
+        let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
             return Err(CollectionError::bad_request(format!(
                 "Shard {} doesn't exist",
-                transfer_key.shard_id
+                transfer_key.shard_id,
             )));
         };
 
@@ -340,7 +369,10 @@ impl Collection {
                 let shard_transfer_registered = shards_holder.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers.iter().any(|shard_transfer| {
-                            shard_transfer.shard_id == shard_id && shard_transfer.to == this_peer_id
+                            let to_shard_id = shard_transfer
+                                .to_shard_id
+                                .unwrap_or(shard_transfer.shard_id);
+                            to_shard_id == shard_id && shard_transfer.to == this_peer_id
                         })
                     },
                     Duration::from_secs(60),

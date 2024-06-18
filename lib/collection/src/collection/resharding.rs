@@ -67,6 +67,7 @@ impl Collection {
                 collection_id,
                 self.path.clone(),
                 collection_config,
+                self.shared_storage_config.clone(),
                 channel_service,
                 temp_dir,
                 on_finish,

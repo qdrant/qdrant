@@ -809,17 +809,17 @@ impl ShardReplicaSet {
         // Check that we are not trying to disable the last active peer
         let peers = self.peers();
 
-        let active_peers = peers.iter().filter_map(|(&peer_id, &state)| {
-            if state == ReplicaState::Active {
-                Some(peer_id)
-            } else {
-                None
-            }
+        // List the peers in active or resharding state
+        // If resharding, there will be only one shard in resharding state and we should not
+        // consider all to be dead
+        // TODO(resharding): accept resharding state as active like below?
+        let active_or_resharding_peers = peers.iter().filter_map(|(&peer_id, &state)| {
+            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(peer_id)
         });
 
         let mut locally_disabled_peers = self.locally_disabled_peers.write();
 
-        if locally_disabled_peers.is_all_disabled(active_peers) {
+        if locally_disabled_peers.is_all_disabled(active_or_resharding_peers) {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled_peers.clear();
         } else {

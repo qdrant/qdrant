@@ -21,6 +21,7 @@ use super::shard::{PeerId, ShardId};
 use super::transfer::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::config::CollectionConfig;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::CollectionId;
@@ -83,6 +84,7 @@ pub fn spawn_resharding_task<T, F>(
     collection_id: CollectionId,
     collection_path: PathBuf,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    shared_storage_config: Arc<SharedStorageConfig>,
     channel_service: ChannelService,
     temp_dir: PathBuf,
     on_finish: T,
@@ -114,6 +116,7 @@ where
                     collection_id.clone(),
                     collection_path.clone(),
                     collection_config.clone(),
+                    &shared_storage_config,
                     channel_service.clone(),
                     &temp_dir,
                 )

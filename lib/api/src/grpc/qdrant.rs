@@ -901,6 +901,8 @@ pub struct ShardTransferInfo {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from: u64,
     #[prost(uint64, tag = "3")]
@@ -936,6 +938,8 @@ pub struct MoveShard {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
@@ -950,6 +954,8 @@ pub struct ReplicateShard {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
@@ -964,6 +970,8 @@ pub struct AbortShardTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
@@ -976,6 +984,8 @@ pub struct RestartTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
+    #[prost(uint32, optional, tag = "5")]
+    pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from_peer_id: u64,
     #[prost(uint64, tag = "3")]
@@ -1507,6 +1517,8 @@ pub enum ShardTransferMethod {
     Snapshot = 1,
     /// Resolve WAL delta between peers and transfer the difference
     WalDelta = 2,
+    /// Stream shard records in batches for resharding
+    ReshardingStreamRecords = 3,
 }
 impl ShardTransferMethod {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1518,6 +1530,7 @@ impl ShardTransferMethod {
             ShardTransferMethod::StreamRecords => "StreamRecords",
             ShardTransferMethod::Snapshot => "Snapshot",
             ShardTransferMethod::WalDelta => "WalDelta",
+            ShardTransferMethod::ReshardingStreamRecords => "ReshardingStreamRecords",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1526,6 +1539,7 @@ impl ShardTransferMethod {
             "StreamRecords" => Some(Self::StreamRecords),
             "Snapshot" => Some(Self::Snapshot),
             "WalDelta" => Some(Self::WalDelta),
+            "ReshardingStreamRecords" => Some(Self::ReshardingStreamRecords),
             _ => None,
         }
     }

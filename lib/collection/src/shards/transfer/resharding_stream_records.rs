@@ -92,7 +92,7 @@ pub(super) async fn transfer_resharding_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring))
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
             .await?;
 
         {
@@ -122,7 +122,7 @@ pub(super) async fn transfer_resharding_stream_records(
 
         let cutoff = replica_set.shard_recovery_point().await?;
         let result = remote_shard
-            .update_shard_cutoff_point(collection_id, shard_id, &cutoff)
+            .update_shard_cutoff_point(collection_id, remote_shard.id, &cutoff)
             .await;
 
         // Warn and ignore if remote shard is running an older version, error otherwise
