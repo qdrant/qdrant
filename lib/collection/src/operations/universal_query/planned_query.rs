@@ -351,7 +351,7 @@ mod tests {
 
     use std::collections::HashSet;
 
-    use segment::data_types::vectors::{MultiDenseVector, NamedVectorStruct, Vector};
+    use segment::data_types::vectors::{MultiDenseVectorInternal, NamedVectorStruct, Vector};
     use segment::json_path::JsonPath;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
@@ -400,7 +400,9 @@ mod tests {
             }],
             query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                 NamedVectorStruct::new_from_vector(
-                    Vector::MultiDense(MultiDenseVector::new_unchecked(vec![dummy_vector.clone()])),
+                    Vector::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
+                        dummy_vector.clone()
+                    ])),
                     "multi",
                 ),
             ))),
@@ -458,7 +460,7 @@ mod tests {
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
-                            Vector::MultiDense(MultiDenseVector::new_unchecked(vec![
+                            Vector::MultiDense(MultiDenseVectorInternal::new_unchecked(vec![
                                 dummy_vector.clone()
                             ])),
                             "multi"

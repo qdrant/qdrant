@@ -8,7 +8,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
 
-use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, VectorElementType};
 use crate::types::{
     AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition,
     IsEmptyCondition, Match, MatchAny, Payload, PayloadField, Range as RangeCondition, ValuesCount,
@@ -135,13 +135,13 @@ pub fn random_multi_vector<R: Rng + ?Sized>(
     rnd_gen: &mut R,
     vector_size: usize,
     num_vector_per_points: usize,
-) -> MultiDenseVector {
+) -> MultiDenseVectorInternal {
     let mut vectors = vec![];
     for _ in 0..num_vector_per_points {
         let vec = random_vector(rnd_gen, vector_size);
         vectors.extend(vec);
     }
-    MultiDenseVector::new(vectors, vector_size)
+    MultiDenseVectorInternal::new(vectors, vector_size)
 }
 
 pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {

@@ -9,7 +9,7 @@ use super::quantized_vectors::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVector, QueryVector, VectorElementType, VectorElementTypeByte,
+    DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf,
 };
 use crate::spaces::metric::Metric;
@@ -214,14 +214,15 @@ impl<'a> QuantizedScorerBuilder<'a> {
         match query {
             QueryVector::Nearest(vector) => {
                 let query_scorer = QuantizedQueryScorer::<TElement, TMetric, _, _>::new_multi(
-                    MultiDenseVector::try_from(vector)?,
+                    MultiDenseVectorInternal::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Recommend(reco_query) => {
-                let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+                let reco_query: RecoQuery<MultiDenseVectorInternal> =
+                    reco_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
                         reco_query,
@@ -231,7 +232,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Discovery(discovery_query) => {
-                let discovery_query: DiscoveryQuery<MultiDenseVector> =
+                let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                     discovery_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
@@ -242,7 +243,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
             QueryVector::Context(context_query) => {
-                let context_query: ContextQuery<MultiDenseVector> =
+                let context_query: ContextQuery<MultiDenseVectorInternal> =
                     context_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(

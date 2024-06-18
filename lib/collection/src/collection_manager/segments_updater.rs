@@ -6,7 +6,7 @@ use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
+use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -52,26 +52,25 @@ pub(crate) fn delete_points(
 pub(crate) fn update_vectors(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    points: &[PointVectors],
+    points: Vec<PointVectors>,
 ) -> CollectionResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
-    let points_map: HashMap<PointIdType, PointVectors> =
-        points
-            .iter()
-            .fold(HashMap::with_capacity(points.len()), |mut map, p| {
-                map.entry(p.id)
-                    .and_modify(|e| e.vector.merge(p.vector.clone()))
-                    .or_insert_with(|| p.clone());
-                map
-            });
+    let mut points_map: HashMap<PointIdType, NamedVectors> = HashMap::new();
+    for point in points {
+        let PointVectors { id, vector } = point;
+        let named_vector = NamedVectors::from(vector);
+
+        let entry = points_map.entry(id).or_default();
+        entry.merge(named_vector);
+    }
+
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         &ids,
         |id, write_segment| {
-            let vectors: VectorStruct = points_map[&id].vector.clone().into();
-            let vectors = vectors.into_all_vectors();
+            let vectors = points_map[&id].clone();
             write_segment.update_vectors(op_num, id, vectors)
         },
         |_| false,
@@ -453,14 +452,14 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperationsInternal::PointsBatch(batch) => {
-                    let batch_vectors: BatchVectorStruct = batch.vectors.into();
+                    let batch_vectors: BatchVectorStructInternal = batch.vectors.into();
                     let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector: VectorStruct::from(vectors).into(),
+                                vector: VectorStructInternal::from(vectors).into(),
                                 payload: None,
                             })
                             .collect(),
@@ -468,7 +467,7 @@ pub(crate) fn process_point_operation(
                             .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector: VectorStruct::from(vectors).into(),
+                                vector: VectorStructInternal::from(vectors).into(),
                                 payload,
                             })
                             .collect(),
@@ -502,7 +501,7 @@ pub(crate) fn process_vector_operation(
 ) -> CollectionResult<usize> {
     match vector_operation {
         VectorOperations::UpdateVectors(operation) => {
-            update_vectors(&segments.read(), op_num, &operation.points)
+            update_vectors(&segments.read(), op_num, operation.points)
         }
         VectorOperations::DeleteVectors(ids, vector_names) => {
             delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)

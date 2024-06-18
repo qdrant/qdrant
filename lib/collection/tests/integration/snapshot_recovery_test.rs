@@ -15,7 +15,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use common::cpu::CpuBudget;
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
@@ -96,7 +96,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     for i in 0..100 {
         points.push(PointStruct {
             id: i.into(),
-            vector: VectorStruct::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructInternal::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

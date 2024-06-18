@@ -10,7 +10,7 @@ use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::{
-    MultiDenseVector, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+    MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
@@ -26,8 +26,8 @@ enum MultiDenseStorageType {
     AppendableMmapFloat,
 }
 
-fn multi_points_fixtures(vec_count: usize, vec_dim: usize) -> Vec<MultiDenseVector> {
-    let mut multis: Vec<MultiDenseVector> = Vec::new();
+fn multi_points_fixtures(vec_count: usize, vec_dim: usize) -> Vec<MultiDenseVectorInternal> {
+    let mut multis: Vec<MultiDenseVectorInternal> = Vec::new();
     for i in 0..vec_count {
         let value = i as f32;
         // hardcoded 5 inner vectors
@@ -38,7 +38,7 @@ fn multi_points_fixtures(vec_count: usize, vec_dim: usize) -> Vec<MultiDenseVect
             vec![value; vec_dim],
             vec![value; vec_dim],
         ];
-        let multi = MultiDenseVector::try_from(vectors).unwrap();
+        let multi = MultiDenseVectorInternal::try_from(vectors).unwrap();
         multis.push(multi);
     }
     multis
@@ -332,7 +332,7 @@ fn test_large_multi_dense_vector_storage(
     let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
 
     let vectors = vec![vec![0.0; vec_dim]; vec_count];
-    let multivec = MultiDenseVector::try_from(vectors).unwrap();
+    let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
     let result = storage.insert_vector(0, VectorRef::from(&multivec));
     match result {

@@ -5,7 +5,7 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    MultiDenseVector, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
+    MultiDenseVectorInternal, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams,
@@ -542,7 +542,7 @@ mod from_rest {
                 }
                 rest::VectorInput::MultiDenseVector(multi_dense) => VectorInput::Vector(
                     // TODO(universal-query): Validate at API level
-                    Vector::MultiDense(MultiDenseVector::new_unchecked(multi_dense)),
+                    Vector::MultiDense(MultiDenseVectorInternal::new_unchecked(multi_dense)),
                 ),
             }
         }

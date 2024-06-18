@@ -21,7 +21,7 @@ fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
 mod group_by {
     use api::rest::SearchRequestInternal;
     use collection::grouping::GroupBy;
-    use segment::data_types::vectors::BatchVectorStruct;
+    use segment::data_types::vectors::BatchVectorStructInternal;
 
     use super::*;
 
@@ -56,7 +56,7 @@ mod group_by {
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: (0..docs * chunks).map(|x| x.into()).collect_vec(),
-                vectors: BatchVectorStruct::from(
+                vectors: BatchVectorStructInternal::from(
                     (0..docs * chunks)
                         .map(|_| rand_dense_vector(&mut rng, 4))
                         .collect_vec(),
@@ -438,7 +438,7 @@ mod group_by_builder {
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;
-    use segment::data_types::vectors::BatchVectorStruct;
+    use segment::data_types::vectors::BatchVectorStructInternal;
     use tokio::sync::RwLock;
 
     use super::*;
@@ -476,7 +476,7 @@ mod group_by_builder {
             let insert_points = CollectionUpdateOperations::PointOperation(
                 Batch {
                     ids: (0..docs * chunks_per_doc).map(|x| x.into()).collect_vec(),
-                    vectors: BatchVectorStruct::from(
+                    vectors: BatchVectorStructInternal::from(
                         (0..docs * chunks_per_doc)
                             .map(|_| rand_dense_vector(&mut rng, 4))
                             .collect_vec(),
@@ -509,7 +509,7 @@ mod group_by_builder {
             let insert_points = CollectionUpdateOperations::PointOperation(
                 Batch {
                     ids: (0..docs).map(|x| x.into()).collect_vec(),
-                    vectors: BatchVectorStruct::from(
+                    vectors: BatchVectorStructInternal::from(
                         (0..docs)
                             .map(|_| rand_dense_vector(&mut rng, 4))
                             .collect_vec(),
