@@ -22,7 +22,7 @@ service PointsInternal {
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
-  rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponse) {}
+  rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponseInternal) {}
 }
 
 
@@ -282,7 +282,7 @@ message QueryResultInternal {
     repeated IntermediateResult intermediate_results = 1;
 }
 
-message QueryBatchResponse {
+message QueryBatchResponseInternal {
   repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
 }

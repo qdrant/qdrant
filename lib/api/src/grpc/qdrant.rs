@@ -4848,12 +4848,14 @@ pub struct PrefetchQuery {
     #[prost(message, optional, tag = "8")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPoints {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "2")]
@@ -4866,6 +4868,7 @@ pub struct QueryPoints {
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[prost(message, optional, tag = "5")]
+    #[validate]
     pub filter: ::core::option::Option<Filter>,
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "6")]
@@ -4894,6 +4897,10 @@ pub struct QueryPoints {
     /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
     #[prost(message, optional, tag = "14")]
     pub lookup_from: ::core::option::Option<LookupLocation>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "15")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5177,6 +5184,16 @@ pub struct GroupsResult {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
     /// Time spent to process
@@ -6519,6 +6536,27 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "UpdateBatch"));
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Universal query interface for search, query, scroll and rescoring.
+        pub async fn query(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryPoints>,
+        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Query");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Query"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -6728,6 +6766,12 @@ pub mod points_server {
             tonic::Response<super::UpdateBatchResponse>,
             tonic::Status,
         >;
+        ///
+        /// Universal query interface for search, query, scroll and rescoring.
+        async fn query(
+            &self,
+            request: tonic::Request<super::QueryPoints>,
+        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -7794,6 +7838,50 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/Query" => {
+                    #[allow(non_camel_case_types)]
+                    struct QuerySvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::QueryPoints>
+                    for QuerySvc<T> {
+                        type Response = super::QueryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::query(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = QuerySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         Ok(
@@ -8409,7 +8497,7 @@ pub struct QueryResultInternal {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QueryBatchResponse {
+pub struct QueryBatchResponseInternal {
     #[prost(message, repeated, tag = "1")]
     pub results: ::prost::alloc::vec::Vec<QueryResultInternal>,
     /// Time spent to process
@@ -8895,7 +8983,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::QueryBatchPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::QueryBatchResponse>,
+            tonic::Response<super::QueryBatchResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -9032,7 +9120,7 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::QueryBatchPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::QueryBatchResponse>,
+            tonic::Response<super::QueryBatchResponseInternal>,
             tonic::Status,
         >;
     }
@@ -9868,7 +9956,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::QueryBatchPointsInternal>
                     for QueryBatchSvc<T> {
-                        type Response = super::QueryBatchResponse;
+                        type Response = super::QueryBatchResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

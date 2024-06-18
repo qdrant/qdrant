@@ -259,6 +259,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DatetimeRange.gt", "custom = \"crate::grpc::validate::validate_timestamp\""),
             ("DatetimeRange.lte", "custom = \"crate::grpc::validate::validate_timestamp\""),
             ("DatetimeRange.gte", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("QueryPoints.collection_name", "length(min = 1, max = 255)"),
+            ("QueryPoints.filter", ""),
+            ("QueryPoints.params", ""),
+            ("QueryPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
@@ -294,6 +298,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CountPointsInternal.count_points", ""),
             ("SyncPointsInternal.sync_points", ""),
             ("SyncPoints.collection_name", "length(min = 1, max = 255)"),
+            ("QueryPointsInternal.collection_name", "length(min = 1, max = 255)"),
+            ("QueryPointsInternal.filter", ""),
+            ("QueryPointsInternal.params", ""),
+            ("QueryPointsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
         ], &[])
         // Service: raft_service.proto
         .validates(&[

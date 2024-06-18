@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryBatchPointsInternal,
-    QueryBatchResponse, QueryResultInternal, QueryShardPoints, RecommendPointsInternal,
+    QueryBatchResponseInternal, QueryResultInternal, QueryShardPoints, RecommendPointsInternal,
     RecommendResponse, ScrollPointsInternal, ScrollResponse, SearchBatchResponse,
     SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
@@ -47,7 +47,7 @@ pub async fn query_batch_internal(
     query_points: Vec<QueryShardPoints>,
     shard_selection: Option<ShardId>,
     timeout: Option<Duration>,
-) -> Result<Response<QueryBatchResponse>, Status> {
+) -> Result<Response<QueryBatchResponseInternal>, Status> {
     let batch_requests: Vec<_> = query_points
         .into_iter()
         .map(ShardQueryRequest::try_from)
@@ -70,7 +70,7 @@ pub async fn query_batch_internal(
         .await
         .map_err(error_to_status)?;
 
-    let response = QueryBatchResponse {
+    let response = QueryBatchResponseInternal {
         results: batch_response
             .into_iter()
             .map(|response| QueryResultInternal {
@@ -484,7 +484,7 @@ impl PointsInternal for PointsInternalService {
     async fn query_batch(
         &self,
         request: Request<QueryBatchPointsInternal>,
-    ) -> Result<Response<QueryBatchResponse>, Status> {
+    ) -> Result<Response<QueryBatchResponseInternal>, Status> {
         // TODO(universal-query): validate
         // validate_and_log(request.get_ref());
 

@@ -179,6 +179,7 @@
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
     - [Query](#qdrant-Query)
     - [QueryPoints](#qdrant-QueryPoints)
+    - [QueryResponse](#qdrant-QueryResponse)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
@@ -3102,6 +3103,23 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees. |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards. |
 | lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | The location to use for IDs lookup, if not specified - use the current collection and the &#39;using&#39; vector |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+
+
+
+
+
+
+<a name="qdrant-QueryResponse"></a>
+
+### QueryResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
 
 
 
@@ -4094,6 +4112,7 @@ When using target (with or without context), the score behaves a little differen
 | DiscoverBatch | [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints) | [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse) | Batch request points based on { positive, negative } pairs of examples, and/or a target |
 | Count | [CountPoints](#qdrant-CountPoints) | [CountResponse](#qdrant-CountResponse) | Count points in collection with given filtering conditions |
 | UpdateBatch | [UpdateBatchPoints](#qdrant-UpdateBatchPoints) | [UpdateBatchResponse](#qdrant-UpdateBatchResponse) | Perform multiple update operations in one request |
+| Query | [QueryPoints](#qdrant-QueryPoints) | [QueryResponse](#qdrant-QueryResponse) | Universal query interface for search, query, scroll and rescoring. |
 
  
 

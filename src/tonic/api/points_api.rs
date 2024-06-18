@@ -6,18 +6,18 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
     DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, GetPoints,
-    GetResponse, PointsOperationResponse, RecommendBatchPoints, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
-    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    GetResponse, PointsOperationResponse, QueryPoints, QueryResponse, RecommendBatchPoints,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
+    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, discover, discover_batch, recommend_groups, search_groups, update_batch,
+    delete_vectors, discover, discover_batch, query, recommend_groups, search_groups, update_batch,
     update_vectors,
 };
 use super::validate;
@@ -437,6 +437,21 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         count(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
+    }
+
+    async fn query(
+        &self,
+        mut request: Request<QueryPoints>,
+    ) -> Result<Response<QueryResponse>, Status> {
+        validate(request.get_ref())?;
+        let access = extract_access(&mut request);
+        query(
             self.dispatcher.toc(&access),
             request.into_inner(),
             None,

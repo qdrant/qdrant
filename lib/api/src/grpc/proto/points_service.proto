@@ -109,4 +109,8 @@ service Points {
   Perform multiple update operations in one request
   */
   rpc UpdateBatch (UpdateBatchPoints) returns (UpdateBatchResponse) {}
+  /*
+  Universal query interface for search, query, scroll and rescoring.
+  */
+  rpc Query (QueryPoints) returns (QueryResponse) {}
 }
