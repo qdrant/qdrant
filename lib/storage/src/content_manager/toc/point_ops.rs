@@ -294,21 +294,26 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
-    pub async fn query(
+    pub async fn query_batch(
         &self,
         collection_name: &str,
-        mut request: CollectionQueryRequest,
+        mut requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        let mut collection_pass = None;
+        for (request, _shard_selector) in &mut requests {
+            collection_pass = Some(access.check_point_op(collection_name, request)?);
+        }
+        let Some(collection_pass) = collection_pass else {
+            return Ok(vec![]);
+        };
 
         let collection = self.get_collection(&collection_pass).await?;
 
         collection
-            .query(request, read_consistency, &shard_selection, timeout)
+            .query_batch(requests, read_consistency, timeout)
             .await
             .map_err(|err| err.into())
     }

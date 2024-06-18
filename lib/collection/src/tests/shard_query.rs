@@ -56,7 +56,9 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let sources_scores = shard.query(Arc::new(query), &current_runtime, None).await;
+    let sources_scores = shard
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .await;
     let expected_error =
         CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
@@ -89,8 +91,10 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // one score per prefetch
@@ -133,8 +137,10 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // one score per prefetch
@@ -174,8 +180,10 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // one score per prefetch
@@ -243,8 +251,10 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // only one inner result in absence of prefetches
@@ -267,8 +277,10 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // only one inner result in absence of prefetches
@@ -294,8 +306,10 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // only one inner result in absence of fusion
@@ -352,8 +366,10 @@ async fn test_shard_query_payload_vector() {
     };
 
     let sources_scores = shard
-        .query(Arc::new(query), &current_runtime, None)
+        .query_batch(Arc::new(vec![query]), &current_runtime, None)
         .await
+        .unwrap()
+        .pop()
         .unwrap();
 
     // only one inner result in absence of prefetches

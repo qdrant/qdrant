@@ -346,7 +346,7 @@ impl CollectionQueryRequest {
         }
 
         // Check we actually fetched all referenced vectors in this request (and nested prefetches)
-        for &point_id in &(&self).get_referenced_point_ids() {
+        for &point_id in &self.get_referenced_point_ids() {
             if ids_to_vectors.get(&None, point_id).is_none() {
                 return Err(CollectionError::PointNotFound {
                     missed_point_id: point_id,
@@ -354,12 +354,12 @@ impl CollectionQueryRequest {
             }
         }
 
-        let lookup_vector_name = (&self).get_lookup_vector_name();
-        let lookup_collection = (&self).get_lookup_collection().cloned();
+        let lookup_vector_name = self.get_lookup_vector_name();
+        let lookup_collection = self.get_lookup_collection().cloned();
         let using = self.using.clone();
 
         // Edit filter to exclude all referenced point ids (root and nested)
-        let filter = exclude_referenced_ids((&self).get_referenced_point_ids(), self.filter);
+        let filter = exclude_referenced_ids(self.get_referenced_point_ids(), self.filter);
 
         let query = self
             .query

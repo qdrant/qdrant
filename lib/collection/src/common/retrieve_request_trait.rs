@@ -105,7 +105,7 @@ impl RetrieveRequest for DiscoverRequestInternal {
     }
 }
 
-impl RetrieveRequest for &CollectionQueryRequest {
+impl RetrieveRequest for CollectionQueryRequest {
     fn get_lookup_collection(&self) -> Option<&String> {
         None // TODO(universal-query): Change this when we add lookup_from to CollectionQueryRequest
     }

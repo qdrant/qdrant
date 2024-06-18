@@ -22,7 +22,6 @@ service PointsInternal {
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
-  rpc Query (QueryPointsInternal) returns (QueryResponse) {}
   rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponse) {}
 }
 
@@ -268,13 +267,6 @@ message QueryShardPoints {
   WithVectorsSelector with_vectors = 10;
 }
 
-message QueryPointsInternal {
-  string collection_name = 1;
-  QueryShardPoints query_points = 2;
-  optional uint32 shard_id = 3;
-  optional uint64 timeout = 4;
-}
-
 message QueryBatchPointsInternal {
   string collection_name = 1;
   repeated QueryShardPoints query_points = 2;
@@ -286,16 +278,11 @@ message IntermediateResult {
   repeated ScoredPoint result = 1;
 }
 
-message QueryResponse {
-  repeated IntermediateResult result = 1;
-  double time = 2; // Time spent to process
-}
-
-message QueryResult {
-    repeated IntermediateResult result = 1;
+message QueryResultInternal {
+    repeated IntermediateResult intermediate_results = 1;
 }
 
 message QueryBatchResponse {
-  repeated QueryResult batch_results = 1;
+  repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
 }

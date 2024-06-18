@@ -185,32 +185,13 @@ impl ShardOperation for LocalShard {
         SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)
     }
 
-    async fn query(
-        &self,
-        request: Arc<ShardQueryRequest>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let planned_query = PlannedQuery::try_from(vec![request.as_ref().to_owned()])?;
-
-        let mut batch_result = self
-            .do_planned_query(planned_query, search_runtime_handle, timeout)
-            .await?;
-
-        debug_assert_eq!(batch_result.len(), 1);
-
-        batch_result
-            .pop()
-            .ok_or_else(|| CollectionError::service_error("Query result is empty".to_string()))
-    }
-
     async fn query_batch(
         &self,
-        request: Arc<Vec<ShardQueryRequest>>,
+        requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        let planned_query = PlannedQuery::try_from(request.as_ref().to_owned())?;
+        let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         self.do_planned_query(planned_query, search_runtime_handle, timeout)
             .await
