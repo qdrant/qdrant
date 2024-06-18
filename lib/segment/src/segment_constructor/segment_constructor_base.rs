@@ -336,13 +336,13 @@ pub(crate) fn create_vector_index(
 
 #[cfg(feature = "testing")]
 pub fn create_sparse_vector_index_test(
-    args: SparseVectorIndexOpenArgs,
+    args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
     create_sparse_vector_index(args)
 }
 
 pub(crate) fn create_sparse_vector_index(
-    args: SparseVectorIndexOpenArgs,
+    args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match (
         args.config.index_type,
@@ -498,6 +498,7 @@ fn create_segment(
             payload_index: payload_index.clone(),
             path: &vector_index_path,
             stopped,
+            tick_progress: || (),
         })?);
 
         check_process_stopped(stopped)?;

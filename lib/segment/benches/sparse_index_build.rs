@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use half::f16;
@@ -14,7 +13,6 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{
     SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
 };
@@ -77,34 +75,28 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         Some(SparseVectorIndexDatatype::Float32),
     );
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));
-
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: index_config,
-            id_tracker: id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            payload_index: wrapped_payload_index.clone(),
-            path: index_dir.path(),
-            stopped: &stopped,
-        })
-        .unwrap();
 
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
         b.iter(|| {
-            sparse_vector_index
-                .build_index(permit.clone(), &stopped)
+            let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+                SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+                    config: index_config,
+                    id_tracker: id_tracker.clone(),
+                    vector_storage: vector_storage.clone(),
+                    payload_index: wrapped_payload_index.clone(),
+                    path: index_dir.path(),
+                    stopped: &stopped,
+                    tick_progress: || (),
+                })
                 .unwrap();
             assert_eq!(sparse_vector_index.indexed_vector_count(), NUM_VECTORS);
         })
     });
 
     // build once to reuse in mmap conversion benchmark
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: index_config,
             id_tracker,
@@ -112,10 +104,9 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
             payload_index: wrapped_payload_index,
             path: index_dir.path(),
             stopped: &stopped,
+            tick_progress: || (),
         })
         .unwrap();
-
-    sparse_vector_index.build_index(permit, &stopped).unwrap();
 
     // intent: measure mmap conversion time
     group.bench_function("convert-mmap-index", |b| {

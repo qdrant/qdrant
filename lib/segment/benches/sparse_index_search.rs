@@ -2,9 +2,7 @@
 mod prof;
 
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dataset::Dataset;
@@ -13,8 +11,9 @@ use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram_from_iter;
-use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::index::sparse_index::sparse_index_config::{
+    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
+};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -75,14 +74,10 @@ fn sparse_vector_index_search_benchmark_impl(
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     let sparse_vector_index = fixture_sparse_index_ram_from_iter(
-        progress("Indexing (1/3)", vectors_len).wrap_iter(vectors),
+        progress("Indexing (1/2)", vectors_len).wrap_iter(vectors),
         FULL_SCAN_THRESHOLD,
         data_dir.path(),
         &stopped,
-        || {
-            let pb = progress("Indexing (2/3)", vectors_len);
-            move || pb.inc(1)
-        },
     );
 
     // adding payload on field
@@ -104,14 +99,12 @@ fn sparse_vector_index_search_benchmark_impl(
 
     let mut query_vector_it = query_vectors.iter().cycle();
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
     let sparse_index_config =
         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
-    let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
+    let pb = progress("Indexing (2/2)", vectors_len);
+    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_index.id_tracker().clone(),
@@ -119,11 +112,8 @@ fn sparse_vector_index_search_benchmark_impl(
             payload_index: sparse_vector_index.payload_index().clone(),
             path: mmap_index_dir.path(),
             stopped: &stopped,
+            tick_progress: || pb.inc(1),
         })
-        .unwrap();
-    let pb = progress("Indexing (3/3)", vectors_len);
-    sparse_vector_index_mmap
-        .build_index_with_progress(permit, &stopped, || pb.inc(1))
         .unwrap();
     pb.finish_and_clear();
     assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), vectors_len);

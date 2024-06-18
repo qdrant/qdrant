@@ -13,7 +13,6 @@ use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_links::{GraphLinks, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::hnsw_index::num_rayon_threads;
-use crate::index::VectorIndex;
 use crate::segment_constructor::build_segment;
 use crate::types::{
     Distance, HnswConfig, Indexes, SegmentConfig, SeqNumberType, VectorDataConfig,

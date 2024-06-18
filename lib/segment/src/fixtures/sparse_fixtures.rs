@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
@@ -14,7 +13,6 @@ use sparse::index::inverted_index::InvertedIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
@@ -25,10 +23,10 @@ use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 
-/// Helper to open a test sparse vector index
-pub fn fixture_open_sparse_index<I: InvertedIndex>(
+/// Prepares a sparse vector index with a given iterator of sparse vectors
+pub fn fixture_sparse_index_ram_from_iter<I: InvertedIndex>(
     data_dir: &Path,
-    num_vectors: usize,
+    vectors: impl ExactSizeIterator<Item = SparseVector>,
     full_scan_threshold: usize,
     index_type: SparseIndexType,
     stopped: &AtomicBool,
@@ -39,7 +37,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let storage_dir = &data_dir.join("storage");
 
     // setup
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_vectors)));
+    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(vectors.len())));
     let payload_storage = InMemoryPayloadStorage::default();
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let payload_index = StructPayloadIndex::open(
@@ -58,12 +56,13 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     )?));
     let mut borrowed_storage = vector_storage.borrow_mut();
 
-    // add empty points to storage
-    for idx in 0..num_vectors {
-        let vec = &SparseVector::new(vec![], vec![]).unwrap();
+    let num_vectors = vectors.len();
+    let mut num_vectors_not_empty = 0;
+    for (idx, vec) in vectors.enumerate() {
         borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
+            .insert_vector(idx as PointOffsetType, (&vec).into())
             .unwrap();
+        num_vectors_not_empty += !vec.is_empty() as usize;
     }
     drop(borrowed_storage);
 
@@ -82,7 +81,13 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
             payload_index: wrapped_payload_index,
             path: index_dir,
             stopped,
+            tick_progress: || (),
         })?;
+
+    assert_eq!(
+        sparse_vector_index.indexed_vector_count(),
+        num_vectors_not_empty
+    );
 
     Ok(sparse_vector_index)
 }
@@ -97,61 +102,11 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     stopped: &AtomicBool,
 ) -> SparseVectorIndex<InvertedIndexImmutableRam> {
     fixture_sparse_index_ram_from_iter(
+        data_dir,
         (0..num_vectors).map(|_| random_sparse_vector(rnd, max_dim)),
-        full_scan_threshold,
-        data_dir,
-        stopped,
-        || || (),
-    )
-}
-
-/// Prepares a sparse vector index with a given iterator of sparse vectors
-pub fn fixture_sparse_index_ram_from_iter<P: FnMut()>(
-    vectors: impl ExactSizeIterator<Item = SparseVector>,
-    full_scan_threshold: usize,
-    data_dir: &Path,
-    stopped: &AtomicBool,
-    progress: impl FnOnce() -> P,
-) -> SparseVectorIndex<InvertedIndexImmutableRam> {
-    let num_vectors = vectors.len();
-    let mut sparse_vector_index = fixture_open_sparse_index(
-        data_dir,
-        num_vectors,
         full_scan_threshold,
         SparseIndexType::ImmutableRam,
         stopped,
     )
-    .unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
-
-    // add points to storage
-    for (idx, vec) in vectors.enumerate() {
-        borrowed_storage
-            .insert_vector(idx as PointOffsetType, (&vec).into())
-            .unwrap();
-    }
-    drop(borrowed_storage);
-
-    // assert all points are in storage
-    assert_eq!(
-        sparse_vector_index
-            .vector_storage()
-            .borrow()
-            .available_vector_count(),
-        num_vectors,
-    );
-
-    // assert no points are indexed following open for RAM index
-    assert_eq!(sparse_vector_index.indexed_vector_count(), 0);
-
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
-    // build index to refresh RAM index
-    let tick_progress = progress();
-    sparse_vector_index
-        .build_index_with_progress(permit, stopped, tick_progress)
-        .unwrap();
-    assert_eq!(sparse_vector_index.indexed_vector_count(), num_vectors);
-    sparse_vector_index
+    .unwrap()
 }

@@ -2,9 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fs::remove_file;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, TelemetryDetail};
 use io::storage_version::VERSION_FILE;
 use itertools::Itertools;
@@ -15,8 +13,9 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
-use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
-use segment::index::hnsw_index::num_rayon_threads;
+use segment::fixtures::sparse_fixtures::{
+    fixture_sparse_index_ram, fixture_sparse_index_ram_from_iter,
+};
 use segment::index::sparse_index::sparse_index_config::{
     SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
 };
@@ -40,6 +39,7 @@ use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sp
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
@@ -208,9 +208,6 @@ fn sparse_vector_index_consistent_with_storage() {
         &stopped,
     );
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     // check consistency with underlying RAM inverted index
     check_index_storage_consistency(&sparse_vector_ram_index);
 
@@ -219,7 +216,7 @@ fn sparse_vector_index_consistent_with_storage() {
     // create mmap sparse vector index
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -227,12 +224,8 @@ fn sparse_vector_index_consistent_with_storage() {
             payload_index: sparse_vector_ram_index.payload_index().clone(),
             path: mmap_index_dir.path(),
             stopped: &stopped,
+            tick_progress: || (),
         })
-        .unwrap();
-
-    // build index
-    sparse_vector_mmap_index
-        .build_index(permit, &stopped)
         .unwrap();
 
     assert_eq!(
@@ -257,6 +250,7 @@ fn sparse_vector_index_consistent_with_storage() {
             payload_index: sparse_vector_ram_index.payload_index().clone(),
             path: mmap_index_dir.path(),
             stopped: &stopped,
+            tick_progress: || (),
         })
         .unwrap();
 
@@ -273,9 +267,9 @@ fn sparse_vector_index_consistent_with_storage() {
 fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
-        fixture_open_sparse_index(
+        fixture_sparse_index_ram_from_iter(
             data_dir.path(),
-            0,
+            [].iter().cloned(),
             10_000,
             SparseIndexType::Mmap,
             &AtomicBool::new(false),
@@ -293,14 +287,14 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let mut sparse_vector_index = fixture_sparse_index_ram(
-        &mut rnd,
-        NUM_VECTORS,
-        MAX_SPARSE_DIM,
-        LOW_FULL_SCAN_THRESHOLD,
+    let sparse_vector_index = fixture_sparse_index_ram_from_iter::<InvertedIndexRam>(
         data_dir.path(),
+        (0..NUM_VECTORS).map(|_| random_sparse_vector(&mut rnd, MAX_SPARSE_DIM)),
+        LOW_FULL_SCAN_THRESHOLD,
+        SparseIndexType::MutableRam,
         &stopped,
-    );
+    )
+    .unwrap();
 
     // sanity check (all indexed, no deleted points)
     assert_eq!(
@@ -349,27 +343,6 @@ fn sparse_vector_index_ram_deleted_points_search() {
             .borrow()
             .deleted_point_count(),
         1
-    );
-    // still need to update index
-    assert_eq!(
-        sparse_vector_index
-            .id_tracker()
-            .borrow()
-            .available_point_count(),
-        sparse_vector_index.indexed_vector_count() - 1
-    );
-
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
-    // refresh index to remove point
-    sparse_vector_index.build_index(permit, &stopped).unwrap();
-    assert_eq!(
-        sparse_vector_index
-            .id_tracker()
-            .borrow()
-            .available_point_count(),
-        sparse_vector_index.indexed_vector_count()
     );
 
     // assert that the deleted point is no longer in the index
@@ -561,10 +534,10 @@ fn handling_empty_sparse_vectors() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexImmutableRam> =
-        fixture_open_sparse_index(
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexImmutableRam> =
+        fixture_sparse_index_ram_from_iter(
             data_dir.path(),
-            NUM_VECTORS,
+            (0..NUM_VECTORS).map(|_| SparseVector::default()),
             DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
             SparseIndexType::ImmutableRam,
             &stopped,
@@ -590,11 +563,7 @@ fn handling_empty_sparse_vectors() {
         NUM_VECTORS,
     );
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     // empty vectors are not indexed
-    sparse_vector_index.build_index(permit, &stopped).unwrap();
     assert_eq!(sparse_vector_index.indexed_vector_count(), 0);
 
     let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
@@ -633,9 +602,6 @@ fn sparse_vector_index_persistence_test() {
         payload_storage_type: Default::default(),
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
-
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     for n in 0..num_vectors {
         let vector: Vector = random_sparse_vector(&mut rnd, dim).into();
@@ -686,19 +652,12 @@ fn sparse_vector_index_persistence_test() {
     assert_eq!(search_after_reload_result.len(), top);
     assert_eq!(search_result, search_after_reload_result);
 
-    check_persistence::<InvertedIndexImmutableRam>(
-        &segment,
-        &permit,
-        &search_result,
-        &query_vector,
-        top,
-    );
-    check_persistence::<InvertedIndexMmap>(&segment, &permit, &search_result, &query_vector, top);
+    check_persistence::<InvertedIndexImmutableRam>(&segment, &search_result, &query_vector, top);
+    check_persistence::<InvertedIndexMmap>(&segment, &search_result, &query_vector, top);
 }
 
 fn check_persistence<TInvertedIndex: InvertedIndex>(
     segment: &Segment,
-    permit: &Arc<CpuPermit>,
     search_result: &[ScoredPoint],
     query_vector: &QueryVector,
     top: usize,
@@ -724,6 +683,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
             payload_index: segment.payload_index.clone(),
             path: inverted_index_dir.path(),
             stopped: &stopped,
+            tick_progress: || (),
         })
         .unwrap()
     };
@@ -747,11 +707,7 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
         }
     };
 
-    let mut sparse_vector_index = open_index();
-    // call build index to create inverted index files
-    sparse_vector_index
-        .build_index(Arc::clone(permit), &stopped)
-        .unwrap();
+    let sparse_vector_index = open_index();
 
     let version_file = inverted_index_dir.path().join(VERSION_FILE);
     assert!(version_file.exists());
@@ -784,15 +740,12 @@ fn sparse_vector_index_files() {
         &stopped,
     );
 
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -800,12 +753,8 @@ fn sparse_vector_index_files() {
             payload_index: sparse_vector_ram_index.payload_index().clone(),
             path: mmap_index_dir.path(),
             stopped: &stopped,
+            tick_progress: || (),
         })
-        .unwrap();
-
-    // build index
-    sparse_vector_mmap_index
-        .build_index(permit, &stopped)
         .unwrap();
 
     // files for immutable RAM index

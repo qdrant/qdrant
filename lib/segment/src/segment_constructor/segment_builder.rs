@@ -20,7 +20,7 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndexEnum};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
@@ -322,7 +322,15 @@ impl SegmentBuilder {
                     quantized_vectors_arc,
                 )?;
 
-                vector_index.build_index(permit.clone(), stopped)?;
+                match &mut vector_index {
+                    VectorIndexEnum::HnswRam(index) => {
+                        index.build_index(permit.clone(), stopped)?
+                    }
+                    VectorIndexEnum::HnswMmap(index) => {
+                        index.build_index(permit.clone(), stopped)?
+                    }
+                    _ => (),
+                }
             }
 
             for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
@@ -338,16 +346,15 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
 
-                let mut vector_index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+                create_sparse_vector_index(SparseVectorIndexOpenArgs {
                     config: sparse_vector_config.index,
                     id_tracker: id_tracker_arc.clone(),
                     vector_storage: vector_storage_arc.clone(),
                     payload_index: payload_index_arc.clone(),
                     path: &vector_index_path,
                     stopped,
+                    tick_progress: || (),
                 })?;
-
-                vector_index.build_index(permit.clone(), stopped)?;
             }
 
             // We're done with CPU-intensive tasks, release CPU permit
