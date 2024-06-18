@@ -1,4 +1,7 @@
-use std::{collections::HashSet, ops::Range, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
+use std::collections::HashSet;
+use std::ops::Range;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use parking_lot::Mutex;
