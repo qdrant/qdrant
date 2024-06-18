@@ -1,7 +1,7 @@
 use segment::data_types::order_by::OrderBy;
 
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
-use super::{OrderByInterface, Query, QueryInterface};
+use super::{NearestQuery, OrderByInterface, Query, QueryInterface};
 use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<segment::data_types::vectors::Vector> for Vector {
@@ -186,7 +186,7 @@ impl From<OrderByInterface> for OrderBy {
 impl From<QueryInterface> for Query {
     fn from(value: QueryInterface) -> Self {
         match value {
-            QueryInterface::Nearest(vector) => Query::Nearest(vector),
+            QueryInterface::Nearest(vector) => Query::Nearest(NearestQuery { nearest: vector }),
             QueryInterface::Query(query) => query,
         }
     }

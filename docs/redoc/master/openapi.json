@@ -11585,86 +11585,48 @@
         ]
       },
       "Query": {
-        "oneOf": [
+        "anyOf": [
           {
-            "description": "Find the nearest neighbors to this vector.",
-            "type": "object",
-            "required": [
-              "nearest"
-            ],
-            "properties": {
-              "nearest": {
-                "$ref": "#/components/schemas/VectorInput"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/NearestQuery"
           },
           {
-            "description": "Use multiple positive and negative vectors to find the results.",
-            "type": "object",
-            "required": [
-              "recommend"
-            ],
-            "properties": {
-              "recommend": {
-                "$ref": "#/components/schemas/RecommendInput"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/RecommendQuery"
           },
           {
-            "description": "Search for nearest points, but constrain the search space with context",
-            "type": "object",
-            "required": [
-              "discover"
-            ],
-            "properties": {
-              "discover": {
-                "$ref": "#/components/schemas/DiscoverInput"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/DiscoverQuery"
           },
           {
-            "description": "Return points that live in positive areas.",
-            "type": "object",
-            "required": [
-              "context"
-            ],
-            "properties": {
-              "context": {
-                "$ref": "#/components/schemas/ContextInput"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/ContextQuery"
           },
           {
-            "description": "Order the points by a payload field.",
-            "type": "object",
-            "required": [
-              "order_by"
-            ],
-            "properties": {
-              "order_by": {
-                "$ref": "#/components/schemas/OrderByInterface"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/OrderByQuery"
           },
           {
-            "description": "Fuse the results of multiple prefetches.",
-            "type": "object",
-            "required": [
-              "fusion"
-            ],
-            "properties": {
-              "fusion": {
-                "$ref": "#/components/schemas/Fusion"
-              }
-            },
-            "additionalProperties": false
+            "$ref": "#/components/schemas/FusionQuery"
           }
         ]
+      },
+      "NearestQuery": {
+        "type": "object",
+        "required": [
+          "nearest"
+        ],
+        "properties": {
+          "nearest": {
+            "$ref": "#/components/schemas/VectorInput"
+          }
+        }
+      },
+      "RecommendQuery": {
+        "type": "object",
+        "required": [
+          "recommend"
+        ],
+        "properties": {
+          "recommend": {
+            "$ref": "#/components/schemas/RecommendInput"
+          }
+        }
       },
       "RecommendInput": {
         "type": "object",
@@ -11695,6 +11657,17 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "DiscoverQuery": {
+        "type": "object",
+        "required": [
+          "discover"
+        ],
+        "properties": {
+          "discover": {
+            "$ref": "#/components/schemas/DiscoverInput"
           }
         }
       },
@@ -11742,6 +11715,17 @@
           }
         }
       },
+      "ContextQuery": {
+        "type": "object",
+        "required": [
+          "context"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ContextInput"
+          }
+        }
+      },
       "ContextInput": {
         "anyOf": [
           {
@@ -11757,6 +11741,28 @@
             "nullable": true
           }
         ]
+      },
+      "OrderByQuery": {
+        "type": "object",
+        "required": [
+          "order_by"
+        ],
+        "properties": {
+          "order_by": {
+            "$ref": "#/components/schemas/OrderByInterface"
+          }
+        }
+      },
+      "FusionQuery": {
+        "type": "object",
+        "required": [
+          "fusion"
+        ],
+        "properties": {
+          "fusion": {
+            "$ref": "#/components/schemas/Fusion"
+          }
+        }
       },
       "Fusion": {
         "oneOf": [
