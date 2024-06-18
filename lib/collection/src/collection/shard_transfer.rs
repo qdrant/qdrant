@@ -107,7 +107,8 @@ impl Collection {
                 )
                 .await?;
 
-                to_replica_set.set_local(shard, Some(initial_state)).await?;
+                let old_shard = to_replica_set.set_local(shard, Some(initial_state)).await?;
+                debug_assert!(old_shard.is_none(), "We should not have a local shard yet");
             } else {
                 to_replica_set
                     .ensure_replica_with_state(&shard_transfer.to, initial_state)
