@@ -129,7 +129,7 @@ fn hnsw_quantized_search_test(
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -140,10 +140,10 @@ fn hnsw_quantized_search_test(
             .clone(),
         segment.payload_index.clone(),
         hnsw_config,
+        Some(permit),
+        &stopped,
     )
     .unwrap();
-
-    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let query_vectors = (0..attempts)
         .map(|_| random_vector(&mut rnd, dim).into())

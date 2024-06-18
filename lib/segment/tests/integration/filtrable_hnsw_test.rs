@@ -149,22 +149,8 @@ fn _test_filterable_hnsw(
         payload_m: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr.clone(),
-        hnsw_config,
-    )
-    .unwrap();
-
-    hnsw_index.build_index(permit.clone(), &stopped).unwrap();
 
     payload_index_ptr
         .borrow_mut()
@@ -204,7 +190,19 @@ fn _test_filterable_hnsw(
         "not all points are covered by payload blocks"
     );
 
-    hnsw_index.build_index(permit, &stopped).unwrap();
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
+        Some(permit),
+        &stopped,
+    )
+    .unwrap();
 
     let top = 3;
     let mut hits = 0;

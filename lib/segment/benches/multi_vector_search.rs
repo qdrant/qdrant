@@ -77,17 +77,17 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         vector_storage.clone(),
         quantized_vectors.clone(),
         segment.payload_index.clone(),
         hnsw_config,
+        Some(permit),
+        &stopped,
     )
     .unwrap();
-
-    hnsw_index.build_index(permit.clone(), &stopped).unwrap();
 
     // intent: bench `search` without filter
     group.bench_function("hnsw-multivec-search", |b| {

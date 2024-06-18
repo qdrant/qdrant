@@ -76,7 +76,7 @@ fn test_graph_connectivity() {
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -85,17 +85,18 @@ fn test_graph_connectivity() {
         Default::default(),
         payload_index_ptr.clone(),
         hnsw_config,
+        Some(permit),
+        &stopped,
     )
     .unwrap();
-
-    hnsw_index.build_index(permit, &stopped).unwrap();
-
-    let graph = hnsw_index.graph().unwrap();
 
     let mut reverse_links = vec![vec![]; num_vectors as usize];
 
     for point_id in 0..num_vectors {
-        let links = graph.links.links(point_id as PointOffsetType, 0);
+        let links = hnsw_index
+            .graph()
+            .links
+            .links(point_id as PointOffsetType, 0);
         for link in links {
             reverse_links[*link as usize].push(point_id);
         }

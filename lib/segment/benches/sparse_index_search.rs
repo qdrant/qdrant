@@ -11,9 +11,7 @@ use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram_from_iter;
-use segment::index::sparse_index::sparse_index_config::{
-    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
-};
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -24,6 +22,7 @@ use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::loaders::Csr;
 use tempfile::Builder;
 
@@ -73,12 +72,14 @@ fn sparse_vector_index_search_benchmark_impl(
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let sparse_vector_index = fixture_sparse_index_ram_from_iter(
+    let sparse_vector_index = fixture_sparse_index_ram_from_iter::<InvertedIndexRam>(
+        data_dir.path(),
         progress("Indexing (1/2)", vectors_len).wrap_iter(vectors),
         FULL_SCAN_THRESHOLD,
-        data_dir.path(),
+        SparseIndexType::MutableRam,
         &stopped,
-    );
+    )
+    .unwrap();
 
     // adding payload on field
     let field_name = "field";

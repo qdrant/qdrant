@@ -211,7 +211,7 @@ fn test_byte_storage_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let mut hnsw_index_byte = HNSWIndex::<GraphLinksRam>::open(
+    let hnsw_index_byte = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir_byte.path(),
         segment_byte.id_tracker.clone(),
         segment_byte.vector_data[DEFAULT_VECTOR_NAME]
@@ -222,10 +222,10 @@ fn test_byte_storage_hnsw(
             .clone(),
         segment_byte.payload_index.clone(),
         hnsw_config,
+        Some(permit),
+        &stopped,
     )
     .unwrap();
-
-    hnsw_index_byte.build_index(permit, &stopped).unwrap();
 
     let top = 3;
     let mut hits = 0;

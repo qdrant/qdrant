@@ -308,7 +308,7 @@ fn test_multivector_quantization_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
         segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -319,9 +319,10 @@ fn test_multivector_quantization_hnsw(
             .clone(),
         segment.payload_index.clone(),
         hnsw_config,
+        Some(permit),
+        &stopped,
     )
     .unwrap();
-    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let top = 5;
     let mut sames = 0;

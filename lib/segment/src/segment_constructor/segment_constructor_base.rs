@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -294,6 +295,7 @@ pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_vector_index(
     vector_config: &VectorDataConfig,
     vector_index_path: &Path,
@@ -301,6 +303,8 @@ pub(crate) fn create_vector_index(
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    permit: Option<Arc<CpuPermit>>,
+    stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainIndex::new(
@@ -317,6 +321,8 @@ pub(crate) fn create_vector_index(
                     quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
+                    permit,
+                    stopped,
                 )?)
             } else {
                 VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
@@ -326,6 +332,8 @@ pub(crate) fn create_vector_index(
                     quantized_vectors.clone(),
                     payload_index.clone(),
                     vector_hnsw_config.clone(),
+                    permit,
+                    stopped,
                 )?)
             }
         }
@@ -457,6 +465,8 @@ fn create_segment(
             vector_storage.clone(),
             payload_index.clone(),
             quantized_vectors.clone(),
+            None,
+            stopped,
         )?);
 
         check_process_stopped(stopped)?;
