@@ -44,45 +44,29 @@ pub struct PointMappings {
     pub(crate) external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
 }
 
-type Byteorder = LittleEndian;
+/// Used endianness for storing PointMapping-files.
+type FileEndianess = LittleEndian;
 
 impl PointMappings {
     const EXTERNAL_ID_NUMBER_BYTE: u8 = 0;
     const EXTERNAL_ID_UUID_BYTE: u8 = 1;
 
     // TODO:
-    // - Describe storage layout in comment
-    // - Add code comments
-    // - Add tests for this load/store
-    // - Improve readability
     // - Fix failing test causted by differently built BTreeMaps
 
-    pub fn load(file: &Path, filter: Option<&BitSlice>) -> OperationResult<Self> {
-        let mut reader = BufReader::new(File::open(file)?);
-
-        let len = reader.read_u64::<Byteorder>()? as usize;
+    /// Loads a `PointMappings` from the given reader. Applies an optional filter of deleted items
+    /// to prevent allocating unneeded data.
+    pub fn load<R: Read>(mut reader: R, filter: Option<&BitSlice>) -> OperationResult<Self> {
+        // Deserialize the header
+        let len = reader.read_u64::<FileEndianess>()? as usize;
 
         let mut internal_to_external = Vec::with_capacity(len);
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
 
+        // Deserialize the list entries
         for i in 0..len {
-            let external_id_type = reader.read_u8()?;
-
-            let external_id = if external_id_type == Self::EXTERNAL_ID_NUMBER_BYTE {
-                let num = reader.read_u64::<Byteorder>()?;
-                PointIdType::NumId(num)
-            } else if external_id_type == Self::EXTERNAL_ID_UUID_BYTE {
-                let uuid_u128 = reader.read_u128::<Byteorder>()?;
-                PointIdType::Uuid(Uuid::from_u128(uuid_u128))
-            } else {
-                return Err(OperationError::InconsistentStorage {
-                    description: "Invalid byte read when deserializing Immutable id tracker"
-                        .to_string(),
-                });
-            };
-
-            let internal_id = reader.read_u32::<Byteorder>()? as PointOffsetType;
+            let (internal_id, external_id) = Self::load_entry(&mut reader)?;
 
             // Need to push this regardless of point deletion as the vecs index represents the internal id
             // which would become wrong if we leave out entries.
@@ -107,7 +91,7 @@ impl PointMappings {
             }
         }
 
-        // assert that the file has ben fully read.
+        // Check that the file has ben fully read.
         #[cfg(debug_assertions)] // Only for dev builds
         {
             let mut buf = vec![];
@@ -123,36 +107,92 @@ impl PointMappings {
         })
     }
 
-    pub fn store(&self, file: &Path) -> OperationResult<()> {
-        let mut writer = BufWriter::new(File::create(file)?);
+    /// Loads a single entry from a reader. Expects the reader to be aligned so, that the next read
+    /// byte is the first byte of a new entry.
+    /// This function reads exact one entry which means after calling this function, the reader
+    /// will be at the start of the next entry.
+    fn load_entry<R: Read>(mut reader: R) -> OperationResult<(PointOffsetType, ExtendedPointId)> {
+        let point_id_type = reader.read_u8()?;
 
-        // Serialize the length
-        writer.write_u64::<Byteorder>(self.internal_to_external.len() as u64)?;
+        let external_id = if point_id_type == Self::EXTERNAL_ID_NUMBER_BYTE {
+            let num = reader.read_u64::<FileEndianess>()?;
+            PointIdType::NumId(num)
+        } else if point_id_type == Self::EXTERNAL_ID_UUID_BYTE {
+            let uuid_u128 = reader.read_u128::<FileEndianess>()?;
+            PointIdType::Uuid(Uuid::from_u128_le(uuid_u128))
+        } else {
+            return Err(OperationError::InconsistentStorage {
+                description: "Invalid byte read when deserializing Immutable id tracker"
+                    .to_string(),
+            });
+        };
 
+        let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
+        Ok((internal_id, external_id))
+    }
+
+    /// Serializes the `PointMappings` into the given writer using the file format specified below.
+    ///
+    /// ## File format
+    /// In general the format looks like this:
+    /// +---------------------------+-----------------+
+    /// | Header (list length: u64) | List of entries |
+    /// +---------------------------+-----------------+
+    ///
+    /// A single list entry:
+    /// +-----------------+-----------------------+------------------+
+    /// | PointIdType: u8 | Number/UUID: u64/u128 | Internal ID: u32 |
+    /// +-----------------+-----------------------+------------------+
+    /// A single entry is thus either 1+8+4=13 or 1+16+4=21 bytes in size depending
+    /// on the PointIdType.
+
+    pub fn store<W: Write>(&self, mut writer: W) -> OperationResult<()> {
+        // Serialize the header (=length).
+        writer.write_u64::<FileEndianess>(self.internal_to_external.len() as u64)?;
+
+        // Serialize all entries
         for external_id in self.internal_to_external.iter() {
-            // Serializing External ID
-            match external_id {
-                PointIdType::NumId(num) => {
-                    writer.write_u8(Self::EXTERNAL_ID_NUMBER_BYTE)?;
-                    writer.write_u64::<Byteorder>(*num)?;
-                }
-                PointIdType::Uuid(uuid) => {
-                    writer.write_u8(Self::EXTERNAL_ID_UUID_BYTE)?;
-                    writer.write_u128::<Byteorder>(uuid.to_u128_le())?;
-                }
-            }
-
-            let internal_id = match external_id {
-                PointIdType::NumId(n) => self.external_to_internal_num.get(n),
-                PointIdType::Uuid(u) => self.external_to_internal_uuid.get(u),
-            }
-            .unwrap();
-
-            // Serializing Internal ID
-            writer.write_u32::<Byteorder>(*internal_id)?;
+            self.store_entry(&mut writer, external_id)?;
         }
 
         writer.flush()?;
+        Ok(())
+    }
+
+    fn store_entry<W: Write>(
+        &self,
+        mut writer: W,
+        external_id: &PointIdType,
+    ) -> OperationResult<()> {
+        // Serializing External ID
+        match external_id {
+            PointIdType::NumId(num) => {
+                // Byte to distinguish between Number and UUID
+                writer.write_u8(Self::EXTERNAL_ID_NUMBER_BYTE)?;
+
+                // The PointID's number
+                writer.write_u64::<FileEndianess>(*num)?;
+            }
+            PointIdType::Uuid(uuid) => {
+                // Byte to distinguish between Number and UUID
+                writer.write_u8(Self::EXTERNAL_ID_UUID_BYTE)?;
+
+                // The PointID's UUID
+                writer.write_u128::<FileEndianess>(uuid.to_u128_le())?;
+            }
+        }
+
+        let internal_id = match external_id {
+            PointIdType::NumId(n) => self.external_to_internal_num.get(n),
+            PointIdType::Uuid(u) => self.external_to_internal_uuid.get(u),
+        }
+        .ok_or(OperationError::PointIdError {
+            missed_point_id: *external_id,
+        })?;
+
+        // Serializing Internal ID
+        writer.write_u32::<FileEndianess>(*internal_id)?;
+
         Ok(())
     }
 }
@@ -172,10 +212,8 @@ impl ImmutableIdTracker {
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_mapslice);
 
-        let mappings = PointMappings::load(
-            &Self::mappings_file_path(segment_path),
-            Some(&deleted_bitvec),
-        )?;
+        let reader = BufReader::new(File::open(Self::mappings_file_path(segment_path))?);
+        let mappings = PointMappings::load(reader, Some(&deleted_bitvec))?;
 
         Ok(Self {
             path: segment_path.to_path_buf(),
@@ -219,7 +257,8 @@ impl ImmutableIdTracker {
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
         // Write mappings to disk.
-        mappings.store(&Self::mappings_file_path(path))?;
+        let writer = BufWriter::new(File::create(Self::mappings_file_path(path))?);
+        mappings.store(writer)?;
 
         Ok(Self {
             path: path.to_path_buf(),
@@ -555,6 +594,8 @@ mod point_mappings_deser {
 #[cfg(test)]
 mod test {
     use itertools::Itertools;
+    use rand::prelude::*;
+    use rand::Rng;
     use tempfile::Builder;
 
     use super::*;
@@ -648,7 +689,7 @@ mod test {
     #[test]
     fn test_load_store() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let (old_deleted, old_mappings, old_versions) = {
+        let (old_deleted, _old_mappings, old_versions) = {
             let id_tracker = make_immutable_tracker(dir.path());
             (
                 id_tracker.deleted.to_bitvec(),
@@ -729,5 +770,107 @@ mod test {
         // Point should still be gone
         let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
+    }
+
+    fn gen_random_point_mappings(size: usize, rand: &mut StdRng) -> PointMappings {
+        const UUID_LIKELYNESS: f64 = 0.5;
+
+        let mut external_to_internal_num = BTreeMap::new();
+        let mut external_to_internal_uuid = BTreeMap::new();
+
+        let internal_to_external = (0..size)
+            .map(|_| {
+                if rand.gen_bool(UUID_LIKELYNESS) {
+                    PointIdType::Uuid(Uuid::new_v4())
+                } else {
+                    PointIdType::NumId(rand.next_u64())
+                }
+            })
+            .enumerate()
+            .inspect(|(pos, point_type)| match point_type {
+                ExtendedPointId::NumId(num) => {
+                    external_to_internal_num.insert(*num, *pos as u32);
+                }
+                ExtendedPointId::Uuid(uuid) => {
+                    external_to_internal_uuid.insert(*uuid, *pos as u32);
+                }
+            })
+            .map(|i| i.1)
+            .collect();
+
+        PointMappings {
+            internal_to_external,
+            external_to_internal_num,
+            external_to_internal_uuid,
+        }
+    }
+
+    /// Tests de/serializing of whole `PointMappings`.
+    #[test]
+    fn test_point_mappings_de_serialization() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let mut buf = vec![];
+
+        // Test different sized PointMappings, growing exponentially to also test large ones.
+        // This way we test up to 2^22=4_194_304 points.
+        for size_exp in (0..23u32).step_by(3) {
+            buf.clear();
+
+            let size = 2usize.pow(size_exp);
+
+            let mappings = gen_random_point_mappings(size, &mut rng);
+
+            mappings.store(&mut buf).unwrap();
+
+            assert!(buf.len() >= size * 16);
+
+            let new_mappings = PointMappings::load(&*buf, None).unwrap();
+
+            assert_eq!(new_mappings.internal_to_external.len(), size);
+            assert_eq!(mappings, new_mappings);
+        }
+    }
+
+    /// Verifies that de/serializing works properly for empty `PointMappings`.
+    #[test]
+    fn test_point_mappings_de_serialization_empty() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mappings = gen_random_point_mappings(0, &mut rng);
+
+        let mut buf = vec![];
+
+        mappings.store(&mut buf).unwrap();
+
+        // We still have a header!
+        assert!(!buf.is_empty());
+
+        let new_mappings = PointMappings::load(&*buf, None).unwrap();
+
+        assert!(new_mappings.internal_to_external.is_empty());
+        assert_eq!(mappings, new_mappings);
+    }
+
+    /// Tests de/serializing of only single ID mappings.
+    #[test]
+    fn test_point_mappings_de_serialization_single() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        const SIZE: usize = 400_000;
+
+        let mappings = gen_random_point_mappings(SIZE, &mut rng);
+
+        for i in 0..SIZE {
+            let mut buf = vec![];
+
+            let expected_external = mappings.internal_to_external[i];
+
+            mappings.store_entry(&mut buf, &expected_external).unwrap();
+
+            let (got_internal, got_external) = PointMappings::load_entry(&*buf).unwrap();
+
+            assert_eq!(i as PointOffsetType, got_internal);
+            assert_eq!(expected_external, got_external);
+        }
     }
 }
