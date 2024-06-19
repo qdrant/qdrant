@@ -3,12 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::defaults;
 use futures::Future;
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::task::block_in_place;
+use tokio::time::{sleep_until, timeout_at};
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
@@ -26,7 +28,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::resharding_stream_records::transfer_resharding_stream_records;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 /// Maximum time a point migration transfer might take.
 const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -215,7 +217,8 @@ pub async fn drive_resharding(
             consensus,
             &channel_service,
             &collection_id,
-        ).await?;
+        )
+        .await?;
     }
 
     // Stage 5: propagate deletes
@@ -583,9 +586,7 @@ async fn stage_replicate(
 /// Stage 4: commit new hashring
 ///
 /// Check whether the new hashring still needs to be committed.
-fn completed_commit_hashring(
-    state: &PersistedState,
-) -> bool {
+fn completed_commit_hashring(state: &PersistedState) -> bool {
     state.read().all_peers_reached(Stage::S4_CommitHashringEnd)
 }
 
@@ -606,12 +607,16 @@ async fn stage_commit_hashring(
     })?;
 
     // Commit read hashring and sync cluster
-    consensus.commit_read_hashring_confirm_and_retry(collection_id, reshard_key).await?;
-    consensus.await_consensus_sync(this_peer_id, channel_service).await;
+    consensus
+        .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
+        .await?;
+    await_consensus_sync(consensus, channel_service, this_peer_id).await;
 
     // Commit write hashring and sync cluster
-    consensus.commit_write_hashring_confirm_and_retry(collection_id, reshard_key).await?;
-    consensus.await_consensus_sync(this_peer_id, channel_service).await;
+    consensus
+        .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
+        .await?;
+    await_consensus_sync(consensus, channel_service, this_peer_id).await;
 
     state.write(|data| {
         data.bump_all_peers_to(Stage::S4_CommitHashringEnd);
