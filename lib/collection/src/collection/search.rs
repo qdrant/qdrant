@@ -268,8 +268,7 @@ impl Collection {
 
             let results_from_shards = all_searches_res
                 .iter_mut()
-                .map(|res| mem::take(&mut res[batch_index]))
-                .flatten();
+                .flat_map(|res| mem::take(&mut res[batch_index]));
 
             let merged_iter = match order {
                 Order::LargeBetter => {

@@ -293,7 +293,7 @@ impl Collection {
             Some(order_by) => {
                 retrieved_iter
                     // Extract and remove order value from payload
-                    .map(|records| {
+                    .flat_map(|records| {
                         records.into_iter().map(|mut record| {
                             let value;
                             if local_only {
@@ -310,7 +310,6 @@ impl Collection {
                             (value, record)
                         })
                     })
-                    .flatten()
                     .sorted_unstable_by(|(value_a, record_a), (value_b, record_b)| {
                         match order_by.direction() {
                             Direction::Asc => (value_a, &record_a.id).cmp(&(value_b, &record_b.id)),
