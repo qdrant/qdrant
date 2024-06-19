@@ -351,6 +351,17 @@ impl ShardReplicaSet {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
 
+    /// List the peer IDs on which this shard is active, both the local and remote peers.
+    pub async fn active_shards(&self) -> Vec<PeerId> {
+        let replica_state = self.replica_state.read();
+        replica_state
+            .active_peers()
+            .into_iter()
+            .filter(|peer_id| !self.is_locally_disabled(peer_id))
+            .collect()
+    }
+
+    /// List the remote peer IDs on which this shard is active, excludes the local peer ID.
     pub async fn active_remote_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
         let this_peer_id = replica_state.this_peer_id;
