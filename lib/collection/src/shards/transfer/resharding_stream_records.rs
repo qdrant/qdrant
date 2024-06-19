@@ -53,7 +53,7 @@ pub(crate) async fn transfer_resharding_stream_records(
             .cloned();
         hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
             CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
+                "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash ring"
             ))
         })?;
 
