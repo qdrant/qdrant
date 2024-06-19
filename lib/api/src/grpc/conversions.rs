@@ -964,7 +964,7 @@ fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>)
             } else {
                 conditions
                     .into_iter()
-                    .filter(|c| !matches!(c, segment::types::Condition::Resharding(_))) // TODO(resharding)!?
+                    .filter(|c| !c.is_local_only()) // TODO(resharding)!?
                     .map(|c| c.into())
                     .collect()
             }

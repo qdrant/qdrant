@@ -1976,6 +1976,13 @@ impl Condition {
             nested: Nested { key, filter },
         })
     }
+
+    pub fn is_local_only(&self) -> bool {
+        match self {
+            Condition::Resharding(_) => true,
+            _ => false,
+        }
+    }
 }
 
 // The validator crate does not support deriving for enums.
