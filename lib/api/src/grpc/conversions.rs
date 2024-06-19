@@ -700,10 +700,12 @@ impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
                         ));
                     }
                     if let Some(vectors_count) = vectors_count {
+                        let dim = data.len() / vectors_count as usize;
+
                         segment_vectors::VectorStructInternal::MultiDense(
                             segment::data_types::vectors::MultiDenseVectorInternal::try_from_flatten(
                                 data,
-                                vectors_count as usize,
+                                dim,
                             ).map_err(|err| {
                                 Status::invalid_argument(format!("Unable to convert to multi-dense vector: {err}"))
                             })?,
