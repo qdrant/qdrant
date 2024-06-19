@@ -625,10 +625,11 @@ async fn stage_propagate_deletes(
     };
 
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_delete().next()) {
-        let mut offset = None;
+        let mut offset = Some(0.into());
 
-        while {
+        while offset.is_some() {
             let shard_holder = shard_holder.read().await;
+
             let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
                 CollectionError::service_error(format!(
                     "Shard {source_shard_id} not found in the shard holder for resharding",
@@ -636,7 +637,7 @@ async fn stage_propagate_deletes(
             })?;
 
             // Take batch of points, if full, pop the last entry as next batch offset
-            let mut batch = replica_set
+            let mut points = replica_set
                 .scroll_by(
                     offset,
                     DELETE_BATCH_SIZE + 1,
@@ -649,21 +650,26 @@ async fn stage_propagate_deletes(
                     None,
                 )
                 .await?;
-            offset = (batch.len() >= DELETE_BATCH_SIZE).then(|| batch.pop().unwrap().id);
 
-            let ids = batch
+            offset = if points.len() >= DELETE_BATCH_SIZE {
+                points.pop().map(|point| point.id)
+            } else {
+                None
+            };
+
+            let ids = points
                 .into_iter()
-                .filter(|record| hashring.has_moved(&record.id))
-                .map(|record| record.id)
-                .collect::<Vec<_>>();
+                .map(|point| point.id)
+                .filter(|point_id| hashring.has_moved(&point_id))
+                .collect();
+
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids });
+
             replica_set
                 .update_with_consistency(operation, offset.is_some(), WriteOrdering::Weak)
                 .await?;
-
-            offset.is_some()
-        } {}
+        }
 
         state.write(|data| {
             data.deleted_shards.push(source_shard_id);
