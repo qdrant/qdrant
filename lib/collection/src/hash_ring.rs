@@ -167,14 +167,16 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     ///
     /// Returns true if this is a resharding hashring in which both hashrings place the given point
     /// ID in a different shard.
-    pub fn has_moved<U: Hash>(&self, key: &U) -> bool
+    pub fn has_moved_from<U: Hash>(&self, key: &U, shard: T) -> bool
     where
         T: PartialEq,
     {
-        match self {
-            Self::Single(_) => false,
-            Self::Resharding { old, new } => old.get(key) != new.get(key),
-        }
+        let ring = match self {
+            Self::Resharding { new, .. } => new,
+            Self::Single(ring) => ring,
+        };
+
+        ring.get(key) != Some(&shard)
     }
 }
 

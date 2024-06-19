@@ -92,7 +92,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, shard_id, Some(&hashring), true)
             .await?;
 
         {
