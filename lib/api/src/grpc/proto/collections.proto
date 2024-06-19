@@ -537,7 +537,7 @@ message ReplicateShard {
 
 message AbortShardTransfer {
   uint32 shard_id = 1; // Local shard id
-  optional uint32 to_shard_id = 5;
+  optional uint32 to_shard_id = 4;
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
 }

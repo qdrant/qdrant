@@ -970,7 +970,7 @@ pub struct AbortShardTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
     pub shard_id: u32,
-    #[prost(uint32, optional, tag = "5")]
+    #[prost(uint32, optional, tag = "4")]
     pub to_shard_id: ::core::option::Option<u32>,
     #[prost(uint64, tag = "2")]
     pub from_peer_id: u64,
