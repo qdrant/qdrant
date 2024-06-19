@@ -635,7 +635,7 @@ async fn stage_propagate_deletes(
                 ))
             })?;
 
-            // Take batch of pionts, if full, pop the last entry as next batch offset
+            // Take batch of points, if full, pop the last entry as next batch offset
             let mut batch = replica_set
                 .scroll_by(
                     offset,
