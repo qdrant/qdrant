@@ -8,6 +8,7 @@ use crate::common::operation_error::OperationResult;
 pub struct PointLinkingData {
     pub point_id: PointOffsetType,
     pub level: usize,
+    pub batch_index: usize,
     pub entry: AtomicU32,
 }
 
@@ -35,13 +36,14 @@ impl BatchedPoints {
         let batches = Self::build_initial_batches(&level_fn, &ids, groups_count);
 
         let mut points = Vec::with_capacity(ids.len());
-        for batch in batches.iter() {
+        for (batch_index, batch) in batches.iter().enumerate() {
             for i in batch.clone() {
                 let point_id = ids[i];
                 let level = level_fn(point_id);
                 points.push(PointLinkingData {
                     point_id,
                     level,
+                    batch_index,
                     entry: first_point_id.into(),
                 });
             }
