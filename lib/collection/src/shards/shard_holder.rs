@@ -361,6 +361,7 @@ impl ShardHolder {
         Ok(())
     }
 
+    /// A filter that excludes points migrated to a different shard, as part of resharding.
     pub fn resharding_filter(&self) -> Option<Filter> {
         let filter = self.resharding_filter_impl()?;
         let filter = Filter::new_must_not(Condition::Resharding(Arc::new(filter)));

@@ -385,7 +385,7 @@ impl Collection {
         let with_payload = WithPayload::from(with_payload_interface);
         let request = Arc::new(request);
 
-        #[allow(unused_assignments)] // 🤦‍♀️
+        #[allow(unused_assignments)]
         let mut resharding_filter = None;
 
         let all_shard_collection_results = {
