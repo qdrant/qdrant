@@ -9,6 +9,7 @@ use tokio::time::{sleep, sleep_until, timeout_at};
 use super::channel_service::ChannelService;
 use super::remote_shard::RemoteShard;
 use super::replica_set::ReplicaState;
+use super::resharding::ReshardKey;
 use super::shard::{PeerId, ShardId};
 use super::CollectionId;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -448,6 +449,116 @@ pub trait ShardTransferConsensus: Send + Sync {
         result.map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to set shard replica set state through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
+    /// Propose to commit the read hash ring.
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn commit_read_hashring(
+        &self,
+        collection_id: CollectionId,
+        reshard_key: ReshardKey,
+    ) -> CollectionResult<()>;
+
+    /// Propose to commit the read hash ring, then confirm or retry.
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn commit_read_hashring_confirm_and_retry(
+        &self,
+        collection_id: &CollectionId,
+        reshard_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`commit_read_hashring_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm commit read hashring operation");
+            result = self
+                .commit_read_hashring(collection_id.into(), reshard_key.clone())
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm commit read hashring operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to commit read hashring through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
+    /// Propose to commit the write hash ring.
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn commit_write_hashring(
+        &self,
+        collection_id: CollectionId,
+        reshard_key: ReshardKey,
+    ) -> CollectionResult<()>;
+
+    /// Propose to commit the write hash ring, then confirm or retry.
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn commit_write_hashring_confirm_and_retry(
+        &self,
+        collection_id: &CollectionId,
+        reshard_key: &ReshardKey,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`commit_write_hashring_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm commit write hashring operation");
+            result = self
+                .commit_write_hashring(collection_id.into(), reshard_key.clone())
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm commit write hashring operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to commit write hashring through consensus \
                  after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
             ))
         })
