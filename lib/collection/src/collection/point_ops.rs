@@ -269,9 +269,11 @@ impl Collection {
                         if shard_key.is_none() {
                             return Ok(records);
                         }
-                        for point in &mut records {
+                        
+                        records.0.iter_mut().for_each(|point| {
                             point.shard_key.clone_from(&shard_key);
-                        }
+                        });
+                        
                         Ok(records)
                     })
             });
@@ -279,7 +281,7 @@ impl Collection {
             future::try_join_all(scroll_futures).await?
         };
 
-        let retrieved_iter = retrieved_points.into_iter();
+        let retrieved_iter = retrieved_points.into_iter().map(|(records, _)| records);
 
         let mut points = match &order_by {
             None => retrieved_iter

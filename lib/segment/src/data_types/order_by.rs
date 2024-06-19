@@ -36,6 +36,27 @@ impl Direction {
             },
         }
     }
+    
+    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderValue {
+        value
+            .and_then(|v| OrderValue::try_from(v).ok())
+            .unwrap_or_else(|| match self {
+                Direction::Asc => OrderValue::MAX,
+                Direction::Desc => OrderValue::MIN,
+            })
+    }
+
+    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderValue {
+        self.json_value_to_ordering_value(
+            payload.and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE).cloned()),
+        )
+    }
+
+    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderValue {
+        self.json_value_to_ordering_value(
+            payload.and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)),
+        )
+    }
 }
 
 impl From<Direction> for Order {
@@ -128,15 +149,11 @@ impl OrderBy {
     }
 
     pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderValue {
-        self.json_value_to_ordering_value(
-            payload.and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE).cloned()),
-        )
+        self.direction().get_order_value_from_payload(payload)
     }
 
     pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderValue {
-        self.json_value_to_ordering_value(
-            payload.and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)),
-        )
+        self.direction().remove_order_value_from_payload(payload)
     }
 }
 

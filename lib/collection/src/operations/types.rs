@@ -26,9 +26,7 @@ use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
-    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
-    WithPayloadInterface, WithVector,
+    Distance, Filter, MultiVectorConfig, Order, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype, WithPayloadInterface, WithVector
 };
 use semver::Version;
 use serde;
@@ -772,6 +770,11 @@ pub struct PointGroup {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
+}
+
+pub struct OrderedItems<T> {
+    pub items: Vec<T>,
+    pub order: Order,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]

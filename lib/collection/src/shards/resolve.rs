@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::hash;
 
-use segment::types::{Payload, ScoredPoint};
+use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy};
+use segment::types::{Order, Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
-use crate::operations::types::{CountResult, Record};
+use crate::operations::types::{CountResult, OrderedItems, Record};
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -46,6 +48,43 @@ impl Resolve for CountResult {
 impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
         Resolver::resolve(records, |record| record.id, record_eq, condition)
+    }
+}
+
+impl Resolve for (Vec<Record>, Option<Direction>) {
+    fn resolve(many_records: Vec<Self>, condition: ResolveCondition) -> Self {
+        assert!(many_records
+            .iter()
+            .map(|(_, direction)| direction)
+            .all_equal());
+        let direction = many_records.first().and_then(|(_, direction)| *direction);
+
+        let many_records = many_records
+            .into_iter()
+            .map(|(records, _)| records)
+            .collect();
+        let mut resolved =
+            Resolver::resolve(many_records, |record| record.id, record_eq, condition);
+
+        if let Some(direction) = direction {
+            resolved = resolved
+                .into_iter()
+                .map(|record| {
+                    let order_value =
+                        direction.get_order_value_from_payload(record.payload.as_ref());
+                    (order_value, record)
+                })
+                .sorted_unstable_by(|(value_a, record_a), (value_b, record_b)| match direction {
+                    Direction::Asc => (value_a, record_a.id).cmp(&(value_b, record_b.id)),
+                    Direction::Desc => (value_b, record_b.id).cmp(&(value_a, record_a.id)),
+                })
+                .map(|(_, record)| record)
+                .collect();
+        } else {
+            resolved.sort_unstable_by_key(|record| record.id)
+        }
+
+        (resolved, direction)
     }
 }
 

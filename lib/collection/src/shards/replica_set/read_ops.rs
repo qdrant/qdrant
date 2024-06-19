@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt as _;
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::*;
 
 use super::ShardReplicaSet;
@@ -22,7 +22,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         order_by: Option<&OrderBy>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<(Vec<Record>, Option<Direction>)> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
         let filter = filter.map(|filter| Arc::new(filter.clone()));
@@ -48,6 +48,7 @@ impl ShardReplicaSet {
                             order_by.as_deref(),
                         )
                         .await
+                        .map(|response| (response, order_by.map(|order_by| order_by.direction())))
                 }
                 .boxed()
             },
