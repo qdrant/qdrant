@@ -197,6 +197,12 @@ mod tests {
                 let links_b = graph_b.links_layers[point_id as usize][level]
                     .read()
                     .clone();
+                if links_a != links_b {
+                    println!(
+                        "ERROR, wrong links point_id={} at level {}",
+                        point_id, level
+                    );
+                }
                 assert_eq!(links_a, links_b);
             }
         }

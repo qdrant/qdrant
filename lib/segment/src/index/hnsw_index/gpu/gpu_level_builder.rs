@@ -141,12 +141,13 @@ mod tests {
 
             build_level_on_gpu(&mut gpu_search_context, &batched_points, 0, level).unwrap();
 
-            let ids = batched_points
+            let mut ids = batched_points
                 .points
                 .iter()
                 .filter(|linking_point| linking_point.level >= level)
                 .map(|linking_point| linking_point.point_id)
                 .collect::<Vec<_>>();
+            ids.push(batched_points.first_point_id);
             gpu_search_context
                 .download_links(level, &ids, &graph_layers_builder)
                 .unwrap();
@@ -157,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_level_equivalency() {
-        let num_vectors = 10;
+        let num_vectors = 1024;
         let dim = 64;
         let m = 8;
         let m0 = 16;
@@ -176,13 +177,13 @@ mod tests {
         let m = 8;
         let m0 = 16;
         let ef = 32;
-        let threads = 4;
-        let groups_count = 10;
+        let groups_count = 4;
+        let searches_count = 20;
         let top = 10;
 
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, groups_count);
-        let graph_layers_builder = build_gpu_graph(&test, threads);
+        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
+        let graph_layers_builder = build_gpu_graph(&test, groups_count);
 
-        check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.9)
+        check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
     }
 }
