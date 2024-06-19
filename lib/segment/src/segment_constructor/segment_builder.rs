@@ -351,12 +351,15 @@ impl SegmentBuilder {
                 vector_index.build_index(permit.clone(), stopped)?;
             }
 
+            // TODO: uncomment when releasing the next version! Also in segment_constructor_base.rs:403
             // Make the IdTracker immutable if segment is not appendable.
+            /*
             if !appendable_flag {
                 if let IdTrackerEnum::MutableIdTracker(mutable) = &*id_tracker_arc.borrow() {
                     mutable.make_immutable(&temp_path)?;
                 }
             }
+             */
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(

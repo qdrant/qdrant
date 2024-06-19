@@ -63,7 +63,7 @@ impl PointMappings {
 
         // Deserialize the list entries
         for i in 0..len {
-            let (internal_id, external_id) = Self::load_entry(&mut reader)?;
+            let (internal_id, external_id) = Self::read_entry(&mut reader)?;
 
             // Need to push this regardless of point deletion as the vecs index represents the internal id
             // which would become wrong if we leave out entries.
@@ -108,7 +108,7 @@ impl PointMappings {
     /// byte is the first byte of a new entry.
     /// This function reads exact one entry which means after calling this function, the reader
     /// will be at the start of the next entry.
-    fn load_entry<R: Read>(mut reader: R) -> OperationResult<(PointOffsetType, ExtendedPointId)> {
+    fn read_entry<R: Read>(mut reader: R) -> OperationResult<(PointOffsetType, ExtendedPointId)> {
         let point_id_type = reader.read_u8()?;
 
         let external_id = if point_id_type == Self::EXTERNAL_ID_NUMBER_BYTE {
@@ -149,14 +149,14 @@ impl PointMappings {
 
         // Serialize all entries
         for external_id in self.internal_to_external.iter() {
-            self.store_entry(&mut writer, external_id)?;
+            self.write_entry(&mut writer, external_id)?;
         }
 
         writer.flush()?;
         Ok(())
     }
 
-    fn store_entry<W: Write>(
+    fn write_entry<W: Write>(
         &self,
         mut writer: W,
         external_id: &PointIdType,
@@ -866,9 +866,9 @@ mod test {
 
             let expected_external = mappings.internal_to_external[i];
 
-            mappings.store_entry(&mut buf, &expected_external).unwrap();
+            mappings.write_entry(&mut buf, &expected_external).unwrap();
 
-            let (got_internal, got_external) = PointMappings::load_entry(&*buf).unwrap();
+            let (got_internal, got_external) = PointMappings::read_entry(&*buf).unwrap();
 
             assert_eq!(i as PointOffsetType, got_internal);
             assert_eq!(expected_external, got_external);

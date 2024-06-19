@@ -409,7 +409,7 @@ fn create_segment(
 
     let appendable_flag = config.is_appendable();
 
-    // Disable immutable id tracker for now.
+    // TODO: uncomment when releasing the next version! Also in segment_builder.rs:353
     /*
     let mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
