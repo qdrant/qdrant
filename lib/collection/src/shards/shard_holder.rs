@@ -380,11 +380,11 @@ impl ShardHolder {
         }
 
         let Some(ring) = self.rings.get(&state.shard_key) else {
-            return None; // TODO(resharding)!?
+            return None; // TODO(resharding): Return error?
         };
 
         let HashRing::Resharding { new, .. } = ring else {
-            return None; // TODO(resharding)!?
+            return None; // TODO(resharding): Return error?
         };
 
         Some(hash_ring::Filter::new(new.clone(), state.shard_id))
