@@ -625,9 +625,9 @@ async fn stage_propagate_deletes(
     };
 
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_delete().next()) {
-        let mut offset = Some(0.into());
+        let mut offset = None;
 
-        while offset.is_some() {
+        loop {
             let shard_holder = shard_holder.read().await;
 
             let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
@@ -669,6 +669,10 @@ async fn stage_propagate_deletes(
             replica_set
                 .update_with_consistency(operation, offset.is_some(), WriteOrdering::Weak)
                 .await?;
+
+            if offset.is_none() {
+                break;
+            }
         }
 
         state.write(|data| {
