@@ -579,11 +579,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn await_consensus_sync(
-        &self,
-        this_peer_id: PeerId,
-        channel_service: &ChannelService,
-    ) -> CollectionResult<()> {
+    async fn await_consensus_sync(&self, channel_service: &ChannelService) -> CollectionResult<()> {
         let other_peer_count = channel_service.id_to_address.read().len().saturating_sub(1);
         if other_peer_count == 0 {
             log::warn!("There are no other peers, skipped synchronizing consensus");
@@ -595,7 +591,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             "Waiting on {other_peer_count} peer(s) to reach consensus (commit: {commit}, term: {term}) before finalizing shard transfer"
         );
         channel_service
-            .await_commit_on_all_peers(this_peer_id, commit, term, defaults::CONSENSUS_META_OP_WAIT)
+            .await_commit_on_all_peers(
+                self.this_peer_id(),
+                commit,
+                term,
+                defaults::CONSENSUS_META_OP_WAIT,
+            )
             .await
     }
 }

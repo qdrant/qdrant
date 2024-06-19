@@ -600,8 +600,6 @@ async fn stage_commit_hashring(
     channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    let this_peer_id = consensus.this_peer_id();
-
     state.write(|data| {
         data.bump_all_peers_to(Stage::S4_CommitHashringStart);
     })?;
@@ -610,13 +608,13 @@ async fn stage_commit_hashring(
     consensus
         .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
-    await_consensus_sync(consensus, channel_service, this_peer_id).await;
+    await_consensus_sync(consensus, channel_service).await;
 
     // Commit write hashring and sync cluster
     consensus
         .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
-    await_consensus_sync(consensus, channel_service, this_peer_id).await;
+    await_consensus_sync(consensus, channel_service).await;
 
     state.write(|data| {
         data.bump_all_peers_to(Stage::S4_CommitHashringEnd);

@@ -71,14 +71,10 @@ pub async fn create_shard_dir(
 async fn await_consensus_sync(
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
-    this_peer_id: PeerId,
 ) {
     let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT;
-    let sync_consensus = timeout_at(
-        wait_until,
-        consensus.await_consensus_sync(this_peer_id, channel_service),
-    )
-    .await;
+    let sync_consensus =
+        timeout_at(wait_until, consensus.await_consensus_sync(channel_service)).await;
 
     match sync_consensus {
         Ok(Ok(_)) => log::trace!("All peers reached consensus"),
