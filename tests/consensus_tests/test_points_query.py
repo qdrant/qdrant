@@ -262,49 +262,56 @@ def test_points_query(tmp_path: pathlib.Path):
                 "score_threshold": 0.5
             })
         ),
-        # TODO(universal-query) uncomment when order_by aggregation is fixed
-        # (
-        #     # scroll
-        #     ("scroll", "points.id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #     }),
-        #     ("query", "id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #         "with_payload": True,
-        #     }),
-        # ),
-        # (
-        #     # scroll order by `asc`
-        #     ("scroll", "points.id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #         "order_by": "count",
-        #         "direction": "asc",
-        #     }),
-        #     ("query", "id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #         "order_by": "count",
-        #         "direction": "asc",
-        #     }),
-        # ),
-        # (
-        #     # scroll order by `desc`
-        #     ("scroll", "points.id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #         "order_by": "count",
-        #         "direction": "desc",
-        #     }),
-        #     ("query", "id", {
-        #         "filter": filter,
-        #         "limit": 5,
-        #         "order_by": "count",
-        #         "direction": "desc",
-        #     }),
-        # )
+        (
+            # scroll
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "with_payload": True,
+            }),
+        ),
+        (
+            # scroll order by `asc`
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "asc",
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "query": {
+                    "order_by": {
+                        "key": "count",
+                        "direction": "asc",
+                    }
+                }
+            }),
+        ),
+        (
+            # scroll order by `desc`
+            ("scroll", "points.id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": "count",
+                "direction": "desc",
+            }),
+            ("query", "id", {
+                "filter": filter,
+                "limit": 5,
+                "query": {
+                    "order_by": {
+                        "key": "count",
+                        "direction": "desc",
+                    }
+                }
+            }),
+        )
     ]
 
     # Verify that the results are the same across all peers
