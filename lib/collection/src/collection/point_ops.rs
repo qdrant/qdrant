@@ -318,10 +318,8 @@ impl Collection {
                             }
                         }
                     })
-                    // Add each point-value only once
-                    .dedup_by(|(value_a, record_a), (value_b, record_b)| {
-                        value_a == value_b && record_a.id == record_b.id
-                    })
+                    // Add each point only once, dedup by point ID
+                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()
