@@ -13,8 +13,10 @@ use tokio::task::block_in_place;
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::config::CollectionConfig;
+use crate::operations::point_ops::{PointOperations, WriteOrdering};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -35,6 +37,9 @@ const REPLICATE_TRANSFER_MAX_DURATION: Duration = MIGRATE_POINT_TRANSFER_MAX_DUR
 /// Interval for the sanity check while awaiting shard transfers.
 const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
+/// Batch size for deleting migrated points in existing shards.
+const DELETE_BATCH_SIZE: usize = 500;
+
 type PersistedState = SaveOnDisk<DriverState>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +49,8 @@ struct DriverState {
     peers: HashMap<PeerId, Stage>,
     /// List of shard IDs successfully migrated to the new shard
     migrated_shards: Vec<ShardId>,
+    /// List of shard IDs in which we successfully deleted migrated points
+    deleted_shards: Vec<ShardId>,
 }
 
 impl DriverState {
@@ -52,6 +59,7 @@ impl DriverState {
             key,
             peers: HashMap::from_iter(peers.iter().map(|peer_id| (*peer_id, Stage::default()))),
             migrated_shards: vec![],
+            deleted_shards: vec![],
         }
     }
 
@@ -84,6 +92,12 @@ impl DriverState {
             .filter(|shard_id| !self.migrated_shards.contains(shard_id))
     }
 
+    /// List the shard IDs in which we still need to propagate point deletions.
+    pub fn shards_to_delete(&self) -> impl Iterator<Item = ShardId> + '_ {
+        self.source_shards()
+            .filter(|shard_id| !self.deleted_shards.contains(shard_id))
+    }
+
     /// Get all the shard IDs which points are sourced from.
     pub fn source_shards(&self) -> impl Iterator<Item = ShardId> {
         0..self.key.shard_id
@@ -114,8 +128,10 @@ enum Stage {
     S3_ReplicateEnd,
     #[serde(rename = "commit_hash_ring")]
     S4_CommitHashring,
-    #[serde(rename = "propagate_deletes")]
-    S5_PropagateDeletes,
+    #[serde(rename = "propagate_deletes_start")]
+    S5_PropagateDeletesStart,
+    #[serde(rename = "propagate_deletes_end")]
+    S5_PropagateDeletesEnd,
     #[serde(rename = "finalize")]
     S6_Finalize,
 }
@@ -195,9 +211,9 @@ pub async fn drive_resharding(
     }
 
     // Stage 5: propagate deletes
-    if !completed_propagate_deletes() {
+    if !completed_propagate_deletes(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
-        stage_propagate_deletes()?;
+        stage_propagate_deletes(&reshard_key, &state, shard_holder.clone()).await?;
     }
 
     // Stage 6: finalize
@@ -283,7 +299,7 @@ async fn stage_migrate_points(
                     let replica_set =
                         shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
                             CollectionError::service_error(format!(
-                                "Source shard {source_shard_id} not found in the shard holder for resharding",
+                                "Shard {source_shard_id} not found in the shard holder for resharding",
                             ))
                         })?;
                     replica_set.active_shards().await
@@ -573,15 +589,102 @@ fn stage_commit_hashring() -> CollectionResult<()> {
 /// Stage 5: propagate deletes
 ///
 /// Check whether migrated points still need to be deleted in their old shards.
-fn completed_propagate_deletes() -> bool {
-    todo!()
+fn completed_propagate_deletes(state: &PersistedState) -> bool {
+    let state_read = state.read();
+    state_read.all_peers_reached(Stage::S5_PropagateDeletesEnd)
+        && state_read.shards_to_delete().next().is_none()
 }
 
 /// Stage 5: commit new hashring
 ///
 /// Do delete migrated points from their old shards.
-fn stage_propagate_deletes() -> CollectionResult<()> {
-    todo!()
+// TODO(resharding): this is a naive implementation, delete by hashring filter directly!
+async fn stage_propagate_deletes(
+    reshard_key: &ReshardKey,
+    state: &PersistedState,
+    shard_holder: Arc<LockedShardHolder>,
+) -> CollectionResult<()> {
+    log::debug!("Resharding stage: propagate deletes");
+
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S5_PropagateDeletesStart);
+    })?;
+
+    let hashring = {
+        let shard_holder = shard_holder.read().await;
+        let shard_key = shard_holder
+            .get_shard_id_to_key_mapping()
+            .get(&reshard_key.shard_id)
+            .cloned();
+        shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Cannot delete migrated points while resharding shard {}, failed to get shard hash ring",
+                reshard_key.shard_id,
+            ))
+        })?
+    };
+
+    while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_delete().next()) {
+        let mut offset = None;
+
+        loop {
+            let shard_holder = shard_holder.read().await;
+
+            let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Shard {source_shard_id} not found in the shard holder for resharding",
+                ))
+            })?;
+
+            // Take batch of points, if full, pop the last entry as next batch offset
+            let mut points = replica_set
+                .scroll_by(
+                    offset,
+                    DELETE_BATCH_SIZE + 1,
+                    &false.into(),
+                    &false.into(),
+                    // TODO(resharding): directly apply hash ring filter here
+                    None,
+                    None,
+                    false,
+                    None,
+                )
+                .await?;
+
+            offset = if points.len() > DELETE_BATCH_SIZE {
+                points.pop().map(|point| point.id)
+            } else {
+                None
+            };
+
+            let ids = points
+                .into_iter()
+                .map(|point| point.id)
+                .filter(|point_id| hashring.has_moved(&point_id))
+                .collect();
+
+            let operation =
+                CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids });
+
+            replica_set
+                .update_with_consistency(operation, offset.is_some(), WriteOrdering::Weak)
+                .await?;
+
+            if offset.is_none() {
+                break;
+            }
+        }
+
+        state.write(|data| {
+            data.deleted_shards.push(source_shard_id);
+        })?;
+    }
+
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S5_PropagateDeletesEnd);
+    })?;
+
+    Ok(())
 }
 
 /// Stage 6: finalize
