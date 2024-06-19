@@ -10,7 +10,7 @@ use collection::shards::CollectionId;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, ReshardingOperation, ShardTransferOperations
+    CollectionMetaOperations, ReshardingOperation, ShardTransferOperations,
 };
 use crate::content_manager::consensus_manager::ConsensusStateRef;
 use crate::content_manager::consensus_ops::ConsensusOperations;

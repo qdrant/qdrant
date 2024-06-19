@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common::defaults::{self, CONSENSUS_CONFIRM_RETRIES};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tokio::time::{sleep, sleep_until, timeout_at};
+use tokio::time::sleep;
 
 use super::channel_service::ChannelService;
 use super::remote_shard::RemoteShard;
@@ -597,44 +597,5 @@ pub trait ShardTransferConsensus: Send + Sync {
         channel_service
             .await_commit_on_all_peers(this_peer_id, commit, term, defaults::CONSENSUS_META_OP_WAIT)
             .await
-    }
-}
-
-/// Await for consensus to synchronize across all peers
-///
-/// This will take the current consensus state of this node. It then explicitly waits on all other
-/// nodes to reach the same (or later) consensus.
-///
-/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
-/// timeout.
-///
-/// # Cancel safety
-///
-/// This function is cancel safe.
-async fn await_consensus_sync(
-    consensus: &dyn ShardTransferConsensus,
-    channel_service: &ChannelService,
-    this_peer_id: PeerId,
-) {
-    let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT;
-    let sync_consensus = timeout_at(
-        wait_until,
-        consensus.await_consensus_sync(this_peer_id, channel_service),
-    )
-    .await;
-
-    match sync_consensus {
-        Ok(Ok(_)) => log::trace!("All peers reached consensus"),
-        // Failed to sync explicitly, waiting until timeout to assume synchronization
-        Ok(Err(err)) => {
-            log::warn!("All peers failed to synchronize consensus, waiting until timeout: {err}");
-            sleep_until(wait_until).await;
-        }
-        // Reached timeout, assume consensus is synchronized
-        Err(err) => {
-            log::warn!(
-                "All peers failed to synchronize consensus, continuing after timeout: {err}"
-            );
-        }
     }
 }
