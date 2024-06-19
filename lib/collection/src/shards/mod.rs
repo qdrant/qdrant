@@ -24,7 +24,11 @@ mod test;
 
 use std::path::{Path, PathBuf};
 
+use channel_service::ChannelService;
+use common::defaults;
 use shard::ShardId;
+use tokio::time::{sleep_until, timeout_at};
+use transfer::ShardTransferConsensus;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::shard_versioning::versioned_shard_path;
@@ -49,6 +53,41 @@ pub async fn create_shard_dir(
             } else {
                 Err(CollectionError::from(e))
             }
+        }
+    }
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+) {
+    let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT;
+    let sync_consensus =
+        timeout_at(wait_until, consensus.await_consensus_sync(channel_service)).await;
+
+    match sync_consensus {
+        Ok(Ok(_)) => log::trace!("All peers reached consensus"),
+        // Failed to sync explicitly, waiting until timeout to assume synchronization
+        Ok(Err(err)) => {
+            log::warn!("All peers failed to synchronize consensus, waiting until timeout: {err}");
+            sleep_until(wait_until).await;
+        }
+        // Reached timeout, assume consensus is synchronized
+        Err(err) => {
+            log::warn!(
+                "All peers failed to synchronize consensus, continuing after timeout: {err}"
+            );
         }
     }
 }

@@ -3,13 +3,14 @@ use std::sync::Weak;
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, ShardTransferOperations,
+    CollectionMetaOperations, ReshardingOperation, ShardTransferOperations,
 };
 use crate::content_manager::consensus_manager::ConsensusStateRef;
 use crate::content_manager::consensus_ops::ConsensusOperations;
@@ -163,6 +164,46 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             .map(|_| ())
             .map_err(|err| {
                 CollectionError::service_error(format!("Failed to propose and confirm set replica set state operation through consensus: {err}"))
+            })
+    }
+
+    async fn commit_read_hashring(
+        &self,
+        collection_id: CollectionId,
+        reshard_key: ReshardKey,
+    ) -> CollectionResult<()> {
+        let operation =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
+                collection_id,
+                ReshardingOperation::CommitRead(reshard_key),
+            )));
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation, None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm commit read hashring operation through consensus: {err}"))
+            })
+    }
+
+    async fn commit_write_hashring(
+        &self,
+        collection_id: CollectionId,
+        reshard_key: ReshardKey,
+    ) -> CollectionResult<()> {
+        let operation =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
+                collection_id,
+                ReshardingOperation::CommitWrite(reshard_key),
+            )));
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation, None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm commit write hasrhing operation through consensus: {err}"))
             })
     }
 }
