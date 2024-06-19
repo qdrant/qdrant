@@ -87,8 +87,25 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn commit_hashring(&self, reshard: ReshardKey) -> CollectionResult<()> {
-        self.shards_holder.write().await.commit_hashring(reshard)
+    pub async fn commit_read_hashring(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.shards_holder
+            .write()
+            .await
+            .commit_read_hashring(resharding_key)
+    }
+
+    pub async fn commit_write_hashring(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.shards_holder
+            .write()
+            .await
+            .commit_write_hashring(resharding_key)
+    }
+
+    pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.shards_holder
+            .write()
+            .await
+            .finish_resharding(resharding_key)
     }
 
     pub async fn abort_resharding(&self, reshard_key: ReshardKey) -> CollectionResult<()> {

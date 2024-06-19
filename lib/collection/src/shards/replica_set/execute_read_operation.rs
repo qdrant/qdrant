@@ -62,6 +62,7 @@ impl ShardReplicaSet {
 
         let remotes_count = remotes.len();
 
+        // TODO(resharding): Handle resharded shard?
         let active_remotes_count = remotes
             .iter()
             .filter(|remote| self.peer_is_active(&remote.peer_id))
@@ -179,6 +180,7 @@ impl ShardReplicaSet {
             None
         };
 
+        // TODO(resharding): Handle resharded shard?
         let mut active_remotes: Vec<_> = remotes
             .iter()
             .filter(|remote| self.peer_is_active(&remote.peer_id))
