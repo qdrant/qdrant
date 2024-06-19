@@ -38,7 +38,7 @@ where
     /// Panics if the index is out of bounds.
     pub fn set(&self, index: usize, value: T) {
         assert!(index < self.len, "index {index} out of range: {}", self.len);
-        *self.pending_updates.lock().get_mut(&index).unwrap() = value;
+        self.pending_updates.lock().insert(index, value);
     }
 }
 

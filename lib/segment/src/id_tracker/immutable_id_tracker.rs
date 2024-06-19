@@ -51,9 +51,6 @@ impl PointMappings {
     const EXTERNAL_ID_NUMBER_BYTE: u8 = 0;
     const EXTERNAL_ID_UUID_BYTE: u8 = 1;
 
-    // TODO:
-    // - Fix failing test causted by differently built BTreeMaps
-
     /// Loads a `PointMappings` from the given reader. Applies an optional filter of deleted items
     /// to prevent allocating unneeded data.
     pub fn load<R: Read>(mut reader: R, filter: Option<&BitSlice>) -> OperationResult<Self> {
@@ -501,98 +498,10 @@ impl IdTracker for ImmutableIdTracker {
     }
 }
 
-/*
-impl<'de> Deserialize<'de> for PointMappings {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(PointMappingVisitor)
-    }
-}
-
-impl Serialize for PointMappings {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut sequence = serializer.serialize_seq(Some(self.internal_to_external.len()))?;
-
-        for external_id in self.internal_to_external.iter() {
-            let internal_id = match external_id {
-                StoredPointId::NumId(n) => self.external_to_internal_num.get(n),
-                StoredPointId::Uuid(u) => self.external_to_internal_uuid.get(u),
-                StoredPointId::String(str) => {
-                    unimplemented!("cannot convert internal string id '{str}' to external id")
-                }
-            }
-            .unwrap();
-
-            sequence.serialize_element(&(external_id, internal_id))?;
-        }
-
-        sequence.end()
-    }
-}
-
-mod point_mappings_deser {
-    use std::collections::BTreeMap;
-    use std::fmt::Formatter;
-
-    use common::types::PointOffsetType;
-    use serde::de::{SeqAccess, Visitor};
-    use uuid::Uuid;
-
-    use crate::id_tracker::immutable_id_tracker::PointMappings;
-    use crate::id_tracker::simple_id_tracker::StoredPointId;
-
-    pub(super) struct PointMappingVisitor;
-
-    impl<'de> Visitor<'de> for PointMappingVisitor {
-        type Value = PointMappings;
-
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("a sequence of tuples")
-        }
-        // Custom deserializer to prevent allocating a humongous intermediate list of points
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let mut internal_to_external = Vec::with_capacity(seq.size_hint().unwrap_or_default());
-            let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
-            let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
-
-            while let Some((external, internal)) =
-                seq.next_element::<(StoredPointId, PointOffsetType)>()?
-            {
-                match &external {
-                    StoredPointId::NumId(num) => {
-                        external_to_internal_num.insert(*num, internal);
-                    }
-                    StoredPointId::Uuid(uuid) => {
-                        external_to_internal_uuid.insert(*uuid, internal);
-                    }
-                    StoredPointId::String(str) => {
-                        unimplemented!("cannot convert internal string id '{str}' to external id")
-                    }
-                }
-
-                internal_to_external.push(external);
-            }
-
-            Ok(PointMappings {
-                internal_to_external,
-                external_to_internal_num,
-                external_to_internal_uuid,
-            })
-        }
-    }
-}
-*/
-
 #[cfg(test)]
 mod test {
+    use std::collections::{HashMap, HashSet};
+
     use itertools::Itertools;
     use rand::prelude::*;
     use rand::Rng;
@@ -602,6 +511,8 @@ mod test {
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTrackerEnum;
+
+    const RAND_SEED: u64 = 42;
 
     #[test]
     fn test_iterator() {
@@ -632,32 +543,28 @@ mod test {
         assert_eq!(last.len(), 7);
     }
 
-    fn make_values() -> Vec<PointIdType> {
-        vec![
-            100.into(),
-            PointIdType::Uuid(Uuid::from_u128(123_u128)),
-            PointIdType::Uuid(Uuid::from_u128(156_u128)),
-            150.into(),
-            120.into(),
-            PointIdType::Uuid(Uuid::from_u128(12_u128)),
-            180.into(),
-            110.into(),
-            115.into(),
-            PointIdType::Uuid(Uuid::from_u128(673_u128)),
-            190.into(),
-            177.into(),
-            PointIdType::Uuid(Uuid::from_u128(971_u128)),
-        ]
-    }
+    const TEST_POINTS: &[PointIdType] = &[
+        PointIdType::NumId(100),
+        PointIdType::Uuid(Uuid::from_u128(123_u128)),
+        PointIdType::Uuid(Uuid::from_u128(156_u128)),
+        PointIdType::NumId(150),
+        PointIdType::NumId(120),
+        PointIdType::Uuid(Uuid::from_u128(12_u128)),
+        PointIdType::NumId(180),
+        PointIdType::NumId(110),
+        PointIdType::NumId(115),
+        PointIdType::Uuid(Uuid::from_u128(673_u128)),
+        PointIdType::NumId(190),
+        PointIdType::NumId(177),
+        PointIdType::Uuid(Uuid::from_u128(971_u128)),
+    ];
 
     fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker {
         let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
 
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
-        let values = make_values();
-
-        for (id, value) in values.iter().enumerate() {
+        for (id, value) in TEST_POINTS.iter().enumerate() {
             id_tracker.set_link(*value, id as PointOffsetType).unwrap();
         }
 
@@ -680,7 +587,7 @@ mod test {
 
         let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
 
-        let mut values = make_values();
+        let mut values = TEST_POINTS.to_vec();
         values.sort();
 
         assert_eq!(sorted_from_tracker, values);
@@ -689,7 +596,7 @@ mod test {
     #[test]
     fn test_load_store() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let (old_deleted, _old_mappings, old_versions) = {
+        let (old_deleted, old_mappings, old_versions) = {
             let id_tracker = make_immutable_tracker(dir.path());
             (
                 id_tracker.deleted.to_bitvec(),
@@ -706,7 +613,88 @@ mod test {
 
         assert_eq!(old_versions, loaded_id_tracker.internal_to_version);
 
+        assert_eq!(old_mappings, loaded_id_tracker.mappings);
+
         loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+    }
+
+    /// Mutates an ID tracker and stores it to disk. Tests whether loading results in the exact same
+    /// ID tracker.
+    #[test]
+    fn test_store_load_mutated() {
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let (dropped_points, custom_version) = {
+            let mut id_tracker = make_immutable_tracker(dir.path());
+
+            let mut dropped_points = HashSet::new();
+            let mut custom_version = HashMap::new();
+
+            for (index, point) in TEST_POINTS.iter().enumerate() {
+                if index % 2 == 0 {
+                    continue;
+                }
+
+                if index % 3 == 0 {
+                    id_tracker.drop(*point).unwrap();
+                    dropped_points.insert(*point);
+                    continue;
+                }
+
+                if index % 5 == 0 {
+                    let new_version = rng.next_u64();
+                    id_tracker
+                        .set_internal_version(index as PointOffsetType, new_version)
+                        .unwrap();
+                    custom_version.insert(index as PointOffsetType, new_version);
+                }
+            }
+
+            id_tracker.mapping_flusher()().unwrap();
+            id_tracker.versions_flusher()().unwrap();
+
+            (dropped_points, custom_version)
+        };
+
+        let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        for (index, point) in TEST_POINTS.iter().enumerate() {
+            let internal_id = index as PointOffsetType;
+
+            if dropped_points.contains(point) {
+                assert!(id_tracker.is_deleted_point(internal_id));
+                assert_eq!(id_tracker.external_id(internal_id), None);
+                match point {
+                    PointIdType::NumId(num) => {
+                        assert!(!id_tracker
+                            .mappings
+                            .external_to_internal_num
+                            .contains_key(num));
+                    }
+                    PointIdType::Uuid(uuid) => {
+                        assert!(!id_tracker
+                            .mappings
+                            .external_to_internal_uuid
+                            .contains_key(uuid));
+                    }
+                }
+
+                continue;
+            }
+
+            // Check version
+            let expect_version = custom_version.get(&internal_id).unwrap_or(&0);
+            assert_eq!(
+                id_tracker.internal_to_version.get(internal_id as usize),
+                Some(expect_version)
+            );
+
+            // Check that unmodified points still haven't changed.
+            assert_eq!(
+                id_tracker.external_id(index as PointOffsetType),
+                Some(*point)
+            );
+        }
     }
 
     #[test]
@@ -722,10 +710,10 @@ mod test {
     fn test_point_deletion_correctness() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
-        point_deletion_correctness(IdTrackerEnum::ImmutableIdTracker(id_tracker));
+        assert_point_deletion_correctness(IdTrackerEnum::ImmutableIdTracker(id_tracker));
     }
 
-    fn point_deletion_correctness(mut id_tracker: IdTrackerEnum) {
+    fn assert_point_deletion_correctness(mut id_tracker: IdTrackerEnum) {
         // No deletions yet
         assert_eq!(
             id_tracker.total_point_count(),
@@ -760,16 +748,27 @@ mod test {
 
         let point_to_delete = PointIdType::NumId(100);
 
-        {
+        let old_mappings = {
             let mut id_tracker = make_immutable_tracker(dir.path());
+            let intetrnal_id = id_tracker
+                .internal_id(point_to_delete)
+                .expect("Point to delete exists.");
+            assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
             id_tracker.versions_flusher()().unwrap();
             id_tracker.mapping_flusher()().unwrap();
-        }
+            id_tracker.mappings
+        };
 
         // Point should still be gone
         let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
+
+        // Old mappings should be the same as newly loaded one.
+        assert_eq!(
+            old_mappings.external_to_internal_num,
+            id_tracker.mappings.external_to_internal_num
+        );
     }
 
     fn gen_random_point_mappings(size: usize, rand: &mut StdRng) -> PointMappings {
@@ -808,7 +807,7 @@ mod test {
     /// Tests de/serializing of whole `PointMappings`.
     #[test]
     fn test_point_mappings_de_serialization() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
 
         let mut buf = vec![];
 
@@ -823,6 +822,8 @@ mod test {
 
             mappings.store(&mut buf).unwrap();
 
+            // 16 is the min byte size of an entry. The exact number is not that important
+            // we just want to ensure that the written bytes correlate to the amount of entries.
             assert!(buf.len() >= size * 16);
 
             let new_mappings = PointMappings::load(&*buf, None).unwrap();
@@ -835,7 +836,7 @@ mod test {
     /// Verifies that de/serializing works properly for empty `PointMappings`.
     #[test]
     fn test_point_mappings_de_serialization_empty() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
         let mappings = gen_random_point_mappings(0, &mut rng);
 
         let mut buf = vec![];
@@ -854,7 +855,7 @@ mod test {
     /// Tests de/serializing of only single ID mappings.
     #[test]
     fn test_point_mappings_de_serialization_single() {
-        let mut rng = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
 
         const SIZE: usize = 400_000;
 
