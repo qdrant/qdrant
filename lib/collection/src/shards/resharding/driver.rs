@@ -45,7 +45,7 @@ type PersistedState = SaveOnDisk<DriverState>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DriverState {
     key: ReshardKey,
-    /// State of each peer we know about
+    /// Stage each peer is currently in
     peers: HashMap<PeerId, Stage>,
     /// List of shard IDs successfully migrated to the new shard
     migrated_shards: Vec<ShardId>,
@@ -102,6 +102,30 @@ impl DriverState {
     /// Get all the shard IDs which points are sourced from.
     pub fn source_shards(&self) -> impl Iterator<Item = ShardId> {
         0..self.key.shard_id
+    }
+
+    /// Describe the current stage and state in a human readable string.
+    pub fn describe(&self) -> String {
+        let Some(lowest_stage) = self.peers.values().min() else {
+            return "unknown: no known peers".into();
+        };
+
+        match lowest_stage {
+            Stage::S1_Init => "initialize".into(),
+            Stage::S2_MigratePoints => format!(
+                "migrate points: migrating points from shards {:?} to {}",
+                self.shards_to_migrate().collect::<Vec<_>>(),
+                self.key.shard_id,
+            ),
+            Stage::S3_Replicate => "replicate: replicate new shard to other peers".into(),
+            Stage::S4_CommitHashring => "commit hash ring: switching reads and writes".into(),
+            Stage::S5_PropagateDeletes => format!(
+                "propagate deletes: deleting migrated points from shards {:?}",
+                self.shards_to_migrate().collect::<Vec<_>>(),
+            ),
+            Stage::S6_Finalize => "finalize".into(),
+            Stage::Finished => "finished".into(),
+        }
     }
 }
 
