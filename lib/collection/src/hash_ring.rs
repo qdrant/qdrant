@@ -1,7 +1,9 @@
-use std::fmt;
 use std::hash::Hash;
+use std::{any, fmt};
 
 use itertools::Itertools as _;
+use segment::index::field_index::CardinalityEstimation;
+use segment::types::{PointIdType, ReshardingCondition};
 use smallvec::SmallVec;
 
 use crate::shards::shard::ShardId;
@@ -76,7 +78,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         new.add(shard);
     }
 
-    pub fn commit(&mut self) -> bool {
+    pub fn commit_resharding(&mut self) -> bool {
         let Self::Resharding { new, .. } = self else {
             log::warn!("committing resharding hashring, but hashring is not in resharding mode");
             return false;
@@ -245,6 +247,61 @@ impl<T: Hash + Copy> Inner<T> {
             Inner::Raw(ring) => ring.is_empty(),
             Inner::Fair { ring, .. } => ring.is_empty(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Inner::Raw(ring) => ring.len(),
+            Inner::Fair { ring, scale } => ring.len() / *scale as usize,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Filter<T = ShardId> {
+    ring: Inner<T>,
+    filter: T,
+}
+
+impl<T> Filter<T> {
+    pub fn new(ring: Inner<T>, filter: T) -> Self {
+        Self { ring, filter }
+    }
+
+    pub fn check(&self, point_id: PointIdType) -> bool
+    where
+        T: Hash + PartialEq + Copy,
+    {
+        self.ring.get(&point_id) == Some(&self.filter)
+    }
+}
+
+impl<T> ReshardingCondition for Filter<T>
+where
+    T: fmt::Debug + Hash + PartialEq + Copy + 'static,
+{
+    fn check(&self, point_id: PointIdType) -> bool {
+        self.check(point_id)
+    }
+
+    fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation {
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: points / self.ring.len(),
+            max: points,
+        }
+    }
+
+    fn eq(&self, other: &dyn ReshardingCondition) -> bool {
+        match other.as_any().downcast_ref::<Self>() {
+            Some(other) => self == other,
+            None => false,
+        }
+    }
+
+    fn as_any(&self) -> &dyn any::Any {
+        self
     }
 }
 

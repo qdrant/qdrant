@@ -121,6 +121,15 @@ pub fn condition_converter<'a>(
                 })
             })
         }
+        Condition::Resharding(cond) => {
+            let segment_ids: HashSet<_> = id_tracker
+                .iter_external()
+                .filter(|&point_id| cond.check(point_id))
+                .filter_map(|external_id| id_tracker.internal_id(external_id))
+                .collect();
+
+            Box::new(move |internal_id| segment_ids.contains(&internal_id))
+        }
         Condition::Filter(_) => unreachable!(),
     }
 }

@@ -125,11 +125,25 @@ impl Collection {
 
     async fn do_core_search_batch(
         &self,
-        request: CoreSearchRequestBatch,
+        mut request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        if let Some(resharding_filter) = self.shards_holder.read().await.resharding_filter() {
+            for search in &mut request.searches {
+                match &mut search.filter {
+                    Some(filter) => {
+                        *filter = filter.merge(&resharding_filter);
+                    }
+
+                    None => {
+                        search.filter = Some(resharding_filter.clone());
+                    }
+                }
+            }
+        }
+
         let request = Arc::new(request);
 
         let instant = Instant::now();

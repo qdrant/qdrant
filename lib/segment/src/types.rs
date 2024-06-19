@@ -1,10 +1,12 @@
+use std::any;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use common::types::ScoreType;
 use fnv::FnvBuildHasher;
@@ -27,6 +29,7 @@ use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::VectorStructInternal;
+use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
@@ -1931,7 +1934,7 @@ impl NestedCondition {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum Condition {
@@ -1947,6 +1950,24 @@ pub enum Condition {
     Nested(NestedCondition),
     /// Nested filter
     Filter(Filter),
+
+    #[serde(skip)]
+    Resharding(Arc<dyn ReshardingCondition + Send + Sync + 'static>),
+}
+
+impl PartialEq for Condition {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Field(this), Self::Field(other)) => this == other,
+            (Self::IsEmpty(this), Self::IsEmpty(other)) => this == other,
+            (Self::IsNull(this), Self::IsNull(other)) => this == other,
+            (Self::HasId(this), Self::HasId(other)) => this == other,
+            (Self::Nested(this), Self::Nested(other)) => this == other,
+            (Self::Filter(this), Self::Filter(other)) => this == other,
+            (Self::Resharding(this), Self::Resharding(other)) => this.eq(other.deref()),
+            _ => false,
+        }
+    }
 }
 
 impl Condition {
@@ -1954,6 +1975,10 @@ impl Condition {
         Self::Nested(NestedCondition {
             nested: Nested { key, filter },
         })
+    }
+
+    pub fn is_local_only(&self) -> bool {
+        matches!(self, Condition::Resharding(_))
     }
 }
 
@@ -1965,8 +1990,17 @@ impl Validate for Condition {
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
+            Condition::Resharding(_) => Ok(()),
         }
     }
+}
+
+pub trait ReshardingCondition: fmt::Debug {
+    fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation;
+    fn check(&self, point_id: ExtendedPointId) -> bool;
+
+    fn eq(&self, other: &dyn ReshardingCondition) -> bool;
+    fn as_any(&self) -> &dyn any::Any;
 }
 
 /// Options for specifying which payload to include or not

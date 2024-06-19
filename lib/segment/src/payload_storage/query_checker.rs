@@ -147,6 +147,11 @@ where
                     )
                 })
         }
+
+        Condition::Resharding(cond) => id_tracker
+            .and_then(|id_tracker| id_tracker.external_id(point_id))
+            .map_or(false, |point_id| cond.check(point_id)),
+
         Condition::Filter(_) => unreachable!(),
     };
 

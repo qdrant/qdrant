@@ -962,7 +962,11 @@ fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>)
             if conditions.is_empty() {
                 vec![]
             } else {
-                conditions.into_iter().map(|c| c.into()).collect()
+                conditions
+                    .into_iter()
+                    .filter(|c| !c.is_local_only()) // TODO(resharding)!?
+                    .map(|c| c.into())
+                    .collect()
             }
         }
     }
@@ -1059,6 +1063,10 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
             segment::types::Condition::Nested(nested) => {
                 ConditionOneOf::Nested(nested.nested.into())
+            }
+
+            segment::types::Condition::Resharding(_) => {
+                unimplemented!()
             }
         };
 

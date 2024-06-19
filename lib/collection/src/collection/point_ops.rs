@@ -5,7 +5,7 @@ use futures::stream::FuturesUnordered;
 use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
+use segment::types::{Filter, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
 use super::Collection;
@@ -207,10 +207,15 @@ impl Collection {
 
     pub async fn scroll_by(
         &self,
-        request: ScrollRequestInternal,
+        mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<ScrollResult> {
+        merge_filters(
+            &mut request.filter,
+            self.shards_holder.read().await.resharding_filter(),
+        );
+
         let default_request = ScrollRequestInternal::default();
 
         let id_offset = request.offset;
@@ -333,10 +338,15 @@ impl Collection {
 
     pub async fn count(
         &self,
-        request: CountRequestInternal,
+        mut request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CountResult> {
+        merge_filters(
+            &mut request.filter,
+            self.shards_holder.read().await.resharding_filter(),
+        );
+
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
 
@@ -374,8 +384,16 @@ impl Collection {
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
         let request = Arc::new(request);
+
+        #[allow(unused_assignments)]
+        let mut resharding_filter = None;
+
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
+
+            // Get resharding filter, while we hold the lock to shard holder
+            resharding_filter = shard_holder.resharding_filter_impl();
+
             let target_shards = shard_holder.select_shards(shard_selection)?;
             let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
                 let shard_key = shard_key.cloned();
@@ -397,15 +415,32 @@ impl Collection {
                         Ok(records)
                     })
             });
+
             future::try_join_all(retrieve_futures).await?
         };
+
         let mut covered_point_ids = HashSet::new();
         let points = all_shard_collection_results
             .into_iter()
             .flatten()
+            // If resharding is in progress, and *read* hash-ring is committed, filter-out "resharded" points
+            .filter(|point| match &resharding_filter {
+                Some(filter) => filter.check(point.id),
+                None => true,
+            })
             // Add each point only once, deduplicate point IDs
             .filter(|point| covered_point_ids.insert(point.id))
             .collect();
+
         Ok(points)
+    }
+}
+
+fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>) {
+    if let Some(resharding_filter) = resharding_filter {
+        *filter = Some(match filter.take() {
+            Some(filter) => filter.merge_owned(resharding_filter),
+            None => resharding_filter,
+        });
     }
 }
