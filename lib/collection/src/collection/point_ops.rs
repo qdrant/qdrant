@@ -310,13 +310,19 @@ impl Collection {
                             (value, record)
                         })
                     })
-                    // Get top results
-                    .kmerge_by(|(value_a, _), (value_b, _)| match order_by.direction() {
-                        Direction::Asc => value_a <= value_b,
-                        Direction::Desc => value_a >= value_b,
+                    .flatten()
+                    .sorted_unstable_by(|(value_a, record_a), (value_b, record_b)| {
+                        match order_by.direction() {
+                            Direction::Asc => (value_a, &record_a.id).cmp(&(value_b, &record_b.id)),
+                            Direction::Desc => {
+                                (value_b, &record_b.id).cmp(&(value_a, &record_a.id))
+                            }
+                        }
                     })
-                    // Add each point only once, deduplicate point IDs
-                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
+                    // Add each point-value only once
+                    .dedup_by(|(value_a, record_a), (value_b, record_b)| {
+                        value_a == value_b && record_a.id == record_b.id
+                    })
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()

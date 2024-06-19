@@ -264,7 +264,7 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         (
             # scroll
-            ("scroll", "points.id", {
+            ("scroll", "id", {
                 "filter": filter,
                 "limit": 5,
             }),
@@ -274,13 +274,53 @@ def test_points_query(tmp_path: pathlib.Path):
                 "with_payload": True,
             }),
         ),
+        # Order-by without filter
         (
             # scroll order by `asc`
-            ("scroll", "points.id", {
-                "filter": filter,
+            ("scroll", "id", {
                 "limit": 5,
                 "order_by": "count",
                 "direction": "asc",
+            }),
+            ("query", "id", {
+                "limit": 5,
+                "query": {
+                    "order_by": {
+                        "key": "count",
+                        "direction": "asc",
+                    }
+                }
+            }),
+        ),
+        (
+            # scroll order by `desc`
+            ("scroll", "id", {
+                "limit": 5,
+                "order_by": {
+                    "key": "count",
+                    "direction": "desc",
+                }
+            }),
+            ("query", "id", {
+                "limit": 5,
+                "query": {
+                    "order_by": {
+                        "key": "count",
+                        "direction": "desc",
+                    }
+                }
+            }),
+        ),
+        # # Order-by with filter
+        (
+            # scroll order by `asc`
+            ("scroll", "id", {
+                "filter": filter,
+                "limit": 5,
+                "order_by": {
+                    "key": "count",
+                    "direction": "asc",
+                }
             }),
             ("query", "id", {
                 "filter": filter,
@@ -295,11 +335,13 @@ def test_points_query(tmp_path: pathlib.Path):
         ),
         (
             # scroll order by `desc`
-            ("scroll", "points.id", {
+            ("scroll", "id", {
                 "filter": filter,
                 "limit": 5,
-                "order_by": "count",
-                "direction": "desc",
+                "order_by": {
+                    "key": "count",
+                    "direction": "desc",
+                }
             }),
             ("query", "id", {
                 "filter": filter,
@@ -337,6 +379,7 @@ def test_points_query(tmp_path: pathlib.Path):
             )
             assert_http_ok(r_one)
             r_one = get_results(action1, r_one.json())
+            print(r_one)
             if extract1:
                 r_one = apply_json_path(r_one, extract1)
 
@@ -348,19 +391,26 @@ def test_points_query(tmp_path: pathlib.Path):
             )
             assert_http_ok(r_two)
             r_two = get_results(action2, r_two.json())
+            print(r_two)
             if extract2:
                 r_two = apply_json_path(r_two, extract2)
 
             # assert same number of results
             assert len(r_one) == len(r_two), f"Different number of results for {action1} and {action2}"
-            # search equivalent results
-            assert set(str(d) for d in r_one) == set(str(d) for d in r_two), f"Different results for {action1} and {action2}"
-            # assert stable across peers
-            assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one), f"Different results for {action1} and {action2}"
+            if action1 in ["search", "recommend", "scroll"]:
+                # assert same order of results
+                assert [str(d) for d in r_one] == [str(d) for d in r_two], f"Different order of results for {action1} and {action2}"
+                # assert stable across peers
+                assert [str(d) for d in r_one] == [str(d) for d in r_init_one], f"Different order of results for {action1} and {action2}"
+            else:
+                # assert equivalent results
+                assert set(str(d) for d in r_one) == set(str(d) for d in r_two), f"Different results for {action1} and {action2}"
+                # assert stable across peers
+                assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one), f"Different results for {action1} and {action2}"
 
 
 def get_results(action_name, res_json):
-    if action_name == "query":
+    if action_name in ["query", "scroll"]:
         return res_json["result"]["points"]
     return res_json["result"]
 
