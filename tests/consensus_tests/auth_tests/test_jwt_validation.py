@@ -192,7 +192,7 @@ def test_payload_filters_query(berlin_token, prefetch):
     )
 
     cities_in_payload = set(
-        point["payload"].get("city") for point in res.json()["result"]
+        point["payload"].get("city") for point in res.json()["result"]["points"]
     )
 
     assert len(cities_in_payload) > 1
@@ -210,7 +210,7 @@ def test_payload_filters_query(berlin_token, prefetch):
     )
 
     cities_in_payload = set(
-        point["payload"].get("city") for point in res.json()["result"]
+        point["payload"].get("city") for point in res.json()["result"]["points"]
     )
 
     assert cities_in_payload == {"Berlin"}

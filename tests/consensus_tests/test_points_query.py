@@ -316,7 +316,7 @@ def test_points_query(tmp_path: pathlib.Path):
             json=body1
         )
         assert_http_ok(r_init_one)
-        r_init_one = r_init_one.json()["result"]
+        r_init_one = get_results(action1, r_init_one.json())
         if extract1:
             r_init_one = apply_json_path(r_init_one, extract1)
 
@@ -329,7 +329,7 @@ def test_points_query(tmp_path: pathlib.Path):
                 json=body1
             )
             assert_http_ok(r_one)
-            r_one = r_one.json()["result"]
+            r_one = get_results(action1, r_one.json())
             if extract1:
                 r_one = apply_json_path(r_one, extract1)
 
@@ -340,7 +340,7 @@ def test_points_query(tmp_path: pathlib.Path):
                 json=body2
             )
             assert_http_ok(r_two)
-            r_two = r_two.json()["result"]
+            r_two = get_results(action2, r_two.json())
             if extract2:
                 r_two = apply_json_path(r_two, extract2)
 
@@ -350,6 +350,13 @@ def test_points_query(tmp_path: pathlib.Path):
             assert set(str(d) for d in r_one) == set(str(d) for d in r_two), f"Different results for {action1} and {action2}"
             # assert stable across peers
             assert set(str(d) for d in r_one) == set(str(d) for d in r_init_one), f"Different results for {action1} and {action2}"
+
+
+def get_results(action_name, res_json):
+    if action_name == "query":
+        return res_json["result"]["points"]
+    return res_json["result"]
+
 
 def apply_json_path(json_obj, json_path):
     if json_path is None:

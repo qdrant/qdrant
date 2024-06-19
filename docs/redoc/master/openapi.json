@@ -5235,10 +5235,7 @@
                       "type": "string"
                     },
                     "result": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ScoredPoint"
-                      }
+                      "$ref": "#/components/schemas/QueryResponse"
                     }
                   }
                 }
@@ -5335,10 +5332,7 @@
                     "result": {
                       "type": "array",
                       "items": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ScoredPoint"
-                        }
+                        "$ref": "#/components/schemas/QueryResponse"
                       }
                     }
                   }
@@ -11949,6 +11943,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/QueryRequest"
+            }
+          }
+        }
+      },
+      "QueryResponse": {
+        "type": "object",
+        "required": [
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScoredPoint"
             }
           }
         }

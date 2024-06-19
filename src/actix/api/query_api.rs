@@ -1,6 +1,6 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use api::rest::{QueryRequest, QueryRequestBatch};
+use api::rest::{QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use itertools::Itertools;
@@ -31,7 +31,7 @@ async fn query_points(
             Some(shard_keys) => shard_keys.into(),
         };
 
-        let res = dispatcher
+        let points = dispatcher
             .toc(&access)
             .query_batch(
                 &collection.name,
@@ -49,7 +49,7 @@ async fn query_points(
             .map(api::rest::ScoredPoint::from)
             .collect_vec();
 
-        Ok(res)
+        Ok(QueryResponse { points })
     })
     .await
 }
@@ -94,11 +94,11 @@ async fn query_points_batch(
             )
             .await?
             .into_iter()
-            .map(|response| {
-                response
+            .map(|response| QueryResponse {
+                points: response
                     .into_iter()
                     .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
+                    .collect_vec(),
             })
             .collect_vec();
 

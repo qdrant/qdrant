@@ -636,7 +636,7 @@ paths:
             type: integer
             minimum: 1
 
-      responses: #@ response(array(reference("ScoredPoint")))
+      responses: #@ response(reference("QueryResponse"))
   
   /collections/{collection_name}/points/query/batch:
     post:
@@ -674,7 +674,7 @@ paths:
             type: integer
             minimum: 1
 
-      responses: #@ response(array(array(reference("ScoredPoint"))))
+      responses: #@ response(array(reference("QueryResponse")))
 
 components:
   securitySchemes:

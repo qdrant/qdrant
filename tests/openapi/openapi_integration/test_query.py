@@ -34,7 +34,7 @@ def root_and_rescored_query(query, limit=None, with_payload=None):
         },
     )
     assert response.ok
-    root_query_result = response.json()["result"]
+    root_query_result = response.json()["result"]["points"]
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
@@ -49,7 +49,7 @@ def root_and_rescored_query(query, limit=None, with_payload=None):
         },
     )
     assert response.ok
-    nested_query_result = response.json()["result"]
+    nested_query_result = response.json()["result"]["points"]
 
     assert root_query_result == nested_query_result
     return root_query_result
@@ -95,7 +95,7 @@ def test_basic_scroll():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
@@ -155,7 +155,7 @@ def test_basic_recommend_best_score():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     assert recommend_result == query_result
 
@@ -211,7 +211,7 @@ def test_basic_context():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
 
@@ -275,7 +275,7 @@ def test_basic_rrf():
         },
     )
     assert response.ok, response.json()
-    rrf_result = response.json()["result"]
+    rrf_result = response.json()["result"]["points"]
     
     def get_id(x):
         return x["id"]

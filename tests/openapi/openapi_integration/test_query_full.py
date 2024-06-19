@@ -50,7 +50,7 @@ def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=
         },
     )
     assert response.ok
-    root_query_result = response.json()["result"]
+    root_query_result = response.json()["result"]["points"]
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
@@ -67,7 +67,7 @@ def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=
         },
     )
     assert response.ok
-    nested_query_result = response.json()["result"]
+    nested_query_result = response.json()["result"]["points"]
 
     assert root_query_result == nested_query_result
     return root_query_result
@@ -107,7 +107,7 @@ def test_search_by_id():
         },
     )
     assert response.ok
-    by_id_query_result = response.json()["result"]
+    by_id_query_result = response.json()["result"]["points"]
 
     top = by_id_query_result[0]
     assert top["id"] != 2 # id 2 is excluded from the results
@@ -166,7 +166,7 @@ def test_scroll():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
@@ -204,7 +204,7 @@ def test_filtered_scroll():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
@@ -268,7 +268,7 @@ def test_recommend_best_score():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     assert recommend_result == query_result
 
@@ -328,7 +328,7 @@ def test_context():
         },
     )
     assert response.ok
-    query_result = response.json()["result"]
+    query_result = response.json()["result"]["points"]
 
     assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
 
@@ -464,7 +464,7 @@ def test_rrf():
         },
     )
     assert response.ok, response.json()
-    rrf_result = response.json()["result"]
+    rrf_result = response.json()["result"]["points"]
 
     def get_id(x):
         return x["id"]
@@ -511,7 +511,7 @@ def test_rrf():
         },
     )
     assert response.ok, response.json()
-    rrf_inner_filter_result = response.json()["result"]
+    rrf_inner_filter_result = response.json()["result"]["points"]
 
     for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_inner_filter_result, key=get_id)):
         assert expected["id"] == result["id"]
@@ -543,7 +543,7 @@ def test_sparse_dense_rerank_colbert():
         },
     )
     assert response.ok, response.json()
-    rerank_result = response.json()["result"]
+    rerank_result = response.json()["result"]["points"]
     assert len(rerank_result) == 3
     # record current result to detect change
     assert rerank_result[0]["id"] == 5
