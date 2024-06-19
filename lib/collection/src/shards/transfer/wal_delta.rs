@@ -11,7 +11,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 /// Orchestrate shard diff transfer
 ///
@@ -168,7 +168,7 @@ pub(super) async fn transfer_wal_delta(
         })?;
 
     // Synchronize all nodes
-    super::await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
+    await_consensus_sync(consensus, &channel_service).await;
 
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
 

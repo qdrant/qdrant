@@ -26,7 +26,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::resharding_stream_records::transfer_resharding_stream_records;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 /// Maximum time a point migration transfer might take.
 const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -126,8 +126,10 @@ enum Stage {
     S3_ReplicateStart,
     #[serde(rename = "replicate_end")]
     S3_ReplicateEnd,
-    #[serde(rename = "commit_hash_ring")]
-    S4_CommitHashring,
+    #[serde(rename = "commit_hash_ring_start")]
+    S4_CommitHashringStart,
+    #[serde(rename = "commit_hash_ring_end")]
+    S4_CommitHashringEnd,
     #[serde(rename = "propagate_deletes_start")]
     S5_PropagateDeletesStart,
     #[serde(rename = "propagate_deletes_end")]
@@ -205,9 +207,16 @@ pub async fn drive_resharding(
     }
 
     // Stage 4: commit new hashring
-    if !completed_commit_hashring() {
+    if !completed_commit_hashring(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit hashring");
-        stage_commit_hashring()?;
+        stage_commit_hashring(
+            &reshard_key,
+            &state,
+            consensus,
+            &channel_service,
+            &collection_id,
+        )
+        .await?;
     }
 
     // Stage 5: propagate deletes
@@ -575,15 +584,41 @@ async fn stage_replicate(
 /// Stage 4: commit new hashring
 ///
 /// Check whether the new hashring still needs to be committed.
-fn completed_commit_hashring() -> bool {
-    todo!()
+fn completed_commit_hashring(state: &PersistedState) -> bool {
+    state.read().all_peers_reached(Stage::S4_CommitHashringEnd)
 }
 
 /// Stage 4: commit new hashring
 ///
 /// Do commit the new hashring.
-fn stage_commit_hashring() -> CollectionResult<()> {
-    todo!()
+async fn stage_commit_hashring(
+    reshard_key: &ReshardKey,
+    state: &PersistedState,
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    collection_id: &CollectionId,
+) -> CollectionResult<()> {
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S4_CommitHashringStart);
+    })?;
+
+    // Commit read hashring and sync cluster
+    consensus
+        .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
+        .await?;
+    await_consensus_sync(consensus, channel_service).await;
+
+    // Commit write hashring and sync cluster
+    consensus
+        .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
+        .await?;
+    await_consensus_sync(consensus, channel_service).await;
+
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S4_CommitHashringEnd);
+    })?;
+
+    Ok(())
 }
 
 /// Stage 5: propagate deletes
