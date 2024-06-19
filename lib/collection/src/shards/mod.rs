@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use channel_service::ChannelService;
 use common::defaults;
-use shard::{PeerId, ShardId};
+use shard::ShardId;
 use tokio::time::{sleep_until, timeout_at};
 use transfer::ShardTransferConsensus;
 

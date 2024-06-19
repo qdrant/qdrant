@@ -3,14 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::defaults;
 use futures::Future;
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::task::block_in_place;
-use tokio::time::{sleep_until, timeout_at};
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
