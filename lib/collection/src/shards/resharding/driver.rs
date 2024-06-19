@@ -75,15 +75,16 @@ impl DriverState {
     }
 
     /// Check whether all peers have reached at least the given stage
-    fn all_peers_reached(&self, stage: Stage) -> bool {
-        self.peers.values().all(|peer_stage| peer_stage >= &stage)
+    fn all_peers_completed(&self, stage: Stage) -> bool {
+        self.peers.values().all(|peer_stage| peer_stage > &stage)
     }
 
     /// Bump the state of all peers to at least the given stage.
-    fn bump_all_peers_to(&mut self, stage: Stage) {
+    fn complete_for_all_peers(&mut self, stage: Stage) {
+        let next_stage = stage.next();
         self.peers
             .values_mut()
-            .for_each(|peer_stage| *peer_stage = stage.max(*peer_stage));
+            .for_each(|peer_stage| *peer_stage = next_stage.max(*peer_stage));
     }
 
     /// List the shard IDs we still need to migrate.
@@ -114,28 +115,34 @@ impl DriverState {
 #[allow(non_camel_case_types)]
 enum Stage {
     #[default]
-    #[serde(rename = "init_start")]
-    S1_InitStart,
-    #[serde(rename = "init_end")]
-    S1_InitEnd,
-    #[serde(rename = "migrate_points_start")]
-    S2_MigratePointsStart,
-    #[serde(rename = "migrate_points_end")]
-    S2_MigratePointsEnd,
-    #[serde(rename = "replicate_start")]
-    S3_ReplicateStart,
-    #[serde(rename = "replicate_end")]
-    S3_ReplicateEnd,
-    #[serde(rename = "commit_hash_ring_start")]
-    S4_CommitHashringStart,
-    #[serde(rename = "commit_hash_ring_end")]
-    S4_CommitHashringEnd,
-    #[serde(rename = "propagate_deletes_start")]
-    S5_PropagateDeletesStart,
-    #[serde(rename = "propagate_deletes_end")]
-    S5_PropagateDeletesEnd,
+    #[serde(rename = "init")]
+    S1_Init,
+    #[serde(rename = "migrate_points")]
+    S2_MigratePoints,
+    #[serde(rename = "replicate")]
+    S3_Replicate,
+    #[serde(rename = "commit_hash_ring")]
+    S4_CommitHashring,
+    #[serde(rename = "propagate_deletes")]
+    S5_PropagateDeletes,
     #[serde(rename = "finalize")]
     S6_Finalize,
+    #[serde(rename = "finished")]
+    Finished,
+}
+
+impl Stage {
+    pub fn next(self) -> Self {
+        match self {
+            Self::S1_Init => Self::S2_MigratePoints,
+            Self::S2_MigratePoints => Self::S3_Replicate,
+            Self::S3_Replicate => Self::S4_CommitHashring,
+            Self::S4_CommitHashring => Self::S5_PropagateDeletes,
+            Self::S5_PropagateDeletes => Self::S6_Finalize,
+            Self::S6_Finalize => Self::Finished,
+            Self::Finished => unreachable!()
+        }
+    }
 }
 
 /// Drive the resharding on the target node based on the given configuration
@@ -227,7 +234,7 @@ pub async fn drive_resharding(
 
     // Stage 6: finalize
     log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
-    stage_finalize()?;
+    stage_finalize(&state)?;
 
     // Remove the state file after successful resharding
     if let Err(err) = tokio::fs::remove_file(resharding_state_path).await {
@@ -247,7 +254,7 @@ fn resharding_state_path(reshard_key: &ReshardKey, collection_path: &Path) -> Pa
 ///
 /// Check whether we need to initialize the resharding process.
 fn completed_init(state: &PersistedState) -> bool {
-    state.read().all_peers_reached(Stage::S1_InitEnd)
+    state.read().all_peers_completed(Stage::S1_Init)
 }
 
 /// Stage 1: init
@@ -255,7 +262,7 @@ fn completed_init(state: &PersistedState) -> bool {
 /// Do initialize the resharding process.
 fn stage_init(state: &PersistedState) -> CollectionResult<()> {
     state.write(|data| {
-        data.bump_all_peers_to(Stage::S1_InitEnd);
+        data.complete_for_all_peers(Stage::S1_Init);
     })?;
 
     Ok(())
@@ -266,7 +273,7 @@ fn stage_init(state: &PersistedState) -> CollectionResult<()> {
 /// Check whether we need to migrate points into the new shard.
 fn completed_migrate_points(state: &PersistedState) -> bool {
     let state_read = state.read();
-    state_read.all_peers_reached(Stage::S2_MigratePointsEnd)
+    state_read.all_peers_completed(Stage::S2_MigratePoints)
         && state_read.shards_to_migrate().next().is_none()
 }
 
@@ -283,10 +290,6 @@ async fn stage_migrate_points(
     channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    state.write(|data| {
-        data.bump_all_peers_to(Stage::S2_MigratePointsStart);
-    })?;
-
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
         let ongoing_transfer = shard_holder
             .read()
@@ -407,7 +410,7 @@ async fn stage_migrate_points(
         .await?;
 
     state.write(|data| {
-        data.bump_all_peers_to(Stage::S2_MigratePointsEnd);
+        data.complete_for_all_peers(Stage::S2_MigratePoints);
     })?;
 
     Ok(())
@@ -462,7 +465,7 @@ async fn completed_replicate(
     shard_holder: &Arc<LockedShardHolder>,
     collection_config: &Arc<RwLock<CollectionConfig>>,
 ) -> CollectionResult<bool> {
-    Ok(state.read().all_peers_reached(Stage::S3_ReplicateEnd)
+    Ok(state.read().all_peers_completed(Stage::S3_Replicate)
         && has_enough_replicas(reshard_key, shard_holder, collection_config).await?)
 }
 
@@ -504,10 +507,6 @@ async fn stage_replicate(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
-    state.write(|data| {
-        data.bump_all_peers_to(Stage::S3_ReplicateStart);
-    })?;
-
     while !has_enough_replicas(reshard_key, &shard_holder, &collection_config).await? {
         // Select a peer to replicate to, not having a replica yet
         let occupied_peers = {
@@ -575,7 +574,7 @@ async fn stage_replicate(
     }
 
     state.write(|data| {
-        data.bump_all_peers_to(Stage::S3_ReplicateEnd);
+        data.complete_for_all_peers(Stage::S3_Replicate);
     })?;
 
     Ok(())
@@ -585,7 +584,7 @@ async fn stage_replicate(
 ///
 /// Check whether the new hashring still needs to be committed.
 fn completed_commit_hashring(state: &PersistedState) -> bool {
-    state.read().all_peers_reached(Stage::S4_CommitHashringEnd)
+    state.read().all_peers_completed(Stage::S4_CommitHashring)
 }
 
 /// Stage 4: commit new hashring
@@ -598,10 +597,6 @@ async fn stage_commit_hashring(
     channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    state.write(|data| {
-        data.bump_all_peers_to(Stage::S4_CommitHashringStart);
-    })?;
-
     // Commit read hashring and sync cluster
     consensus
         .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
@@ -615,7 +610,7 @@ async fn stage_commit_hashring(
     await_consensus_sync(consensus, channel_service).await;
 
     state.write(|data| {
-        data.bump_all_peers_to(Stage::S4_CommitHashringEnd);
+        data.complete_for_all_peers(Stage::S4_CommitHashring);
     })?;
 
     Ok(())
@@ -626,7 +621,7 @@ async fn stage_commit_hashring(
 /// Check whether migrated points still need to be deleted in their old shards.
 fn completed_propagate_deletes(state: &PersistedState) -> bool {
     let state_read = state.read();
-    state_read.all_peers_reached(Stage::S5_PropagateDeletesEnd)
+    state_read.all_peers_completed(Stage::S5_PropagateDeletes)
         && state_read.shards_to_delete().next().is_none()
 }
 
@@ -639,12 +634,6 @@ async fn stage_propagate_deletes(
     state: &PersistedState,
     shard_holder: Arc<LockedShardHolder>,
 ) -> CollectionResult<()> {
-    log::debug!("Resharding stage: propagate deletes");
-
-    state.write(|data| {
-        data.bump_all_peers_to(Stage::S5_PropagateDeletesStart);
-    })?;
-
     let hashring = {
         let shard_holder = shard_holder.read().await;
         let shard_key = shard_holder
@@ -716,7 +705,7 @@ async fn stage_propagate_deletes(
     }
 
     state.write(|data| {
-        data.bump_all_peers_to(Stage::S5_PropagateDeletesEnd);
+        data.complete_for_all_peers(Stage::S5_PropagateDeletes);
     })?;
 
     Ok(())
@@ -725,8 +714,12 @@ async fn stage_propagate_deletes(
 /// Stage 6: finalize
 ///
 /// Finalize the resharding operation.
-fn stage_finalize() -> CollectionResult<()> {
-    todo!()
+fn stage_finalize(state: &PersistedState) -> CollectionResult<()> {
+    state.write(|data| {
+        data.complete_for_all_peers(Stage::S6_Finalize);
+    })?;
+
+    Ok(())
 }
 
 /// Await for a resharding shard transfer to succeed.
