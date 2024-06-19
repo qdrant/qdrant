@@ -1978,10 +1978,7 @@ impl Condition {
     }
 
     pub fn is_local_only(&self) -> bool {
-        match self {
-            Condition::Resharding(_) => true,
-            _ => false,
-        }
+        matches!(self, Condition::Resharding(_))
     }
 }
 
