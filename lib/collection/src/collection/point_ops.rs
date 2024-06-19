@@ -293,7 +293,7 @@ impl Collection {
             Some(order_by) => {
                 retrieved_iter
                     // Extract and remove order value from payload
-                    .map(|records| {
+                    .flat_map(|records| {
                         // TODO(1.11): read value only from record.order_value, remove & cleanup this part
                         records.into_iter().map(|mut record| {
                             let value;
@@ -318,8 +318,7 @@ impl Collection {
                             (value, record)
                         })
                     })
-                    // Get top results
-                    .kmerge_by(|(value_a, record_a), (value_b, record_b)| {
+                    .sorted_unstable_by(|(value_a, record_a), (value_b, record_b)| {
                         match order_by.direction() {
                             Direction::Asc => (value_a, record_a.id) < (value_b, record_b.id),
                             Direction::Desc => (value_a, record_a.id) > (value_b, record_b.id),
