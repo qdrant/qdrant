@@ -265,7 +265,11 @@ impl ShardHolder {
             Ok(())
         })?;
 
-        todo!()
+        self.resharding_state.write(|state| {
+            state.take();
+        })?;
+
+        Ok(())
     }
 
     pub async fn abort_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
@@ -354,7 +358,7 @@ impl ShardHolder {
                     "resharding {resharding_key} is not in progress:\n{state:#?}"
                 );
 
-                *state = None;
+                state.take();
             })?;
         }
 
