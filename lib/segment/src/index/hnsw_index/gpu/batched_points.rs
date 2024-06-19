@@ -1,10 +1,12 @@
 use std::ops::Range;
 use std::sync::atomic::AtomicU32;
 
+use ahash::HashSet;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 
+#[derive(Debug)]
 pub struct PointLinkingData {
     pub point_id: PointOffsetType,
     pub level: usize,
@@ -12,16 +14,18 @@ pub struct PointLinkingData {
     pub entry: AtomicU32,
 }
 
+#[derive(Debug)]
 pub struct Batch<'a> {
-    pub batch_index: usize,
     pub points: &'a [PointLinkingData],
-    pub batch_level: usize,
+    pub level: usize,
 }
 
 pub struct BatchedPoints {
     pub points: Vec<PointLinkingData>,
     pub batches: Vec<Range<usize>>,
+    pub ids_by_batches: Vec<HashSet<PointOffsetType>>,
     pub first_point_id: PointOffsetType,
+    pub levels_count: usize,
 }
 
 impl BatchedPoints {
@@ -49,14 +53,48 @@ impl BatchedPoints {
             }
         }
 
+        let ids_by_batches = batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .clone()
+                    .map(|i| ids[i])
+                    .collect::<HashSet<PointOffsetType>>()
+            })
+            .collect();
+
         Ok(Self {
             points,
             batches,
+            ids_by_batches,
             first_point_id,
+            levels_count: level_fn(first_point_id) + 1,
         })
     }
 
-    fn sort_points_by_level(
+    pub fn is_same_batch(
+        &self,
+        linking_point: &PointLinkingData,
+        other_point: PointOffsetType,
+    ) -> bool {
+        self.ids_by_batches[linking_point.batch_index].contains(&other_point)
+    }
+
+    pub fn iter_batches(&self, skip_count: usize) -> impl Iterator<Item = Batch> {
+        self.batches
+            .iter()
+            .filter(move |batch| batch.end > skip_count)
+            .map(move |batch| {
+                let intersected_batch = std::cmp::max(batch.start, skip_count)..batch.end;
+                let level = self.points[intersected_batch.start].level;
+                Batch {
+                    points: &self.points[intersected_batch],
+                    level,
+                }
+            })
+    }
+
+    pub fn sort_points_by_level(
         level_fn: impl Fn(PointOffsetType) -> usize,
         ids: &mut [PointOffsetType],
     ) {

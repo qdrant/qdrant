@@ -384,28 +384,29 @@ impl GpuGraphBuilder {
         assert!(graph_layers_builder.get_point_level(entry) >= level);
 
         let (raw_scorer, filter_context) = points_scorer_builder(point_id)?;
-        let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+        let mut points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
         let (patches, new_entries) = graph_layers_builder.get_patch(
             GpuRequest {
                 id: point_id,
                 entry,
             },
             level,
-            points_scorer,
+            &mut points_scorer,
         );
 
         let success = graph_layers_builder.try_apply_patch(level, patches);
 
         if !success {
             let _retry_guard = retry_mutex.lock();
-            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+            let mut points_scorer =
+                FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
             let (patches, new_entries) = graph_layers_builder.get_patch(
                 GpuRequest {
                     id: point_id,
                     entry,
                 },
                 level,
-                points_scorer,
+                &mut points_scorer,
             );
             graph_layers_builder.apply_patch(level, patches);
             Ok(new_entries)

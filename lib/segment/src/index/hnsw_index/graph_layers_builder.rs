@@ -517,7 +517,7 @@ impl GraphLayersBuilder {
         &self,
         request: super::gpu::gpu_search_context::GpuRequest,
         level: usize,
-        mut points_scorer: FilteredScorer,
+        points_scorer: &mut FilteredScorer,
     ) -> (
         Vec<super::gpu::gpu_search_context::GpuGraphLinksPatch>,
         Vec<PointOffsetType>,
@@ -537,12 +537,7 @@ impl GraphLayersBuilder {
         };
         let mut search_context = SearchContext::new(level_entry, self.ef_construct);
 
-        self._search_on_level(
-            &mut search_context,
-            level,
-            &mut visited_list,
-            &mut points_scorer,
-        );
+        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
 
         let new_entries = search_context
             .nearest

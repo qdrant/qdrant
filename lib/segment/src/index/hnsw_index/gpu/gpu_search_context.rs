@@ -905,10 +905,11 @@ mod tests {
                 .vector_holder
                 .get_raw_scorer(added_vector.clone())
                 .unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let (cpu_patches, cpu_new_entry) =
-                test.graph_layers_builder.get_patch(requests[i], 0, scorer);
+                test.graph_layers_builder
+                    .get_patch(requests[i], 0, &mut scorer);
 
             assert_eq!(new_entries[i], *cpu_new_entry.first().unwrap());
             assert_eq!(gpu_patches.len(), cpu_patches.len());
