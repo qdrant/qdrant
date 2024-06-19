@@ -105,7 +105,8 @@ impl DriverState {
     }
 
     /// Describe the current stage and state in a human readable string.
-    pub fn describe(&self) -> String {
+    // TODO(resharding): connect this to cluster info
+    pub fn _describe(&self) -> String {
         let Some(lowest_stage) = self.peers.values().min() else {
             return "unknown: no known peers".into();
         };
@@ -164,7 +165,7 @@ impl Stage {
             Self::S4_CommitHashring => Self::S5_PropagateDeletes,
             Self::S5_PropagateDeletes => Self::S6_Finalize,
             Self::S6_Finalize => Self::Finished,
-            Self::Finished => unreachable!()
+            Self::Finished => unreachable!(),
         }
     }
 }
