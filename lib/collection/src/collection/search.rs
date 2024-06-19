@@ -268,11 +268,16 @@ impl Collection {
 
             let results_from_shards = all_searches_res
                 .iter_mut()
-                .map(|res| mem::take(&mut res[batch_index]));
+                .map(|res| mem::take(&mut res[batch_index]))
+                .flatten();
 
             let merged_iter = match order {
-                Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),
-                Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
+                Order::LargeBetter => {
+                    Either::Left(results_from_shards.sorted_unstable_by(|a, b| b.cmp(a)))
+                }
+                Order::SmallBetter => {
+                    Either::Right(results_from_shards.sorted_unstable_by(|a, b| a.cmp(b)))
+                }
             }
             .filter(|point| seen_ids.insert(point.id));
 

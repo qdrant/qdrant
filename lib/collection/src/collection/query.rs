@@ -270,28 +270,27 @@ impl Collection {
             // `shards_results` shape: [num_shards, num_scored_points]
             let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
 
+            let shards_results_iter = shards_results.into_iter().flatten();
+
             // Equivalent to:
             //
             // shards_results
             //     .into_iter()
-            //     .kmerge_by(match order {
-            //         Order::LargeBetter => |a, b| ScoredPointTies(a) > ScoredPointTies(b),
-            //         Order::SmallBetter => |a, b| ScoredPointTies(a) < ScoredPointTies(b),
+            //     .sorted_unstable_by(match order {
+            //         Order::LargeBetter => |a, b| ScoredPointTies(b).cmp(ScoredPointTies(a)),
+            //         Order::SmallBetter => |a, b| ScoredPointTies(a).cmp(ScoredPointTies(b)),
             //     })
             //
-            // if the `kmerge_by` function were able to work with reference predicates.
             // Either::Left and Either::Right are used to allow type inference to work.
             //
             let intermediate_result = match order {
                 Order::LargeBetter => Either::Left(
-                    shards_results
-                        .into_iter()
-                        .kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
+                    shards_results_iter
+                        .sorted_unstable_by(|a, b| ScoredPointTies(b).cmp(&ScoredPointTies(a))),
                 ),
                 Order::SmallBetter => Either::Right(
-                    shards_results
-                        .into_iter()
-                        .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
+                    shards_results_iter
+                        .sorted_unstable_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b))),
                 ),
             }
             .dedup()

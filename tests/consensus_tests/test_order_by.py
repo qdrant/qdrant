@@ -12,7 +12,7 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
 
     uri = peer_api_uris[0]
 
-    create_collection(uri, collection=COLL_NAME, shard_number=2, replication_factor=1)
+    create_collection(uri, collection=COLL_NAME, shard_number=2, replication_factor=2)
 
     requests.put(
         f"{uri}/collections/{COLL_NAME}/index",
@@ -134,6 +134,7 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
         },
     ).raise_for_status()
 
+    # asc
     res = requests.post(
         f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index"}
     )
@@ -146,11 +147,28 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     values = [point["payload"]["index"] for point in res.json()["result"]["points"]]
 
     assert values == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    
+    # desc
+    res = requests.post(
+        f"{uri}/collections/{COLL_NAME}/points/scroll", 
+        json={"limit": 10, "order_by": {"key": "index", "direction": "desc"}},
+        params={"consistency": "all"}
+    )
+
+    assert_http_ok(res)
+
+    for point in res.json()["result"]["points"]:
+        assert point.get("payload") is not None
+
+    values = [point["payload"]["index"] for point in res.json()["result"]["points"]]
+
+    assert values == [13, 12, 11, 10, 9, 8, 7, 6, 5, 4]
 
     # It should also work when with_payload is False
     res = requests.post(
         f"{uri}/collections/{COLL_NAME}/points/scroll",
         json={"limit": 10, "order_by": "index", "with_payload": False},
+        params={"consistency": "all"}
     )
 
     assert_http_ok(res)

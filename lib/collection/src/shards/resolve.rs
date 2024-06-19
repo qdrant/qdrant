@@ -45,9 +45,7 @@ impl Resolve for CountResult {
 
 impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        let mut resolved = Resolver::resolve(records, |record| record.id, record_eq, condition);
-        resolved.sort_unstable_by_key(|record| record.id);
-        resolved
+        Resolver::resolve(records, |record| record.id, record_eq, condition)
     }
 }
 
@@ -59,13 +57,7 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
         let batches = transposed_iter(batches);
 
         batches
-            .map(|points| {
-                let mut resolved =
-                    Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
-
-                resolved.sort_unstable();
-                resolved
-            })
+            .map(|points| Resolver::resolve(points, |point| point.id, scored_point_eq, condition))
             .collect()
     }
 }
