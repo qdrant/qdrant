@@ -651,7 +651,7 @@ async fn stage_propagate_deletes(
                 )
                 .await?;
 
-            offset = if points.len() >= DELETE_BATCH_SIZE {
+            offset = if points.len() > DELETE_BATCH_SIZE {
                 points.pop().map(|point| point.id)
             } else {
                 None
