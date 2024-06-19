@@ -209,6 +209,11 @@ pub struct QueryRequestBatch {
     pub searches: Vec<QueryRequest>,
 }
 
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct QueryResponse {
+    pub points: Vec<ScoredPoint>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum QueryInterface {
