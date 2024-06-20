@@ -567,11 +567,62 @@ mod from_rest {
     }
 }
 
-mod from_grpc {
+pub mod from_grpc {
     use api::grpc::qdrant::{self as grpc};
     use tonic::Status;
 
     use super::*;
+
+    impl TryFrom<api::grpc::qdrant::QueryPoints> for CollectionQueryRequest {
+        type Error = Status;
+
+        fn try_from(value: api::grpc::qdrant::QueryPoints) -> Result<Self, Self::Error> {
+            let grpc::QueryPoints {
+                collection_name: _,
+                prefetch,
+                query,
+                using,
+                filter,
+                search_params,
+                score_threshold,
+                limit,
+                offset,
+                with_payload,
+                with_vectors,
+                read_consistency: _,
+                shard_key_selector: _,
+                lookup_from,
+                timeout: _,
+            } = value;
+
+            let request = CollectionQueryRequest {
+                prefetch: prefetch
+                    .into_iter()
+                    .map(TryFrom::try_from)
+                    .collect::<Result<_, _>>()?,
+                query: query.map(TryFrom::try_from).transpose()?,
+                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+                filter: filter.map(TryFrom::try_from).transpose()?,
+                score_threshold,
+                limit: limit
+                    .map(|l| l as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+                offset: offset
+                    .map(|o| o as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
+                params: search_params.map(From::from),
+                with_vector: with_vectors
+                    .map(From::from)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+                with_payload: with_payload
+                    .map(TryFrom::try_from)
+                    .transpose()?
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+                lookup_from: lookup_from.map(From::from),
+            };
+            Ok(request)
+        }
+    }
 
     impl TryFrom<grpc::PrefetchQuery> for CollectionPrefetch {
         type Error = Status;
