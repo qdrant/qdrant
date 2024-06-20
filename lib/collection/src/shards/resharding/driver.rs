@@ -261,9 +261,8 @@ pub async fn drive_resharding(
     log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
     stage_finalize(&state)?;
 
-    // Remove the state file after successful resharding
-    drop(state);
-    if let Err(err) = tokio::fs::remove_file(resharding_state_path).await {
+    // Delete the state file after successful resharding
+    if let Err(err) = state.delete().await {
         log::error!(
             "Failed to remove resharding state file after successful resharding, ignoring: {err}"
         );
