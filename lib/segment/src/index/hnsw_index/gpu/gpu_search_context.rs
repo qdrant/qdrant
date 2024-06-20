@@ -258,7 +258,7 @@ impl GpuSearchContext {
         let insert_atomics_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<PointOffsetType>(),
+            points_count * std::mem::size_of::<PointOffsetType>(),
         ));
 
         let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
