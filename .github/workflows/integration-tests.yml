@@ -23,8 +23,16 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install dependencies
-        run: sudo apt-get install clang
+        run: |
+          sudo apt-get install clang
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests
@@ -49,8 +57,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install python deps
-        run: pip install -r ./tests/consensus_tests/requirements.txt
+      - name: Install dependencies
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          pip install -r ./tests/consensus_tests/requirements.txt
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests - 1 peer
