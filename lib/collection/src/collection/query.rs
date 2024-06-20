@@ -53,7 +53,7 @@ impl Collection {
                     shard_responses
                         .iter_mut()
                         .flatten()
-                        .flat_map(|(points, _)| points.iter_mut())
+                        .flat_map(|(points, _)| points)
                         .for_each(|point| point.shard_key.clone_from(&shard_key));
 
                     Ok(shard_responses)
@@ -291,7 +291,7 @@ impl Collection {
                     shards_results.kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                 ),
             }
-            .dedup()
+            .unique_by(|point| point.id)
             .take(take)
             .collect();
 

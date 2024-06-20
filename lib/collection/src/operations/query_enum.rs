@@ -89,8 +89,6 @@ pub enum QueryEnum {
     Context(NamedQuery<ContextQuery<Vector>>),
 }
 
-impl QueryEnum {}
-
 impl From<DenseVector> for QueryEnum {
     fn from(vector: DenseVector) -> Self {
         QueryEnum::Nearest(NamedVectorStruct::Default(vector))

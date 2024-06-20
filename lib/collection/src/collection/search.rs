@@ -266,11 +266,11 @@ impl Collection {
                 .map(|(_, order)| *order)
                 .unwrap_or(Order::SmallBetter);
 
-            let results = results_from_shards.into_iter().flat_map(|(res, _)| res);
+            let results = results_from_shards.into_iter().map(|(res, _)| res);
 
             let merged_iter = match order {
-                Order::LargeBetter => Either::Left(results.sorted_unstable_by(|a, b| b.cmp(a))),
-                Order::SmallBetter => Either::Right(results.sorted_unstable_by(|a, b| a.cmp(b))),
+                Order::LargeBetter => Either::Left(results.kmerge_by(|a, b| a > b)),
+                Order::SmallBetter => Either::Right(results.kmerge_by(|a, b| a > b)),
             }
             .filter(|point| seen_ids.insert(point.id));
 

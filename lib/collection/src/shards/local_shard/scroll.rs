@@ -198,10 +198,9 @@ impl LocalShard {
 
         let (values, point_ids): (Vec<_>, Vec<_>) = all_reads
             .into_iter()
-            .flatten()
-            .sorted_unstable_by(|a, b| match order_by.direction() {
-                Direction::Asc => a.cmp(b),
-                Direction::Desc => b.cmp(a),
+            .kmerge_by(|a, b| match order_by.direction() {
+                Direction::Asc => a < b,
+                Direction::Desc => a > b,
             })
             .dedup()
             .take(limit)
