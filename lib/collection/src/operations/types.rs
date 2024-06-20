@@ -240,6 +240,10 @@ pub struct ReshardingInfo {
     pub peer_id: PeerId,
 
     pub shard_key: Option<ShardKey>,
+
+    /// A human-readable report of the operation progress. Available only on the source peer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
