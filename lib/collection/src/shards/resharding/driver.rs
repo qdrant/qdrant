@@ -63,6 +63,16 @@ impl DriverState {
         }
     }
 
+    /// Update the resharding state, must be called periodically
+    pub fn update(
+        &mut self,
+        progress: &Mutex<ReshardTaskProgress>,
+        consensus: &dyn ShardTransferConsensus,
+    ) {
+        self.sync_peers(&consensus.peers());
+        progress.lock().description.replace(self.describe());
+    }
+
     /// Sync the peers we know about with this state.
     ///
     /// This will update this driver state to have exactly the peers given in the list. New peers
@@ -202,7 +212,7 @@ pub async fn drive_resharding(
     // Stage 1: init
     if !completed_init(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: init");
-        stage_init(&state, &progress)?;
+        stage_init(&state, &progress, consensus)?;
     }
 
     // Stage 2: init
@@ -253,12 +263,19 @@ pub async fn drive_resharding(
     // Stage 5: propagate deletes
     if !completed_propagate_deletes(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
-        stage_propagate_deletes(&reshard_key, &state, &progress, shard_holder.clone()).await?;
+        stage_propagate_deletes(
+            &reshard_key,
+            &state,
+            &progress,
+            shard_holder.clone(),
+            consensus,
+        )
+        .await?;
     }
 
     // Stage 6: finalize
     log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
-    stage_finalize(&state, &progress)?;
+    stage_finalize(&state, &progress, consensus)?;
 
     // Delete the state file after successful resharding
     if let Err(err) = state.delete().await {
@@ -284,10 +301,14 @@ fn completed_init(state: &PersistedState) -> bool {
 /// Stage 1: init
 ///
 /// Do initialize the resharding process.
-fn stage_init(state: &PersistedState, progress: &Mutex<ReshardTaskProgress>) -> CollectionResult<()> {
+fn stage_init(
+    state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
+    consensus: &dyn ShardTransferConsensus,
+) -> CollectionResult<()> {
     state.write(|data| {
         data.complete_for_all_peers(Stage::S1_Init);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())
@@ -418,7 +439,7 @@ async fn stage_migrate_points(
 
         state.write(|data| {
             data.migrated_shards.push(source_shard_id);
-            progress.lock().description.replace(data.describe());
+            data.update(progress, consensus);
         })?;
         log::debug!(
             "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
@@ -438,7 +459,7 @@ async fn stage_migrate_points(
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S2_MigratePoints);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())
@@ -604,7 +625,7 @@ async fn stage_replicate(
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S3_Replicate);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())
@@ -629,28 +650,40 @@ async fn stage_commit_hashring(
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     // Commit read hashring
-    progress.lock().description.replace(format!("{} (switching read)", state.read().describe()));
+    progress
+        .lock()
+        .description
+        .replace(format!("{} (switching read)", state.read().describe()));
     consensus
         .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
 
     // Sync cluster
-    progress.lock().description.replace(format!("{} (await cluster sync for read)", state.read().describe()));
+    progress.lock().description.replace(format!(
+        "{} (await cluster sync for read)",
+        state.read().describe(),
+    ));
     await_consensus_sync(consensus, channel_service).await;
 
     // Commit write hashring
-    progress.lock().description.replace(format!("{} (switching write)", state.read().describe()));
+    progress
+        .lock()
+        .description
+        .replace(format!("{} (switching write)", state.read().describe()));
     consensus
         .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
 
     // Sync cluster
-    progress.lock().description.replace(format!("{} (await cluster sync for read)", state.read().describe()));
+    progress.lock().description.replace(format!(
+        "{} (await cluster sync for write)",
+        state.read().describe(),
+    ));
     await_consensus_sync(consensus, channel_service).await;
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S4_CommitHashring);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())
@@ -674,6 +707,7 @@ async fn stage_propagate_deletes(
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
     shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
 ) -> CollectionResult<()> {
     let hashring = {
         let shard_holder = shard_holder.read().await;
@@ -742,13 +776,13 @@ async fn stage_propagate_deletes(
 
         state.write(|data| {
             data.deleted_shards.push(source_shard_id);
-            progress.lock().description.replace(data.describe());
+            data.update(progress, consensus);
         })?;
     }
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S5_PropagateDeletes);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())
@@ -760,10 +794,11 @@ async fn stage_propagate_deletes(
 fn stage_finalize(
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
+    consensus: &dyn ShardTransferConsensus,
 ) -> CollectionResult<()> {
     state.write(|data| {
         data.complete_for_all_peers(Stage::S6_Finalize);
-        progress.lock().description.replace(data.describe());
+        data.update(progress, consensus);
     })?;
 
     Ok(())

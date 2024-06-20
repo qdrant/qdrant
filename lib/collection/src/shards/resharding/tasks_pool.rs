@@ -37,9 +37,7 @@ pub struct ReshardTaskStatus {
 impl ReshardTaskProgress {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self {
-            description: None,
-        }
+        Self { description: None }
     }
 }
 
