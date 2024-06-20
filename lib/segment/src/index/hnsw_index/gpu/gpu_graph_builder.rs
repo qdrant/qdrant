@@ -5,7 +5,6 @@ use std::thread::JoinHandle;
 
 use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
-use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::ThreadPool;
@@ -225,12 +224,6 @@ impl GpuGraphBuilder {
 
         let levels_count = self.points[0].level + 1;
         for level in (0..levels_count).rev() {
-            let level_m = if level > 0 {
-                self.graph_layers_builder.m
-            } else {
-                self.graph_layers_builder.m0
-            };
-
             let (start_gpu_chunk_index, start_gpu_index) = self.build_level_on_cpu(
                 level,
                 pool,
@@ -252,7 +245,6 @@ impl GpuGraphBuilder {
             gpu_thread = if start_gpu_chunk_index < self.chunks.len() {
                 self.build_level_on_gpu(
                     level,
-                    level_m,
                     start_gpu_chunk_index,
                     start_gpu_index,
                     gpu_processed.clone(),
@@ -418,7 +410,6 @@ impl GpuGraphBuilder {
     fn build_level_on_gpu(
         &self,
         level: usize,
-        level_m: usize,
         start_chunk_index: usize,
         start_gpu_index: usize,
         gpu_processed: Arc<AtomicUsize>,
@@ -444,28 +435,7 @@ impl GpuGraphBuilder {
 
         {
             let mut gpu_search_context = gpu_search_context.lock();
-
-            gpu_search_context.clear(level_m)?;
-
-            let mut ids_to_upload = {
-                (0..start_gpu_index)
-                    .map(|index| points[index].point_id)
-                    .collect_vec()
-            };
-            ids_to_upload.push(first_point_id);
-
-            let timer = std::time::Instant::now();
-            for links_upload_slice in
-                ids_to_upload.chunks(gpu_search_context.gpu_links.max_patched_points)
-            {
-                for &point_id in links_upload_slice {
-                    let links = graph_layers_builder.links_layers[point_id as usize][level].read();
-                    gpu_search_context.set_links(point_id, &links)?;
-                }
-                gpu_search_context.apply_links_patch()?;
-                gpu_search_context.run_context();
-            }
-            println!("Upload links on level {level} time: {:?}", timer.elapsed());
+            gpu_search_context.upload_links(level, &graph_layers_builder)?;
         }
 
         Ok(Some(std::thread::spawn(move || {
@@ -520,7 +490,7 @@ impl GpuGraphBuilder {
 
             gpu_search_context.download_links(
                 level,
-                &download_ids,
+                //&download_ids,
                 graph_layers_builder.as_ref(),
             )?;
 

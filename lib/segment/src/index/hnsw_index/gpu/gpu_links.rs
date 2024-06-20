@@ -3,6 +3,7 @@ use std::sync::Arc;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 
 #[repr(C)]
@@ -164,10 +165,46 @@ impl GpuLinks {
         Ok(())
     }
 
+    pub fn upload_links(
+        &mut self,
+        level: usize,
+        graph_layers_builder: &GraphLayersBuilder,
+        context: &mut gpu::Context,
+    ) -> OperationResult<()> {
+        self.update_params(context, graph_layers_builder.get_m(level));
+        self.clear(context)?;
+        context.run();
+        context.wait_finish();
+
+        let timer = std::time::Instant::now();
+        let points: Vec<_> = (0..graph_layers_builder.links_layers.len())
+            .filter(|&point_id| {
+                graph_layers_builder.get_point_level(point_id as PointOffsetType) >= level
+            })
+            .filter(|&point_id| {
+                !graph_layers_builder.links_layers[point_id][level]
+                    .read()
+                    .is_empty()
+            })
+            .collect();
+
+        for points_slice in points.chunks(self.max_patched_points) {
+            for &point_id in points_slice {
+                let links = graph_layers_builder.links_layers[point_id][level].read();
+                self.set_links(point_id as PointOffsetType, &links)?;
+            }
+            self.apply_gpu_patches(context);
+            context.run();
+            context.wait_finish();
+        }
+
+        println!("Upload links on level {level} time: {:?}", timer.elapsed());
+        Ok(())
+    }
+
     pub fn download_links(
         &mut self,
         level: usize,
-        points: &[PointOffsetType],
         graph_layers_builder: &GraphLayersBuilder,
         context: &mut gpu::Context,
     ) -> OperationResult<()> {
@@ -181,6 +218,10 @@ impl GpuLinks {
             gpu::BufferType::GpuToCpu,
             links_patch_capacity,
         ));
+
+        let points = (0..graph_layers_builder.links_layers.len() as PointOffsetType)
+            .filter(|&point_id| graph_layers_builder.get_point_level(point_id) >= level)
+            .collect::<Vec<_>>();
 
         for chunk_index in 0..points.len().div_ceil(self.max_patched_points) {
             let start = chunk_index * self.max_patched_points;
@@ -214,7 +255,7 @@ impl GpuLinks {
         }
 
         println!(
-            "Downloading links for level {} in time {:?}",
+            "Download links for level {} in time {:?}",
             level,
             timer.elapsed()
         );

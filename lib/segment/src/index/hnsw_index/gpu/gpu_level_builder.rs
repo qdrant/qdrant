@@ -141,15 +141,8 @@ mod tests {
 
             build_level_on_gpu(&mut gpu_search_context, &batched_points, 0, level).unwrap();
 
-            let mut ids = batched_points
-                .points
-                .iter()
-                .filter(|linking_point| linking_point.level >= level)
-                .map(|linking_point| linking_point.point_id)
-                .collect::<Vec<_>>();
-            ids.push(batched_points.first_point_id);
             gpu_search_context
-                .download_links(level, &ids, &graph_layers_builder)
+                .download_links(level, &graph_layers_builder)
                 .unwrap();
         }
 

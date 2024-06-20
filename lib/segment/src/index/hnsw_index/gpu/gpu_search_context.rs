@@ -646,14 +646,22 @@ impl GpuSearchContext {
         self.gpu_links.set_links(point_id, links)
     }
 
-    pub fn download_links(
+    pub fn upload_links(
         &mut self,
         level: usize,
-        points: &[PointOffsetType],
         graph_layers_builder: &GraphLayersBuilder,
     ) -> OperationResult<()> {
         self.gpu_links
-            .download_links(level, points, graph_layers_builder, &mut self.context)
+            .upload_links(level, graph_layers_builder, &mut self.context)
+    }
+
+    pub fn download_links(
+        &mut self,
+        level: usize,
+        graph_layers_builder: &GraphLayersBuilder,
+    ) -> OperationResult<()> {
+        self.gpu_links
+            .download_links(level, graph_layers_builder, &mut self.context)
     }
 
     pub fn clear(&mut self, new_m: usize) -> OperationResult<()> {
