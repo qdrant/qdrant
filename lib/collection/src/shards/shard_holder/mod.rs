@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, RwLock};
 
 use super::replica_set::AbortShardTransfer;
 use super::resharding::tasks_pool::ReshardTasksPool;
-use super::resharding::{ReshardKey, ReshardStage, ReshardState};
+use super::resharding::ReshardState;
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
