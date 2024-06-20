@@ -34,7 +34,7 @@ pub struct ReshardState {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
-    pub filter_read_operations: bool, // TODO(resharding): Add proper resharding state!
+    pub stage: ReshardStage,
 }
 
 impl ReshardState {
@@ -43,7 +43,7 @@ impl ReshardState {
             peer_id,
             shard_id,
             shard_key,
-            filter_read_operations: false,
+            stage: ReshardStage::MigratingPoints,
         }
     }
 
@@ -60,6 +60,15 @@ impl ReshardState {
             shard_key: self.shard_key.clone(),
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReshardStage {
+    #[default]
+    MigratingPoints,
+    ReadHashRingCommitted,
+    WriteHashRingCommitted,
 }
 
 /// Unique identifier of a resharding task

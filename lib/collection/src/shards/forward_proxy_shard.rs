@@ -120,7 +120,7 @@ impl ForwardProxyShard {
             // If using a hashring filter, only transfer points that moved, otherwise transfer all
             .filter(|point| {
                 hashring_filter
-                    .map(|hashring| hashring.has_moved(&point.id))
+                    .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
                     .unwrap_or(true)
             })
             .map(|point| point.try_into())

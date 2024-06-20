@@ -14,7 +14,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{broadcast, RwLock};
 
 use super::replica_set::AbortShardTransfer;
-use super::resharding::{ReshardKey, ReshardState};
+use super::resharding::{ReshardKey, ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
@@ -231,41 +231,51 @@ impl ShardHolder {
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(&resharding_key, |_| {
-            // TODO(resharding): Check resharding is in the correct state to commit read hashring!
-            Ok(())
-        })?;
+        self.check_resharding(&resharding_key, check_stage(ReshardStage::MigratingPoints))?;
 
         self.resharding_state.write(|state| {
             let Some(state) = state else {
                 unreachable!();
             };
 
-            state.filter_read_operations = true; // TODO(resharding): Add proper resharding state!
+            state.stage = ReshardStage::ReadHashRingCommitted;
         })?;
 
         Ok(())
     }
 
     pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(&resharding_key, |_| {
-            // TODO(resharding): Check resharding is in the correct state to commit write hashring!
-            Ok(())
-        })?;
+        self.check_resharding(
+            &resharding_key,
+            check_stage(ReshardStage::ReadHashRingCommitted),
+        )?;
 
         let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
         ring.commit_resharding();
+
+        self.resharding_state.write(|state| {
+            let Some(state) = state else {
+                unreachable!();
+            };
+
+            state.stage = ReshardStage::WriteHashRingCommitted;
+        })?;
 
         Ok(())
     }
 
     pub fn finish_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(&resharding_key, |_| {
-            // TODO(resharding): Check resharding is in the correct state to finish resharding!
-            Ok(())
+        self.check_resharding(
+            &resharding_key,
+            check_stage(ReshardStage::WriteHashRingCommitted),
+        )?;
+
+        self.resharding_state.write(|state| {
+            debug_assert!(state.is_some(), "resharding is not in progress");
+            *state = None;
         })?;
 
-        todo!()
+        Ok(())
     }
 
     pub async fn abort_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
@@ -354,7 +364,7 @@ impl ShardHolder {
                     "resharding {resharding_key} is not in progress:\n{state:#?}"
                 );
 
-                *state = None;
+                state.take();
             })?;
         }
 
@@ -375,7 +385,7 @@ impl ShardHolder {
             return None;
         };
 
-        if !state.filter_read_operations {
+        if state.stage < ReshardStage::ReadHashRingCommitted {
             return None;
         }
 
@@ -383,11 +393,12 @@ impl ShardHolder {
             return None; // TODO(resharding): Return error?
         };
 
-        let HashRing::Resharding { new, .. } = ring else {
-            return None; // TODO(resharding): Return error?
+        let ring = match ring {
+            HashRing::Resharding { new, .. } => new,
+            HashRing::Single(ring) => ring,
         };
 
-        Some(hash_ring::Filter::new(new.clone(), state.shard_id))
+        Some(hash_ring::Filter::new(ring.clone(), state.shard_id))
     }
 
     pub fn add_shard(
@@ -1333,17 +1344,46 @@ fn assert_resharding_state_consistency(
     ring: &HashRing,
     shard_key: &Option<ShardKey>,
 ) {
-    if let Some(state) = state {
-        debug_assert!(
-            ring.is_resharding(),
-            "resharding is in progress, but {shard_key:?} hashring is not a resharding hashring:\n\
-             {state:#?}"
-        );
-    } else {
-        debug_assert!(
-            !ring.is_resharding(),
-            "resharding is not in progress, but {shard_key:?} hashring is a resharding hashring"
-        );
+    match state.as_ref().map(|state| state.stage) {
+        Some(ReshardStage::MigratingPoints | ReshardStage::ReadHashRingCommitted) => {
+            debug_assert!(
+                ring.is_resharding(),
+                "resharding is in progress, \
+                 but {shard_key:?} hashring is not a resharding hashring:\n\
+                 {state:#?}"
+            );
+        }
+
+        Some(ReshardStage::WriteHashRingCommitted) => {
+            debug_assert!(
+                !ring.is_resharding(),
+                "resharding is in progress, \
+                 and write hashring has already been committed, \
+                 but {shard_key:?} hashring is a resharding hashring:\n\
+                 {state:#?}"
+            );
+        }
+
+        None => {
+            debug_assert!(
+                !ring.is_resharding(),
+                "resharding is not in progress, \
+                 but {shard_key:?} hashring is a resharding hashring"
+            );
+        }
+    }
+}
+
+fn check_stage(stage: ReshardStage) -> impl Fn(&ReshardState) -> CollectionResult<()> {
+    move |state| {
+        if state.stage == stage {
+            Ok(())
+        } else {
+            Err(CollectionError::bad_request(format!(
+                "expected resharding stage {stage:?}, but resharding is at stage {:?}",
+                state.stage,
+            )))
+        }
     }
 }
 
