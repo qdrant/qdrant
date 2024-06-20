@@ -9,6 +9,7 @@ use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::task::block_in_place;
+use tokio::time::sleep;
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
@@ -39,6 +40,9 @@ const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs
 
 /// Batch size for deleting migrated points in existing shards.
 const DELETE_BATCH_SIZE: usize = 500;
+
+/// If the shard transfer IO limit is reached, retry with this interval.
+const SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 type PersistedState = SaveOnDisk<DriverState>;
 
@@ -226,6 +230,7 @@ pub async fn drive_resharding(
             consensus,
             &channel_service,
             &collection_id,
+            shared_storage_config,
         )
         .await?;
     }
@@ -328,6 +333,7 @@ fn completed_migrate_points(state: &PersistedState) -> bool {
 /// Keeps checking what shards are still pending point migrations. For each of them it starts a
 /// shard transfer if needed, waiting for them to finish. Once this returns, all points are
 /// migrated to the target shard.
+#[allow(clippy::too_many_arguments)]
 async fn stage_migrate_points(
     reshard_key: &ReshardKey,
     state: &PersistedState,
@@ -336,7 +342,10 @@ async fn stage_migrate_points(
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
     collection_id: &CollectionId,
+    shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
+    let this_peer_id = consensus.this_peer_id();
+
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
         let ongoing_transfer = shard_holder
             .read()
@@ -352,8 +361,14 @@ async fn stage_migrate_points(
         let (transfer, start_transfer) = match ongoing_transfer {
             Some(transfer) => (Some(transfer), false),
             None => {
-                // TODO(resharding): do not just pick random source, consider transfer limits
-                let active_shards = {
+                let incoming_limit = shared_storage_config
+                    .incoming_shard_transfers_limit
+                    .unwrap_or(usize::MAX);
+                let outgoing_limit = shared_storage_config
+                    .outgoing_shard_transfers_limit
+                    .unwrap_or(usize::MAX);
+
+                let source_peer_ids = {
                     let shard_holder = shard_holder.read().await;
                     let replica_set =
                         shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
@@ -361,26 +376,48 @@ async fn stage_migrate_points(
                                 "Shard {source_shard_id} not found in the shard holder for resharding",
                             ))
                         })?;
-                    replica_set.active_shards().await
+
+                    let active_peer_ids = replica_set.active_shards().await;
+                    if active_peer_ids.is_empty() {
+                        return Err(CollectionError::service_error(format!(
+                            "No peer with shard {source_shard_id} in active state for resharding",
+                        )));
+                    }
+
+                    // Respect shard transfer limits, always allow local transfers
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(&this_peer_id);
+                    if incoming < incoming_limit {
+                        active_peer_ids
+                            .into_iter()
+                            .filter(|peer_id| {
+                                let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
+                                outgoing < outgoing_limit || peer_id == &this_peer_id
+                            })
+                            .collect()
+                    } else if active_peer_ids.contains(&this_peer_id) {
+                        vec![this_peer_id]
+                    } else {
+                        vec![]
+                    }
                 };
-                let source_peer_id = active_shards
-                    .choose(&mut rand::thread_rng())
-                    .cloned()
-                    .ok_or_else(|| {
-                        CollectionError::service_error(format!(
-                            "No remote peer with shard {source_shard_id} in active state for resharding",
-                        ))
-                    })?;
+
+                if source_peer_ids.is_empty() {
+                    log::trace!("Postponing resharding migration transfer from shard {source_shard_id} to stay below transfer limit on peers");
+                    sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                    continue;
+                }
+
+                let source_peer_id = *source_peer_ids.choose(&mut rand::thread_rng()).unwrap();
 
                 // Configure shard transfer object, or use none if doing a local transfer
-                if source_peer_id != consensus.this_peer_id() {
-                    debug_assert_ne!(source_peer_id, consensus.this_peer_id());
+                if source_peer_id != this_peer_id {
+                    debug_assert_ne!(source_peer_id, this_peer_id);
                     debug_assert_ne!(source_shard_id, reshard_key.shard_id);
                     let transfer = ShardTransfer {
                         shard_id: source_shard_id,
                         to_shard_id: Some(reshard_key.shard_id),
                         from: source_peer_id,
-                        to: consensus.this_peer_id(),
+                        to: this_peer_id,
                         sync: true,
                         method: Some(ShardTransferMethod::ReshardingStreamRecords),
                     };
@@ -558,30 +595,74 @@ async fn stage_replicate(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
+    let this_peer_id = consensus.this_peer_id();
+
     while !has_enough_replicas(reshard_key, &shard_holder, &collection_config).await? {
-        // Select a peer to replicate to, not having a replica yet
-        let occupied_peers = {
-            let shard_holder_read = shard_holder.read().await;
-            let Some(replica_set) = shard_holder_read.get_shard(&reshard_key.shard_id) else {
+        // Find peer candidates to replicate to
+        let candidate_peers = {
+            let incoming_limit = shared_storage_config
+                .incoming_shard_transfers_limit
+                .unwrap_or(usize::MAX);
+            let outgoing_limit = shared_storage_config
+                .outgoing_shard_transfers_limit
+                .unwrap_or(usize::MAX);
+
+            // Ensure we don't exceed the outgoing transfer limits
+            let shard_holder = shard_holder.read().await;
+            let (_, outgoing) = shard_holder.count_shard_transfer_io(&this_peer_id);
+            if outgoing < outgoing_limit {
+                log::trace!("Postponing resharding replication transfer to stay below transfer limit (outgoing: {outgoing})");
+                sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                continue;
+            }
+
+            // Select peers that don't have this replica yet
+            let Some(replica_set) = shard_holder.get_shard(&reshard_key.shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {} not found in the shard holder for resharding",
                     reshard_key.shard_id,
                 )));
             };
-            replica_set.peers().into_keys().collect()
-        };
-        let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
-        let candidate_peers: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
-        // TODO(resharding): do not just pick random source, consider shard distribution
-        let Some(target_peer) = candidate_peers.choose(&mut rand::thread_rng()).cloned() else {
-            log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
-            break;
+            let occupied_peers = replica_set.peers().into_keys().collect();
+            let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
+            let candidate_peers: Vec<_> = all_peers
+                .difference(&occupied_peers)
+                .map(|peer_id| (*peer_id, shard_holder.count_peer_shards(*peer_id)))
+                .collect();
+            if candidate_peers.is_empty() {
+                log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
+                break;
+            };
+
+            // To balance, only keep candidates with lowest number of shards
+            // Peers must have room for an incoming transfer
+            let lowest_shard_count = *candidate_peers
+                .iter()
+                .map(|(_, count)| count)
+                .min()
+                .unwrap();
+            let candidate_peers: Vec<_> = candidate_peers
+                .into_iter()
+                .filter(|(peer_id, shard_count)| {
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(peer_id);
+                    lowest_shard_count == *shard_count && incoming < incoming_limit
+                })
+                .map(|(peer_id, _)| peer_id)
+                .collect();
+            if candidate_peers.is_empty() {
+                log::trace!("Postponing resharding replication transfer to stay below transfer limit on peers");
+                sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
+                continue;
+            };
+
+            candidate_peers
         };
 
+        let target_peer = *candidate_peers.choose(&mut rand::thread_rng()).unwrap();
         let transfer = ShardTransfer {
             shard_id: reshard_key.shard_id,
             to_shard_id: None,
-            from: consensus.this_peer_id(),
+            from: this_peer_id,
             to: target_peer,
             sync: true,
             method: Some(
@@ -833,11 +914,11 @@ async fn await_transfer_success(
             .await
             .check_transfer_exists(&transfer_key)
         {
-            tokio::time::sleep(AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL).await;
+            sleep(AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL).await;
         }
 
         // Give our normal logic time process the transfer end
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
     };
 
     tokio::select! {

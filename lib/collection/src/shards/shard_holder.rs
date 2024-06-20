@@ -1008,6 +1008,13 @@ impl ShardHolder {
         })
     }
 
+    /// Count how many shard replicas are on the given peer.
+    pub fn count_peer_shards(&self, peer_id: PeerId) -> usize {
+        self.get_shards()
+            .filter(|(_, replica_set)| replica_set.peer_state(&peer_id).is_some())
+            .count()
+    }
+
     pub fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
         self.shard_transfers
             .read()
