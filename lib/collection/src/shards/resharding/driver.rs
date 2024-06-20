@@ -333,6 +333,7 @@ fn completed_migrate_points(state: &PersistedState) -> bool {
 /// Keeps checking what shards are still pending point migrations. For each of them it starts a
 /// shard transfer if needed, waiting for them to finish. Once this returns, all points are
 /// migrated to the target shard.
+#[allow(clippy::too_many_arguments)]
 async fn stage_migrate_points(
     reshard_key: &ReshardKey,
     state: &PersistedState,
