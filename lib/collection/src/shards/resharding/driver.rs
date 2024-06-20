@@ -105,8 +105,7 @@ impl DriverState {
     }
 
     /// Describe the current stage and state in a human readable string.
-    // TODO(resharding): connect this to cluster info
-    pub fn _describe(&self) -> String {
+    pub fn describe(&self) -> String {
         let Some(lowest_stage) = self.peers.values().min() else {
             return "unknown: no known peers".into();
         };
@@ -183,7 +182,7 @@ impl Stage {
 #[allow(clippy::too_many_arguments)]
 pub async fn drive_resharding(
     reshard_key: ReshardKey,
-    _progress: Arc<Mutex<ReshardTaskProgress>>,
+    progress: Arc<Mutex<ReshardTaskProgress>>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
@@ -198,15 +197,12 @@ pub async fn drive_resharding(
     let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
         DriverState::new(reshard_key.clone(), &consensus.peers())
     })?;
-
-    state.write(|data| {
-        data.sync_peers(&consensus.peers());
-    })?;
+    progress.lock().description.replace(state.read().describe());
 
     // Stage 1: init
     if !completed_init(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: init");
-        stage_init(&state)?;
+        stage_init(&state, &progress)?;
     }
 
     // Stage 2: init
@@ -215,6 +211,7 @@ pub async fn drive_resharding(
         stage_migrate_points(
             &reshard_key,
             &state,
+            &progress,
             shard_holder.clone(),
             consensus,
             &channel_service,
@@ -229,6 +226,7 @@ pub async fn drive_resharding(
         stage_replicate(
             &reshard_key,
             &state,
+            &progress,
             shard_holder.clone(),
             consensus,
             &collection_id,
@@ -244,6 +242,7 @@ pub async fn drive_resharding(
         stage_commit_hashring(
             &reshard_key,
             &state,
+            &progress,
             consensus,
             &channel_service,
             &collection_id,
@@ -254,12 +253,12 @@ pub async fn drive_resharding(
     // Stage 5: propagate deletes
     if !completed_propagate_deletes(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
-        stage_propagate_deletes(&reshard_key, &state, shard_holder.clone()).await?;
+        stage_propagate_deletes(&reshard_key, &state, &progress, shard_holder.clone()).await?;
     }
 
     // Stage 6: finalize
     log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
-    stage_finalize(&state)?;
+    stage_finalize(&state, &progress)?;
 
     // Delete the state file after successful resharding
     if let Err(err) = state.delete().await {
@@ -285,9 +284,10 @@ fn completed_init(state: &PersistedState) -> bool {
 /// Stage 1: init
 ///
 /// Do initialize the resharding process.
-fn stage_init(state: &PersistedState) -> CollectionResult<()> {
+fn stage_init(state: &PersistedState, progress: &Mutex<ReshardTaskProgress>) -> CollectionResult<()> {
     state.write(|data| {
         data.complete_for_all_peers(Stage::S1_Init);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
@@ -310,6 +310,7 @@ fn completed_migrate_points(state: &PersistedState) -> bool {
 async fn stage_migrate_points(
     reshard_key: &ReshardKey,
     state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
@@ -417,6 +418,7 @@ async fn stage_migrate_points(
 
         state.write(|data| {
             data.migrated_shards.push(source_shard_id);
+            progress.lock().description.replace(data.describe());
         })?;
         log::debug!(
             "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
@@ -436,6 +438,7 @@ async fn stage_migrate_points(
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S2_MigratePoints);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
@@ -526,6 +529,7 @@ async fn has_enough_replicas(
 async fn stage_replicate(
     reshard_key: &ReshardKey,
     state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
@@ -600,6 +604,7 @@ async fn stage_replicate(
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S3_Replicate);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
@@ -618,24 +623,34 @@ fn completed_commit_hashring(state: &PersistedState) -> bool {
 async fn stage_commit_hashring(
     reshard_key: &ReshardKey,
     state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
     consensus: &dyn ShardTransferConsensus,
     channel_service: &ChannelService,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    // Commit read hashring and sync cluster
+    // Commit read hashring
+    progress.lock().description.replace(format!("{} (switching read)", state.read().describe()));
     consensus
         .commit_read_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
+
+    // Sync cluster
+    progress.lock().description.replace(format!("{} (await cluster sync for read)", state.read().describe()));
     await_consensus_sync(consensus, channel_service).await;
 
-    // Commit write hashring and sync cluster
+    // Commit write hashring
+    progress.lock().description.replace(format!("{} (switching write)", state.read().describe()));
     consensus
         .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
         .await?;
+
+    // Sync cluster
+    progress.lock().description.replace(format!("{} (await cluster sync for read)", state.read().describe()));
     await_consensus_sync(consensus, channel_service).await;
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S4_CommitHashring);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
@@ -657,6 +672,7 @@ fn completed_propagate_deletes(state: &PersistedState) -> bool {
 async fn stage_propagate_deletes(
     reshard_key: &ReshardKey,
     state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
     shard_holder: Arc<LockedShardHolder>,
 ) -> CollectionResult<()> {
     let hashring = {
@@ -726,11 +742,13 @@ async fn stage_propagate_deletes(
 
         state.write(|data| {
             data.deleted_shards.push(source_shard_id);
+            progress.lock().description.replace(data.describe());
         })?;
     }
 
     state.write(|data| {
         data.complete_for_all_peers(Stage::S5_PropagateDeletes);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
@@ -739,9 +757,13 @@ async fn stage_propagate_deletes(
 /// Stage 6: finalize
 ///
 /// Finalize the resharding operation.
-fn stage_finalize(state: &PersistedState) -> CollectionResult<()> {
+fn stage_finalize(
+    state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
+) -> CollectionResult<()> {
     state.write(|data| {
         data.complete_for_all_peers(Stage::S6_Finalize);
+        progress.lock().description.replace(data.describe());
     })?;
 
     Ok(())
