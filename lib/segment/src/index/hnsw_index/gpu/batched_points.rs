@@ -18,6 +18,7 @@ pub struct PointLinkingData {
 pub struct Batch<'a> {
     pub points: &'a [PointLinkingData],
     pub level: usize,
+    pub end_index: usize,
 }
 
 pub struct BatchedPoints {
@@ -88,6 +89,7 @@ impl BatchedPoints {
                 let intersected_batch = std::cmp::max(batch.start, skip_count)..batch.end;
                 let level = self.points[intersected_batch.start].level;
                 Batch {
+                    end_index: intersected_batch.end,
                     points: &self.points[intersected_batch],
                     level,
                 }

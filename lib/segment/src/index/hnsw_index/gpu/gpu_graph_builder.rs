@@ -1,4 +1,8 @@
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
 use common::types::PointOffsetType;
+use parking_lot::Mutex;
 use rayon::ThreadPool;
 
 use crate::common::operation_error::OperationResult;
@@ -38,16 +42,22 @@ pub fn build_hnsw_on_gpu<'a>(
     let m0 = reference_graph.m0;
     let ef = reference_graph.ef_construct;
 
-    let batched_points = BatchedPoints::new(
+    let batched_points = Arc::new(BatchedPoints::new(
         |point_id| reference_graph.get_point_level(point_id),
         ids,
         groups_count,
-    )?;
+    )?);
 
-    let graph_layers_builder =
-        create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num)?;
+    let graph_layers_builder = Arc::new(create_graph_layers_builder(
+        &batched_points,
+        num_vectors,
+        m,
+        m0,
+        ef,
+        entry_points_num,
+    )?);
 
-    let mut gpu_search_context = GpuSearchContext::new(
+    let gpu_search_context = Arc::new(Mutex::new(GpuSearchContext::new(
         debug_messenger,
         groups_count,
         vector_storage,
@@ -57,9 +67,15 @@ pub fn build_hnsw_on_gpu<'a>(
         ef,
         num_vectors,
         force_half_precision,
-    )?;
+    )?));
+
+    let mut gpu_thread_handle: Option<JoinHandle<OperationResult<()>>> = None;
 
     for level in (0..batched_points.levels_count).rev() {
+        if let Some(handle) = gpu_thread_handle.take() {
+            handle.join().unwrap()?;
+        }
+
         let gpu_start_index = build_level_on_cpu(
             &pool,
             &graph_layers_builder,
@@ -69,17 +85,29 @@ pub fn build_hnsw_on_gpu<'a>(
             &points_scorer_builder,
         )?;
 
-        gpu_search_context.upload_links(level, &graph_layers_builder)?;
-        build_level_on_gpu(
-            &mut gpu_search_context,
-            &batched_points,
-            gpu_start_index,
-            level,
-        )?;
-        gpu_search_context.download_links(level, &graph_layers_builder)?;
+        let gpu_search_context = gpu_search_context.clone();
+        let graph_layers_builder = graph_layers_builder.clone();
+        let batched_points = batched_points.clone();
+        gpu_thread_handle = Some(std::thread::spawn(move || -> OperationResult<()> {
+            let mut gpu_search_context = gpu_search_context.lock();
+            gpu_search_context.upload_links(level, &graph_layers_builder)?;
+            build_level_on_gpu(
+                &mut gpu_search_context,
+                &batched_points,
+                gpu_start_index,
+                level,
+                |_| {},
+            )?;
+            gpu_search_context.download_links(level, &graph_layers_builder)?;
+            Ok(())
+        }));
     }
 
-    Ok(graph_layers_builder)
+    if let Some(handle) = gpu_thread_handle.take() {
+        handle.join().unwrap()?;
+    }
+
+    Ok(Arc::into_inner(graph_layers_builder).unwrap())
 }
 
 #[cfg(test)]

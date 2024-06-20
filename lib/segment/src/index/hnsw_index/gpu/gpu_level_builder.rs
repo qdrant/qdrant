@@ -13,6 +13,7 @@ pub fn build_level_on_gpu(
     batched_points: &BatchedPoints,
     skip_count: usize,
     level: usize,
+    processed_points_callback: impl Fn(usize),
 ) -> OperationResult<()> {
     let mut prev_batch = None;
     for batch in batched_points.iter_batches(skip_count) {
@@ -21,12 +22,21 @@ pub fn build_level_on_gpu(
         } else {
             gpu_batched_insert(gpu_search_context, &batch, prev_batch.as_ref())?;
         }
+
+        // prev batch entries are updated
+        if let Some(prev_batch) = prev_batch {
+            processed_points_callback(prev_batch.end_index);
+        }
+
         prev_batch = Some(batch);
     }
 
     if let Some(prev_batch) = prev_batch {
         let new_entries = gpu_search_context.download_responses(prev_batch.points.len())?;
         gpu_batched_apply_entries(&prev_batch, new_entries);
+        processed_points_callback(prev_batch.end_index);
+    } else {
+        processed_points_callback(0);
     }
 
     Ok(())
@@ -139,7 +149,7 @@ mod tests {
             let level_m = graph_layers_builder.get_m(level);
             gpu_search_context.clear(level_m).unwrap();
 
-            build_level_on_gpu(&mut gpu_search_context, &batched_points, 0, level).unwrap();
+            build_level_on_gpu(&mut gpu_search_context, &batched_points, 0, level, |_| {}).unwrap();
 
             gpu_search_context
                 .download_links(level, &graph_layers_builder)
