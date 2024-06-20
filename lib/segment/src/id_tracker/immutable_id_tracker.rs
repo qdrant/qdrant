@@ -1,3 +1,5 @@
+// TODO: Remove when we release the next version and integrate the immutable id tracker
+#![allow(dead_code)]
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};

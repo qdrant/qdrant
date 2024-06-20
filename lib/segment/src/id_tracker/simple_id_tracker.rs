@@ -220,6 +220,8 @@ impl SimpleIdTracker {
         )
     }
 
+    // TODO: Remove when we release the next version and integrate the immutable id tracker
+    #[allow(dead_code)]
     pub(crate) fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
         let external_to_internal_num = self
             .external_to_internal_num
