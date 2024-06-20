@@ -999,3 +999,15 @@ pub async fn do_query_points(
         .next()
         .ok_or_else(|| StorageError::service_error("Empty query result"))
 }
+
+pub async fn do_query_batch_points(
+    toc: &TableOfContent,
+    collection_name: &str,
+    requests: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+    read_consistency: Option<ReadConsistency>,
+    access: Access,
+    timeout: Option<Duration>,
+) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    toc.query_batch(collection_name, requests, read_consistency, access, timeout)
+        .await
+}

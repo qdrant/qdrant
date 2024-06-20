@@ -546,6 +546,13 @@ message QueryPoints {
   optional uint64 timeout = 15; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
+message QueryBatchPoints {
+  string collection_name = 1;
+  repeated QueryPoints query_points = 2;
+  optional ReadConsistency read_consistency = 3; // Options for specifying read consistency guarantees
+  optional uint64 timeout = 4; // If set, overrides global timeout setting for this request. Unit is seconds.
+}
+
 message PointsUpdateOperation {
   message PointStructList {
     repeated PointStruct points = 1;
@@ -674,6 +681,11 @@ message SearchResponse {
 
 message QueryResponse {
   repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
+}
+
+message QueryBatchResponse {
+  repeated BatchResult result = 1;
   double time = 2; // Time spent to process
 }
 

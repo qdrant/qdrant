@@ -64,6 +64,23 @@ $docker_grpcurl -d '{
 
 $docker_grpcurl -d '{
   "collection_name": "test_collection",
+  "query_points": [
+    {
+      "collection_name": "test_collection",
+      "query": {
+        "nearest": {
+          "dense": {
+            "data": [0.2,0.1,0.9,0.7]
+          }
+        }
+      },
+      "limit": 3
+    }
+  ]
+}' $QDRANT_HOST qdrant.Points/QueryBatch
+
+$docker_grpcurl -d '{
+  "collection_name": "test_collection",
   "filter": {
     "should": [
       {
