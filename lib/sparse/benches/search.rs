@@ -14,6 +14,7 @@ use rand::SeedableRng as _;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
+use sparse::common::types::QuantizedU8;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
@@ -136,28 +137,6 @@ pub fn run_bench(
     );
 
     run_bench2(
-        c.benchmark_group(format!("search/ram_c32/{name}")),
-        &InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
-            Cow::Borrowed(&index),
-            "nonexistent/path",
-        )
-        .unwrap(),
-        query_vectors,
-        &hottest_query_vectors,
-    );
-
-    run_bench2(
-        c.benchmark_group(format!("search/ram_c16/{name}")),
-        &InvertedIndexCompressedImmutableRam::<half::f16>::from_ram_index(
-            Cow::Borrowed(&index),
-            "nonexistent/path",
-        )
-        .unwrap(),
-        query_vectors,
-        &hottest_query_vectors,
-    );
-
-    run_bench2(
         c.benchmark_group(format!("search/mmap/{name}")),
         &InvertedIndexMmap::from_ram_index(
             Cow::Borrowed(&index),
@@ -172,35 +151,40 @@ pub fn run_bench(
         &hottest_query_vectors,
     );
 
-    run_bench2(
-        c.benchmark_group(format!("search/mmap_c32/{name}")),
-        &InvertedIndexCompressedMmap::<f32>::from_ram_index(
-            Cow::Borrowed(&index),
-            tempfile::Builder::new()
-                .prefix("test_index_dir")
-                .tempdir()
-                .unwrap()
-                .path(),
-        )
-        .unwrap(),
-        query_vectors,
-        &hottest_query_vectors,
-    );
+    macro_rules! run_bench2 {
+        ($name:literal, $type:ty) => {
+            run_bench2(
+                c.benchmark_group(format!("search/ram_{}/{name}", $name)),
+                &InvertedIndexCompressedImmutableRam::<$type>::from_ram_index(
+                    Cow::Borrowed(&index),
+                    "nonexistent/path",
+                )
+                .unwrap(),
+                query_vectors,
+                &hottest_query_vectors,
+            );
 
-    run_bench2(
-        c.benchmark_group(format!("search/mmap_c16/{name}")),
-        &InvertedIndexCompressedMmap::<half::f16>::from_ram_index(
-            Cow::Borrowed(&index),
-            tempfile::Builder::new()
-                .prefix("test_index_dir")
-                .tempdir()
-                .unwrap()
-                .path(),
-        )
-        .unwrap(),
-        query_vectors,
-        &hottest_query_vectors,
-    );
+            run_bench2(
+                c.benchmark_group(format!("search/mmap_{}/{name}", $name)),
+                &InvertedIndexCompressedMmap::<$type>::from_ram_index(
+                    Cow::Borrowed(&index),
+                    tempfile::Builder::new()
+                        .prefix("test_index_dir")
+                        .tempdir()
+                        .unwrap()
+                        .path(),
+                )
+                .unwrap(),
+                query_vectors,
+                &hottest_query_vectors,
+            );
+        };
+    }
+
+    run_bench2!("c32", f32);
+    run_bench2!("c16", half::f16);
+    // run_bench2!("c8", u8);
+    run_bench2!("q8", QuantizedU8);
 }
 
 fn run_bench2(

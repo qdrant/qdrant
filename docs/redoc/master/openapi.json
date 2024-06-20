@@ -9731,7 +9731,8 @@
         "type": "string",
         "enum": [
           "float32",
-          "float16"
+          "float16",
+          "uint8"
         ]
       },
       "PayloadStorageType": {
