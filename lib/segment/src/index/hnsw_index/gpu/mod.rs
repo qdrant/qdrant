@@ -1,5 +1,4 @@
 pub mod batched_points;
-pub mod cpu_build_iterator;
 pub mod cpu_level_builder;
 pub mod gpu_candidates_heap;
 pub mod gpu_graph_builder;

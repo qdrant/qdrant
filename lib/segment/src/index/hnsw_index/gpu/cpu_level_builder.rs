@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use common::types::PointOffsetType;
@@ -7,7 +7,7 @@ use rayon::ThreadPool;
 
 use super::batched_points::{BatchedPoints, PointLinkingData};
 use super::gpu_search_context::GpuRequest;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -18,9 +18,9 @@ use crate::vector_storage::RawScorer;
 pub fn build_level_on_cpu<'a>(
     pool: &ThreadPool,
     graph_layers_builder: &GraphLayersBuilder,
-    batched_points: &'a BatchedPoints,
+    batched_points: &BatchedPoints,
     level: usize,
-    stopped: &AtomicBool,
+    stop_condition: impl Fn(usize) -> bool + Send + Sync,
     points_scorer_builder: impl Fn(
             PointOffsetType,
         )
@@ -31,11 +31,13 @@ pub fn build_level_on_cpu<'a>(
     let retry_mutex: Mutex<()> = Default::default();
     let index = AtomicUsize::new(0);
 
-    let cpu_build_result = pool.install(|| {
+    pool.install(|| {
         (0..graph_layers_builder.links_layers.len())
             .into_par_iter()
             .try_for_each(|_| -> OperationResult<()> {
-                check_process_stopped(stopped)?;
+                if stop_condition(index.load(Ordering::Relaxed)) {
+                    return Ok(());
+                }
 
                 let i = index.fetch_add(1, Ordering::Relaxed);
                 if i >= batched_points.points.len() {
@@ -61,21 +63,17 @@ pub fn build_level_on_cpu<'a>(
                     )
                 }
             })
-    });
+    })?;
 
     let processed_count = index
         .load(Ordering::Relaxed)
         .min(batched_points.points.len());
-    match cpu_build_result {
-        Ok(_) => Ok(processed_count),
-        Err(OperationError::Cancelled { .. }) => Ok(processed_count),
-        Err(e) => Err(e),
-    }
+    Ok(processed_count)
 }
 
 fn update_entry_on_cpu<'a>(
     graph_layers_builder: &GraphLayersBuilder,
-    linking_point: &'a PointLinkingData,
+    linking_point: &PointLinkingData,
     level: usize,
     points_scorer_builder: impl Fn(
             PointOffsetType,
@@ -100,8 +98,8 @@ fn update_entry_on_cpu<'a>(
 fn link_point_on_cpu<'a>(
     retry_mutex: &Mutex<()>,
     graph_layers_builder: &GraphLayersBuilder,
-    batched_points: &'a BatchedPoints,
-    linking_point: &'a PointLinkingData,
+    batched_points: &BatchedPoints,
+    linking_point: &PointLinkingData,
     level: usize,
     points_scorer_builder: impl Fn(
             PointOffsetType,
@@ -191,7 +189,7 @@ mod tests {
                 &graph_layers_builder,
                 &batched_points,
                 level,
-                &false.into(),
+                |_| false,
                 |point_id| {
                     let fake_filter_context = FakeFilterContext {};
                     let added_vector = test.vector_holder.vectors.get(point_id).to_vec();

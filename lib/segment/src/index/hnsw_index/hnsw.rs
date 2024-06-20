@@ -28,7 +28,7 @@ use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::gpu::gpu_graph_builder::GpuGraphBuilder;
+use crate::index::hnsw_index::gpu::gpu_graph_builder::build_hnsw_on_gpu;
 use crate::index::hnsw_index::gpu::{
     get_gpu_force_half_precision, get_gpu_indexing, get_gpu_max_groups,
 };
@@ -772,7 +772,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             indexed_vectors = ids.len() + first_few_ids.len();
 
             if use_gpu {
-                graph_layers_builder = GpuGraphBuilder::build(
+                graph_layers_builder = build_hnsw_on_gpu(
                     &pool,
                     &graph_layers_builder,
                     None,
