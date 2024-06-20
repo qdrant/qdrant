@@ -702,7 +702,7 @@ async fn stage_propagate_deletes(
                 CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids });
 
             replica_set
-                .update_with_consistency(operation, offset.is_some(), WriteOrdering::Weak)
+                .update_with_consistency(operation, offset.is_none(), WriteOrdering::Weak)
                 .await?;
 
             if offset.is_none() {
