@@ -34,6 +34,7 @@ pub struct ShardTransfer {
     /// For resharding, a different target shard ID may be configured
     /// By default the shard ID on the target peer is the same.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
@@ -60,6 +61,7 @@ impl ShardTransfer {
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
@@ -94,6 +96,7 @@ impl From<ShardTransfer> for ShardTransferRestart {
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     pub to_shard_id: Option<ShardId>,
     pub from: PeerId,
     pub to: PeerId,
@@ -118,8 +121,7 @@ pub enum ShardTransferMethod {
     WalDelta,
     /// Shard transfer for resharding: stream all records in batches until all points are
     /// transferred.
-    #[doc(hidden)]
-    #[schemars(skip)]
+    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     ReshardingStreamRecords,
 }
 

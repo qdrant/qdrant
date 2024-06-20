@@ -9039,12 +9039,6 @@
             "format": "uint32",
             "minimum": 0
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "from": {
             "description": "Source peer id",
             "type": "integer",
@@ -10272,12 +10266,6 @@
             "format": "uint32",
             "minimum": 0
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "to_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -10325,12 +10313,6 @@
             "format": "uint32",
             "minimum": 0
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "to_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -10377,12 +10359,6 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
-          },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
           },
           "to_peer_id": {
             "type": "integer",
@@ -10518,12 +10494,6 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
-          },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
           },
           "from_peer_id": {
             "type": "integer",
