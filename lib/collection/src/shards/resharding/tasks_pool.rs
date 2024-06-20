@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::common::eta_calculator::EtaCalculator;
 use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
 use crate::shards::resharding::ReshardKey;
 use crate::shards::CollectionId;
@@ -21,10 +19,7 @@ pub struct ReshardTaskItem {
 }
 
 pub struct ReshardTaskProgress {
-    // TODO(resharding): find a different metric, this might not make sense here
-    pub points_transferred: usize,
-    pub points_total: usize,
-    pub eta: EtaCalculator,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -42,11 +37,7 @@ pub struct ReshardTaskStatus {
 impl ReshardTaskProgress {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self {
-            points_transferred: 0,
-            points_total: 0,
-            eta: EtaCalculator::new(),
-        }
+        Self { description: None }
     }
 }
 
@@ -69,19 +60,17 @@ impl ReshardTasksPool {
         };
 
         let progress = task.progress.lock();
-        let mut comment = format!(
-            "Transferring records ({}/{}), started {}s ago, ETA: ",
-            progress.points_transferred,
-            progress.points_total,
+        let mut parts = vec![];
+        if let Some(description) = &progress.description {
+            parts.push(description.clone());
+        }
+        parts.push(format!(
+            "started {}s ago",
             chrono::Utc::now()
                 .signed_duration_since(task.started_at)
                 .num_seconds(),
-        );
-        if let Some(eta) = progress.eta.estimate(progress.points_total) {
-            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
-        } else {
-            comment.push('-');
-        }
+        ));
+        let comment = parts.join(", ");
 
         Some(ReshardTaskStatus { result, comment })
     }

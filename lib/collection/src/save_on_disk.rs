@@ -129,6 +129,10 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     pub fn save_to(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
         Self::save_data_to(path, &self.data.read())
     }
+
+    pub async fn delete(self) -> std::io::Result<()> {
+        tokio::fs::remove_file(self.path).await
+    }
 }
 
 impl<T> Deref for SaveOnDisk<T> {
