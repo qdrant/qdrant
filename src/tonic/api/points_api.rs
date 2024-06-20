@@ -6,19 +6,20 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
     DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, GetPoints,
-    GetResponse, PointsOperationResponse, QueryPoints, QueryResponse, RecommendBatchPoints,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
-    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    GetResponse, PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryPoints,
+    QueryResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints,
+    SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, discover, discover_batch, query, recommend_groups, search_groups, update_batch,
-    update_vectors,
+    delete_vectors, discover, discover_batch, query, query_batch, recommend_groups, search_groups,
+    update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -456,6 +457,31 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             access,
+        )
+        .await
+    }
+
+    async fn query_batch(
+        &self,
+        mut request: Request<QueryBatchPoints>,
+    ) -> Result<Response<QueryBatchResponse>, Status> {
+        validate(request.get_ref())?;
+        let access = extract_access(&mut request);
+        let request = request.into_inner();
+        let QueryBatchPoints {
+            collection_name,
+            query_points,
+            read_consistency,
+            timeout,
+        } = request;
+        let timeout = timeout.map(Duration::from_secs);
+        query_batch(
+            self.dispatcher.toc(&access),
+            collection_name,
+            query_points,
+            read_consistency,
+            access,
+            timeout,
         )
         .await
     }
