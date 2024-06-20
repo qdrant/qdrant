@@ -547,6 +547,7 @@ async fn has_enough_replicas(
 /// Stage 3: replicate to match replication factor
 ///
 /// Do replicate replicate to match replication factor.
+#[allow(clippy::too_many_arguments)]
 async fn stage_replicate(
     reshard_key: &ReshardKey,
     state: &PersistedState,
