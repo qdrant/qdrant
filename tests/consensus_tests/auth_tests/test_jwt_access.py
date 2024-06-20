@@ -528,7 +528,7 @@ ACTION_ACCESS = {
         True, True, True, "POST /collections/{collection_name}/points/query", "qdrant.Points/Query"
     ),
     "query_batch_points": EndpointAccess(
-        True, True, True, "POST /collections/{collection_name}/points/query/batch", # "qdrant.Points/QueryBatch"
+        True, True, True, "POST /collections/{collection_name}/points/query/batch", "qdrant.Points/QueryBatch"
     ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
@@ -1729,10 +1729,11 @@ def test_query_points():
         },
     )
 
+
 def test_query_batch_points():
     check_access(
         "query_batch_points",
-        rest_request={ "searches": [{ "query": [0.1, 0.2, 0.3, 0.4] }] },
+        rest_request={"searches": [{"query": [0.1, 0.2, 0.3, 0.4]}]},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME, 
