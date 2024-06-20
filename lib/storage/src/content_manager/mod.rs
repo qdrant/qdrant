@@ -90,13 +90,11 @@ pub mod consensus_ops {
             )))
         }
 
-        pub fn finish_resharding(_collection_id: CollectionId, _reshard_key: ReshardKey) -> Self {
-            // TODO(resharding@ffuugoo): connect resharding finish message here
-            todo!("connect resharding finish message here");
-            // ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
-            //     collection_id,
-            //     ReshardingOperation::Finish(reshard_key),
-            // )))
+        pub fn finish_resharding(collection_id: CollectionId, reshard_key: ReshardKey) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
+                collection_id,
+                ReshardingOperation::Finish(reshard_key),
+            )))
         }
 
         pub fn set_replica_state(
