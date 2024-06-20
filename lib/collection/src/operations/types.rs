@@ -208,6 +208,7 @@ pub struct ShardTransferInfo {
     pub shard_id: ShardId,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     pub to_shard_id: Option<ShardId>,
 
     /// Source peer id
