@@ -27,9 +27,11 @@ pub enum ClusterOperations {
     /// Restart transfer
     RestartTransfer(RestartTransferOperation),
     /// Start resharding
+    // TODO(resharding): expose when releasing resharding
     #[schemars(skip)]
     StartResharding(StartReshardingOperation),
     /// Abort resharding
+    // TODO(resharding): expose when releasing resharding
     #[schemars(skip)]
     AbortResharding(AbortReshardingOperation),
 }
