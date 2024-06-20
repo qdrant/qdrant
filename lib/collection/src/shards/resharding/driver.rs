@@ -695,7 +695,7 @@ async fn stage_propagate_deletes(
             let ids = points
                 .into_iter()
                 .map(|point| point.id)
-                .filter(|point_id| hashring.has_moved_from(&point_id, source_shard_id))
+                .filter(|point_id| !hashring.is_in_shard(&point_id, source_shard_id))
                 .collect();
 
             let operation =

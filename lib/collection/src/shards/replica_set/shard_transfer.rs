@@ -11,7 +11,7 @@ use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::shard::{Shard, ShardId};
+use crate::shards::shard::Shard;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 
 impl ShardReplicaSet {
@@ -332,7 +332,6 @@ impl ShardReplicaSet {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        shard_id: ShardId,
         hashring_filter: Option<&HashRing>,
         merge_points: bool,
     ) -> CollectionResult<Option<PointIdType>> {
@@ -349,7 +348,6 @@ impl ShardReplicaSet {
             .transfer_batch(
                 offset,
                 batch_size,
-                shard_id,
                 hashring_filter,
                 merge_points,
                 &self.search_runtime,

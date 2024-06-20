@@ -12,7 +12,6 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRing;
 use crate::operations::point_ops::{
@@ -89,7 +88,6 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        shard_id: ShardId,
         hashring_filter: Option<&HashRing>,
         merge_points: bool,
         runtime_handle: &Handle,
@@ -122,7 +120,7 @@ impl ForwardProxyShard {
             // If using a hashring filter, only transfer points that moved, otherwise transfer all
             .filter(|point| {
                 hashring_filter
-                    .map(|hashring| hashring.has_moved_from(&point.id, shard_id))
+                    .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
                     .unwrap_or(true)
             })
             .map(|point| point.try_into())

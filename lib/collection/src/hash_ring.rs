@@ -163,11 +163,10 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         }
     }
 
-    /// Check whether the given point has moved according to this hashring
+    /// Check whether the given point is in the given shard
     ///
-    /// Returns true if this is a resharding hashring in which both hashrings place the given point
-    /// ID in a different shard.
-    pub fn has_moved_from<U: Hash>(&self, key: &U, shard: T) -> bool
+    /// In case of resharding, the new hashring is checked.
+    pub fn is_in_shard<U: Hash>(&self, key: &U, shard: T) -> bool
     where
         T: PartialEq,
     {
@@ -176,7 +175,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
             Self::Single(ring) => ring,
         };
 
-        ring.get(key) != Some(&shard)
+        ring.get(key) == Some(&shard)
     }
 }
 
