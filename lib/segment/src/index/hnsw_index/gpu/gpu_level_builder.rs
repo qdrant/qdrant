@@ -16,6 +16,10 @@ pub fn build_level_on_gpu(
     processed_points_callback: impl Fn(usize),
 ) -> OperationResult<()> {
     let mut prev_batch = None;
+
+    // skip_count points are already processed
+    processed_points_callback(skip_count);
+
     for batch in batched_points.iter_batches(skip_count) {
         if level > batch.level {
             gpu_batched_update_entries(gpu_search_context, &batch, prev_batch.as_ref())?;
@@ -23,7 +27,7 @@ pub fn build_level_on_gpu(
             gpu_batched_insert(gpu_search_context, &batch, prev_batch.as_ref())?;
         }
 
-        // prev batch entries are updated
+        // Prev batch entries are updated, mark them as processed
         if let Some(prev_batch) = prev_batch {
             processed_points_callback(prev_batch.end_index);
         }

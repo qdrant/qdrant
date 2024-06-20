@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -70,24 +71,58 @@ pub fn build_hnsw_on_gpu<'a>(
     )?));
 
     let mut gpu_thread_handle: Option<JoinHandle<OperationResult<()>>> = None;
+    let gpu_built_points = Arc::new(AtomicUsize::new(batched_points.points.len()));
 
-    for level in (0..batched_points.levels_count).rev() {
-        if let Some(handle) = gpu_thread_handle.take() {
-            handle.join().unwrap()?;
+    let cpu_stop_condition = |cpu_built_points| {
+        assert_ne!(cpu_built_points, batched_points.points.len());
+
+        // if CPU is faster than GPU, wait for GPU to catch up
+        while cpu_built_points >= gpu_built_points.load(std::sync::atomic::Ordering::Relaxed) {
+            println!(
+                "Waiting for GPU to catch up (CPU ready {}, GPU ready {})",
+                cpu_built_points,
+                gpu_built_points.load(std::sync::atomic::Ordering::Relaxed)
+            );
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
+        let is_gpu_ready = gpu_built_points.load(std::sync::atomic::Ordering::Relaxed)
+            == batched_points.points.len();
+        let min_required_points_reached = cpu_built_points >= min_cpu_linked_points_count;
+
+        // stop id GPU is ready and min required points are linked
+        min_required_points_reached && is_gpu_ready
+    };
+
+    for level in (0..batched_points.levels_count).rev() {
+        // Start building level on CPU
         let gpu_start_index = build_level_on_cpu(
             &pool,
             &graph_layers_builder,
             &batched_points,
             level,
-            |i| i >= min_cpu_linked_points_count,
+            &cpu_stop_condition,
             &points_scorer_builder,
         )?;
+
+        // CPU is ready, finish prev level GPU thread to continue with this level
+        if let Some(handle) = gpu_thread_handle.take() {
+            handle.join().unwrap()?;
+        }
+
+        // Clear GPU built points counter
+        gpu_built_points.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        println!(
+            "Starting GPU level {}, skipped points {}",
+            level, gpu_start_index
+        );
 
         let gpu_search_context = gpu_search_context.clone();
         let graph_layers_builder = graph_layers_builder.clone();
         let batched_points = batched_points.clone();
+        let gpu_built_points = gpu_built_points.clone();
+        // Continue level building on GPU in separate thread
         gpu_thread_handle = Some(std::thread::spawn(move || -> OperationResult<()> {
             let mut gpu_search_context = gpu_search_context.lock();
             gpu_search_context.upload_links(level, &graph_layers_builder)?;
@@ -96,15 +131,40 @@ pub fn build_hnsw_on_gpu<'a>(
                 &batched_points,
                 gpu_start_index,
                 level,
-                |_| {},
+                |count| {
+                    gpu_built_points.store(count, std::sync::atomic::Ordering::Relaxed);
+                },
             )?;
             gpu_search_context.download_links(level, &graph_layers_builder)?;
             Ok(())
         }));
     }
 
+    // Wait for the last GPU level
     if let Some(handle) = gpu_thread_handle.take() {
         handle.join().unwrap()?;
+    }
+
+    {
+        let gpu_search_context = gpu_search_context.lock();
+        log::debug!(
+            "Gpu graph patches time: {:?}, count {:?}, avg {:?}",
+            &gpu_search_context.patches_timer,
+            gpu_search_context.patches_count,
+            gpu_search_context
+                .patches_timer
+                .checked_div(gpu_search_context.patches_count as u32)
+                .unwrap_or_default(),
+        );
+        log::debug!(
+            "Gpu graph update entries time: {:?}, count {:?}, avg {:?}",
+            &gpu_search_context.updates_timer,
+            gpu_search_context.updates_count,
+            gpu_search_context
+                .updates_timer
+                .checked_div(gpu_search_context.updates_count as u32)
+                .unwrap_or_default(),
+        );
     }
 
     Ok(Arc::into_inner(graph_layers_builder).unwrap())

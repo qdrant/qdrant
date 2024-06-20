@@ -106,6 +106,7 @@ mod tests {
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
+    #[allow(dead_code)]
     pub struct GpuGraphTestData {
         pub dir: TempDir,
         pub vector_storage: VectorStorageEnum,

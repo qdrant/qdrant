@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use common::types::PointOffsetType;
@@ -29,22 +29,27 @@ pub fn build_level_on_cpu<'a>(
         + Sync,
 ) -> OperationResult<usize> {
     let retry_mutex: Mutex<()> = Default::default();
-    let index = AtomicUsize::new(0);
+    let index = Mutex::new(0usize);
 
     pool.install(|| {
         (0..graph_layers_builder.links_layers.len())
             .into_par_iter()
             .try_for_each(|_| -> OperationResult<()> {
-                if stop_condition(index.load(Ordering::Relaxed)) {
-                    return Ok(());
-                }
+                let index = {
+                    let mut locked_index = index.lock().unwrap();
+                    let index = *locked_index;
+                    if index >= batched_points.points.len() {
+                        return Ok(());
+                    }
 
-                let i = index.fetch_add(1, Ordering::Relaxed);
-                if i >= batched_points.points.len() {
-                    return Ok(());
-                }
-                let linking_point = &batched_points.points[i];
+                    if stop_condition(index) {
+                        return Ok(());
+                    }
+                    *locked_index += 1;
+                    index
+                };
 
+                let linking_point = &batched_points.points[index];
                 if graph_layers_builder.get_point_level(linking_point.point_id) < level {
                     update_entry_on_cpu(
                         graph_layers_builder,
@@ -65,9 +70,7 @@ pub fn build_level_on_cpu<'a>(
             })
     })?;
 
-    let processed_count = index
-        .load(Ordering::Relaxed)
-        .min(batched_points.points.len());
+    let processed_count = index.lock().unwrap().min(batched_points.points.len());
     Ok(processed_count)
 }
 
