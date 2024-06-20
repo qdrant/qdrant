@@ -25,12 +25,6 @@ use crate::operations::universal_query::shard_query::{
     Fusion, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
-struct IntermediateQueryInfo<'a> {
-    scoring_query: Option<&'a ScoringQuery>,
-    /// Limit + offset
-    take: usize,
-}
-
 impl Collection {
     /// Returns a shape of [shard_id, batch_id, intermediate_response, points]
     async fn batch_query_shards_concurrently(
@@ -39,7 +33,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
+    ) -> CollectionResult<Vec<Vec<Vec<(Vec<ScoredPoint>, Order)>>>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
@@ -59,7 +53,7 @@ impl Collection {
                     shard_responses
                         .iter_mut()
                         .flatten()
-                        .flatten()
+                        .flat_map(|(points, _)| points.iter_mut())
                         .for_each(|point| point.shard_key.clone_from(&shard_key));
 
                     Ok(shard_responses)
@@ -250,85 +244,60 @@ impl Collection {
     async fn merge_intermediate_results_from_shards(
         &self,
         request: &ShardQueryRequest,
-        all_shards_results: Vec<ShardQueryResponse>,
+        all_shards_results: Vec<Vec<(Vec<ScoredPoint>, Order)>>,
     ) -> CollectionResult<ShardQueryResponse> {
-        let query_infos = intermediate_query_infos(request);
-        let results_len = query_infos.len();
+        let intermediate_limits =
+            request.intermediate_response_info(|r| r.offset + r.limit, |p| p.limit);
+
+        let results_len = intermediate_limits.len();
         let mut results = ShardQueryResponse::with_capacity(results_len);
         debug_assert!(all_shards_results
             .iter()
             .all(|shard_results| shard_results.len() == results_len));
 
-        let collection_params = self.collection_config.read().await.params.clone();
-
         // Shape: [num_internal_queries, num_shards, num_scored_points]
         let all_shards_result_by_transposed = transposed_iter(all_shards_results);
 
-        for (query_info, shards_results) in
-            query_infos.into_iter().zip(all_shards_result_by_transposed)
-        {
+        for (shards_results, take) in all_shards_result_by_transposed.zip(intermediate_limits) {
             // `shards_results` shape: [num_shards, num_scored_points]
-            let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
 
-            let shards_results_iter = shards_results.into_iter().flatten();
+            debug_assert!(shards_results.iter().map(|(_, order)| order).all_equal());
+            let order = shards_results
+                .first()
+                .map(|(_, order)| *order)
+                .unwrap_or(Order::SmallBetter);
+
+            let shards_results = shards_results
+                .into_iter()
+                .map(|(scored_points, _)| scored_points);
 
             // Equivalent to:
             //
             // shards_results
             //     .into_iter()
-            //     .sorted_unstable_by(match order {
-            //         Order::LargeBetter => |a, b| ScoredPointTies(b).cmp(ScoredPointTies(a)),
-            //         Order::SmallBetter => |a, b| ScoredPointTies(a).cmp(ScoredPointTies(b)),
+            //     .kmerge_by(match order {
+            //         Order::LargeBetter => |a, b| ScoredPointTies(a) > ScoredPointTies(b),
+            //         Order::SmallBetter => |a, b| ScoredPointTies(a) < ScoredPointTies(b),
             //     })
             //
+            // if the `kmerge_by` function were able to work with reference predicates.
             // Either::Left and Either::Right are used to allow type inference to work.
             //
             let intermediate_result = match order {
                 Order::LargeBetter => Either::Left(
-                    shards_results_iter
-                        .sorted_unstable_by(|a, b| ScoredPointTies(b).cmp(&ScoredPointTies(a))),
+                    shards_results.kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
                 ),
                 Order::SmallBetter => Either::Right(
-                    shards_results_iter
-                        .sorted_unstable_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b))),
+                    shards_results.kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                 ),
             }
             .dedup()
-            .take(query_info.take)
+            .take(take)
             .collect();
 
             results.push(intermediate_result);
         }
 
         Ok(results)
-    }
-}
-
-/// Returns a list of the query that corresponds to each of the results in each shard.
-///
-/// Example: `[info1, info2, info3]` corresponds to `[result1, result2, result3]` of each shard
-fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQueryInfo<'_>> {
-    let needs_intermediate_results = request
-        .query
-        .as_ref()
-        .map(|sq| sq.needs_intermediate_results())
-        .unwrap_or(false);
-
-    if needs_intermediate_results {
-        // In case of Fusion, expect the propagated intermediate results
-        request
-            .prefetches
-            .iter()
-            .map(|prefetch| IntermediateQueryInfo {
-                scoring_query: prefetch.query.as_ref(),
-                take: prefetch.limit,
-            })
-            .collect_vec()
-    } else {
-        // Otherwise, we expect the root result
-        vec![IntermediateQueryInfo {
-            scoring_query: request.query.as_ref(),
-            take: request.offset + request.limit,
-        }]
     }
 }

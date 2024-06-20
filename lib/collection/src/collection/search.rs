@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +11,7 @@ use segment::types::{
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::common::transpose_iterator::transposed_iter;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -165,11 +165,12 @@ impl Collection {
                         if shard_key.is_none() {
                             return Ok(records);
                         }
-                        for batch in &mut records {
-                            for point in batch {
-                                point.shard_key.clone_from(&shard_key);
-                            }
-                        }
+
+                        records
+                            .iter_mut()
+                            .flat_map(|(points, _)| points)
+                            .for_each(|point| point.shard_key.clone_from(&shard_key));
+
                         Ok(records)
                     })
             });
@@ -243,40 +244,33 @@ impl Collection {
 
     async fn merge_from_shards(
         &self,
-        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
+        all_searches_res: Vec<Vec<(Vec<ScoredPoint>, Order)>>,
         request: Arc<CoreSearchRequestBatch>,
         is_client_request: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
-        let collection_params = self.collection_config.read().await.params.clone();
-
         // Merge results from shards in order and deduplicate based on point ID
         let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
         let mut seen_ids = HashSet::new();
 
-        for (batch_index, request) in request.searches.iter().enumerate() {
-            let order = if request.query.is_distance_scored() {
-                collection_params
-                    .get_distance(request.query.get_vector_name())?
-                    .distance_order()
-            } else {
-                // Score comes from special handling of the distances in a way that it doesn't
-                // directly represent distance anymore, so the order is always `LargeBetter`
-                Order::LargeBetter
-            };
+        for (results_from_shards, request) in
+            transposed_iter(all_searches_res).zip(request.searches.iter())
+        {
+            debug_assert!(results_from_shards
+                .iter()
+                .map(|(_, order)| order)
+                .all_equal());
+            let order = results_from_shards
+                .first()
+                .map(|(_, order)| *order)
+                .unwrap_or(Order::SmallBetter);
 
-            let results_from_shards = all_searches_res
-                .iter_mut()
-                .flat_map(|res| mem::take(&mut res[batch_index]));
+            let results = results_from_shards.into_iter().flat_map(|(res, _)| res);
 
             let merged_iter = match order {
-                Order::LargeBetter => {
-                    Either::Left(results_from_shards.sorted_unstable_by(|a, b| b.cmp(a)))
-                }
-                Order::SmallBetter => {
-                    Either::Right(results_from_shards.sorted_unstable_by(|a, b| a.cmp(b)))
-                }
+                Order::LargeBetter => Either::Left(results.sorted_unstable_by(|a, b| b.cmp(a))),
+                Order::SmallBetter => Either::Right(results.sorted_unstable_by(|a, b| a.cmp(b))),
             }
             .filter(|point| seen_ids.insert(point.id));
 

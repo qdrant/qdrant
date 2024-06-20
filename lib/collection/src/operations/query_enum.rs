@@ -1,6 +1,10 @@
 use segment::data_types::vectors::{DenseVector, Named, NamedQuery, NamedVectorStruct, Vector};
+use segment::types::Order;
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
+
+use super::types::CollectionResult;
+use crate::config::CollectionParams;
 
 impl QueryEnum {
     pub fn get_vector_name(&self) -> &str {
@@ -20,6 +24,20 @@ impl QueryEnum {
                 false
             }
         }
+    }
+
+    pub fn query_order(&self, collection_params: &CollectionParams) -> CollectionResult<Order> {
+        let order = if self.is_distance_scored() {
+            collection_params
+                .get_distance(self.get_vector_name())?
+                .distance_order()
+        } else {
+            // Score comes from special handling of the distances in a way that it doesn't
+            // directly represent distance anymore, so the order is always `LargeBetter`
+            Order::LargeBetter
+        };
+
+        Ok(order)
     }
 
     pub fn iterate_sparse(&self, mut f: impl FnMut(&str, &SparseVector)) {
@@ -70,6 +88,8 @@ pub enum QueryEnum {
     Discover(NamedQuery<DiscoveryQuery<Vector>>),
     Context(NamedQuery<ContextQuery<Vector>>),
 }
+
+impl QueryEnum {}
 
 impl From<DenseVector> for QueryEnum {
     fn from(vector: DenseVector) -> Self {

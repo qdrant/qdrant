@@ -36,11 +36,11 @@ impl Direction {
             },
         }
     }
-    
+
     fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderValue {
         value
             .and_then(|v| OrderValue::try_from(v).ok())
-            .unwrap_or_else(|| match self {
+            .unwrap_or(match self {
                 Direction::Asc => OrderValue::MAX,
                 Direction::Desc => OrderValue::MIN,
             })
@@ -137,15 +137,6 @@ impl OrderBy {
             .0
             .insert(INTERNAL_KEY_OF_ORDER_BY_VALUE.to_string(), value.into());
         new_payload
-    }
-
-    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderValue {
-        value
-            .and_then(|v| OrderValue::try_from(v).ok())
-            .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => OrderValue::MAX,
-                Direction::Desc => OrderValue::MIN,
-            })
     }
 
     pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderValue {

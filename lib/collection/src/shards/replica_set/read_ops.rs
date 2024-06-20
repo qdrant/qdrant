@@ -2,13 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt as _;
+use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::*;
 
 use super::ShardReplicaSet;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::types::*;
-use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 
 impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
@@ -64,13 +65,29 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+    ) -> CollectionResult<Vec<(Vec<ScoredPoint>, Order)>> {
+        let collection_params = self.collection_config.read().await.params.clone();
+
+        let orders: Vec<Order> = request
+            .searches
+            .iter()
+            .map(|req| req.query.query_order(&collection_params))
+            .try_collect()?;
+
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.core_search(request, &search_runtime, timeout).await }.boxed()
+                let orders = orders.clone();
+
+                async move {
+                    shard
+                        .core_search(request, &search_runtime, timeout)
+                        .await
+                        .map(|res| res.into_iter().zip(orders).collect_vec())
+                }
+                .boxed()
             },
             read_consistency,
             local_only,
@@ -145,13 +162,42 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<ShardQueryResponse>> {
+    ) -> CollectionResult<Vec<Vec<(Vec<ScoredPoint>, Order)>>> {
+        let collection_params = self.collection_config.read().await.params.clone();
+
+        let intermediate_orders: Vec<Vec<Order>> = requests
+            .iter()
+            .map(|req| {
+                req.intermediate_response_info(
+                    |req| ScoringQuery::order(req.query.as_ref(), &collection_params),
+                    |prefetch| ScoringQuery::order(prefetch.query.as_ref(), &collection_params),
+                )
+                .into_iter()
+                .try_collect()
+            })
+            .try_collect()?;
+
         self.execute_and_resolve_read_operation(
             |shard| {
                 let requests = Arc::clone(&requests);
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.query_batch(requests, &search_runtime, timeout).await }.boxed()
+                let intermediate_orders = intermediate_orders.clone();
+
+                async move {
+                    shard
+                        .query_batch(requests, &search_runtime, timeout)
+                        .await
+                        .map(|res| {
+                            res.into_iter()
+                                .zip(intermediate_orders)
+                                .map(|(intermediates, orders)| {
+                                    intermediates.into_iter().zip(orders).collect_vec()
+                                })
+                                .collect_vec()
+                        })
+                }
+                .boxed()
             },
             read_consistency,
             local_only,

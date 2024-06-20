@@ -41,6 +41,31 @@ impl ShardQueryRequest {
             .max()
             .unwrap_or(0)
     }
+
+    /// Returns a list of the query that should correspond to each of the intermediate results.
+    ///
+    /// `I` is the type of the output of the provided closures.
+    ///
+    /// Example: `[info1, info2, info3]` corresponds to `[result1, result2, result3]`
+    pub fn intermediate_response_info<'a, I>(
+        &'a self,
+        f_root: impl Fn(&'a Self) -> I,
+        f_prefetch: impl Fn(&'a ShardPrefetch) -> I,
+    ) -> Vec<I> {
+        let needs_intermediate_results = self
+            .query
+            .as_ref()
+            .map(|sq| sq.needs_intermediate_results())
+            .unwrap_or(false);
+
+        if needs_intermediate_results {
+            // In case of Fusion, expect the propagated intermediate results
+            self.prefetches.iter().map(f_prefetch).collect_vec()
+        } else {
+            // Otherwise, we expect the root result
+            vec![f_root(self)]
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

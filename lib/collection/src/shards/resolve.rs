@@ -2,13 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::hash;
 
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::Direction;
 use segment::types::{Order, Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
-use crate::operations::types::{CountResult, OrderedItems, Record};
-use crate::operations::universal_query::shard_query::ShardQueryResponse;
+use crate::operations::types::{CountResult, Record};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResolveCondition {
@@ -88,7 +87,7 @@ impl Resolve for (Vec<Record>, Option<Direction>) {
     }
 }
 
-impl Resolve for Vec<Vec<ScoredPoint>> {
+impl Resolve for Vec<(Vec<ScoredPoint>, Order)> {
     fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
         // batches: <replica_id, <batch_id, ScoredPoints>>
         // transpose to <batch_id, <replica_id, ScoredPoints>>
@@ -96,15 +95,32 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
         let batches = transposed_iter(batches);
 
         batches
-            .map(|points| Resolver::resolve(points, |point| point.id, scored_point_eq, condition))
+            .map(|batch| {
+                debug_assert!(batch.iter().map(|(_, order)| order).all_equal());
+                let order = batch
+                    .first()
+                    .map(|(_, order)| *order)
+                    .unwrap_or(Order::SmallBetter);
+                let points = batch.into_iter().map(|(points, _)| points).collect();
+
+                let mut resolved =
+                    Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
+
+                match order {
+                    Order::SmallBetter => resolved.sort_unstable(),
+                    Order::LargeBetter => resolved.sort_unstable_by(|a, b| b.cmp(a)),
+                }
+
+                (resolved, order)
+            })
             .collect()
     }
 }
 
-impl Resolve for Vec<ShardQueryResponse> {
+impl Resolve for Vec<Vec<(Vec<ScoredPoint>, Order)>> {
     fn resolve(batches: Vec<Self>, condition: ResolveCondition) -> Self {
-        // batches: <replica_id, <batch_id, ShardQueryResponse>>
-        // transpose to <batch_id, <replica_id, ShardQueryResponse>>
+        // batches: <replica_id, <batch_id, response>>
+        // transpose to <batch_id, <replica_id, response>>
 
         let batches = transposed_iter(batches);
 
@@ -314,7 +330,7 @@ mod test {
     }
 
     #[rustfmt::skip]
-    fn resolve_scored_points_batch_4_input() -> Vec<Vec<Vec<ScoredPoint>>> {
+    fn resolve_scored_points_batch_4_input() -> Vec<Vec<(Vec<ScoredPoint>, Order)>> {
         let [batch1, batch2, batch3] = resolve_scored_points_batch_4_data();
 
         vec![
@@ -337,14 +353,17 @@ mod test {
             ],
 
             vec![
-                batch1,
-                batch2,
-                batch3,
+                (batch1, Order::SmallBetter),
+                (batch2, Order::SmallBetter),
+                (batch3, Order::SmallBetter),
             ],
         ]
     }
 
-    fn batch<const N: usize>(batch: &[ScoredPoint], mut actions: [Action; N]) -> Vec<ScoredPoint> {
+    fn batch<const N: usize>(
+        batch: &[ScoredPoint],
+        mut actions: [Action; N],
+    ) -> (Vec<ScoredPoint>, Order) {
         let mut batch = batch.to_owned();
 
         actions.sort_unstable_by_key(|action| action.index());
@@ -369,7 +388,7 @@ mod test {
             }
         }
 
-        batch
+        (batch, Order::SmallBetter)
     }
 
     #[derive(Copy, Clone, Debug)]
@@ -416,7 +435,11 @@ mod test {
 
         test_resolve(
             resolve_scored_points_batch_4_input(),
-            [batch1, batch2, batch3],
+            [
+                (batch1, Order::SmallBetter),
+                (batch2, Order::SmallBetter),
+                (batch3, Order::SmallBetter),
+            ],
             ResolveCondition::All,
         );
     }
@@ -435,7 +458,11 @@ mod test {
 
         test_resolve(
             resolve_scored_points_batch_4_input(),
-            [batch1, batch2, batch3],
+            [
+                (batch1, Order::SmallBetter),
+                (batch2, Order::SmallBetter),
+                (batch3, Order::SmallBetter),
+            ],
             ResolveCondition::Majority,
         );
     }

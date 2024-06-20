@@ -269,11 +269,11 @@ impl Collection {
                         if shard_key.is_none() {
                             return Ok(records);
                         }
-                        
+
                         records.0.iter_mut().for_each(|point| {
                             point.shard_key.clone_from(&shard_key);
                         });
-                        
+
                         Ok(records)
                     })
             });
