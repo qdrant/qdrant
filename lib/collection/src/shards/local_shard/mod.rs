@@ -76,6 +76,7 @@ pub struct LocalShard {
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     pub(super) wal: RecoverableWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -186,6 +187,7 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal: RecoverableWal::new(locked_wal, clocks.newest_clocks, clocks.oldest_clocks),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
@@ -773,6 +775,7 @@ impl LocalShard {
         let segments_path = Self::segments_path(&self.path);
         let collection_params = self.collection_config.read().await.params.clone();
         let temp_path = temp_path.to_owned();
+        let payload_index_schema = self.payload_index_schema.clone();
 
         tokio::task::spawn_blocking(move || {
             // Do not change segments while snapshotting
@@ -780,6 +783,7 @@ impl LocalShard {
                 segments.clone(),
                 &segments_path,
                 Some(&collection_params),
+                &payload_index_schema.read().clone(),
                 &temp_path,
                 &snapshot_segments_shard_path,
             )?;
