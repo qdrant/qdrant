@@ -12,6 +12,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
+use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRing;
 use crate::operations::point_ops::{
@@ -37,6 +38,7 @@ use crate::shards::telemetry::LocalShardTelemetry;
 /// It can be used to provide all read and write operations while the wrapped shard is being transferred to another node.
 /// Proxy forwards all operations to remote shards.
 pub struct ForwardProxyShard {
+    shard_id: ShardId,
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
     /// Lock required to protect transfer-in-progress updates.
@@ -45,8 +47,9 @@ pub struct ForwardProxyShard {
 }
 
 impl ForwardProxyShard {
-    pub fn new(wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
+    pub fn new(shard_id: ShardId, wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
         Self {
+            shard_id,
             wrapped_shard,
             remote_shard,
             update_lock: Mutex::new(()),
@@ -191,7 +194,7 @@ impl ShardOperation for ForwardProxyShard {
     /// This method is *not* cancel safe.
     async fn update(
         &self,
-        operation: OperationWithClockTag,
+        mut operation: OperationWithClockTag,
         _wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -206,6 +209,12 @@ impl ShardOperation for ForwardProxyShard {
         // We always have to wait for the result of the update, cause after we release the lock,
         // the transfer needs to have access to the latest version of points.
         let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
+
+        // Strip clock tag if forwarding to a different shard
+        // Each shard has their own clock tags and they are incompatible with other shards
+        if self.shard_id != self.remote_shard.id {
+            operation.clock_tag = None;
+        }
 
         let remote_result = self
             .remote_shard
