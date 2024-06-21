@@ -393,7 +393,7 @@ def test_points_query(tmp_path: pathlib.Path):
 
             # assert same number of results
             assert len(r_one) == len(r_two), f"Different number of results for {action1} and {action2}"
-            if action1 in ["search", "recommend", "scroll"]:
+            if action1 in ["query", "search", "recommend", "scroll"]:
                 # assert same order of results
                 assert [str(d) for d in r_one] == [str(d) for d in r_two], f"Different order of results for {action1} and {action2}"
                 # assert stable across peers
