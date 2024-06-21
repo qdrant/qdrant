@@ -944,7 +944,6 @@ impl Segment {
             }
         }
 
-
         // Do not delete extra payload indices, because collection-level information about
         // the payload indices might be incomplete due to migrations from older versions.
 
