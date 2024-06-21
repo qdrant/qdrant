@@ -161,7 +161,7 @@ float similarity(uint a, uint b) {
     }
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
-    float xor_product = result;
+    float xor_product = subgroupAdd(result);
     float zeros_count = float(d * 32) - xor_product;
     return zeros_count - xor_product;
 #else
