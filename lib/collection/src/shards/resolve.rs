@@ -4,6 +4,7 @@ use std::hash;
 use itertools::Itertools;
 use segment::data_types::order_by::Direction;
 use segment::types::{Order, Payload, ScoredPoint};
+use segment::utils::scored_point_ties::ScoredPointTies;
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
@@ -107,8 +108,10 @@ impl Resolve for Vec<(Vec<ScoredPoint>, Order)> {
                     Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
 
                 match order {
-                    Order::SmallBetter => resolved.sort_unstable(),
-                    Order::LargeBetter => resolved.sort_unstable_by(|a, b| b.cmp(a)),
+                    Order::SmallBetter => resolved
+                        .sort_unstable_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b))),
+                    Order::LargeBetter => resolved
+                        .sort_unstable_by(|a, b| ScoredPointTies(b).cmp(&ScoredPointTies(a))),
                 }
 
                 (resolved, order)
@@ -138,6 +141,7 @@ fn record_eq(this: &Record, other: &Record) -> bool {
 fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
     this.id == other.id
         && this.score == other.score
+        && this.order_value == other.order_value
         && this.vector == other.vector
         && payload_eq(&this.payload, &other.payload)
 }

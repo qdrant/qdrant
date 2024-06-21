@@ -280,15 +280,11 @@ def test_points_query(tmp_path: pathlib.Path):
             ("scroll", "id", {
                 "limit": 5,
                 "order_by": "count",
-                "direction": "asc",
             }),
             ("query", "id", {
                 "limit": 5,
                 "query": {
-                    "order_by": {
-                        "key": "count",
-                        "direction": "asc",
-                    }
+                    "order_by": "count"
                 }
             }),
         ),
