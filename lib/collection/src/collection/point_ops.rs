@@ -302,10 +302,14 @@ impl Collection {
                                     order_by.get_order_value_from_payload(record.payload.as_ref())
                                 });
                             } else {
-                                value = record.order_value.unwrap_or_else(|| {
+                                value = if let Some(order_value) = record.order_value {
+                                    order_by
+                                        .remove_order_value_from_payload(record.payload.as_mut());
+                                    order_value
+                                } else {
                                     order_by
                                         .remove_order_value_from_payload(record.payload.as_mut())
-                                });
+                                };
                                 if !with_payload_interface.is_required() {
                                     // Use None instead of empty hashmap
                                     record.payload = None;
