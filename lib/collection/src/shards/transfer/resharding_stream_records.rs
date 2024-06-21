@@ -51,13 +51,16 @@ pub(crate) async fn transfer_resharding_stream_records(
             .get_shard_id_to_key_mapping()
             .get(&shard_id)
             .cloned();
+
         hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
             CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash ring"
             ))
         })?;
 
-        replica_set.proxify_local(remote_shard.clone()).await?;
+        replica_set
+            .proxify_local(remote_shard.clone(), Some(hashring.clone()))
+            .await?;
 
         let Some(count_result) = replica_set
             .count_local(Arc::new(CountRequestInternal {
