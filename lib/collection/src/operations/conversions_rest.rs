@@ -9,6 +9,7 @@ impl From<Record> for api::rest::Record {
             payload: value.payload,
             vector: value.vector.map(api::rest::VectorStruct::from),
             shard_key: value.shard_key,
+            order_value: value.order_value,
         }
     }
 }
@@ -20,6 +21,7 @@ impl From<api::rest::Record> for Record {
             payload: value.payload,
             vector: value.vector.map(VectorStructInternal::from),
             shard_key: value.shard_key,
+            order_value: value.order_value,
         }
     }
 }

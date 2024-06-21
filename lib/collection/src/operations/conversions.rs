@@ -136,11 +136,17 @@ pub fn try_record_from_grpc(
         .map(|vectors| vectors.try_into())
         .transpose()?;
 
+    let order_value = point
+        .order_value
+        .map(|ov| TryFrom::try_from(ov))
+        .transpose()?;
+
     Ok(Record {
         id,
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
+        order_value,
     })
 }
 
@@ -444,6 +450,7 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
             vectors: vectors.map(api::grpc::qdrant::Vectors::from),
             shard_key: record.shard_key.map(convert_shard_key_to_grpc),
+            order_value: record.order_value.map(From::from),
         }
     }
 }

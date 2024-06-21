@@ -21,6 +21,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
+use segment::data_types::order_by::OrderValue;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
@@ -98,6 +99,8 @@ pub struct Record {
     pub vector: Option<VectorStructInternal>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
+    /// Order value, if used for order_by
+    pub order_value: Option<OrderValue>,
 }
 
 /// Current statistics and configuration of the collection
