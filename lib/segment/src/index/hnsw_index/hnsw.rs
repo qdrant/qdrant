@@ -114,6 +114,19 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 GraphLayers::load(&graph_path, &graph_links_path)?,
             )
         } else {
+            let num_cpus = match permit {
+                Some(p) => p.num_cpus as usize,
+                None => {
+                    log::warn!("Rebuilding HNSW index");
+
+                    // We have no CPU permit, meaning this call is not triggered by the segment
+                    // optimizer which is supposed to be the only entity that builds an HNSW index.
+                    // This should never be executed unless files are removed manually.
+                    debug_assert!(false);
+
+                    get_num_cpus()
+                }
+            };
             let (config, graph) = Self::build_index(
                 path,
                 id_tracker.as_ref().borrow().deref(),
@@ -121,7 +134,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 &quantized_vectors.borrow(),
                 &payload_index.borrow(),
                 hnsw_config,
-                permit.map_or_else(get_num_cpus, |p| p.num_cpus as usize),
+                num_cpus,
                 stopped,
             )?;
 
