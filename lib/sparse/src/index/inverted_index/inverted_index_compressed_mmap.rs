@@ -45,6 +45,7 @@ pub struct InvertedIndexFileHeader {
 }
 
 /// Inverted flatten index from dimension id to posting list
+#[derive(Debug)]
 pub struct InvertedIndexCompressedMmap<W> {
     path: PathBuf,
     mmap: Arc<Mmap>,

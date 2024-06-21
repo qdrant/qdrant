@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -7,7 +8,6 @@ use common::types::PointOffsetType;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
-use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::InvertedIndex;
 
 use crate::common::operation_error::OperationResult;
@@ -24,13 +24,14 @@ use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vect
 use crate::vector_storage::VectorStorage;
 
 /// Prepares a sparse vector index with a given iterator of sparse vectors
-pub fn fixture_sparse_index_ram_from_iter<I: InvertedIndex>(
+pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
     data_dir: &Path,
     vectors: impl ExactSizeIterator<Item = SparseVector>,
     full_scan_threshold: usize,
     index_type: SparseIndexType,
-    stopped: &AtomicBool,
 ) -> OperationResult<SparseVectorIndex<I>> {
+    let stopped = AtomicBool::new(false);
+
     // directories
     let index_dir = &data_dir.join("index");
     let payload_dir = &data_dir.join("payload");
@@ -52,7 +53,7 @@ pub fn fixture_sparse_index_ram_from_iter<I: InvertedIndex>(
     let vector_storage = Arc::new(AtomicRefCell::new(open_simple_sparse_vector_storage(
         db,
         DB_VECTOR_CF,
-        stopped,
+        &stopped,
     )?));
     let mut borrowed_storage = vector_storage.borrow_mut();
 
@@ -80,7 +81,7 @@ pub fn fixture_sparse_index_ram_from_iter<I: InvertedIndex>(
             vector_storage: vector_storage.clone(),
             payload_index: wrapped_payload_index,
             path: index_dir,
-            stopped,
+            stopped: &stopped,
             tick_progress: || (),
         })?;
 
@@ -93,20 +94,32 @@ pub fn fixture_sparse_index_ram_from_iter<I: InvertedIndex>(
 }
 
 /// Prepares a sparse vector index with random sparse vectors
-pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
+pub fn fixture_sparse_index<I: InvertedIndex + Debug, R: Rng + ?Sized>(
     rnd: &mut R,
     num_vectors: usize,
     max_dim: usize,
     full_scan_threshold: usize,
     data_dir: &Path,
-    stopped: &AtomicBool,
-) -> SparseVectorIndex<InvertedIndexImmutableRam> {
-    fixture_sparse_index_ram_from_iter(
+) -> SparseVectorIndex<I> {
+    fixture_sparse_index_from_iter(
         data_dir,
         (0..num_vectors).map(|_| random_sparse_vector(rnd, max_dim)),
         full_scan_threshold,
         SparseIndexType::ImmutableRam,
-        stopped,
     )
     .unwrap()
+}
+
+#[macro_export]
+macro_rules! fixture_for_all_indices {
+    ($test:ident::<_>($($args:tt)*)) => {
+        eprintln!("InvertedIndexCompressedImmutableRam<f32>");
+        $test::<InvertedIndexCompressedImmutableRam<f32>>($($args)*);
+        eprintln!("InvertedIndexCompressedMmap<f32>");
+        $test::<InvertedIndexCompressedMmap<f32>>($($args)*);
+        eprintln!("InvertedIndexImmutableRam");
+        $test::<InvertedIndexImmutableRam>($($args)*);
+        eprintln!("InvertedIndexMmap");
+        $test::<InvertedIndexMmap>($($args)*);
+    };
 }

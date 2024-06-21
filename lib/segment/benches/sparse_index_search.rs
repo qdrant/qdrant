@@ -10,7 +10,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram_from_iter;
+use segment::fixtures::sparse_fixtures::fixture_sparse_index_from_iter;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
@@ -72,12 +72,11 @@ fn sparse_vector_index_search_benchmark_impl(
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let sparse_vector_index = fixture_sparse_index_ram_from_iter::<InvertedIndexRam>(
+    let sparse_vector_index = fixture_sparse_index_from_iter::<InvertedIndexRam>(
         data_dir.path(),
         progress("Indexing (1/2)", vectors_len).wrap_iter(vectors),
         FULL_SCAN_THRESHOLD,
         SparseIndexType::MutableRam,
-        &stopped,
     )
     .unwrap();
 
