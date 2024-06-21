@@ -5482,6 +5482,7 @@ dependencies = [
  "serde-value",
  "serde_cbor",
  "serde_json",
+ "serde_variant",
  "smallvec",
  "smol_str",
  "sparse",
@@ -5619,6 +5620,15 @@ dependencies = [
  "form_urlencoded",
  "itoa",
  "ryu",
+ "serde",
+]
+
+[[package]]
+name = "serde_variant"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a0068df419f9d9b6488fdded3f1c818522cdea328e02ce9d9f147380265a432"
+dependencies = [
  "serde",
 ]
 

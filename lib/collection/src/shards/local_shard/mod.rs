@@ -242,6 +242,7 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
+            let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(
                 thread::Builder::new()
@@ -251,12 +252,14 @@ impl LocalShard {
                         let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
+                            segment.update_all_field_indices(
+                                &payload_index_schema.read().schema.clone(),
+                            )?;
                         } else {
                             std::fs::remove_dir_all(&segments_path).map_err(|err| {
                                 CollectionError::service_error(format!(
-                                    "Can't remove leftover segment {}, due to {}",
+                                    "Can't remove leftover segment {}, due to {err}",
                                     segments_path.to_str().unwrap(),
-                                    err
                                 ))
                             })?;
                         }
