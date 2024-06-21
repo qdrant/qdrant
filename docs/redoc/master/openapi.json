@@ -6468,6 +6468,16 @@
                 "nullable": true
               }
             ]
+          },
+          "order_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderValue"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6553,6 +6563,18 @@
             }
           }
         }
+      },
+      "OrderValue": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "type": "number",
+            "format": "double"
+          }
+        ]
       },
       "SearchRequest": {
         "description": "Search request. Holds all conditions and parameters for the search of most similar points by vector similarity given the filtering restrictions.",
@@ -7388,18 +7410,6 @@
             ]
           }
         }
-      },
-      "OrderValue": {
-        "anyOf": [
-          {
-            "type": "integer",
-            "format": "int64"
-          },
-          {
-            "type": "number",
-            "format": "double"
-          }
-        ]
       },
       "UpdateResult": {
         "type": "object",
