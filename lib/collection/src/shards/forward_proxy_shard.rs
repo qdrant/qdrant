@@ -210,6 +210,8 @@ impl ShardOperation for ForwardProxyShard {
         // the transfer needs to have access to the latest version of points.
         let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
 
+        // Strip clock tag if forwarding to a different shard
+        // Each shard has their own clock tags and they are incompatible with other shards
         if self.shard_id != self.remote_shard.id {
             operation.clock_tag = None;
         }
