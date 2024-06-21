@@ -105,13 +105,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             tick_progress,
         } = args;
 
-        // create directory if it does not exist
-        create_dir_all(path)?;
-
         let config_path = SparseIndexConfig::get_config_path(path);
 
         let (config, inverted_index, indices_tracker) = if !config.index_type.is_persisted() {
             // RAM mutable case - build inverted index from scratch and use provided config
+            create_dir_all(path)?;
             let (inverted_index, indices_tracker) = Self::build_inverted_index(
                 id_tracker.clone(),
                 vector_storage.clone(),
@@ -122,7 +120,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             (config, inverted_index, indices_tracker)
         } else {
             Self::try_load(path).or_else(|e| {
-                log::warn!("Failed to load, rebuilding: {}", e.to_string());
+                if path.try_exists().unwrap_or(true) {
+                    log::warn!("Failed to load {path:?}, rebuilding: {e}");
+
+                    // Drop index completely.
+                    remove_dir_all(path)?;
+                }
+
+                create_dir_all(path)?;
 
                 let (inverted_index, indices_tracker) = Self::build_inverted_index(
                     id_tracker.clone(),
@@ -131,10 +136,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     stopped,
                     tick_progress,
                 )?;
-
-                // Drop index completely.
-                remove_dir_all(path)?;
-                create_dir_all(path)?;
 
                 config.save(&config_path)?;
                 inverted_index.save(path)?;
@@ -146,8 +147,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 // written index in the current format, the index file name is changed from
                 // `inverted_index.data` to `inverted_index.dat`.
                 TInvertedIndex::Version::save(path)?;
-
-                log::info!("Successfully rebuilt");
 
                 OperationResult::Ok((config, inverted_index, indices_tracker))
             })?

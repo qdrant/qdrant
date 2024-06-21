@@ -63,6 +63,14 @@ impl InvertedIndex for InvertedIndexMmap {
 
     fn save(&self, path: &Path) -> std::io::Result<()> {
         debug_assert_eq!(path, self.path);
+
+        // If Self instance exists, it's either constructed by using `open()` (which reads index
+        // files), or using `from_ram_index()` (which writes them). Both assume that the files
+        // exist. If any of the files are missing, then something went wrong.
+        for file in Self::files(path) {
+            debug_assert!(file.exists());
+        }
+
         Ok(())
     }
 
