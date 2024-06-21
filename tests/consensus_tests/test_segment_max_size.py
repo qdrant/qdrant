@@ -9,12 +9,13 @@ from .utils import *
 COLLECTION_NAME = "test_collection"
 
 
-# Test node recovery with a WAL delta transfer.
+# Test that the maximum segment size property is respected
 #
-# The second node is killed while operations are ongoing. We later restart the
-# node, and manually trigger rereplication to sync it up again.
+# It sets a very low limit and inserts some points. Qdrant should dynamically
+# create a few new appendable segments for all the data to fit.
 #
-# Test that data on the both sides is consistent
+# It also confirms payload indices are configured properly and all payload
+# fields are indexed.
 def test_max_segment_size(tmp_path: pathlib.Path):
     assert_project_root()
 

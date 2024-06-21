@@ -118,7 +118,7 @@ def create_field_index(
     field_schema="keyword",
     headers={},
 ):
-    # Create collection in peer_url
+    # Create field index in peer_url
     r_batch = requests.put(
         f"{peer_url}/collections/{collection}/index",
         json={
