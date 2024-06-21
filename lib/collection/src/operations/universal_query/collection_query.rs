@@ -136,56 +136,21 @@ impl VectorQuery<VectorInput> {
                 VectorQuery::Nearest(vector)
             }
             VectorQuery::RecommendAverageVector(reco) => {
-                let positives = reco
-                    .positives
-                    .into_iter()
-                    .filter_map(|vector_input| {
-                        ids_to_vectors.resolve_reference(
-                            lookup_collection,
-                            lookup_vector_name,
-                            vector_input,
-                        )
-                    })
-                    .collect();
-                let negatives = reco
-                    .negatives
-                    .into_iter()
-                    .filter_map(|vector_input| {
-                        ids_to_vectors.resolve_reference(
-                            lookup_collection,
-                            lookup_vector_name,
-                            vector_input,
-                        )
-                    })
-                    .collect();
-
+                let (positives, negatives) = Self::resolve_reco_reference(
+                    reco,
+                    ids_to_vectors,
+                    lookup_vector_name,
+                    lookup_collection,
+                );
                 VectorQuery::RecommendAverageVector(RecoQuery::new(positives, negatives))
             }
             VectorQuery::RecommendBestScore(reco) => {
-                // TODO(universal-query): This is a copy-paste from `RecommendAverageVector` branch, remove duplicated code
-                let positives = reco
-                    .positives
-                    .into_iter()
-                    .filter_map(|vector_input| {
-                        ids_to_vectors.resolve_reference(
-                            lookup_collection,
-                            lookup_vector_name,
-                            vector_input,
-                        )
-                    })
-                    .collect();
-                let negatives = reco
-                    .negatives
-                    .into_iter()
-                    .filter_map(|vector_input| {
-                        ids_to_vectors.resolve_reference(
-                            lookup_collection,
-                            lookup_vector_name,
-                            vector_input,
-                        )
-                    })
-                    .collect();
-
+                let (positives, negatives) = Self::resolve_reco_reference(
+                    reco,
+                    ids_to_vectors,
+                    lookup_vector_name,
+                    lookup_collection,
+                );
                 VectorQuery::RecommendBestScore(RecoQuery::new(positives, negatives))
             }
             VectorQuery::Discover(discover) => {
@@ -224,6 +189,38 @@ impl VectorQuery<VectorInput> {
                 VectorQuery::Context(ContextQuery { pairs })
             }
         }
+    }
+
+    /// Resolves the references in the RecoQuery into actual vectors.
+    fn resolve_reco_reference(
+        reco_query: RecoQuery<VectorInput>,
+        ids_to_vectors: &ReferencedVectors,
+        lookup_vector_name: &str,
+        lookup_collection: Option<&String>,
+    ) -> (Vec<Vector>, Vec<Vector>) {
+        let positives = reco_query
+            .positives
+            .into_iter()
+            .filter_map(|vector_input| {
+                ids_to_vectors.resolve_reference(
+                    lookup_collection,
+                    lookup_vector_name,
+                    vector_input,
+                )
+            })
+            .collect();
+        let negatives = reco_query
+            .negatives
+            .into_iter()
+            .filter_map(|vector_input| {
+                ids_to_vectors.resolve_reference(
+                    lookup_collection,
+                    lookup_vector_name,
+                    vector_input,
+                )
+            })
+            .collect();
+        (positives, negatives)
     }
 }
 
