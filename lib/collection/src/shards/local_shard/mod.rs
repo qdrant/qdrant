@@ -330,7 +330,7 @@ impl LocalShard {
             segment_holder.create_appendable_segment(
                 &segments_path,
                 &collection_params,
-                Some(&payload_index_schema),
+                &payload_index_schema,
             )?;
         }
 

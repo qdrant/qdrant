@@ -830,9 +830,14 @@ impl<'s> SegmentHolder {
         &mut self,
         segments_path: &Path,
         collection_params: &CollectionParams,
-        _payload_index_schema: Option<&PayloadIndexSchema>,
+        payload_index_schema: &PayloadIndexSchema,
     ) -> OperationResult<LockedSegment> {
-        let segment = self.build_tmp_segment(segments_path, Some(collection_params), true)?;
+        let segment = self.build_tmp_segment(
+            segments_path,
+            Some(collection_params),
+            Some(payload_index_schema),
+            true,
+        )?;
         self.add_new_locked(segment.clone());
         Ok(segment)
     }
@@ -858,6 +863,7 @@ impl<'s> SegmentHolder {
         &self,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        payload_index_schema: Option<&PayloadIndexSchema>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
         let config = match collection_params {
@@ -883,11 +889,15 @@ impl<'s> SegmentHolder {
             }
         };
 
-        Ok(LockedSegment::new(build_segment(
-            segments_path,
-            &config,
-            save_version,
-        )?))
+        let mut segment = build_segment(segments_path, &config, save_version)?;
+
+        if let Some(payload_index_schema) = payload_index_schema {
+            for (key, schema) in &payload_index_schema.schema {
+                segment.create_field_index(0, key, Some(schema))?;
+            }
+        }
+
+        Ok(LockedSegment::new(segment))
     }
 
     /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
@@ -903,7 +913,7 @@ impl<'s> SegmentHolder {
     )> {
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment =
-            segments_lock.build_tmp_segment(segments_path, collection_params, false)?;
+            segments_lock.build_tmp_segment(segments_path, collection_params, None, false)?;
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
