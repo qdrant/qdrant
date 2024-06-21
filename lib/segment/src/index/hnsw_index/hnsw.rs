@@ -22,12 +22,10 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use crate::common::BYTES_IN_KB;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
-use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -62,7 +60,7 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    config: HnswGraphConfig,
+    config: HnswConfig,
     path: PathBuf,
     graph: Option<GraphLayers<TGraphLinks>>,
     searches_telemetry: HNSWSearchesTelemetry,
@@ -84,36 +82,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-        hnsw_config: HnswConfig,
+        config: HnswConfig,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
-
-        let config_path = HnswGraphConfig::get_config_path(path);
-        let config = if config_path.exists() {
-            HnswGraphConfig::load(&config_path)?
-        } else {
-            let vector_storage = vector_storage.borrow();
-            let available_vectors = vector_storage.available_vector_count();
-            let full_scan_threshold = vector_storage
-                .available_size_in_bytes()
-                .checked_div(available_vectors)
-                .and_then(|avg_vector_size| {
-                    hnsw_config
-                        .full_scan_threshold
-                        .saturating_mul(BYTES_IN_KB)
-                        .checked_div(avg_vector_size)
-                })
-                .unwrap_or(1);
-
-            HnswGraphConfig::new(
-                hnsw_config.m,
-                hnsw_config.ef_construct,
-                full_scan_threshold,
-                hnsw_config.max_indexing_threads,
-                hnsw_config.payload_m,
-                available_vectors,
-            )
-        };
 
         let graph_path = GraphLayers::<TGraphLinks>::get_path(path);
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
@@ -150,24 +121,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         self.quantized_vectors.clone()
     }
 
-    fn save_config(&self) -> OperationResult<()> {
-        let config_path = HnswGraphConfig::get_config_path(&self.path);
-        self.config.save(&config_path)
-    }
-
-    fn save_graph(&self) -> OperationResult<()> {
+    pub fn save(&self) -> OperationResult<()> {
         let graph_path = GraphLayers::<TGraphLinks>::get_path(&self.path);
         if let Some(graph) = &self.graph {
             graph.save(&graph_path)
         } else {
             Ok(())
         }
-    }
-
-    pub fn save(&self) -> OperationResult<()> {
-        self.save_config()?;
-        self.save_graph()?;
-        Ok(())
     }
 
     pub fn build_filtered_graph(
@@ -273,7 +233,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ef = params
             .and_then(|params| params.hnsw_ef)
-            .unwrap_or(self.config.ef);
+            .unwrap_or(self.config.ef_construct);
 
         let is_stopped = vector_query_context.is_stopped();
 
@@ -700,7 +660,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             self.config.m,
-            self.config.m0,
+            self.config.m0(),
             self.config.ef_construct,
             (total_vector_count
                 .checked_div(indexing_threshold)
@@ -826,7 +786,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
-                        self.config.payload_m0.unwrap_or(self.config.m0),
+                        self.config.payload_m0().unwrap_or(self.config.m0()),
                         self.config.ef_construct,
                         1,
                         HNSW_USE_HEURISTIC,
@@ -846,13 +806,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             let indexed_payload_vectors = block_filter_list.count_visits_since(visits_iteration);
 
             debug_assert!(indexed_vectors >= indexed_payload_vectors || self.config.m == 0);
-            indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
             debug_assert!(indexed_payload_vectors <= total_vector_count);
         } else {
             debug!("skip building additional HNSW links");
         }
-
-        self.config.indexed_vector_count.replace(indexed_vectors);
 
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(&self.path);
         self.graph = Some(graph_layers_builder.into_graph_layers(Some(&graph_links_path))?);
@@ -899,10 +856,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
     }
 
     fn indexed_vector_count(&self) -> usize {
-        self.config
-            .indexed_vector_count
-            // If indexed vector count is unknown, fall back to number of points
-            .or_else(|| self.graph.as_ref().map(|graph| graph.num_points()))
+        self.graph
+            .as_ref()
+            .map(|graph| graph.num_points())
             .unwrap_or(0)
     }
 

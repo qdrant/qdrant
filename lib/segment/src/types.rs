@@ -491,6 +491,14 @@ impl HnswConfig {
             // to flip this flag
             || self.on_disk != other.on_disk
     }
+
+    pub fn m0(&self) -> usize {
+        self.m * 2
+    }
+
+    pub fn payload_m0(&self) -> Option<usize> {
+        self.payload_m.map(|v| v * 2)
+    }
 }
 
 const fn default_max_indexing_threads() -> usize {
