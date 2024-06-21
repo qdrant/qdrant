@@ -136,10 +136,7 @@ pub fn try_record_from_grpc(
         .map(|vectors| vectors.try_into())
         .transpose()?;
 
-    let order_value = point
-        .order_value
-        .map(|ov| TryFrom::try_from(ov))
-        .transpose()?;
+    let order_value = point.order_value.map(TryFrom::try_from).transpose()?;
 
     Ok(Record {
         id,
