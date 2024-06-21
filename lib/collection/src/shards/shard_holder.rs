@@ -16,6 +16,7 @@ use tokio::sync::{broadcast, RwLock};
 use super::replica_set::AbortShardTransfer;
 use super::resharding::{ReshardKey, ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::{self, HashRing};
@@ -796,6 +797,7 @@ impl ShardHolder {
         collection_config: Arc<RwLock<CollectionConfig>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         abort_shard_transfer: AbortShardTransfer,
@@ -841,6 +843,7 @@ impl ShardHolder {
                     collection_config.clone(),
                     effective_optimizers_config.clone(),
                     shared_storage_config.clone(),
+                    payload_index_schema.clone(),
                     channel_service.clone(),
                     on_peer_failure.clone(),
                     abort_shard_transfer.clone(),
@@ -862,6 +865,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             effective_optimizers_config.clone(),
                             shared_storage_config.clone(),
+                            payload_index_schema.clone(),
                             update_runtime.clone(),
                             optimizer_cpu_budget.clone(),
                         )
@@ -888,6 +892,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             effective_optimizers_config.clone(),
                             shared_storage_config.clone(),
+                            payload_index_schema.clone(),
                             update_runtime.clone(),
                             optimizer_cpu_budget.clone(),
                         )

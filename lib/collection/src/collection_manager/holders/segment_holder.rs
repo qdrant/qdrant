@@ -16,6 +16,7 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
@@ -829,6 +830,7 @@ impl<'s> SegmentHolder {
         &mut self,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        _payload_index_schema: Option<&PayloadIndexSchema>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(segments_path, Some(collection_params), true)?;
         self.add_new_locked(segment.clone());

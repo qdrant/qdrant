@@ -40,6 +40,7 @@ use wal::{Wal, WalOptions};
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
@@ -54,6 +55,7 @@ use crate::operations::types::{
 };
 use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -134,6 +136,7 @@ impl LocalShard {
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
@@ -158,6 +161,7 @@ impl LocalShard {
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
+            payload_index_schema.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
             optimizer_cpu_budget.clone(),
@@ -207,6 +211,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
@@ -321,13 +326,19 @@ impl LocalShard {
             log::warn!("Shard has no appendable segments, this should never happen. Creating new appendable segment now");
             let segments_path = LocalShard::segments_path(shard_path);
             let collection_params = collection_config.read().await.params.clone();
-            segment_holder.create_appendable_segment(&segments_path, &collection_params)?;
+            let payload_index_schema = payload_index_schema.read();
+            segment_holder.create_appendable_segment(
+                &segments_path,
+                &collection_params,
+                Some(&payload_index_schema),
+            )?;
         }
 
         let local_shard = LocalShard::new(
             segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal,
             optimizers,
             optimizer_cpu_budget,
@@ -383,6 +394,7 @@ impl LocalShard {
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -395,6 +407,7 @@ impl LocalShard {
             shard_path,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             update_runtime,
             optimizer_cpu_budget,
             effective_optimizers_config,
@@ -412,6 +425,7 @@ impl LocalShard {
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -494,6 +508,7 @@ impl LocalShard {
             segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal,
             optimizers,
             optimizer_cpu_budget,

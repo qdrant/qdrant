@@ -5,6 +5,7 @@ use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;
@@ -19,12 +20,18 @@ async fn test_delete_from_indexed_payload() {
 
     let current_runtime: Handle = Handle::current();
 
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
     let shard = LocalShard::build(
         0,
         collection_name.clone(),
         collection_dir.path(),
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
+        payload_index_schema.clone(),
         current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),
@@ -60,6 +67,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         config.optimizer_config.clone(),
         Arc::new(Default::default()),
+        payload_index_schema.clone(),
         current_runtime.clone(),
         CpuBudget::default(),
     )
@@ -81,6 +89,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         config.optimizer_config.clone(),
         Arc::new(Default::default()),
+        payload_index_schema,
         current_runtime,
         CpuBudget::default(),
     )

@@ -20,6 +20,7 @@ use segment::types::{Distance, PointIdType};
 use tempfile::Builder;
 use tokio::time::{sleep, Instant};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_manager::fixtures::{
     get_indexing_optimizer, get_merge_optimizer, random_segment, PointIdGenerator,
@@ -222,6 +223,7 @@ async fn test_new_segment_when_all_over_capacity() {
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
     };
+    let payload_index_schema = PayloadIndexSchema::default();
     let mut holder = SegmentHolder::default();
 
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
@@ -241,6 +243,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
+        &payload_index_schema,
     )
     .unwrap();
     assert_eq!(segments.read().len(), 6);
@@ -251,6 +254,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
+        &payload_index_schema,
     )
     .unwrap();
 
@@ -288,6 +292,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
+        &payload_index_schema,
     )
     .unwrap();
     assert_eq!(segments.read().len(), 7);

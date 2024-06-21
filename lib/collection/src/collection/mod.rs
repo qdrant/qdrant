@@ -54,7 +54,7 @@ pub struct Collection {
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
-    pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     optimizers_overwrite: Option<OptimizersConfigDiff>,
     this_peer_id: PeerId,
     path: PathBuf,
@@ -108,6 +108,8 @@ impl Collection {
 
         let mut shard_holder = ShardHolder::new(path)?;
 
+        let payload_index_schema = Arc::new(Self::load_payload_index_schema(path)?);
+
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
             let is_local = peers.remove(&this_peer_id);
@@ -130,6 +132,7 @@ impl Collection {
                 shared_collection_config.clone(),
                 effective_optimizers_config,
                 shared_storage_config.clone(),
+                payload_index_schema.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
@@ -146,8 +149,6 @@ impl Collection {
         // Once the config is persisted - the collection is considered to be successfully created.
         CollectionVersion::save(path)?;
         collection_config.save(path)?;
-
-        let payload_index_schema = Self::load_payload_index_schema(path)?;
 
         Ok(Self {
             id: name.clone(),
@@ -233,6 +234,11 @@ impl Collection {
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
+        let payload_index_schema = Arc::new(
+            Self::load_payload_index_schema(path)
+                .expect("Can't load or initialize payload index schema"),
+        );
+
         shard_holder
             .load_shards(
                 path,
@@ -240,6 +246,7 @@ impl Collection {
                 shared_collection_config.clone(),
                 effective_optimizers_config,
                 shared_storage_config.clone(),
+                payload_index_schema.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
                 abort_shard_transfer.clone(),
@@ -251,9 +258,6 @@ impl Collection {
             .await;
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
-
-        let payload_index_schema = Self::load_payload_index_schema(path)
-            .expect("Can't load or initialize payload index schema");
 
         Self {
             id: collection_id.clone(),
