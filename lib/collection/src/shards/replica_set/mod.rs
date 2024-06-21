@@ -24,6 +24,7 @@ use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use super::CollectionId;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -96,6 +97,7 @@ pub struct ShardReplicaSet {
     collection_config: Arc<RwLock<CollectionConfig>>,
     optimizers_config: OptimizersConfig,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
@@ -125,6 +127,7 @@ impl ShardReplicaSet {
         collection_config: Arc<RwLock<CollectionConfig>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         update_runtime: Handle,
         search_runtime: Handle,
@@ -139,6 +142,7 @@ impl ShardReplicaSet {
                 &shard_path,
                 collection_config.clone(),
                 shared_storage_config.clone(),
+                payload_index_schema.clone(),
                 update_runtime.clone(),
                 optimizer_cpu_budget.clone(),
                 effective_optimizers_config.clone(),
@@ -189,6 +193,7 @@ impl ShardReplicaSet {
             collection_config,
             optimizers_config: effective_optimizers_config,
             shared_storage_config,
+            payload_index_schema,
             update_runtime,
             search_runtime,
             optimizer_cpu_budget,
@@ -210,6 +215,7 @@ impl ShardReplicaSet {
         collection_config: Arc<RwLock<CollectionConfig>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
         abort_shard_transfer: AbortShardTransfer,
@@ -256,6 +262,7 @@ impl ShardReplicaSet {
                     collection_config.clone(),
                     effective_optimizers_config.clone(),
                     shared_storage_config.clone(),
+                    payload_index_schema.clone(),
                     update_runtime.clone(),
                     optimizer_cpu_budget.clone(),
                 )
@@ -303,6 +310,7 @@ impl ShardReplicaSet {
             collection_config,
             optimizers_config: effective_optimizers_config,
             shared_storage_config,
+            payload_index_schema,
             update_runtime,
             search_runtime,
             optimizer_cpu_budget,
@@ -469,6 +477,7 @@ impl ShardReplicaSet {
             &self.shard_path,
             self.collection_config.clone(),
             self.shared_storage_config.clone(),
+            self.payload_index_schema.clone(),
             self.update_runtime.clone(),
             self.optimizer_cpu_budget.clone(),
             self.optimizers_config.clone(),
@@ -653,6 +662,7 @@ impl ShardReplicaSet {
                     &self.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
+                    self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
                     self.optimizer_cpu_budget.clone(),
                     self.optimizers_config.clone(),

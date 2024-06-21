@@ -524,6 +524,7 @@ mod tests {
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
+    use crate::save_on_disk::SaveOnDisk;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
 
     #[tokio::test]
@@ -580,6 +581,11 @@ mod tests {
             quantization_config: None,
         };
 
+        let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+        let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+        let payload_index_schema =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
         let shared_config = Arc::new(RwLock::new(config.clone()));
         let remotes = HashSet::from([2, 3, 4, 5]);
         ShardReplicaSet::build(
@@ -594,6 +600,7 @@ mod tests {
             shared_config,
             config.optimizer_config.clone(),
             Default::default(),
+            payload_index_schema,
             Default::default(),
             update_runtime,
             search_runtime,

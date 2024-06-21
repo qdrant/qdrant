@@ -111,6 +111,25 @@ def drop_collection(peer_url, collection="test_collection", timeout=10, headers=
     assert_http_ok(r_delete)
 
 
+def create_field_index(
+    peer_url,
+    collection="test_collection",
+    field_name="city",
+    field_schema="keyword",
+    headers={},
+):
+    # Create field index in peer_url
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection}/index",
+        json={
+            "field_name": field_name,
+            "field_schema": field_schema,
+        },
+        headers=headers,
+    )
+    assert_http_ok(r_batch)
+
+
 def search(peer_url, vector, city, collection="test_collection"):
     q = {
         "vector": vector,

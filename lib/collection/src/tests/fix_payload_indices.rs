@@ -12,7 +12,7 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_delete_from_indexed_payload() {
+async fn test_fix_payload_indices() {
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
     let config = create_collection_config();
@@ -41,55 +41,31 @@ async fn test_delete_from_indexed_payload() {
     .unwrap();
 
     let upsert_ops = upsert_operation();
-
     shard.update(upsert_ops.into(), true).await.unwrap();
 
+    // Create payload index in shard locally, not in global collection configuration
     let index_op = create_payload_index_operation();
-
-    payload_index_schema
-        .write(|schema| {
-            schema.schema.insert(
-                "location".parse().unwrap(),
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Geo),
-            );
-        })
-        .unwrap();
     shard.update(index_op.into(), true).await.unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard.update(delete_point_op.into(), true).await.unwrap();
 
-    let info = shard.info().await.unwrap();
-    eprintln!("info = {:#?}", info.payload_schema);
-    let number_of_indexed_points = info
-        .payload_schema
-        .get(&"location".parse().unwrap())
-        .unwrap()
-        .points;
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     drop(shard);
 
-    let shard = LocalShard::load(
-        0,
-        collection_name.clone(),
-        collection_dir.path(),
-        Arc::new(RwLock::new(config.clone())),
-        config.optimizer_config.clone(),
-        Arc::new(Default::default()),
-        payload_index_schema.clone(),
-        current_runtime.clone(),
-        CpuBudget::default(),
-    )
-    .await
-    .unwrap();
-
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-    eprintln!("dropping point 5");
-    let delete_point_op = delete_point_operation(5);
-    shard.update(delete_point_op.into(), true).await.unwrap();
-
-    drop(shard);
+    payload_index_schema
+        .write(|schema| {
+            schema.schema.insert(
+                "a".parse().unwrap(),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            );
+            schema.schema.insert(
+                "b".parse().unwrap(),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+            );
+        })
+        .unwrap();
 
     let shard = LocalShard::load(
         0,
@@ -106,14 +82,23 @@ async fn test_delete_from_indexed_payload() {
     .unwrap();
 
     let info = shard.info().await.unwrap();
-    eprintln!("info = {:#?}", info.payload_schema);
+    // Deleting existing payload index is not supported
+    // assert!(!info
+    //     .payload_schema
+    //     .contains_key(&"location".parse().unwrap()));
 
-    let number_of_indexed_points_after_load = info
-        .payload_schema
-        .get(&"location".parse().unwrap())
-        .unwrap()
-        .points;
-
-    assert_eq!(number_of_indexed_points, 4);
-    assert_eq!(number_of_indexed_points_after_load, 3);
+    assert_eq!(
+        info.payload_schema
+            .get(&"a".parse().unwrap())
+            .unwrap()
+            .data_type,
+        PayloadSchemaType::Integer
+    );
+    assert_eq!(
+        info.payload_schema
+            .get(&"b".parse().unwrap())
+            .unwrap()
+            .data_type,
+        PayloadSchemaType::Keyword
+    );
 }

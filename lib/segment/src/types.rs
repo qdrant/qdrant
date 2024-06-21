@@ -1155,12 +1155,26 @@ pub enum PayloadSchemaType {
     Datetime,
 }
 
+impl PayloadSchemaType {
+    /// Human readable type name
+    pub fn name(&self) -> &'static str {
+        serde_variant::to_variant_name(&self).unwrap_or("unknown")
+    }
+}
+
 /// Payload type with parameters
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSchemaParams {
     Text(TextIndexParams),
     Integer(IntegerIndexParams),
+}
+
+impl PayloadSchemaParams {
+    /// Human readable type name
+    pub fn name(&self) -> &'static str {
+        serde_variant::to_variant_name(&self).unwrap_or("unknown")
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
@@ -1187,6 +1201,14 @@ impl PayloadFieldSchema {
                 range,
                 ..
             })) => *range,
+        }
+    }
+
+    /// Human readable type name
+    pub fn name(&self) -> &'static str {
+        match self {
+            PayloadFieldSchema::FieldType(field_type) => field_type.name(),
+            PayloadFieldSchema::FieldParams(field_params) => field_params.name(),
         }
     }
 }

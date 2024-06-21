@@ -102,6 +102,7 @@ impl Collection {
                     &to_replica_set.shard_path,
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
+                    self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
                     self.optimizer_cpu_budget.clone(),
                     effective_optimizers_config,
