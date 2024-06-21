@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
+use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -45,6 +46,9 @@ async fn test_delete_from_indexed_payload() {
 
     let index_op = create_payload_index_operation();
 
+    payload_index_schema.write(|schema| {
+        schema.schema.insert("location".parse().unwrap(), PayloadFieldSchema::FieldType(PayloadSchemaType::Geo));
+    }).unwrap();
     shard.update(index_op.into(), true).await.unwrap();
 
     let delete_point_op = delete_point_operation(4);
