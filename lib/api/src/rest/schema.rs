@@ -74,10 +74,8 @@ pub struct ScoredPoint {
     /// Points vector distance to the query vector
     pub score: common::types::ScoreType,
     /// Payload - values assigned to the point
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,10 +92,8 @@ pub struct Record {
     /// Id of the point
     pub id: segment::types::PointIdType,
     /// Payload - values assigned to the point
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
