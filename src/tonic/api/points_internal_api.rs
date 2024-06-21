@@ -485,8 +485,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<QueryBatchPointsInternal>,
     ) -> Result<Response<QueryBatchResponseInternal>, Status> {
-        // TODO(universal-query): validate
-        // validate_and_log(request.get_ref());
+        validate_and_log(request.get_ref());
 
         let QueryBatchPointsInternal {
             collection_name,
