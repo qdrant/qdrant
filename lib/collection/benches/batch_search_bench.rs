@@ -9,6 +9,7 @@ use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::save_on_disk::SaveOnDisk;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
 use common::cpu::CpuBudget;
@@ -86,6 +87,11 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let shared_config = Arc::new(RwLock::new(collection_config));
 
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
     let shard = handle
         .block_on(LocalShard::build_local(
             0,
@@ -93,6 +99,7 @@ fn batch_search_bench(c: &mut Criterion) {
             storage_dir.path(),
             shared_config,
             Default::default(),
+            payload_index_schema,
             handle.clone(),
             CpuBudget::default(),
             optimizers_config,

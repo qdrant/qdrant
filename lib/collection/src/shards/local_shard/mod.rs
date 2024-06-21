@@ -40,6 +40,7 @@ use wal::{Wal, WalOptions};
 use self::clock_map::{ClockMap, RecoveryPoint};
 use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
@@ -54,6 +55,7 @@ use crate::operations::types::{
 };
 use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -74,6 +76,7 @@ pub struct LocalShard {
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     pub(super) wal: RecoverableWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
@@ -134,6 +137,7 @@ impl LocalShard {
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
@@ -158,6 +162,7 @@ impl LocalShard {
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
+            payload_index_schema.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
             optimizer_cpu_budget.clone(),
@@ -182,6 +187,7 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal: RecoverableWal::new(locked_wal, clocks.newest_clocks, clocks.oldest_clocks),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
@@ -207,6 +213,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
@@ -237,6 +244,7 @@ impl LocalShard {
 
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
+            let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(
                 thread::Builder::new()
@@ -246,12 +254,14 @@ impl LocalShard {
                         let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
+                            segment.update_all_field_indices(
+                                &payload_index_schema.read().schema.clone(),
+                            )?;
                         } else {
                             std::fs::remove_dir_all(&segments_path).map_err(|err| {
                                 CollectionError::service_error(format!(
-                                    "Can't remove leftover segment {}, due to {}",
+                                    "Can't remove leftover segment {}, due to {err}",
                                     segments_path.to_str().unwrap(),
-                                    err
                                 ))
                             })?;
                         }
@@ -321,13 +331,19 @@ impl LocalShard {
             log::warn!("Shard has no appendable segments, this should never happen. Creating new appendable segment now");
             let segments_path = LocalShard::segments_path(shard_path);
             let collection_params = collection_config.read().await.params.clone();
-            segment_holder.create_appendable_segment(&segments_path, &collection_params)?;
+            let payload_index_schema = payload_index_schema.read();
+            segment_holder.create_appendable_segment(
+                &segments_path,
+                &collection_params,
+                &payload_index_schema,
+            )?;
         }
 
         let local_shard = LocalShard::new(
             segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal,
             optimizers,
             optimizer_cpu_budget,
@@ -383,6 +399,7 @@ impl LocalShard {
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -395,6 +412,7 @@ impl LocalShard {
             shard_path,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             update_runtime,
             optimizer_cpu_budget,
             effective_optimizers_config,
@@ -412,6 +430,7 @@ impl LocalShard {
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
@@ -494,6 +513,7 @@ impl LocalShard {
             segment_holder,
             collection_config,
             shared_storage_config,
+            payload_index_schema,
             wal,
             optimizers,
             optimizer_cpu_budget,
@@ -755,6 +775,7 @@ impl LocalShard {
         let segments_path = Self::segments_path(&self.path);
         let collection_params = self.collection_config.read().await.params.clone();
         let temp_path = temp_path.to_owned();
+        let payload_index_schema = self.payload_index_schema.clone();
 
         tokio::task::spawn_blocking(move || {
             // Do not change segments while snapshotting
@@ -762,6 +783,7 @@ impl LocalShard {
                 segments.clone(),
                 &segments_path,
                 Some(&collection_params),
+                &payload_index_schema.read().clone(),
                 &temp_path,
                 &snapshot_segments_shard_path,
             )?;

@@ -16,6 +16,7 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
@@ -760,6 +761,7 @@ impl<'s> SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        payload_index_schema: &PayloadIndexSchema,
         f: F,
     ) -> OperationResult<()>
     where
@@ -769,8 +771,12 @@ impl<'s> SegmentHolder {
 
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
-        let (mut proxies, tmp_segment, mut segments_lock) =
-            Self::proxy_all_segments(segments_lock, segments_path, collection_params)?;
+        let (mut proxies, tmp_segment, mut segments_lock) = Self::proxy_all_segments(
+            segments_lock,
+            segments_path,
+            collection_params,
+            payload_index_schema,
+        )?;
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
@@ -829,8 +835,14 @@ impl<'s> SegmentHolder {
         &mut self,
         segments_path: &Path,
         collection_params: &CollectionParams,
+        payload_index_schema: &PayloadIndexSchema,
     ) -> OperationResult<LockedSegment> {
-        let segment = self.build_tmp_segment(segments_path, Some(collection_params), true)?;
+        let segment = self.build_tmp_segment(
+            segments_path,
+            Some(collection_params),
+            payload_index_schema,
+            true,
+        )?;
         self.add_new_locked(segment.clone());
         Ok(segment)
     }
@@ -856,6 +868,7 @@ impl<'s> SegmentHolder {
         &self,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        payload_index_schema: &PayloadIndexSchema,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
         let config = match collection_params {
@@ -881,11 +894,13 @@ impl<'s> SegmentHolder {
             }
         };
 
-        Ok(LockedSegment::new(build_segment(
-            segments_path,
-            &config,
-            save_version,
-        )?))
+        let mut segment = build_segment(segments_path, &config, save_version)?;
+
+        for (key, schema) in &payload_index_schema.schema {
+            segment.create_field_index(0, key, Some(schema))?;
+        }
+
+        Ok(LockedSegment::new(segment))
     }
 
     /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
@@ -894,14 +909,19 @@ impl<'s> SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        payload_index_schema: &PayloadIndexSchema,
     ) -> OperationResult<(
         Vec<(SegmentId, SegmentId, LockedSegment)>,
         LockedSegment,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
         // Create temporary appendable segment to direct all proxy writes into
-        let tmp_segment =
-            segments_lock.build_tmp_segment(segments_path, collection_params, false)?;
+        let tmp_segment = segments_lock.build_tmp_segment(
+            segments_path,
+            collection_params,
+            payload_index_schema,
+            false,
+        )?;
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
@@ -1094,16 +1114,23 @@ impl<'s> SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
+        payload_index_schema: &PayloadIndexSchema,
         temp_dir: &Path,
         snapshot_dir_path: &Path,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
-        Self::proxy_all_segments_and_apply(segments, segments_path, collection_params, |segment| {
-            let read_segment = segment.read();
-            read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
-            Ok(())
-        })
+        Self::proxy_all_segments_and_apply(
+            segments,
+            segments_path,
+            collection_params,
+            payload_index_schema,
+            |segment| {
+                let read_segment = segment.read();
+                read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
+                Ok(())
+            },
+        )
     }
 
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
@@ -1477,6 +1504,7 @@ mod tests {
             holder.clone(),
             segments_dir.path(),
             None,
+            &PayloadIndexSchema::default(),
             temp_dir.path(),
             snapshot_dir.path(),
         )

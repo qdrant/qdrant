@@ -911,6 +911,45 @@ impl Segment {
         Ok(())
     }
 
+    /// Update all payload/field indices to match `desired_schemas`
+    ///
+    /// Missing payload indices are created. Incorrectly configured payload indices are recreated.
+    /// Extra payload indices are NOT deleted.
+    ///
+    /// This does nothing if the current payload indices state matches `desired_schemas` exactly.
+    pub fn update_all_field_indices(
+        &mut self,
+        desired_schemas: &HashMap<PayloadKeyType, PayloadFieldSchema>,
+    ) -> OperationResult<()> {
+        let schema_applied = self.payload_index.borrow().indexed_fields();
+        let schema_config = desired_schemas;
+
+        // Create or update payload indices if they don't match configuration
+        for (key, schema) in schema_config {
+            match schema_applied.get(key) {
+                Some(existing_schema) if existing_schema == schema => continue,
+                Some(existing_schema) => log::warn!("Segment has incorrect payload index for{key}, recreating it now (current: {:?}, configured: {:?})",
+                    existing_schema.name(),
+                    schema.name(),
+                ),
+                None => log::warn!(
+                    "Segment is missing a {} payload index for {key}, creating it now",
+                    schema.name(),
+                ),
+            }
+
+            let created = self.create_field_index(self.version(), key, Some(schema))?;
+            if !created {
+                log::warn!("Failed to create payload index for {key} in segment");
+            }
+        }
+
+        // Do not delete extra payload indices, because collection-level information about
+        // the payload indices might be incomplete due to migrations from older versions.
+
+        Ok(())
+    }
+
     /// Check data consistency of the segment
     /// - internal id without external id
     /// - external id without internal

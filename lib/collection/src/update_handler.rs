@@ -19,6 +19,7 @@ use tokio::task::{self, JoinHandle};
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -30,6 +31,7 @@ use crate::config::CollectionParams;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::wal::WalError;
 use crate::wal_delta::LockedWal;
@@ -81,6 +83,7 @@ pub enum OptimizerSignal {
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
+    payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
@@ -123,6 +126,7 @@ impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
@@ -136,6 +140,7 @@ impl UpdateHandler {
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
+            payload_index_schema,
             optimizers,
             segments,
             update_worker: None,
@@ -169,6 +174,7 @@ impl UpdateHandler {
             self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
             self.has_triggered_optimizers.clone(),
+            self.payload_index_schema.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
@@ -391,6 +397,7 @@ impl UpdateHandler {
         segments_path: &Path,
         collection_params: &CollectionParams,
         thresholds_config: &OptimizerThresholds,
+        payload_index_schema: &PayloadIndexSchema,
     ) -> OperationResult<()> {
         let no_segment_with_capacity = {
             let segments_read = segments.read();
@@ -414,9 +421,11 @@ impl UpdateHandler {
 
         if no_segment_with_capacity {
             log::debug!("Creating new appendable segment, all existing segments are over capacity");
-            segments
-                .write()
-                .create_appendable_segment(segments_path, collection_params)?;
+            segments.write().create_appendable_segment(
+                segments_path,
+                collection_params,
+                payload_index_schema,
+            )?;
         }
 
         Ok(())
@@ -505,6 +514,7 @@ impl UpdateHandler {
         optimizer_cpu_budget: CpuBudget,
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -539,6 +549,7 @@ impl UpdateHandler {
                             optimizer.segments_path(),
                             &optimizer.collection_params(),
                             optimizer.threshold_config(),
+                            &payload_index_schema.read(),
                         );
                         if let Err(err) = result {
                             log::error!("Failed to ensure there are appendable segments with capacity: {err}");

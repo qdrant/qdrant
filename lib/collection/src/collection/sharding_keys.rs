@@ -40,6 +40,7 @@ impl Collection {
             self.collection_config.clone(),
             effective_optimizers_config,
             self.shared_storage_config.clone(),
+            self.payload_index_schema.clone(),
             self.channel_service.clone(),
             self.update_runtime.clone(),
             self.search_runtime.clone(),
