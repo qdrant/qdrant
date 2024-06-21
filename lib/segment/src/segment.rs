@@ -914,7 +914,7 @@ impl Segment {
     /// Update all payload/field indices to match `desired_schemas`
     ///
     /// Missing payload indices are created. Incorrectly configured payload indices are recreated.
-    /// Extra payload indices are deleted.
+    /// Extra payload indices are NOT deleted.
     ///
     /// This does nothing if the current payload indices state matches `desired_schemas` exactly.
     pub fn update_all_field_indices(
@@ -944,20 +944,9 @@ impl Segment {
             }
         }
 
-        // Remove existing payload indices not in the configuration
-        for key in schema_applied.keys() {
-            if schema_config.contains_key(key) {
-                continue;
-            }
 
-            log::warn!(
-                "Segment has payload index for {key} which is not configured, deleting it now"
-            );
-            let deleted = self.delete_field_index(self.version(), key)?;
-            if !deleted {
-                log::warn!("Failed to delete payload index for {key} in segment");
-            }
-        }
+        // Do not delete extra payload indices, because collection-level information about
+        // the payload indices might be incomplete due to migrations from older versions.
 
         Ok(())
     }
