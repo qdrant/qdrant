@@ -468,7 +468,7 @@ pub struct SearchGroupsRequestInternal {
     #[validate]
     pub params: Option<SearchParams>,
 
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
     /// Options for specifying which vectors to include into response. Default is false.
@@ -509,7 +509,7 @@ pub struct SearchRequestInternal {
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
     pub offset: Option<usize>,
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
     /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
