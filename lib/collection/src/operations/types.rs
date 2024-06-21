@@ -314,7 +314,7 @@ pub struct ScrollRequestInternal {
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 
@@ -338,7 +338,7 @@ pub struct QueryScrollRequestInternal {
     /// Select which payload to return with the response. Default: All
     pub with_payload: WithPayloadInterface,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: WithVector,
 
     /// Order the records by a payload field.
@@ -416,7 +416,7 @@ pub struct CoreSearchRequest {
     pub offset: usize,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: Option<WithVector>,
     pub score_threshold: Option<ScoreType>,
 }
@@ -716,7 +716,7 @@ pub struct DiscoverRequestInternal {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: Option<WithVector>,
 
     /// Define which vector to use for recommendation, if not specified - try to use default vector

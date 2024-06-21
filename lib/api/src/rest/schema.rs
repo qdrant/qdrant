@@ -471,7 +471,7 @@ pub struct SearchGroupsRequestInternal {
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
 
@@ -511,7 +511,7 @@ pub struct SearchRequestInternal {
     pub offset: Option<usize>,
     /// Select which payload to return with the response. Default: None
     pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.

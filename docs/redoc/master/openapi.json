@@ -6623,7 +6623,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -10850,7 +10850,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -11368,7 +11368,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
