@@ -468,10 +468,10 @@ pub struct SearchGroupsRequestInternal {
     #[validate]
     pub params: Option<SearchParams>,
 
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
 
@@ -509,9 +509,9 @@ pub struct SearchRequestInternal {
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
     pub offset: Option<usize>,
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
     /// Define a minimal score threshold for the result.

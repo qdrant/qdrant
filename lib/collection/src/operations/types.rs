@@ -311,10 +311,10 @@ pub struct ScrollRequestInternal {
     #[validate]
     pub filter: Option<Filter>,
 
-    /// Select which payload to return with the response. Default: All
+    /// Select which payload to return with the response. Default is true.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 
@@ -335,10 +335,10 @@ pub struct QueryScrollRequestInternal {
     /// Look only for points which satisfies this conditions. If not provided - all points.
     pub filter: Option<Filter>,
 
-    /// Select which payload to return with the response. Default: All
+    /// Select which payload to return with the response. Default is true.
     pub with_payload: WithPayloadInterface,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: WithVector,
 
     /// Order the records by a payload field.
@@ -414,9 +414,9 @@ pub struct CoreSearchRequest {
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
     pub offset: usize,
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: Option<WithVector>,
     pub score_threshold: Option<ScoreType>,
 }
@@ -451,9 +451,9 @@ pub struct PointRequest {
 pub struct PointRequestInternal {
     /// Look for points with ids
     pub ids: Vec<PointIdType>,
-    /// Select which payload to return with the response. Default: All
+    /// Select which payload to return with the response. Default is true.
     pub with_payload: Option<WithPayloadInterface>,
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 }
@@ -555,10 +555,10 @@ pub struct RecommendRequestInternal {
     /// Note: large offset values may cause performance issues.
     pub offset: Option<usize>,
 
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
 
@@ -618,10 +618,10 @@ pub struct RecommendGroupsRequestInternal {
     #[validate]
     pub params: Option<SearchParams>,
 
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     #[serde(default, alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
 
@@ -713,10 +713,10 @@ pub struct DiscoverRequestInternal {
     /// Note: large offset values may cause performance issues.
     pub offset: Option<usize>,
 
-    /// Select which payload to return with the response. Default: None
+    /// Select which payload to return with the response. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
-    /// Whether to return the point vector with the result?
+    /// Options for specifying which vectors to include into response. Default is false.
     pub with_vector: Option<WithVector>,
 
     /// Define which vector to use for recommendation, if not specified - try to use default vector

@@ -6294,7 +6294,7 @@
             }
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: All",
+            "description": "Select which payload to return with the response. Default is true.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -6612,7 +6612,7 @@
             "nullable": true
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
+            "description": "Select which payload to return with the response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -6623,7 +6623,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -7508,7 +7508,7 @@
             "nullable": true
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
+            "description": "Select which payload to return with the response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -7519,7 +7519,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -7669,7 +7669,7 @@
             ]
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: All",
+            "description": "Select which payload to return with the response. Default is true.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -10839,7 +10839,7 @@
             ]
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
+            "description": "Select which payload to return with the response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -10850,7 +10850,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -11013,7 +11013,7 @@
             ]
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
+            "description": "Select which payload to return with the response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -11024,7 +11024,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "default": null,
             "anyOf": [
               {
@@ -11357,7 +11357,7 @@
             "nullable": true
           },
           "with_payload": {
-            "description": "Select which payload to return with the response. Default: None",
+            "description": "Select which payload to return with the response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithPayloadInterface"
@@ -11368,7 +11368,7 @@
             ]
           },
           "with_vector": {
-            "description": "Whether to return the point vector with the result?",
+            "description": "Options for specifying which vectors to include into response. Default is false.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
