@@ -33,24 +33,24 @@ impl GpuLinks {
         links_capacity: usize,
         points_count: usize,
         max_patched_points: usize,
-    ) -> OperationResult<Self> {
+    ) -> gpu::GpuResult<Self> {
         let links_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             points_count * (links_capacity + 1) * std::mem::size_of::<PointOffsetType>(),
-        ));
+        )?);
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
             std::mem::size_of::<GpuLinksParamsBuffer>(),
-        ));
+        )?);
         let links_patch_capacity =
             max_patched_points * (links_capacity + 1) * std::mem::size_of::<PointOffsetType>();
         let patch_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
             links_patch_capacity + std::mem::size_of::<GpuLinksParamsBuffer>(),
-        ));
+        )?);
 
         let params = GpuLinksParamsBuffer {
             m: m as u32,
@@ -213,11 +213,14 @@ impl GpuLinks {
         let links_patch_capacity = self.max_patched_points
             * (self.links_capacity + 1)
             * std::mem::size_of::<PointOffsetType>();
-        let download_buffer = Arc::new(gpu::Buffer::new(
-            self.device.clone(),
-            gpu::BufferType::GpuToCpu,
-            links_patch_capacity,
-        ));
+        let download_buffer = Arc::new(
+            gpu::Buffer::new(
+                self.device.clone(),
+                gpu::BufferType::GpuToCpu,
+                links_patch_capacity,
+            )
+            .unwrap(),
+        );
 
         let points = (0..graph_layers_builder.links_layers.len() as PointOffsetType)
             .filter(|&point_id| graph_layers_builder.get_point_level(point_id) >= level)

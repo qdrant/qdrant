@@ -22,7 +22,7 @@ use crate::common::operation_error::OperationResult;
 static GPU_INDEXING: AtomicBool = AtomicBool::new(false);
 static GPU_FORCE_HALF_PRECISION: AtomicBool = AtomicBool::new(false);
 static GPU_MAX_GROUPS: AtomicUsize = AtomicUsize::new(256);
-pub const GPU_MAX_GROUPS_COUNT_DEFAULT: usize = 2048;
+pub const GPU_MAX_GROUPS_COUNT_DEFAULT: usize = 1024 * 32;
 
 pub fn set_gpu_indexing(gpu_indexing: bool) {
     GPU_INDEXING.store(gpu_indexing, Ordering::Relaxed);

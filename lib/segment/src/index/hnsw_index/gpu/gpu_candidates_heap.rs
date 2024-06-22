@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use common::types::ScoredPointOffset;
 
-use crate::common::operation_error::OperationResult;
-
 #[repr(C)]
 struct GpuCandidatesHeapParamsBuffer {
     capacity: u32,
@@ -23,7 +21,7 @@ impl GpuCandidatesHeap {
         device: Arc<gpu::Device>,
         groups_count: usize,
         capacity: usize,
-    ) -> OperationResult<Self> {
+    ) -> gpu::GpuResult<Self> {
         let ceiled_capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
         let buffers_elements_count = ceiled_capacity * groups_count;
 
@@ -31,18 +29,18 @@ impl GpuCandidatesHeap {
             device.clone(),
             gpu::BufferType::Storage,
             buffers_elements_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
+        )?);
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
             std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
-        ));
+        )?);
 
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
             std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
-        ));
+        )?);
 
         let params = GpuCandidatesHeapParamsBuffer {
             capacity: ceiled_capacity as u32,
@@ -126,17 +124,23 @@ mod tests {
             include_bytes!("./shaders/compiled/test_candidates_heap_f32.spv"),
         ));
 
-        let input_points_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
+        let input_points_buffer = Arc::new(
+            gpu::Buffer::new(
+                device.clone(),
+                gpu::BufferType::Storage,
+                inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+            )
+            .unwrap(),
+        );
 
-        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::CpuToGpu,
-            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
+        let upload_staging_buffer = Arc::new(
+            gpu::Buffer::new(
+                device.clone(),
+                gpu::BufferType::CpuToGpu,
+                inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+            )
+            .unwrap(),
+        );
         upload_staging_buffer.upload_slice(&inputs_data, 0);
         context.copy_gpu_buffer(
             upload_staging_buffer.clone(),
@@ -148,11 +152,14 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        let test_params_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Uniform,
-            std::mem::size_of::<TestParams>(),
-        ));
+        let test_params_buffer = Arc::new(
+            gpu::Buffer::new(
+                device.clone(),
+                gpu::BufferType::Uniform,
+                std::mem::size_of::<TestParams>(),
+            )
+            .unwrap(),
+        );
         upload_staging_buffer.upload(
             &TestParams {
                 input_counts: inputs_count as u32,
@@ -169,11 +176,14 @@ mod tests {
         context.run();
         context.wait_finish();
 
-        let scores_output_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
+        let scores_output_buffer = Arc::new(
+            gpu::Buffer::new(
+                device.clone(),
+                gpu::BufferType::Storage,
+                inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+            )
+            .unwrap(),
+        );
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_uniform_buffer(0)
@@ -216,11 +226,14 @@ mod tests {
             }
         }
 
-        let download_staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::GpuToCpu,
-            scores_output_buffer.size,
-        ));
+        let download_staging_buffer = Arc::new(
+            gpu::Buffer::new(
+                device.clone(),
+                gpu::BufferType::GpuToCpu,
+                scores_output_buffer.size,
+            )
+            .unwrap(),
+        );
         context.copy_gpu_buffer(
             scores_output_buffer.clone(),
             download_staging_buffer.clone(),

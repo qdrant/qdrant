@@ -176,6 +176,12 @@ impl From<TryReserveError> for OperationError {
     }
 }
 
+impl From<gpu::GpuError> for OperationError {
+    fn from(_err: gpu::GpuError) -> Self {
+        Self::service_error("GPU error")
+    }
+}
+
 pub type OperationResult<T> = Result<T, OperationError>;
 
 pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> {

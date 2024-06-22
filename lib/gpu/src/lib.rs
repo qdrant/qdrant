@@ -29,3 +29,11 @@ pub mod shader;
 pub use shader::*;
 
 pub trait Resource: Send + Sync {}
+
+#[derive(Debug)]
+pub enum GpuError {
+    AllocationError(gpu_allocator::AllocationError),
+    NotSupported,
+}
+
+pub type GpuResult<T> = Result<T, GpuError>;

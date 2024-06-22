@@ -183,9 +183,11 @@ impl Device {
         self.instance.alloc.as_ref()
     }
 
-    pub fn gpu_alloc(&self, allocation_desc: &AllocationCreateDesc) -> Allocation {
+    pub fn gpu_alloc(&self, allocation_desc: &AllocationCreateDesc) -> GpuResult<Allocation> {
         let mut gpu_allocator = self.gpu_allocator.as_ref().unwrap().lock().unwrap();
-        gpu_allocator.allocate(allocation_desc).unwrap()
+        gpu_allocator
+            .allocate(allocation_desc)
+            .map_err(GpuError::AllocationError)
     }
 
     pub fn gpu_free(&self, allocation: Allocation) {

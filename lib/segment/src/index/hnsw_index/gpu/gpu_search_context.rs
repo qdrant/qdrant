@@ -64,11 +64,25 @@ pub struct GpuSearchContext {
     pub patches_count: usize,
 }
 
+struct GpuSearchContextGroupAllocation {
+    groups_count: usize,
+    gpu_nearest_heap: GpuNearestHeap,
+    gpu_candidates_heap: GpuCandidatesHeap,
+    gpu_visited_flags: GpuVisitedFlags,
+    upload_staging_buffer: Arc<gpu::Buffer>,
+    download_staging_buffer: Arc<gpu::Buffer>,
+    requests_buffer: Arc<gpu::Buffer>,
+    responses_buffer: Arc<gpu::Buffer>,
+    search_responses_buffer: Arc<gpu::Buffer>,
+    patches_responses_buffer: Arc<gpu::Buffer>,
+    insert_atomics_buffer: Arc<gpu::Buffer>,
+}
+
 impl GpuSearchContext {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         debug_messenger: Option<&dyn gpu::DebugMessenger>,
-        groups_count: usize,
+        max_groups_count: usize,
         vector_storage: &VectorStorageEnum,
         quantized_storage: Option<&QuantizedVectors>,
         m: usize,
@@ -91,22 +105,6 @@ impl GpuSearchContext {
             force_half_precision,
         )?;
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count, max_patched_points)?;
-        let gpu_nearest_heap =
-            GpuNearestHeap::new(device.clone(), groups_count, ef, std::cmp::max(ef, m0 + 1))?;
-        let gpu_candidates_heap =
-            GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
-        let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;
-
-        let requests_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<GpuRequest>(),
-        ));
-        let responses_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * std::mem::size_of::<PointOffsetType>(),
-        ));
 
         let greedy_search_shader = Arc::new(gpu::Shader::new(
             device.clone(),
@@ -125,6 +123,88 @@ impl GpuSearchContext {
                 }
             },
         ));
+
+        let insert_shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/run_insert_vector_binary.spv")
+                }
+            },
+        ));
+
+        let search_shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/test_hnsw_search_binary.spv")
+                }
+            },
+        ));
+
+        let patches_shader = Arc::new(gpu::Shader::new(
+            device.clone(),
+            match gpu_vector_storage.element_type {
+                GpuVectorStorageElementType::Float32 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_f32.spv")
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_f16.spv")
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    include_bytes!("./shaders/compiled/run_get_patch_u8.spv")
+                }
+                GpuVectorStorageElementType::Binary => {
+                    include_bytes!("./shaders/compiled/run_get_patch_binary.spv")
+                }
+            },
+        ));
+
+        let allocation_timer = std::time::Instant::now();
+        let GpuSearchContextGroupAllocation {
+            groups_count,
+            gpu_nearest_heap,
+            gpu_candidates_heap,
+            gpu_visited_flags,
+            upload_staging_buffer,
+            download_staging_buffer,
+            requests_buffer,
+            responses_buffer,
+            search_responses_buffer,
+            patches_responses_buffer,
+            insert_atomics_buffer,
+        } = Self::allocate_grouped_data(
+            device.clone(),
+            max_groups_count,
+            points_count,
+            candidates_capacity,
+            ef,
+            m0,
+        )
+        .map_err(|_| OperationError::service_error("Failed to allocate gpu data"))?;
+        println!(
+            "GPU groups count = {groups_count} (max = {max_groups_count}), allocation time: {:?}",
+            allocation_timer.elapsed()
+        );
+
         let greedy_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
@@ -146,29 +226,6 @@ impl GpuSearchContext {
             .add_shader(greedy_search_shader.clone())
             .build(device.clone());
 
-        let search_responses_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
-        ));
-
-        let search_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_binary.spv")
-                }
-            },
-        ));
         let search_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
@@ -189,30 +246,6 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(search_shader.clone())
             .build(device.clone());
-
-        let patches_responses_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * ((m0 + 1) * (m0 + 2)) * std::mem::size_of::<PointOffsetType>(),
-        ));
-
-        let patches_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/run_get_patch_binary.spv")
-                }
-            },
-        ));
 
         let patches_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
@@ -237,30 +270,6 @@ impl GpuSearchContext {
             .add_shader(patches_shader.clone())
             .build(device.clone());
 
-        let insert_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_binary.spv")
-                }
-            },
-        ));
-
-        let insert_atomics_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            points_count * std::mem::size_of::<PointOffsetType>(),
-        ));
-
         let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
@@ -283,17 +292,6 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(insert_shader.clone())
             .build(device.clone());
-
-        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::CpuToGpu,
-            requests_buffer.size,
-        ));
-        let download_staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::GpuToCpu,
-            patches_responses_buffer.size + responses_buffer.size,
-        ));
 
         Ok(Self {
             gpu_vector_storage,
@@ -324,6 +322,98 @@ impl GpuSearchContext {
             updates_count: 0,
             patches_timer: Default::default(),
             patches_count: 0,
+        })
+    }
+
+    fn allocate_grouped_data(
+        device: Arc<gpu::Device>,
+        mut max_groups_count: usize,
+        points_count: usize,
+        candidates_capacity: usize,
+        ef: usize,
+        m0: usize,
+    ) -> gpu::GpuResult<GpuSearchContextGroupAllocation> {
+        while max_groups_count >= 1 {
+            if let Ok(alloc) = Self::try_allocate_grouped_data(
+                device.clone(),
+                max_groups_count,
+                points_count,
+                candidates_capacity,
+                ef,
+                m0,
+            ) {
+                return Ok(alloc);
+            }
+            max_groups_count /= 2;
+        }
+        panic!("Failed to allocate gpu data")
+    }
+
+    fn try_allocate_grouped_data(
+        device: Arc<gpu::Device>,
+        groups_count: usize,
+        points_count: usize,
+        candidates_capacity: usize,
+        ef: usize,
+        m0: usize,
+    ) -> gpu::GpuResult<GpuSearchContextGroupAllocation> {
+        let requests_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * std::mem::size_of::<GpuRequest>(),
+        )?);
+        let responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * std::mem::size_of::<PointOffsetType>(),
+        )?);
+
+        let gpu_nearest_heap =
+            GpuNearestHeap::new(device.clone(), groups_count, ef, std::cmp::max(ef, m0 + 1))?;
+        let gpu_candidates_heap =
+            GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
+        let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;
+
+        let patches_responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * ((m0 + 1) * (m0 + 2)) * std::mem::size_of::<PointOffsetType>(),
+        )?);
+
+        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::CpuToGpu,
+            requests_buffer.size,
+        )?);
+        let download_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            patches_responses_buffer.size + responses_buffer.size,
+        )?);
+
+        let search_responses_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
+        )?);
+        let insert_atomics_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            points_count * std::mem::size_of::<PointOffsetType>(),
+        )?);
+
+        Ok(GpuSearchContextGroupAllocation {
+            groups_count,
+            gpu_nearest_heap,
+            gpu_candidates_heap,
+            gpu_visited_flags,
+            upload_staging_buffer,
+            download_staging_buffer,
+            requests_buffer,
+            responses_buffer,
+            search_responses_buffer,
+            patches_responses_buffer,
+            insert_atomics_buffer,
         })
     }
 
@@ -948,16 +1038,22 @@ mod tests {
         }
 
         // upload search requests to GPU
-        let search_requests_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::Storage,
-            search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
-        ));
-        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::CpuToGpu,
-            search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
-        ));
+        let search_requests_buffer = Arc::new(
+            gpu::Buffer::new(
+                test.gpu_search_context.device.clone(),
+                gpu::BufferType::Storage,
+                search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
+            )
+            .unwrap(),
+        );
+        let upload_staging_buffer = Arc::new(
+            gpu::Buffer::new(
+                test.gpu_search_context.device.clone(),
+                gpu::BufferType::CpuToGpu,
+                search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
+            )
+            .unwrap(),
+        );
         upload_staging_buffer.upload_slice(&search_requests, 0);
         test.gpu_search_context.context.copy_gpu_buffer(
             upload_staging_buffer.clone(),
@@ -969,16 +1065,22 @@ mod tests {
         test.gpu_search_context.run_context();
 
         // create response and response staging buffers
-        let responses_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::Storage,
-            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
-        ));
-        let responses_staging_buffer = Arc::new(gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
-            gpu::BufferType::GpuToCpu,
-            responses_buffer.size,
-        ));
+        let responses_buffer = Arc::new(
+            gpu::Buffer::new(
+                test.gpu_search_context.device.clone(),
+                gpu::BufferType::Storage,
+                groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
+            )
+            .unwrap(),
+        );
+        let responses_staging_buffer = Arc::new(
+            gpu::Buffer::new(
+                test.gpu_search_context.device.clone(),
+                gpu::BufferType::GpuToCpu,
+                responses_buffer.size,
+            )
+            .unwrap(),
+        );
 
         // Create test pipeline
         let shader = Arc::new(gpu::Shader::new(

@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use crate::common::operation_error::OperationResult;
-
 #[repr(C)]
 pub struct GpuVisitedFlagsParamsBuffer {
     pub capacity: u32,
@@ -23,7 +21,7 @@ impl GpuVisitedFlags {
         device: Arc<gpu::Device>,
         groups_count: usize,
         points_count: usize,
-    ) -> OperationResult<Self> {
+    ) -> gpu::GpuResult<Self> {
         let alignment = std::mem::size_of::<u32>();
         let points_count = points_count.div_ceil(alignment) * alignment;
 
@@ -31,17 +29,17 @@ impl GpuVisitedFlags {
             device.clone(),
             gpu::BufferType::Uniform,
             std::mem::size_of::<GpuVisitedFlagsParamsBuffer>(),
-        ));
+        )?);
         let params_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
             std::mem::size_of::<GpuVisitedFlagsParamsBuffer>(),
-        ));
+        )?);
         let visited_flags_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             groups_count * points_count * std::mem::size_of::<u8>(),
-        ));
+        )?);
 
         let params = GpuVisitedFlagsParamsBuffer {
             capacity: points_count as u32,

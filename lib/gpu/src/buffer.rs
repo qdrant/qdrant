@@ -47,7 +47,7 @@ impl Drop for Buffer {
 }
 
 impl Buffer {
-    pub fn new(device: Arc<Device>, buffer_type: BufferType, size: usize) -> Self {
+    pub fn new(device: Arc<Device>, buffer_type: BufferType, size: usize) -> GpuResult<Self> {
         let (usage_flags, location) = match buffer_type {
             BufferType::Uniform => (
                 vk::BufferUsageFlags::UNIFORM_BUFFER
@@ -76,12 +76,22 @@ impl Buffer {
             let requirements =
                 unsafe { device.vk_device.get_buffer_memory_requirements(vk_buffer) };
 
-            allocation = device.gpu_alloc(&AllocationCreateDesc {
+            let allocation_result = device.gpu_alloc(&AllocationCreateDesc {
                 name: "",
                 requirements,
                 location,
                 linear: true, // Buffers are always linear
             });
+
+            allocation = match allocation_result {
+                Ok(allocation) => allocation,
+                Err(e) => {
+                    unsafe {
+                        device.vk_device.destroy_buffer(vk_buffer, device.alloc());
+                    }
+                    return Err(e);
+                }
+            };
 
             unsafe {
                 device
@@ -97,14 +107,14 @@ impl Buffer {
             None
         };
 
-        Self {
+        Ok(Self {
             device,
             vk_buffer,
             buffer_type,
             size,
             allocation,
             upload_mapped_ptr,
-        }
+        })
     }
 
     pub fn download<T: Sized>(&self, data: &mut T, offset: usize) {

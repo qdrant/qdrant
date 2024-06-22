@@ -22,7 +22,7 @@ pub fn build_hnsw_on_gpu<'a>(
     pool: &ThreadPool,
     reference_graph: &GraphLayersBuilder,
     debug_messenger: Option<&dyn gpu::DebugMessenger>,
-    groups_count: usize,
+    max_groups_count: usize,
     vector_storage: &VectorStorageEnum,
     quantized_storage: Option<&QuantizedVectors>,
     entry_points_num: usize,
@@ -36,17 +36,27 @@ pub fn build_hnsw_on_gpu<'a>(
         + Send
         + Sync,
 ) -> OperationResult<GraphLayersBuilder> {
-    log::debug!("Building GPU graph with max groups count: {}", groups_count);
-
     let num_vectors = reference_graph.links_layers.len();
     let m = reference_graph.m;
     let m0 = reference_graph.m0;
     let ef = reference_graph.ef_construct;
 
+    let gpu_search_context = Arc::new(Mutex::new(GpuSearchContext::new(
+        debug_messenger,
+        max_groups_count,
+        vector_storage,
+        quantized_storage,
+        m,
+        m0,
+        ef,
+        num_vectors,
+        force_half_precision,
+    )?));
+
     let batched_points = Arc::new(BatchedPoints::new(
         |point_id| reference_graph.get_point_level(point_id),
         ids,
-        groups_count,
+        gpu_search_context.lock().groups_count,
     )?);
 
     let graph_layers_builder = Arc::new(create_graph_layers_builder(
@@ -57,18 +67,6 @@ pub fn build_hnsw_on_gpu<'a>(
         ef,
         entry_points_num,
     )?);
-
-    let gpu_search_context = Arc::new(Mutex::new(GpuSearchContext::new(
-        debug_messenger,
-        groups_count,
-        vector_storage,
-        quantized_storage,
-        m,
-        m0,
-        ef,
-        num_vectors,
-        force_half_precision,
-    )?));
 
     let mut gpu_thread_handle: Option<JoinHandle<OperationResult<()>>> = None;
     let gpu_built_points = Arc::new(AtomicUsize::new(batched_points.points.len()));
