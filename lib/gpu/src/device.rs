@@ -107,23 +107,11 @@ impl Device {
             instance
                 .vk_instance
                 .get_physical_device_properties2(vk_physical_device, &mut props2);
-            println!(
-                "maxComputeWorkGroupCount: {:?}",
-                props.limits.max_compute_work_group_count
-            );
-            println!(
-                "maxComputeWorkGroupSize: {:?}",
-                props.limits.max_compute_work_group_size
-            );
-            println!(
-                "maxComputeWorkGroupInvocations: {:?}",
-                props.limits.max_compute_work_group_invocations
-            );
-            println!("subgroup_size: {:?}", subgroup_properties.subgroup_size,);
-            println!(
-                "Device name: {:?}",
+            log::info!(
+                "Choosed GPU evice name: {:?}",
                 ::std::ffi::CStr::from_ptr(props.device_name.as_ptr())
             );
+            log::debug!("GPU subgroup size: {:?}", subgroup_properties.subgroup_size);
             subgroup_properties.subgroup_size as usize
         };
 

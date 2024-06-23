@@ -113,6 +113,10 @@ impl Instance {
                 .filter(|vk_physical_device| {
                     let device_properties =
                         vk_instance.get_physical_device_properties(*vk_physical_device);
+                    log::debug!(
+                        "Foung GPU device: {:?}",
+                        ::std::ffi::CStr::from_ptr(device_properties.device_name.as_ptr())
+                    );
                     device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
                         || device_properties.device_type == vk::PhysicalDeviceType::INTEGRATED_GPU
                 })
