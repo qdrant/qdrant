@@ -227,7 +227,7 @@ fn test_multivector_quantization_hnsw(
                 storage_type,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multivector_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),

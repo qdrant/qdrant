@@ -473,7 +473,7 @@ def full_collection_setup(
                     "size": 4,
                     "distance": distance or "Dot",
                     "on_disk": on_disk_vectors,
-                    "multivec_config": {
+                    "multivector_config": {
                         "comparator": "max_sim"
                     }
                 },

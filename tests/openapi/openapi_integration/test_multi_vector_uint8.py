@@ -32,7 +32,7 @@ def multivector_uint8_collection_setup(
                     "distance": "Dot",
                     "on_disk": on_disk_vectors,
                     "datatype": "uint8",
-                    "multivec_config": {
+                    "multivector_config": {
                         "comparator": "max_sim"
                     }
                 }
