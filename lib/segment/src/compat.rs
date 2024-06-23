@@ -52,7 +52,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
                     storage_type: (old_data.on_disk == Some(true))
                         .then_some(VectorStorageType::Mmap)
                         .unwrap_or_else(|| old_segment.storage_type.into()),
-                    multivec_config: None,
+                    multivector_config: None,
                     datatype: None,
                 };
 

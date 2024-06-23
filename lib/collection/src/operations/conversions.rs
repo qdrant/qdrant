@@ -547,7 +547,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .transpose()?,
             on_disk: vector_params.on_disk,
             datatype: convert_datatype_from_proto(vector_params.datatype)?,
-            multivec_config: vector_params
+            multivector_config: vector_params
                 .multivector_config
                 .map(MultiVectorConfig::try_from)
                 .transpose()?,
@@ -1554,7 +1554,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
                 .datatype
                 .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
             multivector_config: value
-                .multivec_config
+                .multivector_config
                 .map(api::grpc::qdrant::MultiVectorConfig::from),
         }
     }

@@ -251,7 +251,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multivec_config: None,
+                multivector_config: None,
                 datatype: Some(storage_data_type),
             },
         )]),

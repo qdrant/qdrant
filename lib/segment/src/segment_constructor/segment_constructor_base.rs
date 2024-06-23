@@ -99,7 +99,7 @@ pub(crate) fn open_vector_storage(
         VectorStorageType::Memory => {
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
-            if let Some(multi_vec_config) = &vector_config.multivec_config {
+            if let Some(multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
                         database.clone(),
@@ -154,7 +154,7 @@ pub(crate) fn open_vector_storage(
         }
         // Mmap on disk, not appendable
         VectorStorageType::Mmap => {
-            if let Some(multi_vec_config) = &vector_config.multivec_config {
+            if let Some(multi_vec_config) = &vector_config.multivector_config {
                 // there are no mmap multi vector storages, appendable only
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
@@ -202,7 +202,7 @@ pub(crate) fn open_vector_storage(
         }
         // Chunked mmap on disk, appendable
         VectorStorageType::ChunkedMmap => {
-            if let Some(multi_vec_config) = &vector_config.multivec_config {
+            if let Some(multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
                         vector_storage_path,
