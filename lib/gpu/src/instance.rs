@@ -117,6 +117,11 @@ impl Instance {
                         || device_properties.device_type == vk::PhysicalDeviceType::INTEGRATED_GPU
                 })
                 .collect::<Vec<_>>();
+
+            if vk_physical_devices.is_empty() {
+                panic!("No physical device found");
+            }
+
             Ok(Self {
                 _entry: entry,
                 vk_instance,
