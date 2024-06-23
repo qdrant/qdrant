@@ -32,8 +32,6 @@ fn search_in_builder(
         entry_point.level,
         0,
         &mut points_scorer,
-        0,
-        None,
     );
 
     let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
