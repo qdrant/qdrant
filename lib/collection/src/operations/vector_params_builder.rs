@@ -19,7 +19,7 @@ impl VectorParamsBuilder {
                 quantization_config: None,
                 on_disk: None,
                 datatype: None,
-                multivec_config: None,
+                multivector_config: None,
             },
         }
     }
@@ -44,8 +44,8 @@ impl VectorParamsBuilder {
         self
     }
 
-    pub fn with_multi_vec_config(mut self, multivector_config: MultiVectorConfig) -> Self {
-        self.vector_params.multivec_config = Some(multivector_config);
+    pub fn with_multivector_config(mut self, multivector_config: MultiVectorConfig) -> Self {
+        self.vector_params.multivector_config = Some(multivector_config);
         self
     }
 

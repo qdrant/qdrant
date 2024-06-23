@@ -522,7 +522,7 @@ message PrefetchQuery {
   optional Query query = 2; // Query to perform. If missing, returns points ordered by their IDs.
   optional string using = 3; // Define which vector to use for querying. If missing, the default vector is is used.
   optional Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions.
-  optional SearchParams search_params = 5; // Search params for when there is no prefetch.
+  optional SearchParams params = 5; // Search params for when there is no prefetch.
   optional float score_threshold = 6; // Return points with scores better than this threshold.
   optional uint64 limit = 7; // Max number of points. Default is 10
   optional LookupLocation lookup_from = 8; // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
@@ -534,7 +534,7 @@ message QueryPoints {
   optional Query query = 3; // Query to perform. If missing, returns points ordered by their IDs.
   optional string using = 4; // Define which vector to use for querying. If missing, the default vector is used.
   optional Filter filter = 5; // Filter conditions - return only those points that satisfy the specified conditions.
-  optional SearchParams search_params = 6; // Search params for when there is no prefetch.
+  optional SearchParams params = 6; // Search params for when there is no prefetch.
   optional float score_threshold = 7; // Return points with scores better than this threshold.
   optional uint64 limit = 8; // Max number of points. Default is 10.
   optional uint64 offset = 9; // Offset of the result. Skip this many points. Default is 0.

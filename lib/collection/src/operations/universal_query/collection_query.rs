@@ -580,7 +580,7 @@ pub mod from_grpc {
                 query,
                 using,
                 filter,
-                search_params,
+                params,
                 score_threshold,
                 limit,
                 offset,
@@ -607,7 +607,7 @@ pub mod from_grpc {
                 offset: offset
                     .map(|o| o as usize)
                     .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
-                params: search_params.map(From::from),
+                params: params.map(From::from),
                 with_vector: with_vectors
                     .map(From::from)
                     .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
@@ -630,7 +630,7 @@ pub mod from_grpc {
                 query,
                 using,
                 filter,
-                search_params,
+                params,
                 score_threshold,
                 limit,
                 lookup_from,
@@ -648,7 +648,7 @@ pub mod from_grpc {
                 limit: limit
                     .map(|l| l as usize)
                     .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-                params: search_params.map(From::from),
+                params: params.map(From::from),
                 lookup_from: lookup_from.map(From::from),
             };
 

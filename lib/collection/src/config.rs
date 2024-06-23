@@ -361,7 +361,7 @@ impl CollectionParams {
                         } else {
                             VectorStorageType::Memory
                         },
-                        multivec_config: params.multivec_config,
+                        multivector_config: params.multivector_config,
                         datatype: params.datatype.map(VectorStorageDatatype::from),
                     },
                 )

@@ -158,7 +158,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Hnsw(Default::default()),
                 quantization_config: None,
-                multivec_config: None,
+                multivector_config: None,
                 datatype: None,
             },
         )]),
