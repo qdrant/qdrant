@@ -108,6 +108,15 @@ impl Instance {
                 };
 
             let vk_physical_devices = vk_instance.enumerate_physical_devices().unwrap();
+            let vk_physical_devices = vk_physical_devices
+                .into_iter()
+                .filter(|vk_physical_device| {
+                    let device_properties =
+                        vk_instance.get_physical_device_properties(*vk_physical_device);
+                    device_properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU
+                        || device_properties.device_type == vk::PhysicalDeviceType::INTEGRATED_GPU
+                })
+                .collect::<Vec<_>>();
             Ok(Self {
                 _entry: entry,
                 vk_instance,
