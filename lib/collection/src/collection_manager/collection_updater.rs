@@ -72,6 +72,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use segment::data_types::vectors::{
         only_default_vector, VectorStructInternal, DEFAULT_VECTOR_NAME,
     };
@@ -160,7 +161,9 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .unwrap();
+        .unwrap()
+        .into_values()
+        .collect_vec();
 
         assert_eq!(records.len(), 3);
 
@@ -192,7 +195,9 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
         )
-        .unwrap();
+        .unwrap()
+        .into_values()
+        .collect_vec();
 
         for record in records {
             assert!(record.vector.is_some());
@@ -223,7 +228,9 @@ mod tests {
 
         let res =
             SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), &false.into())
-                .unwrap();
+                .unwrap()
+                .into_values()
+                .collect_vec();
 
         assert_eq!(res.len(), 3);
 
@@ -255,7 +262,10 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .unwrap();
+        .unwrap()
+        .into_values()
+        .collect_vec();
+
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -267,7 +277,10 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .unwrap();
+        .unwrap()
+        .into_values()
+        .collect_vec();
+
         assert_eq!(res.len(), 1);
         assert!(res[0].payload.as_ref().unwrap().contains_key("color"));
 
@@ -285,7 +298,10 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
         )
-        .unwrap();
+        .unwrap()
+        .into_values()
+        .collect_vec();
+
         assert_eq!(res.len(), 1);
         assert!(!res[0].payload.as_ref().unwrap().contains_key("color"));
     }
