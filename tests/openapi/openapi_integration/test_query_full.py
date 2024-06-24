@@ -97,6 +97,7 @@ def test_search_by_vector():
     assert search_result == default_query_result
     assert search_result == nearest_query_result
 
+
 def test_search_by_id():
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
@@ -533,7 +534,7 @@ def test_recommend_lookup():
     # check equivalence recommend vs query
     assert recommend_result == query_result
 
-    # check nested query + lookup_from
+    # check nested query id + lookup_from
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -554,17 +555,46 @@ def test_recommend_lookup():
                     }
                 }
             ],
-            "limit": 10,
             "using": "dense-image",
             "query": {"fusion": "rrf"}
         },
     )
     assert response.ok, response.text
-    nested_query_result = response.json()["result"]["points"]
-    # no equivalence to rely on, just check the response is valid
-    assert nested_query_result[0]["id"] == 6
-    assert nested_query_result[1]["id"] == 5
-    assert nested_query_result[2]["id"] == 3
+    nested_query_result_id = response.json()["result"]["points"]
+
+    # check nested query vector + lookup_from
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": {
+                        "recommend": {
+                            "positive": [[1.0, 0.0, 0.0, 0.0]],
+                            "negative": [[0.0, 0.0, 0.0, 2.0]],
+                        },
+                    },
+                    "using": "dense-image",
+                }
+            ],
+            "using": "dense-image",
+            "query": {"fusion": "rrf"}
+        },
+    )
+    assert response.ok, response.text
+    nested_query_result_vector = response.json()["result"]["points"]
+
+    # remove vectors used for lookup in previous call for equivalence check
+    predicate = lambda x: x["id"] == 1 or x["id"] == 2
+    nested_query_result_vector = [x for x in nested_query_result_vector if not predicate(x)]
+
+    print(nested_query_result_id)
+    print(nested_query_result_vector)
+
+    # check equivalence nested query id vs nested query vector
+    assert nested_query_result_id == nested_query_result_vector, f"{nested_query_result_id} != {nested_query_result_vector}"
 
 
 def test_recommend_best_score():
