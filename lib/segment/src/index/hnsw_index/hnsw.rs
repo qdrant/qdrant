@@ -107,12 +107,34 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let config_path = HnswGraphConfig::get_config_path(path);
         let graph_path = GraphLayers::<TGraphLinks>::get_path(path);
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
-        let files_exist = config_path.exists() && graph_path.exists() && graph_links_path.exists();
-        let (config, graph) = if files_exist {
-            (
-                HnswGraphConfig::load(&config_path)?,
-                GraphLayers::load(&graph_path, &graph_links_path)?,
-            )
+        let (config, graph) = if graph_path.exists() {
+            let config = if config_path.exists() {
+                HnswGraphConfig::load(&config_path)?
+            } else {
+                let vector_storage = vector_storage.borrow();
+                let available_vectors = vector_storage.available_vector_count();
+                let full_scan_threshold = vector_storage
+                    .available_size_in_bytes()
+                    .checked_div(available_vectors)
+                    .and_then(|avg_vector_size| {
+                        hnsw_config
+                            .full_scan_threshold
+                            .saturating_mul(BYTES_IN_KB)
+                            .checked_div(avg_vector_size)
+                    })
+                    .unwrap_or(1);
+
+                HnswGraphConfig::new(
+                    hnsw_config.m,
+                    hnsw_config.ef_construct,
+                    full_scan_threshold,
+                    hnsw_config.max_indexing_threads,
+                    hnsw_config.payload_m,
+                    available_vectors,
+                )
+            };
+
+            (config, GraphLayers::load(&graph_path, &graph_links_path)?)
         } else {
             let num_cpus = match permit {
                 Some(p) => p.num_cpus as usize,
