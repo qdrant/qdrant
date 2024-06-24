@@ -235,7 +235,7 @@ pub enum Query {
 
     /// Return points that live in positive areas.
     Context(ContextQuery),
-    
+
     /// Return points that are the farthest apart from this vector. Shorthand for recommend best_score with only one negative input
     Farthest(FarthestQuery),
 
