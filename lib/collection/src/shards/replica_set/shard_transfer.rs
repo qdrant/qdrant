@@ -23,7 +23,7 @@ impl ShardReplicaSet {
     pub async fn proxify_local(
         &self,
         remote_shard: RemoteShard,
-        hash_ring: Option<HashRing>,
+        resharding_hash_ring: Option<HashRing>,
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
@@ -79,8 +79,12 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let proxy_shard =
-            ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, hash_ring);
+        let proxy_shard = ForwardProxyShard::new(
+            self.shard_id,
+            local_shard,
+            remote_shard,
+            resharding_hash_ring,
+        );
         let _ = local.insert(Shard::ForwardProxy(proxy_shard));
 
         Ok(())
