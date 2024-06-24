@@ -456,8 +456,11 @@ pub struct HnswConfig {
     /// If payload chunk is smaller than `full_scan_threshold_kb` additional indexing won't be used -
     /// in this case full-scan search should be preferred by query planner and additional indexing is not required.
     /// Note: 1Kb = 1 vector of size 256
-    #[serde(alias = "full_scan_threshold_kb")]
-    pub full_scan_threshold: usize,
+    #[serde(
+        alias = "full_scan_threshold",
+        rename(serialize = "full_scan_threshold")
+    )]
+    pub full_scan_threshold_kb: usize,
     /// Number of parallel threads used for background index building.
     /// If 0 - automatically select from 8 to 16.
     /// Best to keep between 8 and 16 to prevent likelihood of slow building or broken/inefficient HNSW graphs.
@@ -484,7 +487,7 @@ impl HnswConfig {
     pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
         self.m != other.m
             || self.ef_construct != other.ef_construct
-            || self.full_scan_threshold != other.full_scan_threshold
+            || self.full_scan_threshold_kb != other.full_scan_threshold_kb
             || self.payload_m != other.payload_m
             // Data on disk is the same, we have a unit test for that. We can eventually optimize
             // this to just reload the collection rather than optimizing it again as a whole just
@@ -656,7 +659,7 @@ impl Default for HnswConfig {
         HnswConfig {
             m: 16,
             ef_construct: DEFAULT_HNSW_EF_CONSTRUCT,
-            full_scan_threshold: DEFAULT_FULL_SCAN_THRESHOLD,
+            full_scan_threshold_kb: DEFAULT_FULL_SCAN_THRESHOLD,
             max_indexing_threads: 0,
             on_disk: Some(false),
             payload_m: None,

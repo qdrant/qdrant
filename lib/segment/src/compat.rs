@@ -148,7 +148,7 @@ mod tests {
                         hnsw_config: Some(HnswConfig {
                             m: 20,
                             ef_construct: 100,
-                            full_scan_threshold: 10000,
+                            full_scan_threshold_kb: 10000,
                             max_indexing_threads: 0,
                             on_disk: None,
                             payload_m: Some(10),
@@ -179,7 +179,7 @@ mod tests {
             index: Indexes::Hnsw(HnswConfig {
                 m: 25,
                 ef_construct: 120,
-                full_scan_threshold: 10000,
+                full_scan_threshold_kb: 10000,
                 max_indexing_threads: 0,
                 on_disk: None,
                 payload_m: None,
@@ -254,7 +254,7 @@ mod tests {
             index: Indexes::Hnsw(HnswConfig {
                 m: 25,
                 ef_construct: 120,
-                full_scan_threshold: 10000,
+                full_scan_threshold_kb: 10000,
                 max_indexing_threads: 0,
                 on_disk: None,
                 payload_m: None,

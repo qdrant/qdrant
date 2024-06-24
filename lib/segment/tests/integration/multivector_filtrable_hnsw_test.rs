@@ -110,7 +110,7 @@ fn test_multi_filterable_hnsw(
     let num_points: u64 = 5_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 8; // KB
+    let full_scan_threshold_kb = 8;
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
@@ -168,7 +168,7 @@ fn test_multi_filterable_hnsw(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,

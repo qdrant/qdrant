@@ -22,6 +22,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
+use crate::common::BYTES_IN_KB;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
@@ -93,6 +94,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             None
         };
+
         Ok(HNSWIndex {
             id_tracker,
             vector_storage,
@@ -484,6 +486,20 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         postprocess_result.truncate(top);
         Ok(postprocess_result)
     }
+
+    fn full_scan_threshold_points(&self) -> usize {
+        let vector_storage = self.vector_storage.borrow();
+        vector_storage
+            .available_size_in_bytes()
+            .checked_div(vector_storage.available_vector_count())
+            .and_then(|avg_vector_size| {
+                self.config
+                    .full_scan_threshold_kb
+                    .saturating_mul(BYTES_IN_KB)
+                    .checked_div(avg_vector_size)
+            })
+            .unwrap_or(1)
+    }
 }
 
 impl HNSWIndex<GraphLinksMmap> {
@@ -502,6 +518,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
+        let full_scan_threshold_points = self.full_scan_threshold_points();
         match filter {
             None => {
                 let id_tracker = self.id_tracker.borrow();
@@ -511,8 +528,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
-                let plain_search = exact
-                    || vector_storage.available_vector_count() < self.config.full_scan_threshold;
+                let plain_search =
+                    exact || vector_storage.available_vector_count() < full_scan_threshold_points;
 
                 // Do plain or graph search
                 if plain_search {
@@ -583,7 +600,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     id_tracker.available_point_count(),
                 );
 
-                if query_cardinality.max < self.config.full_scan_threshold {
+                if query_cardinality.max < full_scan_threshold_points {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -596,7 +613,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     );
                 }
 
-                if query_cardinality.min > self.config.full_scan_threshold {
+                if query_cardinality.min > full_scan_threshold_points {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
@@ -616,7 +633,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 if sample_check_cardinality(
                     id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
                     |idx| filter_context.check(idx),
-                    self.config.full_scan_threshold,
+                    full_scan_threshold_points,
                     available_vector_count, // Check cardinality among available vectors
                 ) {
                     // if cardinality is high enough - use HNSW index
@@ -656,7 +673,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
-        let indexing_threshold = self.config.full_scan_threshold;
+        let indexing_threshold = self.full_scan_threshold_points();
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             self.config.m,

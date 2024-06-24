@@ -396,7 +396,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
                     m: Some(config.hnsw_config.m as u64),
                     ef_construct: Some(config.hnsw_config.ef_construct as u64),
-                    full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
+                    full_scan_threshold: Some(config.hnsw_config.full_scan_threshold_kb as u64),
                     max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
                     on_disk: config.hnsw_config.on_disk,
                     payload_m: config.hnsw_config.payload_m.map(|v| v as u64),

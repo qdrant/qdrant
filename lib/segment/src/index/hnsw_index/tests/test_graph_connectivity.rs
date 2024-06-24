@@ -68,7 +68,7 @@ fn test_graph_connectivity() {
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb: full_scan_threshold,
         max_indexing_threads: 4,
         on_disk: Some(false),
         payload_m: None,

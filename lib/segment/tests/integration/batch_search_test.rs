@@ -133,12 +133,12 @@ fn test_batch_and_single_request_equivalency() {
 
     let m = 8;
     let ef_construct = 100;
-    let full_scan_threshold = 10000;
+    let full_scan_threshold_kb = 10000;
 
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,

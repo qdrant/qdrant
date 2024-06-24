@@ -32,7 +32,7 @@ fn exact_search_test() {
     let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16; // KB
+    let full_scan_threshold_kb = 16;
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
@@ -82,7 +82,7 @@ fn exact_search_test() {
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,

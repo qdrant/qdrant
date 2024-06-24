@@ -162,7 +162,7 @@ impl SegmentsSearcher {
             .optimizer_config
             .indexing_threshold
             .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
-        let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
+        let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold_kb;
 
         const DEFAULT_CAPACITY: usize = 3;
         let mut idf_vectors: TinyVec<[&str; DEFAULT_CAPACITY]> = Default::default();

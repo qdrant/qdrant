@@ -233,7 +233,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     let m = 8;
     let num_vectors: u64 = 5_000;
     let ef_construct = 16;
-    let full_scan_threshold = 16; // KB
+    let full_scan_threshold_kb = 16;
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
@@ -329,7 +329,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,

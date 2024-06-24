@@ -107,7 +107,7 @@ fn test_byte_storage_hnsw(
     let num_vectors: u64 = 5_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 0;
+    let full_scan_threshold_kb = 0;
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
@@ -203,7 +203,7 @@ fn test_byte_storage_hnsw(
     let hnsw_config = HnswConfig {
         m,
         ef_construct,
-        full_scan_threshold,
+        full_scan_threshold_kb,
         max_indexing_threads: 2,
         on_disk: Some(false),
         payload_m: None,

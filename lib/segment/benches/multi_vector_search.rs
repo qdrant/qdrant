@@ -68,7 +68,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
     let hnsw_config = HnswConfig {
         m: 8,
         ef_construct: 16,
-        full_scan_threshold: 10, // low value to trigger index usage by default
+        full_scan_threshold_kb: 10, // low value to trigger index usage by default
         max_indexing_threads: 0,
         on_disk: None,
         payload_m: None,
