@@ -56,7 +56,24 @@ def test_query_validation():
     assert not response.ok, response.text
     assert response.json()["status"]["error"] == ("Bad request: A query is needed to use the score_threshold. Can't have score_threshold without defining a query.")
 
-    # raw query to bypass local validation
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "score_threshold": 10,
+            "query": {
+                "order_by": {
+                    "key": "price",
+                }
+            }
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: Can't use score_threshold with an order_by query.")
+
+
+# raw query to bypass local validation
     response = requests.post(f"http://{QDRANT_HOST}/collections/{collection_name}/points/query",
         json={
             "query": {
