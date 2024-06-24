@@ -170,12 +170,14 @@ pub struct QueryRequestInternal {
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
     pub score_threshold: Option<ScoreType>,
 
     /// Max number of points to return. Default is 10.
+    #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
     /// Offset of the result. Skip this many points. Default is 0
@@ -297,12 +299,14 @@ pub struct Prefetch {
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
+    #[validate]
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
     pub score_threshold: Option<ScoreType>,
 
     /// Max number of points to return. Default is 10.
+    #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
     /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector

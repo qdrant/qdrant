@@ -287,12 +287,7 @@ impl CollectionPrefetch {
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
-        // Check no prefetches without a query
-        if !self.prefetch.is_empty() && self.query.is_none() {
-            return Err(CollectionError::bad_request(
-                "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
-            ));
-        }
+        CollectionQueryRequest::validation(&self.query, &self.prefetch, self.score_threshold)?;
 
         let query = self
             .query
@@ -335,12 +330,7 @@ impl CollectionQueryRequest {
         self,
         ids_to_vectors: &ReferencedVectors,
     ) -> CollectionResult<ShardQueryRequest> {
-        // Check no prefetches without a query
-        if !self.prefetch.is_empty() && self.query.is_none() {
-            return Err(CollectionError::bad_request(
-                "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
-            ));
-        }
+        Self::validation(&self.query, &self.prefetch, self.score_threshold)?;
 
         // Check we actually fetched all referenced vectors in this request (and nested prefetches)
         for &point_id in &self.get_referenced_point_ids() {
@@ -393,6 +383,37 @@ impl CollectionQueryRequest {
             with_vector: self.with_vector,
             with_payload: self.with_payload,
         })
+    }
+
+    pub fn validation(
+        query: &Option<Query>,
+        prefetch: &[CollectionPrefetch],
+        score_threshold: Option<ScoreType>,
+    ) -> CollectionResult<()> {
+        // Check no prefetches without a query
+        if !prefetch.is_empty() && query.is_none() {
+            return Err(CollectionError::bad_request(
+                "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
+            ));
+        }
+
+        // Check no score_threshold without a vector query
+        if score_threshold.is_some() {
+            match query {
+                Some(Query::OrderBy(_)) => {
+                    return Err(CollectionError::bad_request(
+                        "Can't use score_threshold with an order_by query.",
+                    ));
+                }
+                None => {
+                    return Err(CollectionError::bad_request(
+                        "A query is needed to use the score_threshold. Can't have score_threshold without defining a query.",
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 }
 

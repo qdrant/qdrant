@@ -1,9 +1,12 @@
 from math import isclose
 import pytest
+import requests
+import os
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
 
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 collection_name = "test_query"
 
 
@@ -20,6 +23,69 @@ def setup(on_disk_vectors):
     assert response.ok
     yield
     drop_collection(collection_name=collection_name)
+
+
+def test_query_validation():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": {
+                        "recommend": {
+                            "positive": [1]
+                        },
+                    }
+                }
+            ]
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: A query is needed to merge the prefetches. Can't have prefetches without defining a query.")
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "score_threshold": 10,
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: A query is needed to use the score_threshold. Can't have score_threshold without defining a query.")
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "score_threshold": 10,
+            "query": {
+                "order_by": {
+                    "key": "price",
+                }
+            }
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Bad request: Can't use score_threshold with an order_by query.")
+
+
+# raw query to bypass local validation
+    response = requests.post(f"http://{QDRANT_HOST}/collections/{collection_name}/points/query",
+        json={
+            "query": {
+                "recommend": {
+                    "positive": [1]
+                },
+            },
+            "limit": 0,
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == ("Validation error in JSON body: [internal.limit: value 0 invalid, must be 1.0 or larger]")
 
 
 def root_and_rescored_query(query, limit=None, with_payload=None):
