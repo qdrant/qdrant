@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::OperationResult;
+use crate::types::VectorStorageDatatype;
 
 pub const SPARSE_INDEX_CONFIG_FILE: &str = "sparse_index_config.json";
 
@@ -39,19 +40,6 @@ impl SparseIndexType {
     }
 }
 
-/// Storage types for vectors
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SparseVectorIndexDatatype {
-    // Single-precision floating point
-    #[default]
-    Float32,
-    // Half-precision floating point
-    Float16,
-    // Unsigned 8-bit integer
-    Uint8,
-}
-
 /// Configuration for sparse inverted index.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -65,7 +53,7 @@ pub struct SparseIndexConfig {
     /// Datatype used to store weights in the index.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub datatype: Option<SparseVectorIndexDatatype>,
+    pub datatype: Option<VectorStorageDatatype>,
 }
 
 impl Anonymize for SparseIndexConfig {
@@ -82,7 +70,7 @@ impl SparseIndexConfig {
     pub fn new(
         full_scan_threshold: Option<usize>,
         index_type: SparseIndexType,
-        datatype: Option<SparseVectorIndexDatatype>,
+        datatype: Option<VectorStorageDatatype>,
     ) -> Self {
         SparseIndexConfig {
             full_scan_threshold,
