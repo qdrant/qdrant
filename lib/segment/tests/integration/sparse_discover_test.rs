@@ -9,15 +9,13 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::index::sparse_index::sparse_index_config::{
-    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
-};
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use segment::index::VectorIndex;
 use segment::segment_constructor::{build_segment, create_sparse_vector_index_test};
 use segment::types::{
     Distance, Indexes, SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    VectorStorageDatatype, VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
@@ -121,7 +119,7 @@ fn sparse_index_discover_test() {
                 index: SparseIndexConfig {
                     full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
                     index_type: SparseIndexType::MutableRam,
-                    datatype: Some(SparseVectorIndexDatatype::Float32),
+                    datatype: Some(VectorStorageDatatype::Float32),
                 },
             },
         )]),
@@ -166,7 +164,7 @@ fn sparse_index_discover_test() {
         config: SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
-            datatype: Some(SparseVectorIndexDatatype::Float32),
+            datatype: Some(VectorStorageDatatype::Float32),
         },
         id_tracker: sparse_segment.id_tracker.clone(),
         vector_storage: vector_storage.clone(),

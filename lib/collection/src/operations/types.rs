@@ -25,7 +25,6 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
-use segment::index::sparse_index::sparse_index_config::SparseVectorIndexDatatype;
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
@@ -1200,10 +1199,6 @@ impl Record {
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]
-/// Defines which datatype should be used to represent vectors in the storage.
-/// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
-/// - For `float32` datatype - vectors are stored as single-precision floating point numbers, 4bytes.
-/// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1byte. It expects vector elements to be in range `[0, 255]`.
 pub enum Datatype {
     #[default]
     Float32,
@@ -1217,18 +1212,6 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
-        }
-    }
-}
-
-impl TryFrom<Datatype> for SparseVectorIndexDatatype {
-    type Error = CollectionError;
-
-    fn try_from(value: Datatype) -> Result<Self, Self::Error> {
-        match value {
-            Datatype::Float32 => Ok(Self::Float32),
-            Datatype::Float16 => Ok(Self::Float16),
-            Datatype::Uint8 => Ok(Self::Uint8),
         }
     }
 }
@@ -1260,6 +1243,15 @@ pub struct VectorParams {
     pub on_disk: Option<bool>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Defines which datatype should be used to represent vectors in the storage.
+    /// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
+    ///
+    /// - For `float32` datatype - vectors are stored as single-precision floating point numbers,
+    ///   4 bytes.
+    /// - For `float16` datatype - vectors are stored as half-precision floating point numbers,
+    ///   2 bytes.
+    /// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte.
+    ///   It expects vector elements to be in range `[0, 255]`.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1333,7 +1325,16 @@ pub struct SparseIndexParams {
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
-    /// Datatype used to store weights in the index.
+    /// Defines which datatype should be used for the index.
+    /// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
+    ///
+    /// - For `float32` datatype - vectors are stored as single-precision floating point numbers,
+    ///   4 bytes.
+    /// - For `float16` datatype - vectors are stored as half-precision floating point numbers,
+    ///   2 bytes.
+    /// - For `uint8` datatype - vectors are quantized to unsigned 8-bit integers, 1 byte.
+    ///   Quantization to fit byte range `[0, 255]` happens during indexing automatically, so the
+    ///   actual vector data does not need to conform to this range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<Datatype>,
 }

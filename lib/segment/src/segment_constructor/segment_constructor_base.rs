@@ -21,7 +21,7 @@ use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::plain_payload_index::PlainIndex;
-use crate::index::sparse_index::sparse_index_config::{SparseIndexType, SparseVectorIndexDatatype};
+use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::{
     self, SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
@@ -348,7 +348,7 @@ pub(crate) fn create_sparse_vector_index(
         args.config.datatype.unwrap_or_default(),
         sparse_vector_index::USE_COMPRESSED,
     ) {
-        (_, a @ (SparseVectorIndexDatatype::Float16 | SparseVectorIndexDatatype::Uint8), false) => {
+        (_, a @ (VectorStorageDatatype::Float16 | VectorStorageDatatype::Uint8), false) => {
             Err(OperationError::ValidationError {
                 description: format!("{:?} datatype is not supported", a),
             })?
@@ -359,30 +359,30 @@ pub(crate) fn create_sparse_vector_index(
         }
 
         // Non-compressed
-        (SparseIndexType::ImmutableRam, SparseVectorIndexDatatype::Float32, false) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, false) => {
             VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, SparseVectorIndexDatatype::Float32, false) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Float32, false) => {
             VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?)
         }
 
         // Compressed
-        (SparseIndexType::ImmutableRam, SparseVectorIndexDatatype::Float32, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, true) => {
             VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, SparseVectorIndexDatatype::Float32, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Float32, true) => {
             VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::ImmutableRam, SparseVectorIndexDatatype::Float16, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16, true) => {
             VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, SparseVectorIndexDatatype::Float16, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Float16, true) => {
             VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::ImmutableRam, SparseVectorIndexDatatype::Uint8, true) => {
+        (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8, true) => {
             VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args)?)
         }
-        (SparseIndexType::Mmap, SparseVectorIndexDatatype::Uint8, true) => {
+        (SparseIndexType::Mmap, VectorStorageDatatype::Uint8, true) => {
             VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
         }
     };
