@@ -1228,9 +1228,7 @@ impl TryFrom<Datatype> for SparseVectorIndexDatatype {
         match value {
             Datatype::Float32 => Ok(Self::Float32),
             Datatype::Float16 => Ok(Self::Float16),
-            Datatype::Uint8 => Err(CollectionError::BadInput {
-                description: "Uint8 datatype is not supported for sparse vectors".to_string(),
-            }),
+            Datatype::Uint8 => Ok(Self::Uint8),
         }
     }
 }
