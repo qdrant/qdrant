@@ -26,7 +26,7 @@ rand_distr = "0.4.3"
 walkdir = "2.5.0"
 rstest = "0.21.0"
 segment = { path = ".", features = ["testing"] }
-proptest = "1.4.0"
+proptest = "1.5.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
