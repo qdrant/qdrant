@@ -4,8 +4,7 @@ use segment::types::PointIdType;
 
 use crate::operations::types::{DiscoverRequestInternal, RecommendRequestInternal, UsingVector};
 use crate::operations::universal_query::collection_query::{
-    self, CollectionPrefetch, CollectionQueryRequest, CollectionQueryResolveRequest, VectorInput,
-    VectorQuery,
+    CollectionQueryResolveRequest, VectorInput, VectorQuery,
 };
 
 const EMPTY_SHARD_KEY_SELECTOR: Option<ShardKeySelector> = None;
@@ -106,45 +105,6 @@ impl RetrieveRequest for DiscoverRequestInternal {
     }
 }
 
-/// Disclaimer: the lookup info corresponds ONLY to the root query, not the prefetches.
-/// Whereas the `get_referenced_point_ids` method will return the point ids of the root query AND all its prefetches.
-impl RetrieveRequest for CollectionQueryRequest {
-    fn get_lookup_collection(&self) -> Option<&String> {
-        self.lookup_from.as_ref().map(|x| &x.collection)
-    }
-
-    fn get_referenced_point_ids(&self) -> Vec<PointIdType> {
-        let mut refs = Vec::new();
-
-        if let Some(collection_query::Query::Vector(vector_query)) = &self.query {
-            refs.extend(vector_query.get_referenced_ids())
-        };
-
-        for prefetch in &self.prefetch {
-            refs.extend(prefetch.get_referenced_ids())
-        }
-
-        refs
-    }
-
-    fn get_lookup_vector_name(&self) -> String {
-        match &self.lookup_from {
-            None => self.using.to_owned(),
-            Some(lookup_from) => match &lookup_from.vector {
-                None => self.using.to_owned(),
-                Some(vector_name) => vector_name.clone(),
-            },
-        }
-    }
-
-    fn get_lookup_shard_key(&self) -> &Option<ShardKeySelector> {
-        self.lookup_from
-            .as_ref()
-            .map(|x| &x.shard_key)
-            .unwrap_or(&EMPTY_SHARD_KEY_SELECTOR)
-    }
-}
-
 impl RetrieveRequest for CollectionQueryResolveRequest {
     fn get_lookup_collection(&self) -> Option<&String> {
         self.lookup_from.as_ref().map(|x| &x.collection)
@@ -178,21 +138,5 @@ impl RetrieveRequest for CollectionQueryResolveRequest {
 impl VectorQuery<VectorInput> {
     pub fn get_referenced_ids(&self) -> Vec<&PointIdType> {
         self.flat_iter().filter_map(VectorInput::as_id).collect()
-    }
-}
-
-impl CollectionPrefetch {
-    fn get_referenced_ids(&self) -> Vec<PointIdType> {
-        let mut refs = Vec::new();
-
-        if let Some(collection_query::Query::Vector(vector_query)) = &self.query {
-            refs.extend(vector_query.get_referenced_ids())
-        };
-
-        for prefetch in &self.prefetch {
-            refs.extend(prefetch.get_referenced_ids())
-        }
-
-        refs
     }
 }

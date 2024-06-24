@@ -15,7 +15,6 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::common::fetch_vectors::ReferencedVectors;
-use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
@@ -293,6 +292,34 @@ fn exclude_referenced_ids(ids: Vec<ExtendedPointId>, filter: Option<Filter>) -> 
 }
 
 impl CollectionPrefetch {
+    fn get_lookup_collection(&self) -> Option<&String> {
+        self.lookup_from.as_ref().map(|x| &x.collection)
+    }
+
+    pub fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
+        let mut refs = Vec::new();
+
+        let mut lookup_other_collection = false;
+        if let Some(lookup_collection) = self.get_lookup_collection() {
+            lookup_other_collection = lookup_collection != collection
+        };
+
+        if !lookup_other_collection {
+            if let Some(Query::Vector(vector_query)) = &self.query {
+                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                    refs.push(*id);
+                }
+                refs.extend(vector_query.get_referenced_ids())
+            };
+        }
+
+        for prefetch in &self.prefetch {
+            refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
+        }
+
+        refs
+    }
+
     fn try_into_shard_prefetch(
         self,
         ids_to_vectors: &ReferencedVectors,
@@ -372,9 +399,48 @@ impl CollectionPrefetch {
 }
 
 impl CollectionQueryRequest {
+    fn get_lookup_collection(&self) -> Option<&String> {
+        self.lookup_from.as_ref().map(|x| &x.collection)
+    }
+
+    fn get_lookup_vector_name(&self) -> String {
+        match &self.lookup_from {
+            None => self.using.to_owned(),
+            Some(lookup_from) => match &lookup_from.vector {
+                None => self.using.to_owned(),
+                Some(vector_name) => vector_name.clone(),
+            },
+        }
+    }
+
+    fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
+        let mut refs = Vec::new();
+
+        let mut lookup_other_collection = false;
+        if let Some(lookup_collection) = self.get_lookup_collection() {
+            lookup_other_collection = lookup_collection != collection
+        };
+
+        if !lookup_other_collection {
+            if let Some(Query::Vector(vector_query)) = &self.query {
+                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                    refs.push(*id);
+                }
+                refs.extend(vector_query.get_referenced_ids())
+            };
+        }
+
+        for prefetch in &self.prefetch {
+            refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
+        }
+
+        refs
+    }
+
     /// Substitutes all the point ids in the request with the actual vectors, as well as editing filters so that ids are not included in the response.
     pub fn try_into_shard_request(
         self,
+        collection_name: &str,
         ids_to_vectors: &ReferencedVectors,
     ) -> CollectionResult<ShardQueryRequest> {
         Self::validation(&self.query, &self.prefetch, self.score_threshold)?;
@@ -383,8 +449,10 @@ impl CollectionQueryRequest {
         let query_lookup_vector_name = self.get_lookup_vector_name();
         let using = self.using.clone();
 
-        // Edit filter to exclude all referenced point ids (root and nested)
-        let filter = exclude_referenced_ids(self.get_referenced_point_ids(), self.filter);
+        // Edit filter to exclude all referenced point ids (root and nested) on the searched collection
+        // We do not want to exclude vector ids from different collection via lookup_from.
+        let referenced_point_ids = self.get_referenced_point_ids_on_collection(collection_name);
+        let filter = exclude_referenced_ids(referenced_point_ids, self.filter);
 
         let query = self
             .query

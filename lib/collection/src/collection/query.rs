@@ -175,7 +175,7 @@ impl Collection {
             requests_batch,
             |(_req, shard)| shard,
             |(req, _), acc| {
-                req.try_into_shard_request(&ids_to_vectors)
+                req.try_into_shard_request(&self.id, &ids_to_vectors)
                     .map(|shard_req| {
                         acc.push(shard_req);
                     })

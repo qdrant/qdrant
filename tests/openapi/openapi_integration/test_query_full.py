@@ -532,7 +532,7 @@ def test_recommend_lookup():
     query_result = response.json()["result"]["points"]
 
     # check equivalence recommend vs query
-    assert recommend_result == query_result
+    assert recommend_result == query_result, f"{recommend_result} != {query_result}"
 
     # check nested query id + lookup_from
     response = request_with_validation(
@@ -585,13 +585,6 @@ def test_recommend_lookup():
     )
     assert response.ok, response.text
     nested_query_result_vector = response.json()["result"]["points"]
-
-    # remove vectors used for lookup in previous call for equivalence check
-    predicate = lambda x: x["id"] == 1 or x["id"] == 2
-    nested_query_result_vector = [x for x in nested_query_result_vector if not predicate(x)]
-
-    print(nested_query_result_id)
-    print(nested_query_result_vector)
 
     # check equivalence nested query id vs nested query vector
     assert nested_query_result_id == nested_query_result_vector, f"{nested_query_result_id} != {nested_query_result_vector}"
