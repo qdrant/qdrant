@@ -15,7 +15,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
-use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::VectorIndex;
 use segment::json_path::path;
 use segment::segment_constructor::build_segment;
@@ -138,31 +138,31 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index_dense = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        segment.payload_index.clone(),
-        hnsw_config.clone(),
-    )
+    let hnsw_index_dense = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+        path: hnsw_dir.path(),
+        id_tracker: segment.id_tracker.clone(),
+        vector_storage: vector_storage.clone(),
+        quantized_vectors: quantized_vectors.clone(),
+        payload_index: segment.payload_index.clone(),
+        hnsw_config: hnsw_config.clone(),
+        permit: Some(permit.clone()),
+        stopped: &stopped,
+    })
     .unwrap();
-    hnsw_index_dense
-        .build_index(permit.clone(), &stopped)
-        .unwrap();
 
     let multi_storage = Arc::new(AtomicRefCell::new(multi_storage));
 
-    let mut hnsw_index_multi = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        multi_storage,
-        quantized_vectors.clone(),
-        segment.payload_index.clone(),
+    let hnsw_index_multi = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+        path: hnsw_dir.path(),
+        id_tracker: segment.id_tracker.clone(),
+        vector_storage: multi_storage,
+        quantized_vectors: quantized_vectors.clone(),
+        payload_index: segment.payload_index.clone(),
         hnsw_config,
-    )
+        permit: Some(permit),
+        stopped: &stopped,
+    })
     .unwrap();
-    hnsw_index_multi.build_index(permit, &stopped).unwrap();
 
     for _ in 0..10 {
         let random_vector = random_vector(&mut rnd, dim);

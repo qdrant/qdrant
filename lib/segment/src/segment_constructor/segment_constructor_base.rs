@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -18,8 +19,7 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
-use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
-use crate::index::hnsw_index::hnsw::HNSWIndex;
+use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexType, SparseVectorIndexDatatype};
 use crate::index::sparse_index::sparse_vector_index::{
@@ -294,6 +294,7 @@ pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_vector_index(
     vector_config: &VectorDataConfig,
     vector_index_path: &Path,
@@ -301,6 +302,8 @@ pub(crate) fn create_vector_index(
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+    permit: Option<Arc<CpuPermit>>,
+    stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainIndex::new(
@@ -309,24 +312,20 @@ pub(crate) fn create_vector_index(
             payload_index.clone(),
         )),
         Indexes::Hnsw(vector_hnsw_config) => {
+            let args = HnswIndexOpenArgs {
+                path: vector_index_path,
+                id_tracker: id_tracker.clone(),
+                vector_storage: vector_storage.clone(),
+                quantized_vectors: quantized_vectors.clone(),
+                payload_index: payload_index.clone(),
+                hnsw_config: vector_hnsw_config.clone(),
+                permit,
+                stopped,
+            };
             if vector_hnsw_config.on_disk == Some(true) {
-                VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
-                    vector_index_path,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    quantized_vectors.clone(),
-                    payload_index.clone(),
-                    vector_hnsw_config.clone(),
-                )?)
+                VectorIndexEnum::HnswMmap(HNSWIndex::open(args)?)
             } else {
-                VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
-                    vector_index_path,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    quantized_vectors.clone(),
-                    payload_index.clone(),
-                    vector_hnsw_config.clone(),
-                )?)
+                VectorIndexEnum::HnswRam(HNSWIndex::open(args)?)
             }
         }
     };
@@ -336,13 +335,13 @@ pub(crate) fn create_vector_index(
 
 #[cfg(feature = "testing")]
 pub fn create_sparse_vector_index_test(
-    args: SparseVectorIndexOpenArgs,
+    args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
     create_sparse_vector_index(args)
 }
 
 pub(crate) fn create_sparse_vector_index(
-    args: SparseVectorIndexOpenArgs,
+    args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match (
         args.config.index_type,
@@ -457,6 +456,8 @@ fn create_segment(
             vector_storage.clone(),
             payload_index.clone(),
             quantized_vectors.clone(),
+            None,
+            stopped,
         )?);
 
         check_process_stopped(stopped)?;
@@ -498,6 +499,7 @@ fn create_segment(
             payload_index: payload_index.clone(),
             path: &vector_index_path,
             stopped,
+            tick_progress: || (),
         })?);
 
         check_process_stopped(stopped)?;

@@ -15,7 +15,7 @@ use segment::data_types::vectors::{
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
-use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::path;
@@ -308,20 +308,21 @@ fn test_multivector_quantization_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
+    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+        path: hnsw_dir.path(),
+        id_tracker: segment.id_tracker.clone(),
+        vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
+        quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
             .quantized_vectors
             .clone(),
-        segment.payload_index.clone(),
+        payload_index: segment.payload_index.clone(),
         hnsw_config,
-    )
+        permit: Some(permit),
+        stopped: &stopped,
+    })
     .unwrap();
-    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let top = 5;
     let mut sames = 0;
