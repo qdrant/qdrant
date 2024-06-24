@@ -225,7 +225,7 @@ def test_basic_order_by():
             "order_by": "price",
         },
     )
-    assert response.ok
+    assert response.ok, response.text
     scroll_result = response.json()["result"]["points"]
 
     query_result = root_and_rescored_query({"order_by": "price"}, with_payload=True)

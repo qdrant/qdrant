@@ -388,6 +388,7 @@ impl SegmentsSearcher {
                             vector.map(Into::into)
                         },
                         shard_key: None,
+                        order_value: None,
                     },
                 );
                 point_version.insert(id, version);
