@@ -475,9 +475,9 @@ mod tests {
             TypeId::of::<InvertedIndexCompressedMmap<QuantizedU8>>(),
         ];
         if errors_allowed_for.contains(&TypeId::of::<I>()) {
-            let precission = 0.25;
+            let precision = 0.25;
             scores.iter_mut().for_each(|score| {
-                score.score = (score.score / precission).round() * precission;
+                score.score = (score.score / precision).round() * precision;
             });
             scores
         } else {
