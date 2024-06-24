@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use half::f16;
 use sparse::common::types::DimId;
@@ -34,19 +31,6 @@ pub trait VectorIndex {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
-
-    /// Force internal index rebuild.
-    fn build_index(&mut self, permit: Arc<CpuPermit>, stopped: &AtomicBool) -> OperationResult<()> {
-        self.build_index_with_progress(permit, stopped, || ())
-    }
-
-    /// Force internal index rebuild.
-    fn build_index_with_progress(
-        &mut self,
-        permit: Arc<CpuPermit>,
-        stopped: &AtomicBool,
-        tick_progress: impl FnMut(),
-    ) -> OperationResult<()>;
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
 
@@ -153,46 +137,6 @@ impl VectorIndex for VectorIndexEnum {
             }
             VectorIndexEnum::SparseCompressedMmapF16(index) => {
                 index.search(vectors, filter, top, params, query_context)
-            }
-        }
-    }
-
-    fn build_index_with_progress(
-        &mut self,
-        permit: Arc<CpuPermit>,
-        stopped: &AtomicBool,
-        tick_progress: impl FnMut(),
-    ) -> OperationResult<()> {
-        match self {
-            VectorIndexEnum::Plain(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::HnswRam(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::HnswMmap(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseRam(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseImmutableRam(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseMmap(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseCompressedMmapF32(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
-            }
-            VectorIndexEnum::SparseCompressedMmapF16(index) => {
-                index.build_index_with_progress(permit, stopped, tick_progress)
             }
         }
     }

@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
@@ -320,15 +318,6 @@ impl VectorIndex for PlainIndex {
                     .collect()
             }
         }
-    }
-
-    fn build_index_with_progress(
-        &mut self,
-        _permit: Arc<CpuPermit>,
-        _stopped: &AtomicBool,
-        _tick_progress: impl FnMut(),
-    ) -> OperationResult<()> {
-        Ok(())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

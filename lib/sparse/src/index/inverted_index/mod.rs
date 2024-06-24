@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -19,7 +20,7 @@ pub mod inverted_index_ram_builder;
 pub const OLD_INDEX_FILE_NAME: &str = "inverted_index.data";
 pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
 
-pub trait InvertedIndex: Sized {
+pub trait InvertedIndex: Sized + Debug {
     type Iter<'a>: PostingListIter + Clone
     where
         Self: 'a;
