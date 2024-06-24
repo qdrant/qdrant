@@ -391,6 +391,7 @@ mod tests {
     use crate::common::scores_memory_pool::ScoresMemoryPool;
     use crate::common::sparse_vector::SparseVector;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
+    use crate::common::types::QuantizedU8;
     use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
     use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
     use crate::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
@@ -415,11 +416,23 @@ mod tests {
     #[instantiate_tests(<InvertedIndexCompressedImmutableRam<half::f16>>)]
     mod iram_f16 {}
 
+    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<u8>>)]
+    mod iram_u8 {}
+
+    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<QuantizedU8>>)]
+    mod iram_q8 {}
+
     #[instantiate_tests(<InvertedIndexCompressedMmap<f32>>)]
     mod mmap_f32 {}
 
     #[instantiate_tests(<InvertedIndexCompressedMmap<half::f16>>)]
     mod mmap_f16 {}
+
+    #[instantiate_tests(<InvertedIndexCompressedMmap<u8>>)]
+    mod mmap_u8 {}
+
+    #[instantiate_tests(<InvertedIndexCompressedMmap<QuantizedU8>>)]
+    mod mmap_q8 {}
 
     // --- End of test instantiations ---
 
@@ -452,6 +465,23 @@ mod tests {
                 index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
                 temp_dir,
             }
+        }
+    }
+
+    /// Round scores to allow some quantization errors
+    fn round_scores<I: 'static>(mut scores: Vec<ScoredPointOffset>) -> Vec<ScoredPointOffset> {
+        let errors_allowed_for = [
+            TypeId::of::<InvertedIndexCompressedImmutableRam<QuantizedU8>>(),
+            TypeId::of::<InvertedIndexCompressedMmap<QuantizedU8>>(),
+        ];
+        if errors_allowed_for.contains(&TypeId::of::<I>()) {
+            let precision = 0.25;
+            scores.iter_mut().for_each(|score| {
+                score.score = (score.score / precision).round() * precision;
+            });
+            scores
+        } else {
+            scores
         }
     }
 
@@ -493,7 +523,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(&match_all),
+            round_scores::<I>(search_context.search(&match_all)),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -539,7 +569,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(&match_all),
+            round_scores::<I>(search_context.search(&match_all)),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -629,7 +659,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(&match_all),
+            round_scores::<I>(search_context.search(&match_all)),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -658,7 +688,7 @@ mod tests {
         );
 
         assert_eq!(
-            search_context.search(&match_all),
+            round_scores::<I>(search_context.search(&match_all)),
             vec![
                 ScoredPointOffset {
                     score: 90.0,
@@ -870,7 +900,7 @@ mod tests {
 
         let scores = search_context.plain_search(&[1, 3, 2]);
         assert_eq!(
-            scores,
+            round_scores::<I>(scores),
             vec![
                 ScoredPointOffset {
                     idx: 3,
@@ -913,7 +943,7 @@ mod tests {
 
         let scores = search_context.plain_search(&[1, 2, 3]);
         assert_eq!(
-            scores,
+            round_scores::<I>(scores),
             vec![
                 ScoredPointOffset {
                     idx: 2,

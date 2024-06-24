@@ -348,9 +348,11 @@ pub(crate) fn create_sparse_vector_index(
         args.config.datatype.unwrap_or_default(),
         sparse_vector_index::USE_COMPRESSED,
     ) {
-        (_, SparseVectorIndexDatatype::Float16, false) => Err(OperationError::ValidationError {
-            description: "Float16 datatype is not supported".to_string(),
-        })?,
+        (_, a @ (SparseVectorIndexDatatype::Float16 | SparseVectorIndexDatatype::Uint8), false) => {
+            Err(OperationError::ValidationError {
+                description: format!("{:?} datatype is not supported", a),
+            })?
+        }
 
         (SparseIndexType::MutableRam, _, _) => {
             VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
@@ -376,6 +378,12 @@ pub(crate) fn create_sparse_vector_index(
         }
         (SparseIndexType::Mmap, SparseVectorIndexDatatype::Float16, true) => {
             VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args)?)
+        }
+        (SparseIndexType::ImmutableRam, SparseVectorIndexDatatype::Uint8, true) => {
+            VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args)?)
+        }
+        (SparseIndexType::Mmap, SparseVectorIndexDatatype::Uint8, true) => {
+            VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
         }
     };
 

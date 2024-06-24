@@ -48,6 +48,8 @@ pub enum SparseVectorIndexDatatype {
     Float32,
     // Half-precision floating point
     Float16,
+    // Unsigned 8-bit integer
+    Uint8,
 }
 
 /// Configuration for sparse inverted index.

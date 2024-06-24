@@ -14,7 +14,7 @@ use crate::index::compressed_posting_list::{
 use crate::index::posting_list_common::PostingListIter as _;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InvertedIndexCompressedImmutableRam<W> {
+pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
     pub(super) postings: Vec<CompressedPostingList<W>>,
     pub(super) vector_count: usize,
 }
@@ -94,7 +94,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();
             for elem in &old_posting_list.elements {
-                new_posting_list.add(elem.record_id, Weight::from_f32(elem.weight));
+                new_posting_list.add(elem.record_id, elem.weight);
             }
             postings.push(new_posting_list.build());
         }
@@ -122,6 +122,7 @@ mod tests {
 
     use super::*;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
+    use crate::common::types::QuantizedU8;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
     #[test]
@@ -134,6 +135,8 @@ mod tests {
 
         check_save_load::<f32>(&inverted_index_ram);
         check_save_load::<half::f16>(&inverted_index_ram);
+        check_save_load::<u8>(&inverted_index_ram);
+        check_save_load::<QuantizedU8>(&inverted_index_ram);
     }
 
     #[test]
@@ -148,6 +151,8 @@ mod tests {
 
         check_save_load::<f32>(&inverted_index_ram);
         check_save_load::<half::f16>(&inverted_index_ram);
+        check_save_load::<u8>(&inverted_index_ram);
+        check_save_load::<QuantizedU8>(&inverted_index_ram);
     }
 
     fn check_save_load<W: Weight>(inverted_index_ram: &InvertedIndexRam) {
