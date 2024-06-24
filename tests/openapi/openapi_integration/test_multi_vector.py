@@ -1,5 +1,4 @@
 import pytest
-import requests
 import os
 
 from .helpers.collection_setup import drop_collection
