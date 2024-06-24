@@ -4790,7 +4790,7 @@ pub struct ContextInput {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub variant: ::core::option::Option<query::Variant>,
 }
 /// Nested message and enum types in `Query`.
@@ -4811,11 +4811,14 @@ pub mod query {
         /// Return points that live in positive areas.
         #[prost(message, tag = "4")]
         Context(super::ContextInput),
-        /// Order the points by a payload field.
+        /// Return points that are the farthest apart from this vector. Shorthand for recommend best_score with only one negative input
         #[prost(message, tag = "5")]
+        Farthest(super::VectorInput),
+        /// Order the points by a payload field.
+        #[prost(message, tag = "6")]
         OrderBy(super::OrderBy),
         /// Fuse the results of multiple prefetches.
-        #[prost(enumeration = "super::Fusion", tag = "6")]
+        #[prost(enumeration = "super::Fusion", tag = "7")]
         Fusion(i32),
     }
 }

@@ -512,8 +512,9 @@ message Query {
     RecommendInput recommend = 2; // Use multiple positive and negative vectors to find the results.
     DiscoverInput discover = 3; // Search for nearest points, but constrain the search space with context
     ContextInput context = 4; // Return points that live in positive areas.
-    OrderBy order_by = 5; // Order the points by a payload field.
-    Fusion fusion = 6; // Fuse the results of multiple prefetches.
+    VectorInput farthest = 5; // Return points that are the farthest apart from this vector. Shorthand for recommend best_score with only one negative input
+    OrderBy order_by = 6; // Order the points by a payload field.
+    Fusion fusion = 7; // Fuse the results of multiple prefetches.
   }
 }
 

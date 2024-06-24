@@ -70,6 +70,7 @@ impl Validate for Query {
             Query::Recommend(recommend) => recommend.recommend.validate(),
             Query::Discover(discover) => discover.discover.validate(),
             Query::Context(context) => context.context.validate(),
+            Query::Farthest(farthest) => farthest.furthest.validate(),
             Query::Fusion(fusion) => fusion.fusion.validate(),
             Query::OrderBy(order_by) => order_by.order_by.validate(),
         }

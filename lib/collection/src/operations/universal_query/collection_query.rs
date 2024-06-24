@@ -474,6 +474,7 @@ mod from_rest {
                 rest::Query::Recommend(recommend) => Query::Vector(From::from(recommend.recommend)),
                 rest::Query::Discover(discover) => Query::Vector(From::from(discover.discover)),
                 rest::Query::Context(context) => Query::Vector(From::from(context.context)),
+                rest::Query::Farthest(farthest) => Query::Vector(From::from(farthest)),
                 rest::Query::OrderBy(order_by) => Query::OrderBy(OrderBy::from(order_by.order_by)),
                 rest::Query::Fusion(fusion) => Query::Fusion(Fusion::from(fusion.fusion)),
             }
@@ -526,6 +527,16 @@ mod from_rest {
                 .collect();
 
             VectorQuery::Context(ContextQuery::new(context))
+        }
+    }
+
+    impl From<rest::FarthestQuery> for VectorQuery<VectorInput> {
+        fn from(value: rest::FarthestQuery) -> Self {
+            let rest::FarthestQuery { furthest: farthest } = value;
+
+            let vector_input = From::from(farthest);
+
+            VectorQuery::RecommendBestScore(RecoQuery::new(vec![], vec![vector_input]))
         }
     }
 
@@ -673,6 +684,9 @@ pub mod from_grpc {
                 Variant::Recommend(recommend) => Query::Vector(TryFrom::try_from(recommend)?),
                 Variant::Discover(discover) => Query::Vector(TryFrom::try_from(discover)?),
                 Variant::Context(context) => Query::Vector(TryFrom::try_from(context)?),
+                Variant::Farthest(farthest) => Query::Vector(VectorQuery::RecommendBestScore(
+                    RecoQuery::new(vec![], vec![TryFrom::try_from(farthest)?]),
+                )),
                 Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
                 Variant::Fusion(fusion) => Query::Fusion(Fusion::try_from(fusion)?),
             };
