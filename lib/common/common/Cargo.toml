@@ -18,7 +18,7 @@ ordered-float = "4.2"
 serde = { workspace = true }
 tokio = { workspace = true }
 validator = { workspace = true }
-lazy_static = "1.4.0"
+lazy_static = "1.5.0"
 semver = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
