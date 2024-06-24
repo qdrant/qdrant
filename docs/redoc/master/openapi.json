@@ -11554,7 +11554,7 @@
             "description": "Max number of points to return. Default is 10.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "offset": {
@@ -11669,7 +11669,7 @@
             "description": "Max number of points to return. Default is 10.",
             "type": "integer",
             "format": "uint",
-            "minimum": 0,
+            "minimum": 1,
             "nullable": true
           },
           "lookup_from": {
