@@ -63,15 +63,14 @@ async fn web_ui_index(
     req: HttpRequest,
     web_ui_settings: web::Data<WebUISettings>,
 ) -> impl Responder {
-    match NamedFile::open(
-        Path::new(&web_ui_settings.static_folder)
-            .join("index.html")
-            .as_path(),
-    ) {
+    let path = Path::new(&web_ui_settings.static_folder).join("index.html");
+
+    match NamedFile::open_async(path).await {
         Ok(file) => {
             let mut res = file.respond_to(&req);
             res.headers_mut()
                 .insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+
             res
         }
         Err(err) => HttpResponse::from_error(err),
