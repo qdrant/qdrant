@@ -294,6 +294,13 @@ impl CollectionPrefetch {
             ));
         }
 
+        // Check no score_threshold without a query
+        if self.score_threshold.is_some() && self.query.is_none() {
+            return Err(CollectionError::bad_request(
+                "A query is needed to use the score_threshold. Can't have score_threshold without defining a query.",
+            ));
+        }
+
         let query = self
             .query
             .map(|query| {
@@ -339,6 +346,13 @@ impl CollectionQueryRequest {
         if !self.prefetch.is_empty() && self.query.is_none() {
             return Err(CollectionError::bad_request(
                 "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
+            ));
+        }
+
+        // Check no score_threshold without a query
+        if self.score_threshold.is_some() && self.query.is_none() {
+            return Err(CollectionError::bad_request(
+                "A query is needed to use the score_threshold. Can't have score_threshold without defining a query.",
             ));
         }
 
