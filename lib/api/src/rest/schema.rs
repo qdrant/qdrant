@@ -134,10 +134,12 @@ pub enum OrderByInterface {
     Struct(OrderBy),
 }
 
+/// Fusion algorithm allows to combine results of multiple prefetches.
+/// Available fusion algorithms:
+/// * `rrf` - Rank Reciprocal Fusion
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
-    /// Reciprocal rank fusion
     Rrf,
 }
 
