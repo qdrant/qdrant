@@ -5301,6 +5301,9 @@ pub struct RetrievedPoint {
     /// Shard key
     #[prost(message, optional, tag = "5")]
     pub shard_key: ::core::option::Option<ShardKey>,
+    /// Order-by value
+    #[prost(message, optional, tag = "6")]
+    pub order_value: ::core::option::Option<OrderValue>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

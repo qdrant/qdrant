@@ -294,14 +294,22 @@ impl Collection {
                 retrieved_iter
                     // Extract and remove order value from payload
                     .map(|records| {
+                        // TODO(1.11): read value only from record.order_value, remove & cleanup this part
                         records.into_iter().map(|mut record| {
                             let value;
                             if local_only {
-                                value =
-                                    order_by.get_order_value_from_payload(record.payload.as_ref());
+                                value = record.order_value.unwrap_or_else(|| {
+                                    order_by.get_order_value_from_payload(record.payload.as_ref())
+                                });
                             } else {
-                                value = order_by
-                                    .remove_order_value_from_payload(record.payload.as_mut());
+                                value = if let Some(order_value) = record.order_value {
+                                    order_by
+                                        .remove_order_value_from_payload(record.payload.as_mut());
+                                    order_value
+                                } else {
+                                    order_by
+                                        .remove_order_value_from_payload(record.payload.as_mut())
+                                };
                                 if !with_payload_interface.is_required() {
                                     // Use None instead of empty hashmap
                                     record.payload = None;

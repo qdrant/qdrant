@@ -98,6 +98,8 @@ pub struct Record {
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
 /// Vector data separator for named and unnamed modes

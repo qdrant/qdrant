@@ -139,11 +139,13 @@ impl ShardOperation for LocalShard {
                     .await?;
 
                 records.iter_mut().zip(values).for_each(|(record, value)| {
+                    // TODO(1.11): stop inserting the value in the payload, only use the order_value
                     // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
                     let new_payload =
                         OrderBy::insert_order_value_in_payload(record.payload.take(), value);
 
                     record.payload = Some(new_payload);
+                    record.order_value = Some(value);
                 });
 
                 Ok(records)

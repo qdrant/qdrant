@@ -724,6 +724,7 @@ message RetrievedPoint {
   reserved 3; // deprecated "vector" field
   optional Vectors vectors = 4;
   optional ShardKey shard_key = 5; // Shard key
+  optional OrderValue order_value = 6; // Order-by value
 }
 
 message GetResponse {
