@@ -13,15 +13,14 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::index::sparse_index::sparse_index_config::{
-    SparseIndexConfig, SparseIndexType, SparseVectorIndexDatatype,
-};
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use segment::types::VectorStorageDatatype;
 use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use segment::vector_storage::VectorStorage;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
@@ -72,7 +71,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let index_config = SparseIndexConfig::new(
         Some(10_000),
         SparseIndexType::ImmutableRam,
-        Some(SparseVectorIndexDatatype::Float32),
+        Some(VectorStorageDatatype::Float32),
     );
 
     let vector_storage = Arc::new(AtomicRefCell::new(vector_storage));

@@ -9691,7 +9691,7 @@
             "description": "Datatype used to store weights in the index.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SparseVectorIndexDatatype"
+                "$ref": "#/components/schemas/VectorStorageDatatype"
               },
               {
                 "nullable": true
@@ -9724,15 +9724,6 @@
               "Mmap"
             ]
           }
-        ]
-      },
-      "SparseVectorIndexDatatype": {
-        "description": "Storage types for vectors",
-        "type": "string",
-        "enum": [
-          "float32",
-          "float16",
-          "uint8"
         ]
       },
       "PayloadStorageType": {

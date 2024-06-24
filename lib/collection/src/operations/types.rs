@@ -25,7 +25,6 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
-use segment::index::sparse_index::sparse_index_config::SparseVectorIndexDatatype;
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
@@ -1217,18 +1216,6 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
-        }
-    }
-}
-
-impl TryFrom<Datatype> for SparseVectorIndexDatatype {
-    type Error = CollectionError;
-
-    fn try_from(value: Datatype) -> Result<Self, Self::Error> {
-        match value {
-            Datatype::Float32 => Ok(Self::Float32),
-            Datatype::Float16 => Ok(Self::Float16),
-            Datatype::Uint8 => Ok(Self::Uint8),
         }
     }
 }
