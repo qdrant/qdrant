@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 chrono = { workspace = true }
-dashmap = "5.5.3"
+dashmap = "6.0.1"
 http = "1.0.0"
 http-serde = "2.0.0"
 schemars = { workspace = true }
