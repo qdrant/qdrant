@@ -333,7 +333,7 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
             view.check_vector_query(vector_query)?
         }
 
-        // TODO(universal-query): implement lookup_from
+        access.check_lookup_from(&self.lookup_from)?;
 
         for prefetch_query in self.prefetch.iter_mut() {
             check_access_for_prefetch(prefetch_query, &view, access)?;
@@ -346,7 +346,7 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
 fn check_access_for_prefetch(
     prefetch: &mut CollectionPrefetch,
     view: &CollectionAccessView<'_>,
-    _access: &CollectionAccessList, // TODO(universal_query): implement lookup_from
+    access: &CollectionAccessList,
 ) -> Result<(), StorageError> {
     view.apply_filter(&mut prefetch.filter);
 
@@ -354,11 +354,11 @@ fn check_access_for_prefetch(
         view.check_vector_query(vector_query)?
     }
 
-    // TODO(universal-query): implement lookup_from
+    access.check_lookup_from(&prefetch.lookup_from)?;
 
     // Recurse inner prefetches
     for prefetch_query in prefetch.prefetch.iter_mut() {
-        check_access_for_prefetch(prefetch_query, view, _access)?;
+        check_access_for_prefetch(prefetch_query, view, access)?;
     }
 
     Ok(())

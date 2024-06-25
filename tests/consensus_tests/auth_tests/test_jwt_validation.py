@@ -5,6 +5,7 @@ from consensus_tests import fixtures
 from .utils import API_KEY_HEADERS, READ_ONLY_API_KEY, REST_URI, SECRET, encode_jwt
 
 COLL_NAME = "jwt_test_collection"
+OTHER_COLL_NAME = "jwt_other_test_collection"
 
 
 @pytest.fixture(scope="module")
@@ -13,6 +14,18 @@ def berlin_token():
         {
             "access": [
                 {"collection": COLL_NAME, "access": "r", "payload": {"city": "Berlin"}}
+            ]
+        },
+        SECRET,
+    )
+
+
+@pytest.fixture(scope="module")
+def collection_readonly_token():
+    return encode_jwt(
+        {
+            "access": [
+                {"collection": COLL_NAME, "access": "r"}
             ]
         },
         SECRET,
@@ -226,6 +239,123 @@ def test_payload_claim_fails_with_ids_in_recommend(berlin_token):
     assert (
         res.json()["status"]["error"]
         == 'Forbidden: This operation is not allowed when "payload" restriction is present for collection jwt_test_collection'
+    )
+
+
+def test_recommend_collection_lookup(collection_readonly_token):
+    # delete other collection if exists
+    fixtures.drop_collection(REST_URI, OTHER_COLL_NAME, headers=API_KEY_HEADERS)
+
+    # create other collection
+    fixtures.create_collection(
+        REST_URI,
+        collection=OTHER_COLL_NAME,
+        headers=API_KEY_HEADERS,
+    )
+
+    # populate collection with points
+    fixtures.upsert_random_points(REST_URI, 100, COLL_NAME, headers=API_KEY_HEADERS)
+
+    # recommending points from same collection should work
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/recommend",
+        json={"positive": [1], "limit": 10},
+        headers={"Authorization": f"Bearer {collection_readonly_token}"},
+    )
+    assert res.status_code == 200, res.json()
+
+    # recommending points from other collection should fail
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/recommend",
+        json={
+            "positive": [1],
+            "limit": 10,
+            "lookup_from": {
+                "collection": OTHER_COLL_NAME,
+            }
+        },
+        headers={"Authorization": f"Bearer {collection_readonly_token}"},
+    )
+    assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == f"Forbidden: Access to collection {OTHER_COLL_NAME} is required"
+    )
+
+
+def test_query_recommendation_collection_lookup(collection_readonly_token):
+    # delete other collection if exists
+    fixtures.drop_collection(REST_URI, OTHER_COLL_NAME, headers=API_KEY_HEADERS)
+
+    # create other collection
+    fixtures.create_collection(
+        REST_URI,
+        collection=OTHER_COLL_NAME,
+        headers=API_KEY_HEADERS,
+    )
+
+    # populate collection with points
+    fixtures.upsert_random_points(REST_URI, 100, COLL_NAME, headers=API_KEY_HEADERS)
+
+    # query recommendation with points from same collection should work
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/query",
+        json={
+            "query": {
+                "recommend": {
+                    "positive": [1],
+                },
+                "limit": 10,
+            }
+        },
+        headers={"Authorization": f"Bearer {collection_readonly_token}"},
+    )
+    assert res.status_code == 200, res.json()
+
+    # query recommending with points from other collection should fail
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/query",
+        json={
+            "recommend": {
+                "positive": [1],
+            },
+            "limit": 10,
+            "lookup_from": {
+                "collection": OTHER_COLL_NAME,
+            }
+        },
+        headers={"Authorization": f"Bearer {collection_readonly_token}"},
+    )
+    assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == f"Forbidden: Access to collection {OTHER_COLL_NAME} is required"
+    )
+
+    # query nested recommendation with points from other collection should fail
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/query",
+        json={
+            "prefetch": [
+                {
+                    "query": {
+                        "recommend": {
+                            "positive": [1],
+                        }
+                    },
+                    "lookup_from": {
+                        "collection": OTHER_COLL_NAME,
+                    }
+                }
+            ],
+            "limit": 10,
+        },
+        headers={"Authorization": f"Bearer {collection_readonly_token}"},
+    )
+    assert res.status_code == 403, res.json()
+    assert (
+        res.json()["status"]["error"]
+        == f"Forbidden: Access to collection {OTHER_COLL_NAME} is required"
     )
 
 

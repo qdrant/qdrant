@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 
 use api::rest::ShardKeySelector;
 use futures::future::try_join_all;
@@ -15,7 +16,10 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
 };
-use crate::operations::universal_query::collection_query::VectorInput;
+use crate::operations::universal_query::collection_query;
+use crate::operations::universal_query::collection_query::{
+    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInput,
+};
 
 pub async fn retrieve_points(
     collection: &Collection,
@@ -94,7 +98,7 @@ pub type CollectionName = String;
 ///
 /// This is a temporary structure, which holds resolved references to vectors,
 /// mentioned in the query.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ReferencedVectors {
     collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
     default_mapping: HashMap<PointIdType, Record>,
@@ -150,14 +154,14 @@ impl ReferencedVectors {
         match vector_input {
             VectorInput::Vector(vector) => Some(vector),
             VectorInput::Id(vid) => {
-                let rec = self.get(&collection_name, vid).unwrap();
+                let rec = self.get(&collection_name, vid)?;
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ReferencedPoints<'coll_name> {
     ids_per_collection: HashMap<Option<&'coll_name String>, HashSet<PointIdType>>,
     vector_names_per_collection: HashMap<Option<&'coll_name String>, HashSet<String>>,
@@ -360,4 +364,32 @@ where
     }
 
     Ok(all_vectors_records_map)
+}
+
+/// This function is used to build a list of queries to resolve vectors for the given batch of query requests.
+/// For each request, one query is issue for the root request and one query for each nested prefetch.
+/// The resolver queries have no prefetches.
+pub fn build_vector_resolver_queries(
+    requests_batch: &Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
+    let mut resolve_prefetches = vec![];
+    for (request, shard_selector) in requests_batch {
+        // resolve query for root query
+        if let Some(collection_query::Query::Vector(vector_query)) = &request.query {
+            let resolve_root = CollectionQueryResolveRequest {
+                vector_query,
+                lookup_from: request.lookup_from.clone(),
+                using: request.using.clone(),
+            };
+            resolve_prefetches.push((resolve_root, shard_selector.clone()));
+        }
+
+        // flatten prefetches
+        for prefetch in &request.prefetch {
+            for flatten in prefetch.flatten_resolver_requests() {
+                resolve_prefetches.push((flatten, shard_selector.clone()));
+            }
+        }
+    }
+    resolve_prefetches
 }

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,11 +7,15 @@ use itertools::{Either, Itertools};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{Order, ScoredPoint};
 use segment::utils::scored_point_ties::ScoredPointTies;
+use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
 use super::Collection;
 use crate::common::batching::batch_requests;
-use crate::common::fetch_vectors::resolve_referenced_vectors_batch;
+use crate::common::fetch_vectors::{
+    build_vector_resolver_queries, resolve_referenced_vectors_batch,
+};
+use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -126,20 +131,40 @@ impl Collection {
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
     ///
     /// This function is used to query the collection. It will return a list of scored points.
-    pub async fn query_batch(
+    pub async fn query_batch<'a, F, Fut>(
         &self,
         requests_batch: Vec<(CollectionQueryRequest, ShardSelectorInternal)>,
+        collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // Turn ids into vectors, if necessary
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
+    where
+        F: Fn(String) -> Fut,
+        Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
+    {
+        // Lift nested prefetches to root queries for vector resolution
+        let resolver_requests = build_vector_resolver_queries(&requests_batch);
+
+        // Build referenced vectors
         let ids_to_vectors = resolve_referenced_vectors_batch(
-            &requests_batch,
+            &resolver_requests,
             self,
-            |_| async { unimplemented!("lookup_from is not implemented yet") },
+            collection_by_name,
             read_consistency,
         )
         .await?;
+
+        // Check we actually fetched all referenced vectors from the resolver requests
+        for (resolver_req, _) in &resolver_requests {
+            for point_id in resolver_req.get_referenced_point_ids() {
+                let lookup_collection = resolver_req.get_lookup_collection();
+                if ids_to_vectors.get(&lookup_collection, point_id).is_none() {
+                    return Err(CollectionError::PointNotFound {
+                        missed_point_id: point_id,
+                    });
+                }
+            }
+        }
 
         let futures = batch_requests::<
             (CollectionQueryRequest, ShardSelectorInternal),
@@ -150,7 +175,7 @@ impl Collection {
             requests_batch,
             |(_req, shard)| shard,
             |(req, _), acc| {
-                req.try_into_shard_request(&ids_to_vectors)
+                req.try_into_shard_request(&self.id, &ids_to_vectors)
                     .map(|shard_req| {
                         acc.push(shard_req);
                     })

@@ -15,12 +15,12 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::common::fetch_vectors::ReferencedVectors;
-use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
+#[derive(Debug)]
 pub struct CollectionQueryRequest {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
@@ -46,6 +46,15 @@ impl CollectionQueryRequest {
     pub const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);
 }
 
+/// Lightweight representation of a query request to implement the [RetrieveRequest] trait.
+#[derive(Debug)]
+pub struct CollectionQueryResolveRequest<'a> {
+    pub vector_query: &'a VectorQuery<VectorInput>,
+    pub lookup_from: Option<LookupLocation>,
+    pub using: String,
+}
+
+#[derive(Debug)]
 pub enum Query {
     /// Score points against some vector(s)
     Vector(VectorQuery<VectorInput>),
@@ -72,7 +81,6 @@ impl Query {
                     .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)
                     // Turn into QueryEnum
                     .into_query_enum(using)?;
-
                 ScoringQuery::Vector(query_enum)
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
@@ -82,6 +90,7 @@ impl Query {
         Ok(scoring_query)
     }
 }
+#[derive(Debug)]
 pub enum VectorInput {
     Id(PointIdType),
     Vector(Vector),
@@ -96,6 +105,7 @@ impl VectorInput {
     }
 }
 
+#[derive(Debug)]
 pub enum VectorQuery<T> {
     Nearest(T),
     RecommendAverageVector(RecoQuery<T>),
@@ -256,6 +266,7 @@ impl VectorQuery<Vector> {
     }
 }
 
+#[derive(Debug)]
 pub struct CollectionPrefetch {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
@@ -281,72 +292,56 @@ fn exclude_referenced_ids(ids: Vec<ExtendedPointId>, filter: Option<Filter>) -> 
 }
 
 impl CollectionPrefetch {
+    fn get_lookup_collection(&self) -> Option<&String> {
+        self.lookup_from.as_ref().map(|x| &x.collection)
+    }
+
+    fn get_lookup_vector_name(&self) -> String {
+        self.lookup_from
+            .as_ref()
+            .and_then(|lookup_from| lookup_from.vector.as_ref())
+            .unwrap_or(&self.using)
+            .to_owned()
+    }
+
+    pub fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
+        let mut refs = Vec::new();
+
+        let mut lookup_other_collection = false;
+        if let Some(lookup_collection) = self.get_lookup_collection() {
+            lookup_other_collection = lookup_collection != collection
+        };
+
+        if !lookup_other_collection {
+            if let Some(Query::Vector(vector_query)) = &self.query {
+                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                    refs.push(*id);
+                }
+                refs.extend(vector_query.get_referenced_ids())
+            };
+        }
+
+        for prefetch in &self.prefetch {
+            refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
+        }
+
+        refs
+    }
+
     fn try_into_shard_prefetch(
         self,
         ids_to_vectors: &ReferencedVectors,
-        lookup_vector_name: &str,
-        lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
-        CollectionQueryRequest::validation(&self.query, &self.prefetch, self.score_threshold)?;
-
-        let query = self
-            .query
-            .map(|query| {
-                query.try_into_scoring_query(
-                    ids_to_vectors,
-                    lookup_vector_name,
-                    lookup_collection,
-                    self.using,
-                )
-            })
-            .transpose()?;
-
-        let prefetches = self
-            .prefetch
-            .into_iter()
-            .map(|prefetch| {
-                prefetch.try_into_shard_prefetch(
-                    ids_to_vectors,
-                    lookup_vector_name,
-                    lookup_collection,
-                )
-            })
-            .try_collect()?;
-
-        Ok(ShardPrefetch {
-            prefetches,
-            query,
-            filter: self.filter,
-            score_threshold: self.score_threshold,
-            limit: self.limit,
-            params: self.params,
-        })
-    }
-}
-
-impl CollectionQueryRequest {
-    /// Substitutes all the point ids in the request with the actual vectors, as well as editing filters so that ids are not included in the response.
-    pub fn try_into_shard_request(
-        self,
-        ids_to_vectors: &ReferencedVectors,
-    ) -> CollectionResult<ShardQueryRequest> {
-        Self::validation(&self.query, &self.prefetch, self.score_threshold)?;
-
-        // Check we actually fetched all referenced vectors in this request (and nested prefetches)
-        for &point_id in &self.get_referenced_point_ids() {
-            if ids_to_vectors.get(&None, point_id).is_none() {
-                return Err(CollectionError::PointNotFound {
-                    missed_point_id: point_id,
-                });
-            }
-        }
+        CollectionQueryRequest::validation(
+            &self.query,
+            &self.using,
+            &self.prefetch,
+            self.score_threshold,
+        )?;
 
         let lookup_vector_name = self.get_lookup_vector_name();
         let lookup_collection = self.get_lookup_collection().cloned();
         let using = self.using.clone();
-
-        // Edit filter to exclude all referenced point ids (root and nested)
-        let filter = exclude_referenced_ids(self.get_referenced_point_ids(), self.filter);
 
         let query = self
             .query
@@ -363,13 +358,117 @@ impl CollectionQueryRequest {
         let prefetches = self
             .prefetch
             .into_iter()
-            .map(|prefetch| {
-                prefetch.try_into_shard_prefetch(
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
+            .try_collect()?;
+
+        Ok(ShardPrefetch {
+            prefetches,
+            query,
+            filter: self.filter,
+            score_threshold: self.score_threshold,
+            limit: self.limit,
+            params: self.params,
+        })
+    }
+
+    pub fn flatten_resolver_requests(&self) -> Vec<CollectionQueryResolveRequest> {
+        let mut inner_queries = vec![];
+        // resolve query for root query
+        if let Some(Query::Vector(vector_query)) = &self.query {
+            let resolve_root = CollectionQueryResolveRequest {
+                vector_query,
+                lookup_from: self.lookup_from.clone(),
+                using: self.using.clone(),
+            };
+            inner_queries.push(resolve_root);
+        }
+
+        // recurse on prefetches
+        for prefetch in &self.prefetch {
+            for flatten in prefetch.flatten_resolver_requests() {
+                inner_queries.push(flatten);
+            }
+        }
+        inner_queries
+    }
+}
+
+impl CollectionQueryRequest {
+    fn get_lookup_collection(&self) -> Option<&String> {
+        self.lookup_from.as_ref().map(|x| &x.collection)
+    }
+
+    fn get_lookup_vector_name(&self) -> String {
+        self.lookup_from
+            .as_ref()
+            .and_then(|lookup_from| lookup_from.vector.as_ref())
+            .unwrap_or(&self.using)
+            .to_owned()
+    }
+
+    fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
+        let mut refs = Vec::new();
+
+        let mut lookup_other_collection = false;
+        if let Some(lookup_collection) = self.get_lookup_collection() {
+            lookup_other_collection = lookup_collection != collection
+        };
+
+        if !lookup_other_collection {
+            if let Some(Query::Vector(vector_query)) = &self.query {
+                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                    refs.push(*id);
+                }
+                refs.extend(vector_query.get_referenced_ids())
+            };
+        }
+
+        for prefetch in &self.prefetch {
+            refs.extend(prefetch.get_referenced_point_ids_on_collection(collection))
+        }
+
+        refs
+    }
+
+    /// Substitutes all the point ids in the request with the actual vectors, as well as editing filters so that ids are not included in the response.
+    pub fn try_into_shard_request(
+        self,
+        collection_name: &str,
+        ids_to_vectors: &ReferencedVectors,
+    ) -> CollectionResult<ShardQueryRequest> {
+        Self::validation(
+            &self.query,
+            &self.using,
+            &self.prefetch,
+            self.score_threshold,
+        )?;
+
+        let query_lookup_collection = self.get_lookup_collection().cloned();
+        let query_lookup_vector_name = self.get_lookup_vector_name();
+        let using = self.using.clone();
+
+        // Edit filter to exclude all referenced point ids (root and nested) on the searched collection
+        // We do not want to exclude vector ids from different collection via lookup_from.
+        let referenced_point_ids = self.get_referenced_point_ids_on_collection(collection_name);
+
+        let filter = exclude_referenced_ids(referenced_point_ids, self.filter);
+
+        let query = self
+            .query
+            .map(|query| {
+                query.try_into_scoring_query(
                     ids_to_vectors,
-                    &lookup_vector_name,
-                    lookup_collection.as_ref(),
+                    &query_lookup_vector_name,
+                    query_lookup_collection.as_ref(),
+                    using,
                 )
             })
+            .transpose()?;
+
+        let prefetches = self
+            .prefetch
+            .into_iter()
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
             .try_collect()?;
 
         Ok(ShardQueryRequest {
@@ -387,6 +486,7 @@ impl CollectionQueryRequest {
 
     pub fn validation(
         query: &Option<Query>,
+        using: &String,
         prefetch: &[CollectionPrefetch],
         score_threshold: Option<ScoreType>,
     ) -> CollectionResult<()> {
@@ -413,6 +513,16 @@ impl CollectionQueryRequest {
                 _ => {}
             }
         }
+
+        // Check that fusion queries are not combined with a using vector name
+        if let Some(Query::Fusion(_)) = query {
+            if using != DEFAULT_VECTOR_NAME {
+                return Err(CollectionError::bad_request(
+                    "Fusion queries cannot be combined with the 'using' field.",
+                ));
+            }
+        }
+
         Ok(())
     }
 }
@@ -511,7 +621,6 @@ mod from_rest {
 
             let positives = positive.into_iter().flatten().map(From::from).collect();
             let negatives = negative.into_iter().flatten().map(From::from).collect();
-
             let reco_query = RecoQuery::new(positives, negatives);
 
             match strategy.unwrap_or_default() {
