@@ -154,12 +154,15 @@ impl LocalShard {
             .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
-        let mut points =
+        let records_map =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
-        points.sort_by_key(|point| point.id);
+        let ordered_records = point_ids
+            .iter()
+            .filter_map(|point| records_map.get(point).cloned())
+            .collect();
 
-        Ok(points)
+        Ok(ordered_records)
     }
 
     pub async fn scroll_by_field(
@@ -209,8 +212,14 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
 
         // Fetch with the requested vector and payload
-        let records = SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+        let records_map =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
-        Ok((records, values))
+        let ordered_records = point_ids
+            .iter()
+            .filter_map(|point| records_map.get(point).cloned())
+            .collect();
+
+        Ok((ordered_records, values))
     }
 }

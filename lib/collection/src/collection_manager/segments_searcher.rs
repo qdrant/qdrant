@@ -340,7 +340,6 @@ impl SegmentsSearcher {
     /// - if vector is enabled, vector will be fetched
     ///
     /// The points ids can contain duplicates, the records will be fetched only once
-    /// and returned in the same order as the input points.
     ///
     /// If an id is not found in the segments, it won't be included in the output.
     pub fn retrieve(
@@ -348,7 +347,7 @@ impl SegmentsSearcher {
         points: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<HashMap<PointIdType, Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
@@ -396,14 +395,7 @@ impl SegmentsSearcher {
             Ok(true)
         })?;
 
-        // TODO(luis): remove this property of returning the records in the same order as the input, return the hashmap instead
-        // Restore the order the ids came in
-        let ordered_records = points
-            .iter()
-            .filter_map(|point| point_records.get(point).cloned())
-            .collect();
-
-        Ok(ordered_records)
+        Ok(point_records)
     }
 }
 
