@@ -297,13 +297,11 @@ impl CollectionPrefetch {
     }
 
     fn get_lookup_vector_name(&self) -> String {
-        match &self.lookup_from {
-            None => self.using.to_owned(),
-            Some(lookup_from) => match &lookup_from.vector {
-                None => self.using.to_owned(),
-                Some(vector_name) => vector_name.clone(),
-            },
-        }
+        self.lookup_from
+            .as_ref()
+            .and_then(|lookup_from| lookup_from.vector.as_ref())
+            .unwrap_or(&self.using)
+            .to_owned()
     }
 
     pub fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
@@ -401,13 +399,11 @@ impl CollectionQueryRequest {
     }
 
     fn get_lookup_vector_name(&self) -> String {
-        match &self.lookup_from {
-            None => self.using.to_owned(),
-            Some(lookup_from) => match &lookup_from.vector {
-                None => self.using.to_owned(),
-                Some(vector_name) => vector_name.clone(),
-            },
-        }
+        self.lookup_from
+            .as_ref()
+            .and_then(|lookup_from| lookup_from.vector.as_ref())
+            .unwrap_or(&self.using)
+            .to_owned()
     }
 
     fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
@@ -522,7 +518,7 @@ impl CollectionQueryRequest {
         if let Some(Query::Fusion(_)) = query {
             if using != DEFAULT_VECTOR_NAME {
                 return Err(CollectionError::bad_request(
-                    "Fusion queries can only be used with the default vector name.",
+                    "Fusion queries cannot be combined with the 'using' field.",
                 ));
             }
         }

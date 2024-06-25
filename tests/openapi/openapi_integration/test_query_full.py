@@ -90,7 +90,7 @@ def test_query_validation():
         },
     )
     assert not response.ok, response.text
-    assert response.json()["status"]["error"] == "Bad request: Fusion queries can only be used with the default vector name."
+    assert response.json()["status"]["error"] == "Bad request: Fusion queries cannot be combined with the 'using' field."
 
 
 def test_search_by_vector():
