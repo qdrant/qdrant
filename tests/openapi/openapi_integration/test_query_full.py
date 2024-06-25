@@ -74,6 +74,25 @@ def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=
     return root_query_result
 
 
+def test_query_validation():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": {
+                "name": "dense-image",
+                "vector": [0.1, 0.2, 0.3, 0.4],
+            },
+            "using": "dense-image",
+            "query": {"fusion": "rrf"},
+            "limit": 10,
+        },
+    )
+    assert not response.ok, response.text
+    assert response.json()["status"]["error"] == "Bad request: Fusion queries can only be used with the default vector name."
+
+
 def test_search_by_vector():
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
@@ -555,7 +574,6 @@ def test_recommend_lookup():
                     }
                 }
             ],
-            "using": "dense-image",
             "query": {"fusion": "rrf"}
         },
     )
@@ -579,7 +597,6 @@ def test_recommend_lookup():
                     "using": "dense-image",
                 }
             ],
-            "using": "dense-image",
             "query": {"fusion": "rrf"}
         },
     )

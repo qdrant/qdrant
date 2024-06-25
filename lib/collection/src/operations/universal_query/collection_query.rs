@@ -326,7 +326,12 @@ impl CollectionPrefetch {
         parent_lookup_vector_name: &str,
         parent_lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
-        CollectionQueryRequest::validation(&self.query, &self.prefetch, self.score_threshold)?;
+        CollectionQueryRequest::validation(
+            &self.query,
+            &self.using,
+            &self.prefetch,
+            self.score_threshold,
+        )?;
 
         let query = self
             .query
@@ -443,7 +448,12 @@ impl CollectionQueryRequest {
         collection_name: &str,
         ids_to_vectors: &ReferencedVectors,
     ) -> CollectionResult<ShardQueryRequest> {
-        Self::validation(&self.query, &self.prefetch, self.score_threshold)?;
+        Self::validation(
+            &self.query,
+            &self.using,
+            &self.prefetch,
+            self.score_threshold,
+        )?;
 
         let query_lookup_collection = self.get_lookup_collection().cloned();
         let query_lookup_vector_name = self.get_lookup_vector_name();
@@ -507,6 +517,7 @@ impl CollectionQueryRequest {
 
     pub fn validation(
         query: &Option<Query>,
+        using: &String,
         prefetch: &[CollectionPrefetch],
         score_threshold: Option<ScoreType>,
     ) -> CollectionResult<()> {
@@ -533,6 +544,16 @@ impl CollectionQueryRequest {
                 _ => {}
             }
         }
+
+        // Check that fusion queries are not combined with a using vector name
+        if let Some(Query::Fusion(_)) = query {
+            if using != DEFAULT_VECTOR_NAME {
+                return Err(CollectionError::bad_request(
+                    "Fusion queries can only be used with the default vector name.",
+                ));
+            }
+        }
+
         Ok(())
     }
 }
