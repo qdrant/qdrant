@@ -184,7 +184,16 @@ impl ShardOperation for LocalShard {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
-        SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)
+        let records_map =
+            SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)?;
+
+        let ordered_records = request
+            .ids
+            .iter()
+            .filter_map(|point| records_map.get(point).cloned())
+            .collect();
+
+        Ok(ordered_records)
     }
 
     async fn query_batch(

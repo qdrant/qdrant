@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -109,22 +109,19 @@ impl LocalShard {
             .collect();
 
         // Collect retrieved records into a hashmap for fast lookup
-        let records_iter: HashMap<_, _> = SegmentsSearcher::retrieve(
+        let records_map = SegmentsSearcher::retrieve(
             self.segments(),
             &point_ids,
             &(&with_payload).into(),
             &with_vector,
-        )?
-        .into_iter()
-        .map(|record| (record.id, record))
-        .collect();
+        )?;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results
         let query_response: Vec<_> = query_response
             .into_iter()
             .filter_map(|mut point| {
-                records_iter.get(&point.id).map(|record| {
+                records_map.get(&point.id).map(|record| {
                     point.payload.clone_from(&record.payload);
                     point.vector.clone_from(&record.vector);
                     point
