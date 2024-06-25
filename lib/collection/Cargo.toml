@@ -15,7 +15,7 @@ data-consistency-check = []
 
 [dev-dependencies]
 criterion = "0.5"
-proptest = "1.4.0"
+proptest = "1.5.0"
 rstest = "0.21.0"
 approx = "0.5.1"
 collection = { path = ".", features = ["testing"] }
