@@ -96,20 +96,22 @@ fn discovery_into_core_search(
         _ => referenced_ids,
     };
 
-    let filter = {
+    let filter = if reference_vectors_ids_to_exclude.is_empty() {
+        request.filter
+    } else {
         let not_ids = Filter::new_must_not(Condition::HasId(HasIdCondition {
             has_id: reference_vectors_ids_to_exclude.into_iter().collect(),
         }));
 
         match &request.filter {
-            None => not_ids,
-            Some(filter) => not_ids.merge(filter),
+            None => Some(not_ids),
+            Some(filter) => Some(not_ids.merge(filter)),
         }
     };
 
     let core_search = CoreSearchRequest {
         query,
-        filter: Some(filter),
+        filter,
         params: request.params,
         limit: request.limit,
         offset: request.offset.unwrap_or_default(),
