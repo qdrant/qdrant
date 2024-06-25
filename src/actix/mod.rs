@@ -12,11 +12,10 @@ use std::sync::Arc;
 
 use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
-use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
-use actix_web::http::header::{self, HeaderValue};
-use actix_web::middleware::{Compress, Condition, Logger};
+use actix_web::http::header::HeaderValue;
+use actix_web::middleware::{Compress, Condition, DefaultHeaders, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use collection::operations::validation;
@@ -48,34 +47,6 @@ use crate::tracing::LoggerHandle;
 
 const DEFAULT_STATIC_DIR: &str = "./static";
 const WEB_UI_PATH: &str = "/dashboard";
-
-struct WebUISettings {
-    static_folder: String,
-}
-
-impl WebUISettings {
-    pub fn new(static_folder: String) -> Self {
-        Self { static_folder }
-    }
-}
-
-async fn web_ui_index(
-    req: HttpRequest,
-    web_ui_settings: web::Data<WebUISettings>,
-) -> impl Responder {
-    let path = Path::new(&web_ui_settings.static_folder).join("index.html");
-
-    match NamedFile::open_async(path).await {
-        Ok(file) => {
-            let mut res = file.respond_to(&req);
-            res.headers_mut()
-                .insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-
-            res
-        }
-        Err(err) => HttpResponse::from_error(err),
-    }
-}
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -214,20 +185,13 @@ pub fn init(
             if web_ui_available {
                 app = app.service(
                     actix_web::web::scope(WEB_UI_PATH)
-                        .app_data(actix_web::web::Data::new(WebUISettings::new(
-                            static_folder.to_owned(),
-                        )))
-                        .service(
-                            actix_web::web::resource("")
-                                .route(actix_web::web::get().to(web_ui_index)),
+                        // For security reasons, deny embedding the web UI in an iframe
+                        .wrap(
+                            DefaultHeaders::new()
+                                .add(("X-Frame-Options", HeaderValue::from_static("DENY"))),
                         )
                         .service(
-                            actix_web::web::resource("/")
-                                .route(actix_web::web::get().to(web_ui_index)),
-                        )
-                        .service(
-                            actix_files::Files::new("/", &static_folder)
-                                .path_filter(|path, _| Path::new("index.html").ne(path)),
+                            actix_files::Files::new("/", &static_folder).index_file("index.html"),
                         ),
                 )
             }
