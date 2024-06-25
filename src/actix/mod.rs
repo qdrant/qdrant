@@ -14,7 +14,8 @@ use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
-use actix_web::middleware::{Compress, Condition, Logger};
+use actix_web::http::header::HeaderValue;
+use actix_web::middleware::{Compress, Condition, DefaultHeaders, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use collection::operations::validation;
@@ -183,7 +184,15 @@ pub fn init(
 
             if web_ui_available {
                 app = app.service(
-                    actix_files::Files::new(WEB_UI_PATH, &static_folder).index_file("index.html"),
+                    actix_web::web::scope(WEB_UI_PATH)
+                        // For security reasons, deny embedding the web UI in an iframe
+                        .wrap(
+                            DefaultHeaders::new()
+                                .add(("X-Frame-Options", HeaderValue::from_static("DENY"))),
+                        )
+                        .service(
+                            actix_files::Files::new("/", &static_folder).index_file("index.html"),
+                        ),
                 )
             }
             app
