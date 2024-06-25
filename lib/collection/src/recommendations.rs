@@ -149,6 +149,7 @@ where
 }
 
 pub fn recommend_into_core_search(
+    collection_name: &str,
     request: RecommendRequestInternal,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
@@ -172,13 +173,21 @@ pub fn recommend_into_core_search(
         }
     }
 
+    // do not exclude vector ids from different lookup collection
+    let reference_vectors_ids_to_exclude = match lookup_collection_name {
+        Some(lookup_collection_name) if lookup_collection_name != collection_name => vec![],
+        _ => reference_vectors_ids,
+    };
+
     match request.strategy.unwrap_or_default() {
-        RecommendStrategy::AverageVector => {
-            recommend_by_avg_vector(request, reference_vectors_ids, all_vectors_records_map)
-        }
+        RecommendStrategy::AverageVector => recommend_by_avg_vector(
+            request,
+            reference_vectors_ids_to_exclude,
+            all_vectors_records_map,
+        ),
         RecommendStrategy::BestScore => Ok(recommend_by_best_score(
             request,
-            reference_vectors_ids,
+            reference_vectors_ids_to_exclude,
             all_vectors_records_map,
         )),
     }
@@ -256,9 +265,11 @@ where
         request_batch,
         |(_req, shard)| shard,
         |(req, _), acc| {
-            recommend_into_core_search(req, &all_vectors_records_map).map(|core_req| {
-                acc.push(core_req);
-            })
+            recommend_into_core_search(&collection.id, req, &all_vectors_records_map).map(
+                |core_req| {
+                    acc.push(core_req);
+                },
+            )
         },
         |shard_selector, core_searches, requests| {
             if core_searches.is_empty() {
@@ -287,7 +298,7 @@ where
 
 fn recommend_by_avg_vector(
     request: RecommendRequestInternal,
-    reference_vectors_ids: Vec<ExtendedPointId>,
+    reference_vectors_ids_to_exclude: Vec<ExtendedPointId>,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
     let lookup_vector_name = request.get_lookup_vector_name();
@@ -340,8 +351,9 @@ fn recommend_by_avg_vector(
             should: None,
             min_should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
+            // Exclude vector ids from the same collection given as lookup params
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: reference_vectors_ids.iter().cloned().collect(),
+                has_id: reference_vectors_ids_to_exclude.into_iter().collect(),
             })]),
         }),
         with_payload,
@@ -355,7 +367,7 @@ fn recommend_by_avg_vector(
 
 fn recommend_by_best_score(
     request: RecommendRequestInternal,
-    reference_vectors_ids: Vec<PointIdType>,
+    reference_vectors_ids_to_exclude: Vec<PointIdType>,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CoreSearchRequest {
     let lookup_vector_name = request.get_lookup_vector_name();
@@ -405,7 +417,7 @@ fn recommend_by_best_score(
             min_should: None,
             must: filter.map(|filter| vec![Condition::Filter(filter)]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: reference_vectors_ids.into_iter().collect(),
+                has_id: reference_vectors_ids_to_exclude.into_iter().collect(),
             })]),
         }),
         params,
