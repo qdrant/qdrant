@@ -48,8 +48,8 @@ impl CollectionQueryRequest {
 
 /// Lightweight representation of a query request to implement the [RetrieveRequest] trait.
 #[derive(Debug)]
-pub struct CollectionQueryResolveRequest {
-    pub vector_query: VectorQuery<VectorInput>,
+pub struct CollectionQueryResolveRequest<'a> {
+    pub vector_query: &'a VectorQuery<VectorInput>,
     pub lookup_from: Option<LookupLocation>,
     pub using: String,
 }
@@ -376,7 +376,7 @@ impl CollectionPrefetch {
     pub fn flatten_resolver_requests(&self) -> Vec<CollectionQueryResolveRequest> {
         let mut inner_queries = vec![];
         // resolve query for root query
-        if let Some(Query::Vector(vector_query)) = self.query.clone() {
+        if let Some(Query::Vector(vector_query)) = &self.query {
             let resolve_root = CollectionQueryResolveRequest {
                 vector_query,
                 lookup_from: self.lookup_from.clone(),

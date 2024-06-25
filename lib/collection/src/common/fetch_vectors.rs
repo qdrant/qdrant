@@ -376,7 +376,7 @@ pub fn build_vector_resolver_queries(
     let mut resolve_prefetches = vec![];
     for (request, shard_selector) in requests_batch {
         // resolve query for root query
-        if let Some(collection_query::Query::Vector(vector_query)) = request.query.clone() {
+        if let Some(collection_query::Query::Vector(vector_query)) = &request.query {
             let resolve_root = CollectionQueryResolveRequest {
                 vector_query,
                 lookup_from: request.lookup_from.clone(),
