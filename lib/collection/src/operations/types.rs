@@ -499,6 +499,14 @@ pub enum UsingVector {
     Name(String),
 }
 
+impl UsingVector {
+    pub fn as_string(&self) -> String {
+        match self {
+            UsingVector::Name(name) => name.to_string(),
+        }
+    }
+}
+
 impl From<String> for UsingVector {
     fn from(name: String) -> Self {
         UsingVector::Name(name)
