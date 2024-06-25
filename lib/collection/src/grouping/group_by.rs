@@ -92,7 +92,7 @@ impl GroupRequest {
                 )
                 .await?;
 
-                recommend_into_core_search(recommend_req, &referenced_vectors)?
+                recommend_into_core_search(&collection.id, recommend_req, &referenced_vectors)?
             }
         };
 

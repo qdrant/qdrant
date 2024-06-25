@@ -239,3 +239,86 @@ def test_recommend_from_another_collection(on_disk_vectors):
         path_params={'collection_name': collection_name2},
     )
     assert response.ok
+
+
+def test_recommend_lookup():
+    # delete lookup collection if exists
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name2},
+    )
+    assert response.ok, response.text
+
+    # re-create lookup collection
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name2},
+        body={
+            "vectors": {
+                "other": {
+                    "size": 4,
+                    "distance": "Dot",
+                }
+            }
+        }
+    )
+    assert response.ok, response.text
+
+    # insert vectors to lookup collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name2},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {"other": [1.0, 0.0, 0.0, 0.0]},
+                },
+                {
+                    "id": 2,
+                    "vector": {"other": [0.0, 0.0, 0.0, 2.0]},
+                },
+            ]
+        }
+    )
+    assert response.ok, response.text
+
+    # check recommend by id + lookup_from
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1],
+            "negative": [2],
+            "limit": 10,
+            "lookup_from": {
+                "collection": collection_name2,
+                "vector": "other"
+            }
+        },
+    )
+    assert response.ok, response.text
+    recommend_result_by_id = response.json()["result"]
+
+    # check recommend by vector + lookup_from
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [[1.0, 0.0, 0.0, 0.0]],
+            "negative": [[0.0, 0.0, 0.0, 2.0]],
+            "limit": 10,
+        },
+    )
+    assert response.ok, response.text
+    recommend_result_by_vector = response.json()["result"]
+
+    # results should be equivalent
+    assert recommend_result_by_id == recommend_result_by_vector, \
+        f"recommend_result_by_id: {recommend_result_by_id}, recommend_result_by_vector: {recommend_result_by_vector}"
