@@ -296,6 +296,16 @@ impl CollectionPrefetch {
         self.lookup_from.as_ref().map(|x| &x.collection)
     }
 
+    fn get_lookup_vector_name(&self) -> String {
+        match &self.lookup_from {
+            None => self.using.to_owned(),
+            Some(lookup_from) => match &lookup_from.vector {
+                None => self.using.to_owned(),
+                Some(vector_name) => vector_name.clone(),
+            },
+        }
+    }
+
     pub fn get_referenced_point_ids_on_collection(&self, collection: &str) -> Vec<PointIdType> {
         let mut refs = Vec::new();
 
@@ -323,8 +333,6 @@ impl CollectionPrefetch {
     fn try_into_shard_prefetch(
         self,
         ids_to_vectors: &ReferencedVectors,
-        parent_lookup_vector_name: &str,
-        parent_lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
         CollectionQueryRequest::validation(
             &self.query,
@@ -333,14 +341,18 @@ impl CollectionPrefetch {
             self.score_threshold,
         )?;
 
+        let lookup_vector_name = self.get_lookup_vector_name();
+        let lookup_collection = self.get_lookup_collection().cloned();
+        let using = self.using.clone();
+
         let query = self
             .query
             .map(|query| {
                 query.try_into_scoring_query(
                     ids_to_vectors,
-                    parent_lookup_vector_name,
-                    parent_lookup_collection,
-                    self.using,
+                    &lookup_vector_name,
+                    lookup_collection.as_ref(),
+                    using,
                 )
             })
             .transpose()?;
@@ -348,27 +360,7 @@ impl CollectionPrefetch {
         let prefetches = self
             .prefetch
             .into_iter()
-            .map(|prefetch| {
-                let nested_lookup_collection = prefetch
-                    .lookup_from
-                    .as_ref()
-                    .map(|x| &x.collection)
-                    .cloned();
-                let nested_lookup_vector_name = prefetch
-                    .lookup_from
-                    .as_ref()
-                    .and_then(|x| x.vector.as_ref())
-                    .cloned();
-                prefetch.try_into_shard_prefetch(
-                    ids_to_vectors,
-                    nested_lookup_vector_name
-                        .as_ref()
-                        .unwrap_or(&parent_lookup_vector_name.to_owned()),
-                    nested_lookup_collection
-                        .as_ref()
-                        .or(parent_lookup_collection),
-                )
-            })
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
             .try_collect()?;
 
         Ok(ShardPrefetch {
@@ -462,6 +454,7 @@ impl CollectionQueryRequest {
         // Edit filter to exclude all referenced point ids (root and nested) on the searched collection
         // We do not want to exclude vector ids from different collection via lookup_from.
         let referenced_point_ids = self.get_referenced_point_ids_on_collection(collection_name);
+
         let filter = exclude_referenced_ids(referenced_point_ids, self.filter);
 
         let query = self
@@ -479,27 +472,7 @@ impl CollectionQueryRequest {
         let prefetches = self
             .prefetch
             .into_iter()
-            .map(|prefetch| {
-                let prefetch_lookup_collection = &prefetch
-                    .lookup_from
-                    .as_ref()
-                    .map(|x| &x.collection)
-                    .cloned();
-                let prefetch_lookup_vector_name = prefetch
-                    .lookup_from
-                    .as_ref()
-                    .and_then(|x| x.vector.as_ref())
-                    .cloned();
-                prefetch.try_into_shard_prefetch(
-                    ids_to_vectors,
-                    prefetch_lookup_vector_name
-                        .as_ref()
-                        .unwrap_or(&query_lookup_vector_name),
-                    prefetch_lookup_collection
-                        .as_ref()
-                        .or(query_lookup_collection.as_ref()),
-                )
-            })
+            .map(|prefetch| prefetch.try_into_shard_prefetch(ids_to_vectors))
             .try_collect()?;
 
         Ok(ShardQueryRequest {
