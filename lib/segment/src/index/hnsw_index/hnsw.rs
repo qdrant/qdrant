@@ -919,6 +919,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         [
             GraphLayers::<TGraphLinks>::get_path(&self.path),
             GraphLayers::<TGraphLinks>::get_links_path(&self.path),
+            HnswGraphConfig::get_config_path(&self.path),
         ]
         .into_iter()
         .filter(|p| p.exists())
