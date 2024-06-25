@@ -4,7 +4,7 @@ use segment::types::PointIdType;
 
 use crate::operations::types::{DiscoverRequestInternal, RecommendRequestInternal, UsingVector};
 use crate::operations::universal_query::collection_query::{
-    self, CollectionPrefetch, CollectionQueryRequest, VectorInput, VectorQuery,
+    CollectionQueryResolveRequest, VectorInput, VectorQuery,
 };
 
 const EMPTY_SHARD_KEY_SELECTOR: Option<ShardKeySelector> = None;
@@ -105,51 +105,38 @@ impl RetrieveRequest for DiscoverRequestInternal {
     }
 }
 
-impl RetrieveRequest for CollectionQueryRequest {
+impl<'a> RetrieveRequest for CollectionQueryResolveRequest<'a> {
     fn get_lookup_collection(&self) -> Option<&String> {
-        None // TODO(universal-query): Change this when we add lookup_from to CollectionQueryRequest
+        self.lookup_from.as_ref().map(|x| &x.collection)
     }
 
     fn get_referenced_point_ids(&self) -> Vec<PointIdType> {
-        let mut refs = Vec::new();
-
-        if let Some(collection_query::Query::Vector(vector_query)) = &self.query {
-            refs.extend(vector_query.get_referenced_ids())
-        };
-
-        for prefetch in &self.prefetch {
-            refs.extend(prefetch.get_referenced_ids())
-        }
-
-        refs
+        self.vector_query
+            .get_referenced_ids()
+            .iter()
+            .map(|x| **x)
+            .collect()
     }
 
     fn get_lookup_vector_name(&self) -> String {
-        self.using.clone() //TODO(universal-query): Update this when we add lookup_from to CollectionQueryRequest
+        match &self.lookup_from {
+            None => self.using.to_owned(),
+            Some(lookup_from) => match &lookup_from.vector {
+                None => self.using.to_owned(),
+                Some(vector_name) => vector_name.clone(),
+            },
+        }
     }
 
     fn get_lookup_shard_key(&self) -> &Option<ShardKeySelector> {
-        &None // TODO(universal-query): Change this when we add lookup_from to CollectionQueryRequest
+        self.lookup_from
+            .as_ref()
+            .map(|x| &x.shard_key)
+            .unwrap_or(&EMPTY_SHARD_KEY_SELECTOR)
     }
 }
 impl VectorQuery<VectorInput> {
     pub fn get_referenced_ids(&self) -> Vec<&PointIdType> {
         self.flat_iter().filter_map(VectorInput::as_id).collect()
-    }
-}
-
-impl CollectionPrefetch {
-    fn get_referenced_ids(&self) -> Vec<PointIdType> {
-        let mut refs = Vec::new();
-
-        if let Some(collection_query::Query::Vector(vector_query)) = &self.query {
-            refs.extend(vector_query.get_referenced_ids())
-        };
-
-        for prefetch in &self.prefetch {
-            refs.extend(prefetch.get_referenced_ids())
-        }
-
-        refs
     }
 }

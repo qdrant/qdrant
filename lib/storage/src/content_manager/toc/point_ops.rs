@@ -313,7 +313,12 @@ impl TableOfContent {
         let collection = self.get_collection(&collection_pass).await?;
 
         collection
-            .query_batch(requests, read_consistency, timeout)
+            .query_batch(
+                requests,
+                |name| self.get_collection_opt(name),
+                read_consistency,
+                timeout,
+            )
             .await
             .map_err(|err| err.into())
     }
