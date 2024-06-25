@@ -64,6 +64,12 @@ pub enum ShardKeySelector {
     // ToDo: select by pattern
 }
 
+fn vector_example() -> Option<VectorStruct> {
+    Some(VectorStruct::Single(vec![
+        0.875, 0.140625, -0.15625, 0.96875,
+    ]))
+}
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
@@ -78,6 +84,7 @@ pub struct ScoredPoint {
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "vector_example")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
