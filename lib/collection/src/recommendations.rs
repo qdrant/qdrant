@@ -5,8 +5,8 @@ use std::time::Duration;
 use api::rest::RecommendStrategy;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector, Vector, VectorElementType,
+    VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -33,8 +33,10 @@ use crate::operations::types::{
 fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
+    let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
     let mut dense_count = 0;
     let mut sparse_count = 0;
+    let mut multi_count = 0;
     for vector in vectors {
         match vector {
             VectorRef::Dense(vector) => {
@@ -51,36 +53,48 @@ fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> Collecti
                 sparse_count += 1;
                 avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
             }
-            VectorRef::MultiDense(_) => {
-                // TODO(colbert)
-                return Err(CollectionError::bad_input(
-                    "MultiDenseVector is not supported".to_owned(),
+            VectorRef::MultiDense(vector) => {
+                multi_count += 1;
+                avg_multi = Some(avg_multi.map_or_else(
+                    || vector.to_owned(),
+                    |mut avg_multi| {
+                        avg_multi
+                            .flattened_vectors
+                            .extend_from_slice(vector.flattened_vectors);
+                        avg_multi
+                    },
                 ));
             }
         }
     }
 
-    match (dense_count, sparse_count) {
+    match (dense_count, sparse_count, multi_count) {
         // TODO(sparse): what if vectors iterator is empty? We added CollectionError::BadRequest,
         // but it's not clear if it's the best solution.
         // Currently it's hard to return an zeroed vector, because we don't know its type: dense or sparse.
-        (0, 0) => Err(CollectionError::bad_input(
+        (0, 0, 0) => Err(CollectionError::bad_input(
             "Positive vectors should not be empty with `average` strategy".to_owned(),
         )),
-        (_, 0) => {
+        (_, 0, 0) => {
             for item in &mut avg_dense {
                 *item /= dense_count as VectorElementType;
             }
-            Ok(avg_dense.into())
+            Ok(Vector::from(avg_dense))
         }
-        (0, _) => {
+        (0, _, 0) => {
             for item in &mut avg_sparse.values {
                 *item /= sparse_count as VectorElementType;
             }
-            Ok(avg_sparse.into())
+            Ok(Vector::from(avg_sparse))
         }
-        (_, _) => Err(CollectionError::bad_input(
-            "Can't average dense and sparse vectors together".to_owned(),
+        (0, 0, _) => match avg_multi {
+            Some(avg_multi) => Ok(Vector::from(avg_multi)),
+            None => Err(CollectionError::bad_input(
+                "Positive vectors should not be empty with `average` strategy".to_owned(),
+            )),
+        },
+        (_, _, _) => Err(CollectionError::bad_input(
+            "Can't average vectors with different types".to_owned(),
         )),
     }
 }
@@ -98,8 +112,13 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
         (Vector::Sparse(positive), Vector::Sparse(negative)) => Ok(positive
             .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
             .into()),
+        (Vector::MultiDense(mut positive), Vector::MultiDense(negative)) => {
+            // merge positive and negative vectors as concatenated vectors with negative vectors negated
+            positive.flattened_vectors.extend(negative.flattened_vectors.into_iter().map(|x| -x));
+            Ok(Vector::MultiDense(positive))
+        },
         _ => Err(CollectionError::bad_input(
-            "Positive and negative vectors should be of the same type, either all dense or all sparse".to_owned(),
+            "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi".to_owned(),
         )),
     }
 }
