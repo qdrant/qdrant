@@ -7,6 +7,7 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
 collection_name = "test_discovery"
+colection_name_lookup = "test_discovery_lookup"
 
 
 def random_vector(dim=4):
@@ -299,3 +300,95 @@ def test_null_offset():
         },
     )
     assert response.ok, response.json()
+
+
+def test_discovery_lookup():
+    # delete lookup collection if exists
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': colection_name_lookup},
+    )
+    assert response.ok, response.text
+
+    # re-create lookup collection
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': colection_name_lookup},
+        body={
+            "vectors": {
+                "other": {
+                    "size": 4,
+                    "distance": "Dot",
+                }
+            }
+        }
+    )
+    assert response.ok, response.text
+
+    # insert vectors to lookup collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': colection_name_lookup},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {"other": [1.0, 0.0, 0.0, 0.0]},
+                },
+                {
+                    "id": 2,
+                    "vector": {"other": [0.0, 0.0, 0.0, 2.0]},
+                },
+            ]
+        }
+    )
+    assert response.ok, response.text
+
+    # check discover by id + lookup_from
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "target": [0.2, 0.1, 0.9, 0.7],
+            "context": [
+                {
+                    "positive": 1,
+                    "negative": 2
+                },
+            ],
+            "limit": 10,
+            "lookup_from": {
+                "collection": colection_name_lookup,
+                "vector": "other"
+            }
+        },
+    )
+    assert response.ok, response.text
+    discovery_result_by_id = response.json()["result"]
+
+    # check discover by vector + lookup_from
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "target": [0.2, 0.1, 0.9, 0.7],
+            "context": [
+                {
+                    "positive": [1.0, 0.0, 0.0, 0.0],
+                    "negative": [0.0, 0.0, 0.0, 2.0]
+                },
+            ],
+            "limit": 10,
+        },
+    )
+    assert response.ok, response.text
+    discovery_result_by_vector = response.json()["result"]
+
+    # check if results are the same
+    assert discovery_result_by_id == discovery_result_by_vector, f"discovery_result_by_id: {discovery_result_by_id}, discovery_result_by_vector: {discovery_result_by_vector}"
