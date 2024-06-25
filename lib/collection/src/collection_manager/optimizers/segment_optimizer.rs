@@ -117,6 +117,7 @@ pub trait SegmentOptimizer {
         //     image_vectors: 10100 * dim * VECTOR_ELEMENT_SIZE
         // }
         let mut bytes_count_by_vector_name = HashMap::new();
+        let mut total_required_space: u64 = 0;
 
         for segment in optimizing_segments {
             let segment = match segment {
@@ -129,11 +130,37 @@ pub trait SegmentOptimizer {
             };
             let locked_segment = segment.read();
 
+            match fs4::total_space(locked_segment.data_path()) {
+                Ok(size) => total_required_space += size,
+                Err(error) => log::error!(
+                    "Failed to fetch available space for path: {} due to: {}",
+                    self.temp_path().display(),
+                    error.to_string(),
+                ),
+            }
+
             for vector_name in locked_segment.vector_names() {
                 let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
                 let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
                 *size += vector_size;
             }
+        }
+
+        let mut available_space: u64 = 0;
+
+        match fs4::available_space(self.temp_path()) {
+            Ok(size) => available_space = size,
+            Err(error) => log::error!(
+                "Failed to fetch available space for path: {} due to: {}",
+                self.temp_path().display(),
+                error.to_string(),
+            ),
+        }
+
+        if available_space < total_required_space {
+            return Err(CollectionError::service_error(
+                "Not enough disk space for optimization".to_string(),
+            ));
         }
 
         // Example: maximal_vector_store_size_bytes = 10200 * dim * VECTOR_ELEMENT_SIZE
