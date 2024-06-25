@@ -320,5 +320,5 @@ def test_recommend_lookup():
     recommend_result_by_vector = response.json()["result"]
 
     # results should be equivalent
-    assert recommend_result_by_id == recommend_result_by_vector,\
+    assert recommend_result_by_id == recommend_result_by_vector, \
         f"recommend_result_by_id: {recommend_result_by_id}, recommend_result_by_vector: {recommend_result_by_vector}"
