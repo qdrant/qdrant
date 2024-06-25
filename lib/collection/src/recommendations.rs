@@ -87,7 +87,12 @@ fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> Collecti
             }
             Ok(Vector::from(avg_sparse))
         }
-        (0, 0, _) => Ok(Vector::from(avg_multi.unwrap())),
+        (0, 0, _) => match avg_multi {
+            Some(avg_multi) => Ok(Vector::from(avg_multi)),
+            None => Err(CollectionError::bad_input(
+                "Positive vectors should not be empty with `average` strategy".to_owned(),
+            )),
+        },
         (_, _, _) => Err(CollectionError::bad_input(
             "Can't average vectors with different types".to_owned(),
         )),
