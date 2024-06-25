@@ -54,7 +54,7 @@ pub struct CollectionQueryResolveRequest<'a> {
     pub using: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Query {
     /// Score points against some vector(s)
     Vector(VectorQuery<VectorInput>),
@@ -90,7 +90,7 @@ impl Query {
         Ok(scoring_query)
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum VectorInput {
     Id(PointIdType),
     Vector(Vector),
@@ -105,7 +105,7 @@ impl VectorInput {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum VectorQuery<T> {
     Nearest(T),
     RecommendAverageVector(RecoQuery<T>),

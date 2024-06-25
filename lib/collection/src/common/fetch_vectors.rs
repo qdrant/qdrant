@@ -154,7 +154,6 @@ impl ReferencedVectors {
         match vector_input {
             VectorInput::Vector(vector) => Some(vector),
             VectorInput::Id(vid) => {
-                // TODO(universal-search) we should properly error out if the collection does not exist
                 let rec = self.get(&collection_name, vid)?;
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }

@@ -73,7 +73,7 @@ def test_query_validation():
     assert response.json()["status"]["error"] == ("Bad request: Can't use score_threshold with an order_by query.")
 
 
-# raw query to bypass local validation
+    # raw query to bypass local validation
     response = requests.post(f"http://{QDRANT_HOST}/collections/{collection_name}/points/query",
         json={
             "query": {
