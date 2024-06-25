@@ -39,7 +39,7 @@ ordered-float = "4.2"
 hashring = "0.3.5"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 bitvec = "1.0.1"
-lazy_static = "1.4.0"
+lazy_static = "1.5.0"
 smallvec = "1.13.2"
 
 tokio = { workspace = true }
