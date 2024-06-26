@@ -114,12 +114,16 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn finish_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.check_resharding(
             &resharding_key,
             check_stage(ReshardStage::WriteHashRingCommitted),
         )?;
 
+        Ok(())
+    }
+
+    pub fn finish_resharding_unchecked(&mut self, _: ReshardKey) -> CollectionResult<()> {
         self.resharding_state.write(|state| {
             debug_assert!(state.is_some(), "resharding is not in progress");
             *state = None;

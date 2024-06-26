@@ -102,10 +102,10 @@ impl Collection {
     }
 
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.shards_holder
-            .write()
-            .await
-            .finish_resharding(resharding_key)
+        let mut shard_holder = self.shards_holder.write().await;
+        shard_holder.check_finish_resharding(&resharding_key)?;
+        shard_holder.finish_resharding_unchecked(resharding_key)?;
+        Ok(())
     }
 
     pub async fn abort_resharding(&self, reshard_key: ReshardKey) -> CollectionResult<()> {
