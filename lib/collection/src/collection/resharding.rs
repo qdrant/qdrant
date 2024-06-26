@@ -103,16 +103,34 @@ impl Collection {
 
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
+
         shard_holder.check_finish_resharding(&resharding_key)?;
+        let _ = self.stop_resharding_task(&resharding_key).await;
         shard_holder.finish_resharding_unchecked(resharding_key)?;
+
         Ok(())
     }
 
     pub async fn abort_resharding(&self, reshard_key: ReshardKey) -> CollectionResult<()> {
+        let _ = self.stop_resharding_task(&reshard_key).await;
+
         self.shards_holder
             .write()
             .await
             .abort_resharding(reshard_key)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn stop_resharding_task(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> Option<resharding::tasks_pool::TaskResult> {
+        self.reshard_tasks
+            .lock()
+            .await
+            .stop_task(&resharding_key)
             .await
     }
 }
