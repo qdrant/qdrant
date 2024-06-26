@@ -23,7 +23,7 @@ impl Collection {
 
     pub async fn start_resharding<T, F>(
         &self,
-        reshard_key: ReshardKey,
+        resharding_key: ReshardKey,
         consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
@@ -35,23 +35,23 @@ impl Collection {
     {
         let mut shard_holder = self.shards_holder.write().await;
 
-        shard_holder.check_start_resharding(&reshard_key)?;
+        shard_holder.check_start_resharding(&resharding_key)?;
 
         let replica_set = self
             .create_replica_set(
-                reshard_key.shard_id,
-                &[reshard_key.peer_id],
+                resharding_key.shard_id,
+                &[resharding_key.peer_id],
                 Some(ReplicaState::Resharding),
             )
             .await?;
 
-        shard_holder.start_resharding_unchecked(reshard_key.clone(), replica_set)?;
+        shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
 
         // If this peer is responsible for driving the resharding, start the task for it
-        if reshard_key.peer_id == self.this_peer_id {
+        if resharding_key.peer_id == self.this_peer_id {
             // Stop any already active resharding task to allow starting a new one
             let mut active_reshard_tasks = self.reshard_tasks.lock().await;
-            let task_result = active_reshard_tasks.stop_task(&reshard_key).await;
+            let task_result = active_reshard_tasks.stop_task(&resharding_key).await;
             debug_assert!(task_result.is_none(), "Reshard task already exists");
 
             let shard_holder = self.shards_holder.clone();
@@ -62,7 +62,7 @@ impl Collection {
             let spawned_task = resharding::spawn_resharding_task(
                 shard_holder,
                 progress.clone(),
-                reshard_key.clone(),
+                resharding_key.clone(),
                 consensus,
                 collection_id,
                 self.path.clone(),
@@ -75,7 +75,7 @@ impl Collection {
             );
 
             active_reshard_tasks.add_task(
-                reshard_key,
+                resharding_key,
                 ReshardTaskItem {
                     task: spawned_task,
                     started_at: chrono::Utc::now(),
@@ -102,17 +102,35 @@ impl Collection {
     }
 
     pub async fn finish_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.shards_holder
-            .write()
-            .await
-            .finish_resharding(resharding_key)
+        let mut shard_holder = self.shards_holder.write().await;
+
+        shard_holder.check_finish_resharding(&resharding_key)?;
+        let _ = self.stop_resharding_task(&resharding_key).await;
+        shard_holder.finish_resharding_unchecked(resharding_key)?;
+
+        Ok(())
     }
 
-    pub async fn abort_resharding(&self, reshard_key: ReshardKey) -> CollectionResult<()> {
+    pub async fn abort_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        let _ = self.stop_resharding_task(&resharding_key).await;
+
         self.shards_holder
             .write()
             .await
-            .abort_resharding(reshard_key)
+            .abort_resharding(resharding_key)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn stop_resharding_task(
+        &self,
+        resharding_key: &ReshardKey,
+    ) -> Option<resharding::tasks_pool::TaskResult> {
+        self.reshard_tasks
+            .lock()
+            .await
+            .stop_task(resharding_key)
             .await
     }
 }
