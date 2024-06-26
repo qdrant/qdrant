@@ -1924,13 +1924,23 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
     type Error = Status;
 
     fn try_from(value: SearchPoints) -> Result<Self, Self::Error> {
+        let named_struct = crate::grpc::conversions::into_named_vector_struct(
+            value.vector_name,
+            value.vector,
+            value.sparse_indices,
+        )?;
+        let vector = match named_struct {
+            segment_vectors::NamedVectorStruct::Default(v) => rest::NamedVectorStruct::Default(v),
+            segment_vectors::NamedVectorStruct::Dense(v) => rest::NamedVectorStruct::Dense(v),
+            segment_vectors::NamedVectorStruct::Sparse(v) => rest::NamedVectorStruct::Sparse(v),
+            segment_vectors::NamedVectorStruct::MultiDense(_) => {
+                return Err(Status::invalid_argument(
+                    "MultiDense vector is not supported in search request",
+                ))
+            }
+        };
         Ok(Self {
-            vector: crate::grpc::conversions::into_named_vector_struct(
-                value.vector_name,
-                value.vector,
-                value.sparse_indices,
-            )?
-            .into(),
+            vector,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,

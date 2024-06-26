@@ -431,7 +431,7 @@ pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-/// TODO(colbert) try to remove this enum and use NamedVectors instead
+/// Multivector is not supported here because this structure is the part of a legacy search API
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorStructInternal {
     Single(DenseVector),

@@ -198,26 +198,6 @@ impl From<NamedVectorStruct> for segment::data_types::vectors::NamedVectorStruct
     }
 }
 
-impl From<segment::data_types::vectors::NamedVectorStruct> for NamedVectorStruct {
-    fn from(value: segment::data_types::vectors::NamedVectorStruct) -> Self {
-        match value {
-            segment::data_types::vectors::NamedVectorStruct::Default(vector) => {
-                NamedVectorStruct::Default(vector)
-            }
-            segment::data_types::vectors::NamedVectorStruct::Dense(vector) => {
-                NamedVectorStruct::Dense(vector)
-            }
-            segment::data_types::vectors::NamedVectorStruct::Sparse(vector) => {
-                NamedVectorStruct::Sparse(vector)
-            }
-            segment::data_types::vectors::NamedVectorStruct::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!("MultiDense is not available in the API yet")
-            }
-        }
-    }
-}
-
 impl From<DenseVector> for NamedVectorStruct {
     fn from(v: DenseVector) -> Self {
         NamedVectorStruct::Default(v)
