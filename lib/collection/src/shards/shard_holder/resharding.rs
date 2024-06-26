@@ -80,7 +80,59 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_resharding(
+    pub fn commit_read_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(&resharding_key, check_stage(ReshardStage::MigratingPoints))?;
+
+        self.resharding_state.write(|state| {
+            let Some(state) = state else {
+                unreachable!();
+            };
+
+            state.stage = ReshardStage::ReadHashRingCommitted;
+        })?;
+
+        Ok(())
+    }
+
+    pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(
+            &resharding_key,
+            check_stage(ReshardStage::ReadHashRingCommitted),
+        )?;
+
+        let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
+        ring.commit_resharding();
+
+        self.resharding_state.write(|state| {
+            let Some(state) = state else {
+                unreachable!();
+            };
+
+            state.stage = ReshardStage::WriteHashRingCommitted;
+        })?;
+
+        Ok(())
+    }
+
+    pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(
+            resharding_key,
+            check_stage(ReshardStage::WriteHashRingCommitted),
+        )?;
+
+        Ok(())
+    }
+
+    pub fn finish_resharding_unchecked(&mut self, _: ReshardKey) -> CollectionResult<()> {
+        self.resharding_state.write(|state| {
+            debug_assert!(state.is_some(), "resharding is not in progress");
+            *state = None;
+        })?;
+
+        Ok(())
+    }
+
+    fn check_resharding(
         &mut self,
         resharding_key: &ReshardKey,
         check_state: impl Fn(&ReshardState) -> CollectionResult<()>,
@@ -120,54 +172,6 @@ impl ShardHolder {
         );
 
         // TODO(resharding): Assert that peer exists!?
-
-        Ok(())
-    }
-
-    pub fn commit_read_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(&resharding_key, check_stage(ReshardStage::MigratingPoints))?;
-
-        self.resharding_state.write(|state| {
-            let Some(state) = state else {
-                unreachable!();
-            };
-
-            state.stage = ReshardStage::ReadHashRingCommitted;
-        })?;
-
-        Ok(())
-    }
-
-    pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(
-            &resharding_key,
-            check_stage(ReshardStage::ReadHashRingCommitted),
-        )?;
-
-        let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
-        ring.commit_resharding();
-
-        self.resharding_state.write(|state| {
-            let Some(state) = state else {
-                unreachable!();
-            };
-
-            state.stage = ReshardStage::WriteHashRingCommitted;
-        })?;
-
-        Ok(())
-    }
-
-    pub fn finish_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(
-            &resharding_key,
-            check_stage(ReshardStage::WriteHashRingCommitted),
-        )?;
-
-        self.resharding_state.write(|state| {
-            debug_assert!(state.is_some(), "resharding is not in progress");
-            *state = None;
-        })?;
 
         Ok(())
     }
