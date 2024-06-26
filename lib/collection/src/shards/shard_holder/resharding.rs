@@ -116,7 +116,7 @@ impl ShardHolder {
 
     pub fn check_finish_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.check_resharding(
-            &resharding_key,
+            resharding_key,
             check_stage(ReshardStage::WriteHashRingCommitted),
         )?;
 
