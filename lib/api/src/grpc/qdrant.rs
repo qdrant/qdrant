@@ -3802,9 +3802,6 @@ pub mod vector_input {
         MultiDense(super::MultiDenseVector),
     }
 }
-/// ---------------------------------------------
-/// ----------------- ShardKeySelector ----------
-/// ---------------------------------------------
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5824,7 +5821,7 @@ impl Direction {
         }
     }
 }
-/// How to use positive and negative vectors to find the results, default is `AverageVector`:
+/// How to use positive and negative vectors to find the results, default is `AverageVector`.
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

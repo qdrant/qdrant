@@ -79,6 +79,7 @@ message VectorInput {
 // ---------------------------------------------
 // ----------------- ShardKeySelector ----------
 // ---------------------------------------------
+
 message ShardKeySelector {
   repeated ShardKey shard_keys = 1; // List of shard keys which should be used in the request
 }
@@ -360,7 +361,7 @@ message ScrollPoints {
   optional OrderBy order_by = 10; // Order the records by a payload field
 }
 
-// How to use positive and negative vectors to find the results, default is `AverageVector`:
+// How to use positive and negative vectors to find the results, default is `AverageVector`.
 enum RecommendStrategy {
   // Average positive and negative vectors and create a single query with the formula 
   // `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
