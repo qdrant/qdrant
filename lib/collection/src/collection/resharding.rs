@@ -130,7 +130,7 @@ impl Collection {
         self.reshard_tasks
             .lock()
             .await
-            .stop_task(&resharding_key)
+            .stop_task(resharding_key)
             .await
     }
 }
