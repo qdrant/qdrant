@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use segment::data_types::vectors::{
-    NamedSparseVector, NamedVectorStruct, Vector, VectorStructInternal,
-};
+use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
+use segment::data_types::vectors::{Vector, VectorStructInternal};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
@@ -17,6 +16,13 @@ fn wrong_sparse_vector() -> SparseVector {
         indices: vec![1, 2],
         values: vec![0.0, 1.0, 2.0],
     }
+}
+
+fn wrong_named_vector_struct() -> api::rest::NamedVectorStruct {
+    api::rest::NamedVectorStruct::Sparse(segment::data_types::vectors::NamedSparseVector {
+        name: "sparse".to_owned(),
+        vector: wrong_sparse_vector(),
+    })
 }
 
 fn wrong_point_struct() -> PointStruct {
@@ -66,6 +72,38 @@ fn validate_error_sparse_vector_points_list() {
     check_validation_error(PointsList {
         points: vec![wrong_point_struct()],
         shard_key: None,
+    });
+}
+
+#[test]
+fn validate_error_sparse_vector_search_request_internal() {
+    check_validation_error(SearchRequestInternal {
+        vector: wrong_named_vector_struct(),
+        filter: None,
+        params: None,
+        limit: 5,
+        offset: None,
+        with_payload: None,
+        with_vector: None,
+        score_threshold: None,
+    });
+}
+
+#[test]
+fn validate_error_sparse_vector_search_groups_request_internal() {
+    check_validation_error(SearchGroupsRequestInternal {
+        vector: wrong_named_vector_struct(),
+        filter: None,
+        params: None,
+        with_payload: None,
+        with_vector: None,
+        score_threshold: None,
+        group_request: BaseGroupRequest {
+            group_by: "sparse".parse().unwrap(),
+            group_size: 5,
+            limit: 5,
+            with_lookup: None,
+        },
     });
 }
 
