@@ -3669,9 +3669,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 <a name="qdrant-ShardKeySelector"></a>
 
 ### ShardKeySelector
----------------------------------------------
------------------ ShardKeySelector ----------
----------------------------------------------
+
 
 
 | Field | Type | Label | Description |
@@ -4058,7 +4056,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 <a name="qdrant-RecommendStrategy"></a>
 
 ### RecommendStrategy
-How to use positive and negative vectors to find the results, default is `AverageVector`:
+How to use positive and negative vectors to find the results, default is `AverageVector`.
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
