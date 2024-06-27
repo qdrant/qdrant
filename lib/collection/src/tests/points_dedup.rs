@@ -192,10 +192,14 @@ async fn test_scroll_dedup() {
     assert!(!result.points.is_empty(), "expected some points");
 
     let mut seen = HashSet::new();
-    for point_id in result.points.iter().map(|point| point.id) {
+    for value_and_id in result
+        .points
+        .iter()
+        .map(|point| (point.order_value, point.id))
+    {
         assert!(
-            seen.insert(point_id),
-            "got point id {point_id} more than once, they should be deduplicated",
+            seen.insert(value_and_id),
+            "got point id {value_and_id:?} more than once, they should be deduplicated",
         );
     }
 }
