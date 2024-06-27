@@ -53,6 +53,7 @@ pub fn do_recover_from_snapshot(
     collection_name: &str,
     source: SnapshotRecover,
     access: Access,
+    only_snapshot_dir: bool,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     let multipass = access.check_global_access(AccessRequirements::new().manage())?;
@@ -60,7 +61,15 @@ pub fn do_recover_from_snapshot(
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
     Ok(tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
+        _do_recover_from_snapshot(
+            dispatcher,
+            access,
+            collection_pass,
+            source,
+            only_snapshot_dir,
+            &client,
+        )
+        .await
     }))
 }
 
@@ -69,6 +78,7 @@ async fn _do_recover_from_snapshot(
     access: Access,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
+    only_snapshot_dir: bool,
     client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover {
@@ -91,7 +101,7 @@ async fn _do_recover_from_snapshot(
     );
 
     let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path()).await?;
+        download_snapshot(client, location, download_dir.path(), only_snapshot_dir).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;

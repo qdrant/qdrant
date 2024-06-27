@@ -58,15 +58,26 @@ async fn download_file(
     Ok(temp_path)
 }
 
-/// Download a snapshot from the given URI.
+/// Download a snapshot file an URI, return a file path to it
+///
+/// For remote resources such as an URL, this downloads the given file and puts it in
+/// `snapshots_dir`. A path to the downloaded file is returned.
+///
+/// For `file://` URIs a direct path is returned.
 ///
 /// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
 /// downloaded file is deleted automatically. To keep the file `keep()` may be used.
+///
+/// # Security
+///
+/// A `file://` URI may point to arbitrary files on the file system, which could be a security
+/// concern. Set `strict_file` to `true` to enforce a local file to be inside `snapshots_dir`.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
     snapshots_dir: &Path,
+    only_snapshot_dir: bool,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
         "file" => {
@@ -81,18 +92,19 @@ pub async fn download_snapshot(
                 )));
             }
 
-            // Try to canonicalize paths so we can more reliably compare with required prefix
-            let snapshots_dir = snapshots_dir
-                .canonicalize()
-                .unwrap_or_else(|_| snapshots_dir.to_path_buf());
             let local_path = local_path.canonicalize().unwrap_or(local_path);
 
             // Prevent using arbitrary files from our file system, enforce the file to be in the
             // snapshots directory
-            if !local_path.starts_with(snapshots_dir) {
-                return Err(StorageError::forbidden(format!(
-                    "Snapshot file {local_path:?} must be inside snapshots directory",
-                )));
+            if only_snapshot_dir {
+                let snapshots_dir = snapshots_dir
+                    .canonicalize()
+                    .unwrap_or_else(|_| snapshots_dir.to_path_buf());
+                if !local_path.starts_with(snapshots_dir) {
+                    return Err(StorageError::forbidden(format!(
+                        "Snapshot file {local_path:?} must be inside snapshots directory",
+                    )));
+                }
             }
 
             Ok((local_path, None))

@@ -211,6 +211,8 @@ async fn upload_snapshot(
             &collection.name,
             snapshot_recover,
             access,
+            // No need to limit to snapshot directory, only uploaded file is used
+            false,
             http_client,
         )
     })
@@ -234,6 +236,8 @@ async fn recover_from_snapshot(
             &collection.name,
             snapshot_recover,
             access,
+            // Limit files to snapshot directory to prevent users from recoverying arbitrary files with file://
+            true,
             http_client,
         )
     })
