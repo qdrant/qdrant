@@ -10,6 +10,9 @@ use uuid::Uuid;
 
 use crate::StorageError;
 
+/// Special file:// URI prefix for relative paths
+const URI_FILE_RELATIVE_PREFIX: &str = "file://./";
+
 fn random_name() -> String {
     format!("{}.snapshot", Uuid::new_v4())
 }
@@ -81,11 +84,7 @@ pub async fn download_snapshot(
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
         "file" => {
-            let local_path = url.to_file_path().map_err(|_| {
-                StorageError::bad_request(
-                    "Invalid snapshot URI, file path must be absolute or on localhost",
-                )
-            })?;
+            let local_path = resolve_uri_file_path(&url, snapshots_dir)?;
             if !local_path.exists() {
                 // Report user provided URL here to prevent leaking the local path
                 return Err(StorageError::bad_request(format!(
@@ -128,4 +127,33 @@ pub async fn download_snapshot(
             url.scheme()
         ))),
     }
+}
+
+/// Resolve a file:// URI to a local path
+///
+/// This supports both absolute and relative paths. If the path is relative, it is resolved within
+/// the given `workdir`.
+///
+/// # Security
+///
+/// This may point to arbitrary files. The resolved file may not exist.
+pub fn resolve_uri_file_path(url: &Url, workdir: &Path) -> Result<PathBuf, StorageError> {
+    // Must be a file URI
+    if url.scheme() != "file" {
+        return Err(StorageError::service_error(
+            "provided URI is not a file:// URI",
+        ));
+    }
+
+    // Parse relative path with specific prefix, normally not supported
+    if let Some(relative_path) = url.to_string().strip_prefix(URI_FILE_RELATIVE_PREFIX) {
+        let workdir = workdir
+            .canonicalize()
+            .unwrap_or_else(|_| workdir.to_path_buf());
+        return Ok(workdir.join(relative_path));
+    }
+
+    // Parse absolute path
+    url.to_file_path()
+        .map_err(|_| StorageError::bad_request("Malformed file URI"))
 }

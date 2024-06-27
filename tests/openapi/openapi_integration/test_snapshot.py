@@ -340,7 +340,7 @@ def test_snapshot_invalid_file_uri():
         }
     )
     assert response.status_code == 400
-    assert response.json()["status"]["error"] == "Bad request: Invalid snapshot URI, file path must be absolute or on localhost"
+    assert response.json()["status"]["error"] == "Bad request: Malformed file URI"
 
     # Absolute path that does not exist
     response = request_with_validation(

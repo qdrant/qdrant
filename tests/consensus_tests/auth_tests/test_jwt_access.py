@@ -1262,7 +1262,7 @@ def test_recover_collection_snapshot(collection_snapshot: bytes):
 
     check_access(
         "recover_collection_snapshot",
-        rest_request={"location": f"file://{file}"},
+        rest_request={"location": f"file://./{file}"},
         path_params={"collection_name": COLL_NAME},
     )
 
