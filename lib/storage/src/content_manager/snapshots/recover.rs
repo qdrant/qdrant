@@ -62,10 +62,12 @@ pub fn do_recover_from_snapshot(
 
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
+    let collection_name = collection_name.to_string();
     Ok(tokio::spawn(async move {
         _do_recover_from_snapshot(
             dispatcher,
             access,
+            &collection_name,
             collection_pass,
             source,
             only_snapshot_dir,
@@ -78,6 +80,7 @@ pub fn do_recover_from_snapshot(
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     access: Access,
+    collection_name: &str,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     only_snapshot_dir: bool,
@@ -95,9 +98,10 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshots_path = Path::new(toc.snapshots_path());
+    let snapshots_path =
+        TableOfContent::collection_snapshots_path(Path::new(toc.snapshots_path()), collection_name);
     let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, snapshots_path, only_snapshot_dir).await?;
+        download_snapshot(client, location, &snapshots_path, only_snapshot_dir).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;
