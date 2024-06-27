@@ -16,8 +16,7 @@ use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    BatchVectorStructInternal, Named, NamedQuery, NamedVectorStruct, Vector, VectorStructInternal,
-    DEFAULT_VECTOR_NAME,
+    BatchVectorStructInternal, NamedQuery, Vector, VectorStructInternal,
 };
 use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
@@ -58,7 +57,7 @@ use crate::operations::types::{
     ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
-use crate::shards::remote_shard::{CollectionCoreSearchRequest, CollectionSearchRequest};
+use crate::shards::remote_shard::CollectionCoreSearchRequest;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -1049,47 +1048,6 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
     }
 }
 
-// Use wrapper type to bundle CollectionId & SearchRequest
-impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
-    fn from(value: CollectionSearchRequest<'a>) -> Self {
-        let (collection_id, request) = value.0;
-        let named_vector = NamedVectorStruct::from(request.clone().vector);
-        let vector_name = match named_vector.get_name() {
-            DEFAULT_VECTOR_NAME => None,
-            vector_name => Some(vector_name.to_string()),
-        };
-        let (vector, sparse_indices) = match named_vector.to_vector() {
-            Vector::Dense(vector) => (vector, None),
-            Vector::Sparse(vector) => (
-                vector.values,
-                Some(api::grpc::qdrant::SparseIndices {
-                    data: vector.indices,
-                }),
-            ),
-            Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
-            }
-        };
-        Self {
-            collection_name: collection_id,
-            vector,
-            filter: request.filter.clone().map(|f| f.into()),
-            limit: request.limit as u64,
-            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
-            with_payload: request.with_payload.clone().map(|wp| wp.into()),
-            params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
-            offset: request.offset.map(|x| x as u64),
-            vector_name,
-            read_consistency: None,
-            timeout: None,
-            shard_key_selector: None,
-            sparse_indices,
-        }
-    }
-}
-
 impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
     fn from(value: QueryEnum) -> Self {
         match value {
@@ -1373,14 +1331,13 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
 
     fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
         let vector: Vector = value.try_into()?;
-        Ok(match vector {
-            Vector::Dense(vector) => Self::Dense(vector),
-            Vector::Sparse(vector) => Self::Sparse(vector),
-            Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
-            }
-        })
+        match vector {
+            Vector::Dense(vector) => Ok(Self::Dense(vector)),
+            Vector::Sparse(vector) => Ok(Self::Sparse(vector)),
+            Vector::MultiDense(_vector) => Err(Status::invalid_argument(
+                "MultiDense vector is not supported in search request",
+            )),
+        }
     }
 }
 

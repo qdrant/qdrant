@@ -613,7 +613,7 @@ mod tests_ops {
     use std::fmt::Debug;
 
     use api::rest::{
-        BatchVectorStruct, LookupLocation, OrderByInterface, RecommendStrategy,
+        self, BatchVectorStruct, LookupLocation, OrderByInterface, RecommendStrategy,
         SearchRequestInternal, VectorStruct,
     };
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
@@ -868,7 +868,7 @@ mod tests_ops {
         let op = GroupRequest {
             // NOTE: SourceRequest::Recommend is already tested in test_recommend_request_internal
             source: SourceRequest::Search(SearchRequestInternal {
-                vector: NamedVectorStruct::Default(vec![0.0, 1.0, 2.0]).into(),
+                vector: rest::NamedVectorStruct::Default(vec![0.0, 1.0, 2.0]),
                 filter: None,
                 params: Some(SearchParams::default()),
                 limit: 100,

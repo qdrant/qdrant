@@ -17,7 +17,6 @@ use api::grpc::qdrant::{
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
-use api::rest::SearchRequestInternal;
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
@@ -632,7 +631,6 @@ impl RemoteShard {
 }
 
 // New-type to own the type in the crate for conversions via From
-pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchRequestInternal));
 pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSearchRequest));
 
 #[async_trait]

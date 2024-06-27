@@ -10,9 +10,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::Flusher;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{
-    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
-};
+use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -202,14 +200,9 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
     }
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        // TODO(colbert) borrow instead of clone
-        self.get_multi_opt(key).map(|multivector| {
-            let multivector = TypedMultiDenseVector {
-                flattened_vectors: multivector.flattened_vectors.to_vec(),
-                dim: multivector.dim,
-            };
-            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Owned(
-                multivector,
+        self.get_multi_opt(key).map(|multi_dense_vector| {
+            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+                multi_dense_vector,
             )))
         })
     }
