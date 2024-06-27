@@ -283,7 +283,9 @@ pub trait SegmentOptimizer {
     }
 
     // Helper function to calculate required disk space
-    fn calculate_required_disk_space(bytes_count_by_vector_name: &HashMap<String, usize>) -> CollectionResult<u64> {
+    fn calculate_required_disk_space(
+        bytes_count_by_vector_name: &HashMap<String,
+        usize>) -> CollectionResult<u64> {
         // Calculate the total required disk space based on the bytes count by vector name
         let total_bytes_count: usize = bytes_count_by_vector_name.values().sum();
         Ok(total_bytes_count as u64)
