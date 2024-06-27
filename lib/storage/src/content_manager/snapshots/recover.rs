@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use collection::collection::Collection;
 use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfig;
@@ -93,15 +95,9 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let download_dir = toc.snapshots_download_tempdir()?;
-
-    log::debug!(
-        "Downloading snapshot from {location} to {}",
-        download_dir.path().display(),
-    );
-
+    let snapshots_path = Path::new(toc.snapshots_path());
     let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path(), only_snapshot_dir).await?;
+        download_snapshot(client, location, snapshots_path, only_snapshot_dir).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;

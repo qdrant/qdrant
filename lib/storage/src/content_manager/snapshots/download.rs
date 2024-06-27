@@ -114,6 +114,11 @@ pub async fn download_snapshot(
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));
 
+            log::debug!(
+                "Downloading snapshot from {url} to {}",
+                snapshots_dir.display(),
+            );
+
             let temp_path = download_file(client, &url, &download_to).await?;
             Ok((download_to, Some(temp_path)))
         }
