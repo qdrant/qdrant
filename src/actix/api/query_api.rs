@@ -109,4 +109,5 @@ async fn query_points_batch(
 
 pub fn config_query_api(cfg: &mut web::ServiceConfig) {
     cfg.service(query_points);
+    cfg.service(query_points_batch);
 }
