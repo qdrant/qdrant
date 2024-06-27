@@ -38,9 +38,8 @@ use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
 
-// TODO(1.10): remove this in the next minor release to expose the compressed sparse index
 /// Whether to use the new compressed format.
-pub const USE_COMPRESSED: bool = false;
+pub const USE_COMPRESSED: bool = true;
 
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
