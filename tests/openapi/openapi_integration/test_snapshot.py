@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import request_with_validation, request_without_validation
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
@@ -149,6 +149,59 @@ def test_collection_snapshot_operations(http_server):
         path_params={'collection_name': collection_name},
         body={
             "location": f"{srv_url}/snapshot.tar",
+            "checksum": snapshot_checksum,
+            "wait": "true",
+        },
+    )
+    assert response.ok
+
+    # validate that the collection is recovered
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={},
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 10
+
+
+def test_collection_snapshot_operations_relative_file():
+    # create snapshot on collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+    )
+    assert response.ok
+    snapshot_name = response.json()['result']['name']
+    snapshot_checksum = response.json()['result']['checksum']
+
+    # delete collection
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    # validate that the collection is deleted
+    response = request_with_validation(
+        api="/collections/{collection_name}/exists",
+        method="GET",
+        path_params={"collection_name": collection_name},
+    )
+    assert response.ok
+    assert not response.json()["result"]["exists"]
+
+    # recover collection from snapshot with correct checksum
+    response = request_without_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "location": f"file://./{snapshot_name}",
             "checksum": snapshot_checksum,
             "wait": "true",
         },
@@ -436,3 +489,15 @@ def test_collection_snapshot_security():
     )
     assert response.status_code == 403
     assert response.json()["status"]["error"] == "Forbidden: Snapshot file \"/etc/passwd\" must be inside snapshots directory"
+
+    # Absolute paths must not be accessible through relative interface
+    response = request_without_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': "somethingthatdoesnotexist"},
+        body={
+            "location": "file://./etc/passwd",
+        }
+    )
+    assert response.status_code == 400
+    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"file://./etc/passwd\" does not exist"

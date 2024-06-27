@@ -37,7 +37,7 @@ def request_with_validation(
         method: str,
         path_params: dict = None,
         query_params: dict = None,
-        body: dict = None
+        body: dict = None,
 ) -> requests.Response:
     operation: APIOperation = SCHEMA[api][method]
 
@@ -80,6 +80,35 @@ def request_with_validation(
     )
 
     operation.validate_response(response)
+
+    return response
+
+
+def request_without_validation(
+        api: str,
+        method: str,
+        path_params: dict = None,
+        query_params: dict = None,
+        body: dict = None,
+) -> requests.Response:
+    operation: APIOperation = SCHEMA[api][method]
+
+    assert isinstance(operation.schema, OpenApi30)
+
+    if path_params is None:
+        path_params = {}
+    if query_params is None:
+        query_params = {}
+    action = getattr(requests, method.lower(), None)
+
+    if not action:
+        raise RuntimeError(f"Method {method} does not exists")
+
+    response = action(
+        url=get_api_string(QDRANT_HOST, api, path_params),
+        params=query_params,
+        json=body
+    )
 
     return response
 
