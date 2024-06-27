@@ -18,7 +18,17 @@ pub fn open_snapshot_archive_with_validation<P: AsRef<Path>>(
         let mut ar = Archive::new(archive_file);
 
         for entry in ar.entries_with_seek()? {
-            let entry_type = entry?.header().entry_type();
+            // Read next archive entry type
+            // Deliberately mask real error here for API users, it can expose arbitrary file contents
+            let entry_type = match entry {
+                Ok(entry) => entry.header().entry_type(),
+                Err(err) => {
+                    log::warn!("Error while reading snapshot archive, malformed entry: {err}");
+                    return Err(OperationError::service_error(
+                        "Failed to open snapshot archive, malformed format",
+                    ));
+                }
+            };
             if !matches!(
                 entry_type,
                 tar::EntryType::Regular | tar::EntryType::Directory,
