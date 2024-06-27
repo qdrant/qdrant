@@ -352,7 +352,7 @@ def test_snapshot_invalid_file_uri():
         }
     )
     assert response.status_code == 400
-    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"file:///whatever.snapshot\" does not exist"
 
     # Path that does not exist
     response = request_with_validation(
@@ -364,7 +364,7 @@ def test_snapshot_invalid_file_uri():
         }
     )
     assert response.status_code == 400
-    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+    assert response.json()["status"]["error"] == "Bad request: Snapshot file \"file:///whatever.snapshot\" does not exist"
 
 
 def test_full_snapshot_security():

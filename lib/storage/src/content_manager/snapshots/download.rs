@@ -87,8 +87,10 @@ pub async fn download_snapshot(
                 )
             })?;
             if !local_path.exists() {
+                // Report user provided URL here to prevent leaking the local path
                 return Err(StorageError::bad_request(format!(
-                    "Snapshot file {local_path:?} does not exist"
+                    "Snapshot file {:?} does not exist",
+                    url.to_string(),
                 )));
             }
 
