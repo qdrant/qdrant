@@ -7,7 +7,7 @@ use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use segment::common::operation_error::check_process_stopped;
+use segment::common::operation_error::{check_enough_storage_space, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -511,9 +511,19 @@ pub trait SegmentOptimizer {
             proxy_ids
         };
 
-        check_process_stopped(stopped).map_err(|error| {
+        check_process_stopped(stopped).inspect_err(|_| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
-            error
+        })?;
+
+        // Up two levels to get the existing collection dir.
+        let working_path = self.temp_path().parent().and_then(|x| x.parent()).unwrap();
+        let segments_path = self.segments_path();
+        let collection_path = segments_path
+            .parent()
+            .and_then(|x| x.parent())
+            .unwrap_or(segments_path);
+        check_enough_storage_space(working_path, collection_path).inspect_err(|_| {
+            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
         })?;
 
         // ---- SLOW PART -----
