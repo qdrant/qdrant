@@ -36,8 +36,6 @@ use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sp
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::posting_list_common::PostingListIter as _;
@@ -64,7 +62,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
-    let sparse_vector_index = fixture_sparse_index::<InvertedIndexImmutableRam, _>(
+    let sparse_vector_index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
@@ -196,7 +194,7 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_ram_index = fixture_sparse_index::<InvertedIndexImmutableRam, _>(
+    let sparse_vector_ram_index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
@@ -212,7 +210,7 @@ fn sparse_vector_index_consistent_with_storage() {
     // create mmap sparse vector index
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -238,7 +236,7 @@ fn sparse_vector_index_consistent_with_storage() {
     // load index from memmap file
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
-    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
+    let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_ram_index.id_tracker().clone(),
@@ -262,7 +260,7 @@ fn sparse_vector_index_consistent_with_storage() {
 #[test]
 fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
+    let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexCompressedMmap<f32>>> =
         fixture_sparse_index_from_iter(
             data_dir.path(),
             [].iter().cloned(),
@@ -355,7 +353,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 
     // setup index
-    let sparse_vector_index = fixture_sparse_index::<InvertedIndexImmutableRam, _>(
+    let sparse_vector_index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
@@ -446,7 +444,7 @@ fn sparse_vector_index_plain_search() {
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     // setup index
-    let sparse_vector_index = fixture_sparse_index::<InvertedIndexImmutableRam, _>(
+    let sparse_vector_index = fixture_sparse_index::<InvertedIndexCompressedImmutableRam<f32>, _>(
         &mut rnd,
         NUM_VECTORS,
         MAX_SPARSE_DIM,
@@ -522,7 +520,7 @@ fn handling_empty_sparse_vectors() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let sparse_vector_index: SparseVectorIndex<InvertedIndexImmutableRam> =
+    let sparse_vector_index: SparseVectorIndex<InvertedIndexCompressedImmutableRam<f32>> =
         fixture_sparse_index_from_iter(
             data_dir.path(),
             (0..NUM_VECTORS).map(|_| SparseVector::default()),

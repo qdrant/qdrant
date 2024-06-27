@@ -21,7 +21,7 @@ use segment::types::{Condition, FieldCondition, Filter, Payload};
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::loaders::Csr;
 use tempfile::Builder;
@@ -104,7 +104,7 @@ fn sparse_vector_index_search_benchmark_impl(
     let sparse_index_config =
         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
     let pb = progress("Indexing (2/2)", vectors_len);
-    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
+    let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
         SparseVectorIndex::open(SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker: sparse_vector_index.id_tracker().clone(),
