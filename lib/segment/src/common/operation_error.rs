@@ -46,8 +46,6 @@ pub enum OperationError {
     InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
-    #[error("Out of storage space")]
-    OutOfStorage,
     #[error("Operation cancelled: {description}")]
     Cancelled { description: String },
     #[error("Validation failed: {description}")]
