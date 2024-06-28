@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
@@ -13,13 +15,14 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::entry_point::SegmentEntry;
+use segment::id_tracker::IdTrackerSS;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, VectorStorageType,
+    ExtendedPointId, HnswConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
+    PayloadStorageType, PointIdType, QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -412,7 +415,72 @@ pub trait SegmentOptimizer {
 
         self.check_cancellation(stopped)?;
 
+        let mut all_point_ids = HashSet::new();
+        let mut id_tracker: Vec<Arc<AtomicRefCell<IdTrackerSS>>> = vec![];
+
+        let mut payload_key = None;
+
         for segment in optimizing_segments {
+            match segment {
+                LockedSegment::Original(segment_arc) => {
+                    let segment_guard = segment_arc.read();
+                    all_point_ids.extend(segment_guard.iter_points());
+                    id_tracker.push(segment_guard.id_tracker.clone());
+
+                    if payload_key.is_none()
+                    {
+                        payload_key = segment_guard.payload_index.borrow().field_indexes.iter().nth(0).map(|i| i.0.clone());
+                    }
+                }
+                LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
+            }
+        }
+
+        let payload_key = payload_key.unwrap();
+
+        let locked_segments: Vec<_> = optimizing_segments
+            .iter()
+            .map(|segment| match segment {
+                LockedSegment::Original(orig) => orig.read(),
+                LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
+            })
+            .collect();
+
+        let mut points_to_apply = vec![];
+        for point in all_point_ids.iter() {
+            let mut max_verison = 0;
+            let mut seg_idx = 0;
+            for (i, locked_seg) in locked_segments.iter().enumerate() {
+                if !locked_seg.has_point(*point) {
+                    continue;
+                }
+
+                let version = locked_seg.point_version(*point).unwrap_or_default();
+                if version > max_verison {
+                    max_verison = version;
+                    seg_idx = i;
+                }
+            }
+
+            points_to_apply.push((*point, seg_idx));
+        }
+
+        let get_payload = |idx: usize, point: ExtendedPointId| -> Option<serde_json::Value> {
+            locked_segments[idx]
+                .payload(point)
+                .ok()
+                .and_then(|i| i.get_value(&payload_key).get(0).cloned().cloned())
+        };
+
+        points_to_apply.sort_unstable_by(|(a_id, a_index), (b_id, b_index)| {
+            let a_payload = get_payload(*a_index, *a_id);
+            let b_payload = get_payload(*b_index, *b_id);
+            let a_hash = a_payload.map(|i| hash_value(&i));
+            let b_hash = b_payload.map(|i| hash_value(&i));
+            a_hash.cmp(&b_hash)
+        });
+
+        /* for segment in optimizing_segments {
             match segment {
                 LockedSegment::Original(segment_arc) => {
                     let segment_guard = segment_arc.read();
@@ -420,7 +488,7 @@ pub trait SegmentOptimizer {
                 }
                 LockedSegment::Proxy(_) => panic!("Attempt to optimize segment which is already currently under optimization. Should never happen"),
             }
-        }
+        } */
 
         for field in proxy_deleted_indexes.read().iter() {
             segment_builder.remove_indexed_field(field);
@@ -678,5 +746,33 @@ pub trait SegmentOptimizer {
         }
         timer.set_success(true);
         Ok(true)
+    }
+}
+
+fn hash_value(val: &serde_json::Value) -> u64 {
+    let mut hash = DefaultHasher::default();
+    hash_value_to(val, &mut hash);
+    hash.finish()
+}
+
+fn hash_value_to<H: Hasher>(val: &serde_json::Value, hash: &mut H) {
+    match val {
+        serde_json::Value::Null => (),
+        serde_json::Value::Bool(b) => b.hash(hash),
+        serde_json::Value::Number(n) => n.hash(hash),
+        serde_json::Value::String(s) => s.hash(hash),
+        serde_json::Value::Array(a) => {
+            for i in a {
+                hash_value_to(i, hash);
+            }
+        }
+        serde_json::Value::Object(o) => {
+            // The 'preserve_order' feature for serde_json is enabled, so iterating
+            // here is ok.
+            for (k, v) in o {
+                k.hash(hash);
+                hash_value_to(v, hash);
+            }
+        }
     }
 }

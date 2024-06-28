@@ -1090,6 +1090,7 @@ dependencies = [
  "approx",
  "arc-swap",
  "async-trait",
+ "atomic_refcell",
  "atomicwrites",
  "bitvec",
  "bytes",
@@ -1129,6 +1130,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "smallvec",
+ "sorted_intersection",
  "sparse",
  "strum",
  "tar",
@@ -5539,6 +5541,7 @@ version = "1.0.120"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e0d21c9a8cae1235ad58a00c11cb40d4b1e5c784f1ef2c537876ed6ffd8b7c5"
 dependencies = [
+ "indexmap 2.2.6",
  "itoa",
  "ryu",
  "serde",
@@ -5782,6 +5785,12 @@ dependencies = [
  "libc",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "sorted_intersection"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43448dcec88f2dc525e8c5b1f5e5a116d3b250879fff04f90c6691dd6865a28b"
 
 [[package]]
 name = "spade"
