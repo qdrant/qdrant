@@ -10,6 +10,7 @@ pub mod geo_hash;
 pub mod geo_index;
 mod histogram;
 mod immutable_point_to_values;
+mod mmap_point_to_values;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;
