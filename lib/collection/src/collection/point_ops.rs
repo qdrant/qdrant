@@ -325,10 +325,8 @@ impl Collection {
                             Direction::Desc => (value_a, record_a.id) > (value_b, record_b.id),
                         }
                     })
-                    // Add each point only once, deduplicate on same (value, IDs) combination
-                    .dedup_by(|(value_a, record_a), (value_b, record_b)| {
-                        (value_a, record_a.id) == (value_b, record_b.id)
-                    })
+                    // Only keep the point with the most "valuable" order value
+                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()
