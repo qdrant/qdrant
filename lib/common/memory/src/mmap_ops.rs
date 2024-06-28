@@ -26,14 +26,18 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
         Ok(file)
     } else {
         let temp_path = path.with_extension(TEMP_FILE_EXTENSION);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            // Don't truncate because we explicitly set the length later
-            .truncate(false)
-            .open(&temp_path)?;
-        file.set_len(length as u64)?;
+        {
+            // create temporary file with the required length
+            // Temp file is used to avoid situations, where crash happens between file creation and setting the length
+            let temp_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                // Don't truncate because we explicitly set the length later
+                .truncate(false)
+                .open(&temp_path)?;
+            temp_file.set_len(length as u64)?;
+        }
 
         std::fs::rename(&temp_path, path)?;
 
