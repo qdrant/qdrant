@@ -1,7 +1,6 @@
 use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::Error as AtomicIoError;
@@ -79,35 +78,6 @@ pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
         });
     }
     Ok(())
-}
-
-/// How many bytes a directory takes.
-fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
-    fn dir_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
-        dir.try_fold(0, |acc, file| {
-            let file = file?;
-            let size = match file.metadata()? {
-                data if data.is_dir() => dir_size(std::fs::read_dir(file.path())?)?,
-                data => data.len(),
-            };
-            Ok(acc + size)
-        })
-    }
-
-    dir_size(std::fs::read_dir(path.into())?)
-}
-
-/// Judge if the available storage space within a volume is less than
-/// the given threshold so that we won't leave a collection in half-updated state.
-/// This is a best guess and the real error might still happen down the line.
-pub fn check_enough_storage_space(temp_path: &Path, segments_path: &Path) -> OperationResult<()> {
-    let free_space = fs4::available_space(temp_path)?;
-
-    let existing_segments_size: u64 = dir_size(segments_path)?;
-
-    (free_space >= 2 * existing_segments_size)
-        .then_some(())
-        .ok_or(OperationError::OutOfStorage)
 }
 
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
