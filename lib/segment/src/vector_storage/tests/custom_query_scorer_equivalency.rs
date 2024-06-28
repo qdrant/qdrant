@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
@@ -216,7 +217,13 @@ fn scoring_equivalency(
 
     let mut other_storage = other_storage(other_dir.path());
 
-    other_storage.update_from(&raw_storage, &mut (0..NUM_POINTS as _), &Default::default())?;
+    let mut iter = (0..NUM_POINTS).map(|i| {
+        let i = i as PointOffsetType;
+        let vec = raw_storage.get_vector(i);
+        let deleted = raw_storage.is_deleted_vector(i);
+        (i, vec, deleted)
+    });
+    other_storage.update_from(&mut iter, &Default::default())?;
 
     let quant_dir = tempfile::Builder::new().prefix("quant-storage").tempdir()?;
     let quantized_vectors = if let Some(config) = &quant_config {

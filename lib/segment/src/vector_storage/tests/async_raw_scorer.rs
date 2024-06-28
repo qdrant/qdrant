@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
+use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
@@ -76,7 +77,13 @@ fn test_async_raw_scorer(
         insert_random_vectors(&mut rng, dim, &mut mutable_storage, points)?;
         delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
 
-        storage.update_from(&mutable_storage, &mut (0..points as _), &Default::default())?;
+        let mut iter = (0..points).map(|i| {
+            let i = i as PointOffsetType;
+            let vec = mutable_storage.get_vector(i);
+            let deleted = mutable_storage.is_deleted_vector(i);
+            (i, vec, deleted)
+        });
+        storage.update_from(&mut iter, &Default::default())?;
     }
 
     for _ in 0..score {

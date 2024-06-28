@@ -1,12 +1,15 @@
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::cpu::CpuPermit;
+use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
+use parking_lot::RwLock;
 
 use super::{
     create_id_tracker, create_payload_storage, create_sparse_vector_index,
@@ -26,7 +29,8 @@ use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::load_segment;
 use crate::types::{
-    PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType,
+    ExtendedPointId, PayloadContainer, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
+    SegmentState, SeqNumberType,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -112,6 +116,155 @@ impl SegmentBuilder {
         self.indexed_fields.insert(field, schema);
     }
 
+    pub fn update(
+        &mut self,
+        segments: &[Arc<RwLock<Segment>>],
+        stopped: &AtomicBool,
+    ) -> OperationResult<bool> {
+        let mut points_to_apply = vec![];
+
+        let locked_segments: Vec<_> = segments.iter().map(|segment| segment.read()).collect();
+        {
+            let mut all_point_ids = HashSet::new();
+            // let mut id_tracker: Vec<Arc<AtomicRefCell<IdTrackerSS>>> = vec![];
+
+            let mut payload_key = None;
+
+            for segment in segments {
+                let segment_guard = segment.read();
+                all_point_ids.extend(segment_guard.iter_points());
+
+                if payload_key.is_none() {
+                    payload_key = segment_guard
+                        .payload_index
+                        .borrow()
+                        .field_indexes
+                        .iter()
+                        .nth(0)
+                        .map(|i| i.0.clone());
+                }
+            }
+
+            for point in all_point_ids.iter() {
+                let mut max_verison = 0;
+                let mut seg_idx = 0;
+                let mut internal_id: Option<PointOffsetType> = None;
+                for (i, locked_seg) in locked_segments.iter().enumerate() {
+                    if !locked_seg.has_point(*point) {
+                        continue;
+                    }
+
+                    let version = locked_seg.point_version(*point).unwrap_or_default();
+                    if version > max_verison {
+                        max_verison = version;
+                        seg_idx = i;
+                        internal_id = locked_seg.get_internal_id(*point);
+                    }
+                }
+
+                points_to_apply.push((*point, internal_id.unwrap(), seg_idx, max_verison));
+            }
+
+            if let Some(payload_key) = payload_key {
+                let get_payload =
+                    |idx: usize, point: ExtendedPointId| -> Option<serde_json::Value> {
+                        locked_segments[idx]
+                            .payload(point)
+                            .ok()
+                            .and_then(|i| i.get_value(&payload_key).get(0).cloned().cloned())
+                    };
+
+                points_to_apply.sort_unstable_by(|(a_id, _, a_index, _), (b_id, _, b_index, _)| {
+                    let a_payload = get_payload(*a_index, *a_id);
+                    let b_payload = get_payload(*b_index, *b_id);
+                    let a_hash = a_payload.map(|i| hash_value(&i));
+                    let b_hash = b_payload.map(|i| hash_value(&i));
+                    a_hash.cmp(&b_hash)
+                });
+            }
+        }
+
+        self.version = cmp::max(
+            self.version,
+            locked_segments.iter().map(|i| i.version()).max().unwrap(),
+        );
+
+        let vector_storages: Vec<_> = locked_segments.iter().map(|i| &i.vector_data).collect();
+
+        let mut new_internal_range = None;
+        for (vector_name, vector_storage) in &mut self.vector_storages {
+            check_process_stopped(stopped)?;
+
+            let other_vector_storages: Vec<_> = vector_storages
+                .iter()
+                .map(|i| &i.get(vector_name).unwrap().vector_storage)
+                .collect();
+            let other_vector_storages: Vec<AtomicRef<VectorStorageEnum>> =
+                other_vector_storages.iter().map(|i| i.borrow()).collect();
+
+            let mut iter =
+                points_to_apply
+                    .iter()
+                    .map(|(_, internal_point_id, src_seg_index, _)| {
+                        let other_vector_storage = &other_vector_storages[*src_seg_index];
+
+                        let vec = other_vector_storage.get_vector(*internal_point_id);
+                        let deleted = other_vector_storage.is_deleted_vector(*internal_point_id);
+
+                        (*internal_point_id, vec, deleted)
+                    });
+            let internal_range = vector_storage.update_from(&mut iter, stopped)?;
+            match new_internal_range.clone() {
+                Some(new_internal_range) => {
+                    if new_internal_range != internal_range {
+                        return Err(OperationError::service_error(
+                            "Internal ids range mismatch between self segment vectors and other segment vectors",
+                        ));
+                    }
+                }
+                None => new_internal_range = Some(internal_range.clone()),
+            }
+        }
+
+        let payloads: Vec<_> = locked_segments
+            .iter()
+            .map(|i| i.payload_index.borrow())
+            .collect();
+
+        if let Some(new_internal_range) = new_internal_range {
+            assert_eq!(new_internal_range.len(), points_to_apply.len());
+
+            let internal_id_iter = new_internal_range.zip(points_to_apply.iter());
+
+            for (new_internal_id, (external_id, old_internal_id, idx, version)) in internal_id_iter
+            {
+                check_process_stopped(stopped)?;
+
+                self.id_tracker.set_link(*external_id, new_internal_id)?;
+                self.id_tracker
+                    .set_internal_version(new_internal_id, *version)?;
+
+                let other_payload = payloads[*idx].payload(*old_internal_id)?;
+                // Propagate payload to new segment
+                if !other_payload.is_empty() {
+                    self.payload_storage
+                        .assign(new_internal_id, &other_payload)?;
+                }
+            }
+        }
+
+        for payload in payloads {
+            for (field, payload_schema) in payload.indexed_fields() {
+                self.indexed_fields.insert(field, payload_schema);
+            }
+        }
+
+        self.id_tracker.mapping_flusher()()?;
+        self.id_tracker.versions_flusher()()?;
+
+        Ok(true)
+    }
+
     /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
     /// Perform index building at the end of update
     ///
@@ -123,7 +276,7 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
+    /* pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
         self.version = cmp::max(self.version, other.version());
 
         let other_id_tracker = other.id_tracker.borrow();
@@ -152,11 +305,12 @@ impl SegmentBuilder {
                     "Cannot update from other segment because if missing vector name {vector_name}"
                 ))
             })?;
-            let internal_range = vector_storage.update_from(
+            let internal_range = 0..2;
+            /* let internal_range = vector_storage.update_from(
                 other_vector_storage,
                 &mut other_id_tracker.iter_ids(),
                 stopped,
-            )?;
+            )?; */
             match new_internal_range.clone() {
                 Some(new_internal_range) => {
                     if new_internal_range != internal_range {
@@ -245,7 +399,7 @@ impl SegmentBuilder {
         id_tracker.versions_flusher()()?;
 
         Ok(true)
-    }
+    } */
 
     pub fn build(self, permit: CpuPermit, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         let (temp_path, destination_path) = {
@@ -429,5 +583,33 @@ impl SegmentBuilder {
             }
         }
         Ok(quantized_vectors_map)
+    }
+}
+
+fn hash_value(val: &serde_json::Value) -> u64 {
+    let mut hash = DefaultHasher::default();
+    hash_value_to(val, &mut hash);
+    hash.finish()
+}
+
+fn hash_value_to<H: Hasher>(val: &serde_json::Value, hash: &mut H) {
+    match val {
+        serde_json::Value::Null => (),
+        serde_json::Value::Bool(b) => b.hash(hash),
+        serde_json::Value::Number(n) => n.hash(hash),
+        serde_json::Value::String(s) => s.hash(hash),
+        serde_json::Value::Array(a) => {
+            for i in a {
+                hash_value_to(i, hash);
+            }
+        }
+        serde_json::Value::Object(o) => {
+            // The 'preserve_order' feature for serde_json is enabled, so iterating
+            // here is ok.
+            for (k, v) in o {
+                k.hash(hash);
+                hash_value_to(v, hash);
+            }
+        }
     }
 }
