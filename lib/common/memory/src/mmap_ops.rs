@@ -17,7 +17,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
+            .create(false)
             // Don't truncate because we explicitly set the length later
             .truncate(false)
             .open(path)?;
