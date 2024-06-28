@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, TEMP_FILE_EXTENSION};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -27,8 +26,7 @@ pub fn read_mmaps<T: Sized>(directory: &Path) -> OperationResult<Vec<MmapChunk<T
     for entry in directory.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.extension().map(OsStr::to_str) != Some(Some(TEMP_FILE_EXTENSION))
-        {
+        if path.is_file() {
             let chunk_id = path
                 .file_name()
                 .and_then(|file_name| file_name.to_str())

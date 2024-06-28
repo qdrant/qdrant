@@ -13,24 +13,37 @@ use crate::madvise::Madviseable;
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
-    let temp_path = path.with_extension(TEMP_FILE_EXTENSION);
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        // Don't truncate because we explicitly set the length later
-        .truncate(false)
-        .open(&temp_path)?;
-    file.set_len(length as u64)?;
+    if path.exists() {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            // Don't truncate because we explicitly set the length later
+            .truncate(false)
+            .open(path)?;
+        file.set_len(length as u64)?;
 
-    std::fs::rename(&temp_path, path)?;
+        Ok(file)
+    } else {
+        let temp_path = path.with_extension(TEMP_FILE_EXTENSION);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            // Don't truncate because we explicitly set the length later
+            .truncate(false)
+            .open(&temp_path)?;
+        file.set_len(length as u64)?;
 
-    OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(false)
-        .truncate(false)
-        .open(path)
+        std::fs::rename(&temp_path, path)?;
+
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(false)
+            .truncate(false)
+            .open(path)
+    }
 }
 
 pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {
