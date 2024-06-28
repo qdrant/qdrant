@@ -7,7 +7,8 @@ use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{check_enough_storage_space, check_process_stopped};
+use segment::common::dir_size;
+use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -118,6 +119,10 @@ pub trait SegmentOptimizer {
         // }
         let mut bytes_count_by_vector_name = HashMap::new();
 
+        // Counting up how much space do the segments being optimized actually take on the fs.
+        // If there was at least one error while reading the size, this will be `None`.
+        let mut space_occupied = Some(0u64);
+
         for segment in optimizing_segments {
             let segment = match segment {
                 LockedSegment::Original(segment) => segment,
@@ -133,6 +138,28 @@ pub trait SegmentOptimizer {
                 let vector_size = locked_segment.available_vectors_size_in_bytes(&vector_name)?;
                 let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
                 *size += vector_size;
+            }
+
+            space_occupied = space_occupied
+                .and_then(|x| dir_size(locked_segment.data_path()).ok().map(|y| x + y));
+        }
+
+        let space_needed = space_occupied.map(|x| 2 * x);
+        let space_available = fs4::available_space(self.temp_path()).ok();
+
+        match (space_available, space_needed) {
+            (Some(space_available), Some(space_needed)) => {
+                if space_available < space_needed {
+                    return Err(CollectionError::service_error(
+                        "Not enough space available for optimization".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                log::warn!(
+                    "Could not estimate available storage space in `{}`; will try optimizing anyway",
+                    self.name()
+                );
             }
         }
 
@@ -512,17 +539,6 @@ pub trait SegmentOptimizer {
         };
 
         check_process_stopped(stopped).inspect_err(|_| {
-            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
-        })?;
-
-        // Up two levels to get the existing collection dir.
-        let working_path = self.temp_path().parent().and_then(|x| x.parent()).unwrap();
-        let segments_path = self.segments_path();
-        let collection_path = segments_path
-            .parent()
-            .and_then(|x| x.parent())
-            .unwrap_or(segments_path);
-        check_enough_storage_space(working_path, collection_path).inspect_err(|_| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
         })?;
 
