@@ -354,18 +354,17 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.insert_vector_impl(key, vector, false)
     }
 
-    fn update_from(
+    fn update_from<'a>(
         &mut self,
-        other: &VectorStorageEnum,
-        other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        other_ids: &'a mut impl Iterator<Item = (PointOffsetType, CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors_metadata.len() as PointOffsetType;
-        for point_id in other_ids {
+        for (_, other_vector, other_deleted) in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            let other_deleted = other.is_deleted_vector(point_id);
-            let other_vector = other.get_vector(point_id);
+            /* let other_deleted = other.is_deleted_vector(point_id);
+            let other_vector = other.get_vector(point_id); */
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.vectors_metadata.len() as PointOffsetType;
             self.insert_vector_impl(new_id, other_vector, other_deleted)?;

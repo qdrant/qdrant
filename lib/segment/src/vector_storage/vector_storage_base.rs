@@ -59,10 +59,9 @@ pub trait VectorStorage {
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
 
-    fn update_from(
+    fn update_from<'a>(
         &mut self,
-        other: &VectorStorageEnum,
-        other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        other_ids: &'a mut impl Iterator<Item = (PointOffsetType, CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
@@ -371,38 +370,31 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn update_from(
+    fn update_from<'a>(
         &mut self,
-        other: &VectorStorageEnum,
-        other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        other_ids: &'a mut impl Iterator<Item = (PointOffsetType, CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
-            VectorStorageEnum::DenseSimple(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseSimpleByte(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseSimpleHalf(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseMemmap(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseMemmapByte(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                v.update_from(other, other_ids, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                v.update_from(other, other_ids, stopped)
-            }
-            VectorStorageEnum::SparseSimple(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::MultiDenseSimple(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                v.update_from(other, other_ids, stopped)
-            }
+            VectorStorageEnum::DenseSimple(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseSimpleByte(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseMemmap(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseMemmapByte(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::SparseSimple(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::MultiDenseSimple(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.update_from(other_ids, stopped),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.update_from(other_ids, stopped),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                v.update_from(other, other_ids, stopped)
+                v.update_from(other_ids, stopped)
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                v.update_from(other, other_ids, stopped)
+                v.update_from(other_ids, stopped)
             }
         }
     }
