@@ -9,6 +9,7 @@ use super::gpu_nearest_heap::GpuNearestHeap;
 use super::gpu_vector_storage::{GpuVectorStorage, GpuVectorStorageElementType};
 use super::gpu_visited_flags::GpuVisitedFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::hnsw_index::gpu::get_gpu_max_candidates_count;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -96,7 +97,7 @@ impl GpuSearchContext {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let context = gpu::Context::new(device.clone());
         let points_count = vector_storage.total_vector_count();
-        let candidates_capacity = 10_000; //points_count;
+        let candidates_capacity = get_gpu_max_candidates_count(); //points_count;
 
         let gpu_vector_storage = GpuVectorStorage::new(
             device.clone(),
@@ -429,6 +430,14 @@ impl GpuSearchContext {
         let mut gpu_responses = vec![PointOffsetType::default(); count];
         self.download_staging_buffer
             .download_slice(&mut gpu_responses, 0);
+
+        // TODO(gpu) if response if uint::MAX, we need to reallocate
+        for i in 0..count {
+            if gpu_responses[i] == PointOffsetType::MAX {
+                return Err(OperationError::service_error("Candidates heap overflow"));
+            }
+        }
+
         Ok(gpu_responses)
     }
 

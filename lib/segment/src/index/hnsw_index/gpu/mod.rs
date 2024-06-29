@@ -20,8 +20,9 @@ use crate::common::operation_error::OperationResult;
 
 static GPU_INDEXING: AtomicBool = AtomicBool::new(false);
 static GPU_FORCE_HALF_PRECISION: AtomicBool = AtomicBool::new(false);
-static GPU_MAX_GROUPS: AtomicUsize = AtomicUsize::new(256);
+static GPU_MAX_GROUPS: AtomicUsize = AtomicUsize::new(GPU_MAX_GROUPS_COUNT_DEFAULT);
 pub const GPU_MAX_GROUPS_COUNT_DEFAULT: usize = 1024 * 32;
+static GPU_MAX_CANDIDATES_COUNT: AtomicUsize = AtomicUsize::new(10_000);
 
 pub fn set_gpu_indexing(gpu_indexing: bool) {
     GPU_INDEXING.store(gpu_indexing, Ordering::Relaxed);
@@ -45,6 +46,14 @@ pub fn set_gpu_max_groups(max_groups: usize) {
 
 pub fn get_gpu_max_groups() -> usize {
     GPU_MAX_GROUPS.load(Ordering::Relaxed)
+}
+
+pub fn set_gpu_max_candidates_count(max_candidates_count: usize) {
+    GPU_MAX_CANDIDATES_COUNT.store(max_candidates_count, Ordering::Relaxed);
+}
+
+pub fn get_gpu_max_candidates_count() -> usize {
+    GPU_MAX_CANDIDATES_COUNT.load(Ordering::Relaxed)
 }
 
 pub fn create_graph_layers_builder(

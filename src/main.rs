@@ -158,6 +158,9 @@ fn main() -> anyhow::Result<()> {
         if let Some(max_groups) = &settings_gpu.max_groups {
             segment::index::hnsw_index::gpu::set_gpu_max_groups(*max_groups);
         }
+        if let Some(max_candidates_count) = &settings_gpu.max_candidates_count {
+            segment::index::hnsw_index::gpu::set_gpu_max_candidates_count(*max_candidates_count);
+        }
     }
 
     welcome(&settings);

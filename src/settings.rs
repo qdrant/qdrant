@@ -134,6 +134,9 @@ pub struct GpuConfig {
     #[validate(range(min = 1))]
     pub max_groups: Option<usize>,
     #[serde(default)]
+    #[validate(range(min = 1))]
+    pub max_candidates_count: Option<usize>,
+    #[serde(default)]
     pub device_index: usize,
     #[serde(default)]
     pub device_name_filter: String,
