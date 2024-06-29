@@ -12,7 +12,6 @@ pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
 
-use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -21,23 +20,6 @@ use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
-
-/// How many bytes a directory takes.
-pub fn dir_size(path: impl Into<PathBuf>) -> std::io::Result<u64> {
-    fn dir_size(mut dir: std::fs::ReadDir) -> std::io::Result<u64> {
-        dir.try_fold(0, |acc, file| {
-            let file = file?;
-            let size = match file.metadata()? {
-                data if data.is_dir() => dir_size(std::fs::read_dir(file.path())?)?,
-                data => data.len(),
-            };
-            Ok(acc + size)
-        })
-    }
-
-    dir_size(std::fs::read_dir(path.into())?)
-}
-
 /// Check that the given vector name is part of the segment config.
 ///
 /// Returns an error if incompatible.
