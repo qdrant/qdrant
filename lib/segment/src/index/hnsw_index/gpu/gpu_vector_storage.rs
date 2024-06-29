@@ -429,7 +429,7 @@ impl GpuVectorStorage {
     }
 
     pub fn get_points_in_storage_count(num_vectors: usize) -> usize {
-        num_vectors + (STORAGES_COUNT - num_vectors % STORAGES_COUNT) % STORAGES_COUNT
+        (num_vectors + (STORAGES_COUNT - num_vectors % STORAGES_COUNT)) / STORAGES_COUNT
     }
 }
 
