@@ -195,7 +195,7 @@ async fn test_scroll_dedup() {
     for point_id in result.points.iter().map(|point| point.id) {
         assert!(
             seen.insert(point_id),
-            "got point id {point_id} more than once, they should be deduplicated",
+            "got point id {point_id:?} more than once, they should be deduplicated",
         );
     }
 }

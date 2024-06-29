@@ -147,6 +147,15 @@ pub enum OrderValue {
     Float(FloatPayloadType),
 }
 
+#[cfg(any(test, feature = "testing"))]
+impl std::hash::Hash for OrderValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            OrderValue::Int(i) => i.hash(state),
+            OrderValue::Float(f) => f.to_bits().hash(state),
+        }
+    }
+}
 impl OrderValue {
     const MAX: Self = Self::Float(f64::NAN);
     const MIN: Self = Self::Float(f64::MIN);
