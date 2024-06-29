@@ -5310,6 +5310,7 @@ dependencies = [
  "criterion",
  "dataset",
  "fnv",
+ "fs4",
  "fs_extra",
  "generic-tests",
  "geo",
