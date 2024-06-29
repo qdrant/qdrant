@@ -1,7 +1,7 @@
 use std::future::{ready, Ready};
 use std::sync::Arc;
 
-use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::dev::{Path, ResourceDef, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::Error;
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
@@ -39,6 +39,17 @@ where
         let match_pattern = request
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
+
+        // Path segments are not yet available at the moment
+        // the middleware is being run, so we have to parse
+        // them on our own:
+        let mut path = Path::new(request.path());
+        let target_collection = ResourceDef::new(&match_pattern)
+            .capture_match_info(&mut path)
+            // Assuming `{name}` is a common segment to all collection-related routes:
+            .then(move || path.get("name").map(str::to_owned))
+            .flatten();
+
         let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
@@ -46,9 +57,12 @@ where
             let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
-            telemetry_data
-                .lock()
-                .add_response(request_key, status, instant);
+            telemetry_data.lock().add_response(
+                request_key,
+                target_collection.as_deref(),
+                status,
+                instant,
+            );
             Ok(response)
         })
     }

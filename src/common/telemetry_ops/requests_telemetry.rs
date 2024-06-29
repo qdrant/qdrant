@@ -10,11 +10,26 @@ use segment::common::operation_time_statistics::{
 };
 use serde::Serialize;
 
+/// What Actix routing matches against when selecting the handler.
+/// Something like `/collections/{name}/points/search`.
+type Route = String;
+
+/// Collection that was targeted by a request measured.
+type CollectionName = String;
+
+/// Breakdown of the time spent in the handler for a specific route,
+/// under an Arc and a Mutex.
+type SharedAgg = Arc<Mutex<OperationDurationsAggregator>>;
+
 pub type HttpStatusCode = u16;
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
-    pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    /// See [ActixWorkerTelemetryCollector::aggregator_of].
+    pub responses: HashMap<
+        Route,
+        HashMap<CollectionName, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    >,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -28,7 +43,8 @@ pub struct ActixTelemetryCollector {
 
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
-    methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    /// Mapping of `(Route, CollectionName, StatusCode)` to its timing histogram.
+    aggregator_of: HashMap<Route, HashMap<CollectionName, HashMap<HttpStatusCode, SharedAgg>>>,
 }
 
 pub struct TonicTelemetryCollector {
@@ -98,12 +114,15 @@ impl ActixWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
         method: String,
+        target_collection: Option<&str>,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
     ) {
         let aggregator = self
-            .methods
+            .aggregator_of
             .entry(method)
+            .or_default()
+            .entry(target_collection.unwrap_or_default().to_string())
             .or_default()
             .entry(status_code)
             .or_insert_with(OperationDurationsAggregator::new);
@@ -111,13 +130,20 @@ impl ActixWorkerTelemetryCollector {
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> WebApiTelemetry {
+        // Route -> CollectionName -> StatusCode -> Statistics
         let mut responses = HashMap::new();
-        for (method, status_codes) in &self.methods {
-            let mut status_codes_map = HashMap::new();
-            for (status_code, aggregator) in status_codes {
-                status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+        for (method, collections) in &self.aggregator_of {
+            // CollectionName -> StatusCode -> Statistics
+            let mut collections_map = HashMap::new();
+            for (collection, status_codes) in collections {
+                // StatusCode -> Statistics
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                collections_map.insert(collection.clone(), status_codes_map);
             }
-            responses.insert(method.clone(), status_codes_map);
+            responses.insert(method.clone(), collections_map);
         }
         WebApiTelemetry { responses }
     }
@@ -134,11 +160,14 @@ impl GrpcTelemetry {
 
 impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
-        for (method, status_codes) in &other.responses {
-            let status_codes_map = self.responses.entry(method.clone()).or_default();
-            for (status_code, statistics) in status_codes {
-                let entry = status_codes_map.entry(*status_code).or_default();
-                *entry = entry.clone() + statistics.clone();
+        for (method, collections) in &other.responses {
+            let collections_map = self.responses.entry(method.clone()).or_default();
+            for (collection, status_codes) in collections {
+                let status_codes_map = collections_map.entry(collection.clone()).or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = status_codes_map.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -178,7 +207,13 @@ impl Anonymize for WebApiTelemetry {
             .map(|(key, value)| {
                 let value: HashMap<_, _> = value
                     .iter()
-                    .map(|(key, value)| (*key, value.anonymize()))
+                    .map(|(key, value)| {
+                        let value: HashMap<_, _> = value
+                            .iter()
+                            .map(|(key, value)| (*key, value.anonymize()))
+                            .collect();
+                        (key.clone(), value)
+                    })
                     .collect();
                 (key.clone(), value)
             })
