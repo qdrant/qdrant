@@ -778,7 +778,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 }
             },
             strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
-            comment: config.comment, 
+            comment: config.comment,
         })
     }
 }

@@ -555,7 +555,7 @@ pub struct UpdateCollection {
     /// New strict mode configuration
     #[prost(message, optional, tag = "9")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
-    /// Collection-level-metadata
+    /// Collection-level-metadata for simple description, data title etc
     #[prost(string, optional, tag = "10")]
     pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }

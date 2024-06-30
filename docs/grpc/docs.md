@@ -449,11 +449,8 @@
 | optimizer_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) |  | Configuration of the optimizers |
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) |  | Configuration of the Write-Ahead-Log |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantization |
-<<<<<<< HEAD
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration of strict mode. |
-=======
 | comment | [string](#string) | optional | Collection-level-metadata for simple description, data title etc |
->>>>>>> 234cbc85b (enable configuring comment on collection create api)
 
 
 
@@ -653,11 +650,8 @@
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
-<<<<<<< HEAD
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration for strict mode |
-=======
 | comment | [string](#string) | optional | Collection-level-metadata for simple description, data title etc |
->>>>>>> 234cbc85b (enable configuring comment on collection create api)
 
 
 
@@ -1477,11 +1471,8 @@ Note: 1kB = 1 vector of size 256. |
 | vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
 | quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Quantization configuration of vector |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | New sparse vector parameters |
-<<<<<<< HEAD
 | strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | New strict mode configuration |
-=======
 | comment | [string](#string) | optional | Collection-level-metadata for simple description, data title etc |
->>>>>>> 234cbc85b (enable configuring comment on collection create api)
 
 
 

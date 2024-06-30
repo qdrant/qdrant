@@ -44,11 +44,8 @@ impl TableOfContent {
             init_from,
             quantization_config,
             sparse_vectors,
-<<<<<<< HEAD
             strict_mode_config,
-=======
             comment,
->>>>>>> 234cbc85b (enable configuring comment on collection create api)
         } = operation;
 
         self.collections
@@ -209,12 +206,8 @@ impl TableOfContent {
             optimizer_config: optimizers_config,
             hnsw_config,
             quantization_config,
-<<<<<<< HEAD
             strict_mode_config,
-            comment: None,
-=======
             comment,
->>>>>>> 234cbc85b (enable configuring comment on collection create api)
         };
         let collection = Collection::new(
             collection_name.to_string(),

@@ -114,7 +114,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .map(SparseVectorsConfig::try_from)
                     .transpose()?,
                 strict_mode_config: value.strict_mode_config.map(StrictModeConfig::from),
-                comment: value.comment, 
+                comment: value.comment,
             },
         )))
     }

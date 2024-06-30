@@ -126,11 +126,8 @@ impl TableOfContent {
             optimizers_config,
             quantization_config,
             sparse_vectors,
-<<<<<<< HEAD
             strict_mode_config: strict_mode,
-=======
             comment,
->>>>>>> 5eda4b598 (store collection-wise comment as config value via rest api)
         } = operation.update_collection;
         let collection = self
             .get_collection_unchecked(&operation.collection_name)
@@ -168,6 +165,7 @@ impl TableOfContent {
         }
         if let Some(strict_mode) = strict_mode {
             collection.update_strict_mode_config(strict_mode).await?;
+        }
         if let Some(comment) = comment {
             collection.update_comment(comment).await?;
         }
