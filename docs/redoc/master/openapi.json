@@ -6118,6 +6118,11 @@
                 "nullable": true
               }
             ]
+          },
+          "comment": {
+            "description": "Collection-level-metadata for simple description, data title etc",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8911,6 +8916,7 @@
               }
             ]
           },
+<<<<<<< HEAD
           "strict_mode_config": {
             "anyOf": [
               {
@@ -8920,6 +8926,13 @@
                 "nullable": true
               }
             ]
+=======
+          "comment": {
+            "description": "Collection-level-metadata for simple description, data title etc",
+            "default": null,
+            "type": "string",
+            "nullable": true
+>>>>>>> 5eda4b598 (store collection-wise comment as config value via rest api)
           }
         }
       },

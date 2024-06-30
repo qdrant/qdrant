@@ -245,6 +245,15 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn update_comment(&self, comment: String) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            config.comment = Some(comment);
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
     /// Recreate the optimizers on all shards for this collection
     ///
     /// This will stop existing optimizers, and start new ones with new configurations.

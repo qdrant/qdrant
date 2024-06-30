@@ -230,6 +230,9 @@ pub struct UpdateCollection {
     pub sparse_vectors: Option<SparseVectorsConfig>,
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -252,7 +255,11 @@ impl UpdateCollectionOperation {
                 optimizers_config: None,
                 quantization_config: None,
                 sparse_vectors: None,
+<<<<<<< HEAD
                 strict_mode_config: None,
+=======
+                comment: None,
+>>>>>>> 5eda4b598 (store collection-wise comment as config value via rest api)
             },
             shard_replica_changes: None,
         }

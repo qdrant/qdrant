@@ -206,6 +206,7 @@ impl TableOfContent {
             hnsw_config,
             quantization_config,
             strict_mode_config,
+            comment: None,
         };
         let collection = Collection::new(
             collection_name.to_string(),
