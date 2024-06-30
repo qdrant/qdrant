@@ -437,6 +437,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 strict_mode_config: config
                     .strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
+                comment: config.comment,
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -777,7 +778,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 }
             },
             strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
-            comment: None, // TODO
+            comment: config.comment, 
         })
     }
 }

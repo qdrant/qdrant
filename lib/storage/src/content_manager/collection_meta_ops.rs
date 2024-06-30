@@ -255,11 +255,8 @@ impl UpdateCollectionOperation {
                 optimizers_config: None,
                 quantization_config: None,
                 sparse_vectors: None,
-<<<<<<< HEAD
                 strict_mode_config: None,
-=======
                 comment: None,
->>>>>>> 5eda4b598 (store collection-wise comment as config value via rest api)
             },
             shard_replica_changes: None,
         }

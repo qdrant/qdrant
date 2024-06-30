@@ -352,6 +352,7 @@ message UpdateCollection {
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
   optional StrictModeConfig strict_mode_config = 9; // New strict mode configuration
+  optional string comment = 10; // Collection-level-metadata 
 }
 
 message DeleteCollection {
@@ -391,6 +392,7 @@ message CollectionConfig {
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
   optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
   optional StrictModeConfig strict_mode_config = 6; // Configuration of strict mode.
+  optional string comment = 7; // Collection-level-metadata 
 }
 
 enum TokenizerType {

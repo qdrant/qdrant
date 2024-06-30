@@ -120,6 +120,7 @@ def test_edit_collection_params(on_disk_vectors, on_disk_payload):
                     "always_ram": True
                 }
             },
+            "comment": "test collection for update",
             "params": {
                 "on_disk_payload": on_disk_payload,
             },
@@ -146,6 +147,7 @@ def test_edit_collection_params(on_disk_vectors, on_disk_payload):
     assert config["quantization_config"]["scalar"]["type"] == "int8"
     assert config["quantization_config"]["scalar"]["quantile"] == 0.99
     assert config["quantization_config"]["scalar"]["always_ram"]
+    assert config["comment"] == "test collection for update"
 
     response = request_with_validation(
         api='/collections/{collection_name}',
