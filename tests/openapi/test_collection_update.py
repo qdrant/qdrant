@@ -90,6 +90,7 @@ def test_edit_collection_params(on_disk_vectors, on_disk_payload):
     assert config["hnsw_config"]["m"] == 16
     assert config["hnsw_config"]["ef_construct"] == 100
     assert config["quantization_config"] is None
+    assert "comment" not in config
 
     response = request_with_validation(
         api='/collections/{collection_name}',
