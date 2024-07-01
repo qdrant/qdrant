@@ -22,7 +22,7 @@ use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 /// Point Id type used for storing ids internally
 /// Should be serializable by `bincode`, therefore is not untagged.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub(crate) enum StoredPointId {
+enum StoredPointId {
     NumId(u64),
     Uuid(Uuid),
     String(String),
