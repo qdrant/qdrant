@@ -261,7 +261,7 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
-#[derive(Debug, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
@@ -271,7 +271,7 @@ pub enum UpdateStatus {
     ClockRejected,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Copy, Clone, Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     /// Sequential number of the operation
