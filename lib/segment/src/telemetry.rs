@@ -9,11 +9,6 @@ use crate::types::{
 };
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
-pub struct VectorIndexesTelemetry {
-    vector_index_searches: Vec<VectorIndexSearchesTelemetry>,
-}
-
-#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,
