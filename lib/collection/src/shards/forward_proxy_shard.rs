@@ -55,6 +55,22 @@ impl ForwardProxyShard {
         remote_shard: RemoteShard,
         resharding_hash_ring: Option<HashRing>,
     ) -> Self {
+        // Validate that `ForwardProxyShard` initialized correctly
+
+        debug_assert!({
+            let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
+            let is_resharding = shard_id != remote_shard.id && resharding_hash_ring.is_some();
+
+            is_regular || is_resharding
+        });
+
+        if shard_id == remote_shard.id && resharding_hash_ring.is_some() {
+            log::warn!(
+                "ForwardProxyShard initialized with resharding hashring, \
+                 but wrapped shard id and remote shard id are the same",
+            );
+        }
+
         Self {
             shard_id,
             wrapped_shard,
@@ -246,6 +262,11 @@ impl ShardOperation for ForwardProxyShard {
             let tag = if self.shard_id != self.remote_shard.id {
                 None
             } else {
+                log::warn!(
+                    "ForwardProxyShard contains resharding hashring, \
+                     but wrapped shard id and remote shard id are the same",
+                );
+
                 operation.clock_tag
             };
 
