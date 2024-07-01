@@ -24,7 +24,8 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
-    CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
+    CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationToShard,
+    OperationWithClockTag, SplitByShard as _,
 };
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -41,17 +42,40 @@ pub struct ForwardProxyShard {
     shard_id: ShardId,
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
+    resharding_hash_ring: Option<HashRing>,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
 }
 
 impl ForwardProxyShard {
-    pub fn new(shard_id: ShardId, wrapped_shard: LocalShard, remote_shard: RemoteShard) -> Self {
+    pub fn new(
+        shard_id: ShardId,
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        resharding_hash_ring: Option<HashRing>,
+    ) -> Self {
+        // Validate that `ForwardProxyShard` initialized correctly
+
+        debug_assert!({
+            let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
+            let is_resharding = shard_id != remote_shard.id && resharding_hash_ring.is_some();
+
+            is_regular || is_resharding
+        });
+
+        if shard_id == remote_shard.id && resharding_hash_ring.is_some() {
+            log::warn!(
+                "ForwardProxyShard initialized with resharding hashring, \
+                 but wrapped shard id and remote shard id are the same",
+            );
+        }
+
         Self {
             shard_id,
             wrapped_shard,
             remote_shard,
+            resharding_hash_ring,
             update_lock: Mutex::new(()),
         }
     }
@@ -194,7 +218,7 @@ impl ShardOperation for ForwardProxyShard {
     /// This method is *not* cancel safe.
     async fn update(
         &self,
-        mut operation: OperationWithClockTag,
+        operation: OperationWithClockTag,
         _wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -210,31 +234,76 @@ impl ShardOperation for ForwardProxyShard {
         // the transfer needs to have access to the latest version of points.
         let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
 
-        // Strip clock tag if forwarding to a different shard
-        // Each shard has their own clock tags and they are incompatible with other shards
-        if self.shard_id != self.remote_shard.id {
-            operation.clock_tag = None;
-        }
+        let forward_operation = if let Some(ring) = &self.resharding_hash_ring {
+            // If `ForwardProxyShard::resharding_hash_ring` is `Some`, we assume that proxy is used
+            // during *resharding* shard transfer, which forwards points to a remote shard with
+            // *different* shard ID.
 
-        let remote_result = self
-            .remote_shard
-            .update(operation, false)
-            .await
-            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
+            debug_assert_ne!(self.shard_id, self.remote_shard.id);
 
-        // Merge `result` and `remote_result`:
-        //
-        // - Pick `clock_tag` with *newer* `clock_tick`
-        let tick = result.clock_tag.map(|tag| tag.clock_tick);
-        let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
+            // Only forward a *part* of the operation that belongs to remote shard.
+            let op = match operation.operation.split_by_shard(ring) {
+                OperationToShard::ToAll(op) => Some(op),
+                OperationToShard::ByShard(by_shard) => by_shard
+                    .into_iter()
+                    .find(|&(shard_id, _)| shard_id == self.remote_shard.id)
+                    .map(|(_, op)| op),
+            };
 
-        if remote_tick > tick || tick.is_none() {
-            result.clock_tag = remote_result.clock_tag;
-        }
+            // Strip the clock tag from the operation, because clock tags are incompatible between
+            // different shards.
+            //
+            // Even though we expect (and assert) that this whole branch is only executed when
+            // forwarding to a *different* remote shard, we still handle the case when local and
+            // remote shards are the same, *just in case*.
+            //
+            // In such case `split_by_shard` call above would be a no-op, and we can preserve the
+            // clock tag.
+            let tag = if self.shard_id != self.remote_shard.id {
+                None
+            } else {
+                log::warn!(
+                    "ForwardProxyShard contains resharding hashring, \
+                     but wrapped shard id and remote shard id are the same",
+                );
 
-        // - If any node *rejected* the operation, propagate `UpdateStatus::ClockRejected`
-        if remote_result.status == UpdateStatus::ClockRejected {
-            result.status = UpdateStatus::ClockRejected;
+                operation.clock_tag
+            };
+
+            op.map(|op| OperationWithClockTag::new(op, tag))
+        } else {
+            // If `ForwardProxyShard::resharding_hash_ring` is `None`, we assume that proxy is used
+            // during *regular* shard transfer, so operation can be forwarded as-is, without any
+            // additional handling.
+
+            debug_assert_eq!(self.shard_id, self.remote_shard.id);
+
+            Some(operation)
+        };
+
+        if let Some(operation) = forward_operation {
+            let remote_result =
+                self.remote_shard
+                    .update(operation, false)
+                    .await
+                    .map_err(|err| {
+                        CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
+                    })?;
+
+            // Merge `result` and `remote_result`:
+            //
+            // - Pick `clock_tag` with *newer* `clock_tick`
+            let tick = result.clock_tag.map(|tag| tag.clock_tick);
+            let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
+
+            if remote_tick > tick || tick.is_none() {
+                result.clock_tag = remote_result.clock_tag;
+            }
+
+            // - If any node *rejected* the operation, propagate `UpdateStatus::ClockRejected`
+            if remote_result.status == UpdateStatus::ClockRejected {
+                result.status = UpdateStatus::ClockRejected;
+            }
         }
 
         Ok(result)

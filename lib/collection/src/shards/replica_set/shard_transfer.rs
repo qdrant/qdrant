@@ -20,7 +20,11 @@ impl ShardReplicaSet {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
+    pub async fn proxify_local(
+        &self,
+        remote_shard: RemoteShard,
+        resharding_hash_ring: Option<HashRing>,
+    ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         match local.deref() {
@@ -75,7 +79,12 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let proxy_shard = ForwardProxyShard::new(self.shard_id, local_shard, remote_shard);
+        let proxy_shard = ForwardProxyShard::new(
+            self.shard_id,
+            local_shard,
+            remote_shard,
+            resharding_hash_ring,
+        );
         let _ = local.insert(Shard::ForwardProxy(proxy_shard));
 
         Ok(())
@@ -459,7 +468,7 @@ impl ShardReplicaSet {
         };
 
         let (local_shard, remote_shard) = queue_proxy.forget_updates_and_finalize();
-        let forward_proxy = ForwardProxyShard::new(self.shard_id, local_shard, remote_shard);
+        let forward_proxy = ForwardProxyShard::new(self.shard_id, local_shard, remote_shard, None);
         let _ = local.insert(Shard::ForwardProxy(forward_proxy));
 
         Ok(())
