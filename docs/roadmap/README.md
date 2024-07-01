@@ -37,17 +37,17 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 ## Core Milestones
 
 * 📃 Hybrid Search and Sparse Vectors
-  * [ ] Make Sparse Vectors serving as cheap and fast as Dense Vectors
-  * [ ] Introduce Hybrid Search into Qdrant Client
-    * [ ] Dense + Sparse + Fusion in one request
+  * [x] Make Sparse Vectors serving as cheap and fast as Dense Vectors
+  * [x] Introduce Hybrid Search into Qdrant Client
+    * [x] Dense + Sparse + Fusion in one request
     * [ ] Customizable Re-Ranking
 
 ---
 
 * 🏗️ Scalability
-  * [ ] Faster shard synchronization
-    * [ ] Non-blocking snapshotting
-    * [ ] Incremental replication
+  * [x] Faster shard synchronization
+    * [x] Non-blocking snapshotting
+    * [x] Incremental replication
   * [ ] Specialized nodes
     * [ ] Read-only nodes
     * [ ] Indexing nodes
