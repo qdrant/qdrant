@@ -140,12 +140,45 @@ pub trait SegmentOptimizer {
                 *size += vector_size;
             }
 
-            space_occupied = space_occupied
-                .and_then(|x| dir_size(locked_segment.data_path()).ok().map(|y| x + y));
+            space_occupied =
+                space_occupied.and_then(|acc| match dir_size(locked_segment.data_path()) {
+                    Ok(size) => Some(size + acc),
+                    Err(err) => {
+                        log::debug!(
+                            "Could not estimate size of segment `{}`: {}",
+                            locked_segment.data_path().display(),
+                            err
+                        );
+                        None
+                    }
+                });
         }
 
         let space_needed = space_occupied.map(|x| 2 * x);
-        let space_available = fs4::available_space(self.temp_path()).ok();
+
+        // Ensure temp_path exists
+
+        if !self.temp_path().exists() {
+            std::fs::create_dir_all(self.temp_path()).map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Could not create temp directory `{}`: {}",
+                    self.temp_path().display(),
+                    err
+                ))
+            })?;
+        }
+
+        let space_available = match fs4::available_space(self.temp_path()) {
+            Ok(available) => Some(available),
+            Err(err) => {
+                log::debug!(
+                    "Could not estimate available storage space in `{}`: {}",
+                    self.temp_path().display(),
+                    err
+                );
+                None
+            }
+        };
 
         match (space_available, space_needed) {
             (Some(space_available), Some(space_needed)) => {
