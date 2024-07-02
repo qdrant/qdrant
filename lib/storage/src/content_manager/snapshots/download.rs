@@ -62,10 +62,10 @@ async fn download_file(
     Ok(temp_path)
 }
 
-/// Download remote snapshot file and return path to downloaded file.
-/// Downloaded file will be saved into `snapshots_dir`.
+/// Download remote snapshot file, or use local snapshot file.
 ///
-/// If URL is a `file://` URL, the path to the local file is returned.
+/// If an HTTP/HTTPS URL is provided, the snapshot file will be downloaded to `downloads_dir`.
+/// If an file URL is provided, the local file will be used directly.
 ///
 /// If remote file was downloaded, an optional `TempPath` is also returned. When `TempFile` is dropped, it will delete downloaded file automatically. See [`TempPath::keep`] and [`TempPath::persist`] to preserve the file.
 ///
@@ -74,9 +74,10 @@ async fn download_file(
 /// A `file://` URI may point to arbitrary files on the file system, which could be a security
 /// concern. Set `only_snapshot_dir` to `true` to only accept local files inside the `snapshots_dir`.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
-pub async fn download_snapshot(
+pub async fn download_or_local_snapshot(
     client: &reqwest::Client,
     url: Url,
+    downloads_dir: &Path,
     snapshots_dir: &Path,
     only_snapshot_dir: bool,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
@@ -119,11 +120,11 @@ pub async fn download_snapshot(
             Ok((local_path, None))
         }
         "http" | "https" => {
-            let download_to = snapshots_dir.join(snapshot_name(&url));
+            let download_to = downloads_dir.join(snapshot_name(&url));
 
             log::debug!(
                 "Downloading snapshot from {url} to {}",
-                snapshots_dir.display(),
+                downloads_dir.display(),
             );
 
             let temp_path = download_file(client, &url, &download_to).await?;
@@ -132,7 +133,7 @@ pub async fn download_snapshot(
         _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
             url,
-            url.scheme()
+            url.scheme(),
         ))),
     }
 }
