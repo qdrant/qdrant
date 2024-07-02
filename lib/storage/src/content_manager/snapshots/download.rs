@@ -90,6 +90,7 @@ pub async fn download_snapshot(
                 )));
             }
 
+            // If we fail, don't return an error right away to prevent leaking file existence
             let local_path = local_path.canonicalize().unwrap_or(local_path);
 
             // Prevent using arbitrary files from our file system, enforce the file to be in the
