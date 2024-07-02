@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
@@ -90,16 +91,25 @@ pub async fn download_snapshot(
                 )));
             }
 
-            // If we fail, don't return an error right away to prevent leaking file existence
+            // Don't return an error if we fail, prevent side channel to check file presence
             let local_path = local_path.canonicalize().unwrap_or(local_path);
 
             // Prevent using arbitrary files from our file system, enforce the file to be in the
             // snapshots directory
             if only_snapshot_dir {
-                let snapshots_dir = snapshots_dir
+                if !snapshots_dir.exists() {
+                    fs::create_dir_all(snapshots_dir).map_err(|err| {
+                        StorageError::forbidden(format!(
+                            "Failed to create snapshots directory at {}: {err}",
+                            snapshots_dir.display(),
+                        ))
+                    })?;
+                }
+
+                let inside_snapshots_dir = snapshots_dir
                     .canonicalize()
-                    .unwrap_or_else(|_| snapshots_dir.to_path_buf());
-                if !local_path.starts_with(snapshots_dir) {
+                    .map_or(false, |snapshots_dir| local_path.starts_with(snapshots_dir));
+                if !inside_snapshots_dir {
                     return Err(StorageError::forbidden(format!(
                         "Snapshot file {local_path:?} must be inside snapshots directory",
                     )));
@@ -145,10 +155,16 @@ pub fn resolve_uri_file_path(url: &Url, workdir: &Path) -> Result<PathBuf, Stora
 
     // Parse relative path with specific prefix, normally not supported
     if let Some(relative_path) = url.to_string().strip_prefix(URI_FILE_RELATIVE_PREFIX) {
-        let workdir = workdir
-            .canonicalize()
-            .unwrap_or_else(|_| workdir.to_path_buf());
-        return Ok(workdir.join(relative_path));
+        if !workdir.exists() {
+            fs::create_dir_all(workdir).map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to create working directory at {}: {err}",
+                    workdir.display(),
+                ))
+            })?;
+        }
+
+        return Ok(workdir.canonicalize()?.join(relative_path));
     }
 
     // Parse absolute path
