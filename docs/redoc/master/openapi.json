@@ -8911,6 +8911,7 @@
           "local_shards",
           "peer_id",
           "remote_shards",
+          "resharding_operations",
           "shard_count",
           "shard_transfers"
         ],
@@ -8946,6 +8947,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTransferInfo"
+            }
+          },
+          "resharding_operations": {
+            "description": "Resharding operations",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReshardingInfo"
             }
           }
         }
@@ -9107,6 +9115,40 @@
             ]
           }
         ]
+      },
+      "ReshardingInfo": {
+        "type": "object",
+        "required": [
+          "peer_id",
+          "shard_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "comment": {
+            "description": "A human-readable report of the operation progress. Available only on the source peer.",
+            "type": "string",
+            "nullable": true
+          }
+        }
       },
       "TelemetryData": {
         "type": "object",
