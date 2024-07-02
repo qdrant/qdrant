@@ -211,8 +211,7 @@ async fn upload_snapshot(
             &collection.name,
             snapshot_recover,
             access,
-            // No need to limit to snapshot directory, only uploaded file is used
-            false,
+            true,
             http_client,
         )
     })
