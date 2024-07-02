@@ -216,15 +216,9 @@ impl DynamicMmapFlags {
 
     /// Count number of set flags
     pub fn count_flags(&self) -> usize {
-        let mut ones = self.flags.count_ones();
-
-        // Subtract flags in extra capacity we don't use
-        // They may have been set before shrinking the bitvec again
-        ones -= (self.status.len..self.flags.len())
-            .filter(|&i| self.get(i))
-            .count();
-
-        ones
+        // Take a bitslice of our set length, count ones in it
+        // This uses bit-indexing, returning a new bitslice, extra bits within capacity are not counted
+        self.flags[..self.status.len].count_ones()
     }
 
     /// Set the `true` value of the flag at the given index.
