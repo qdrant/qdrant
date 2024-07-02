@@ -71,15 +71,14 @@ async fn download_file(
 ///
 /// # Security
 ///
-/// A `file://` URI may point to arbitrary files on the file system, which could be a security
-/// concern. Set `only_snapshot_dir` to `true` to only accept local files inside the `snapshots_dir`.
+/// A `file://` URI is jailed within the `snapshots_dir`. If it points to anything outside that
+/// directory an error is returned.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_or_local_snapshot(
     client: &reqwest::Client,
     url: Url,
     downloads_dir: &Path,
     snapshots_dir: &Path,
-    only_snapshot_dir: bool,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
         "file" => {
@@ -95,26 +94,24 @@ pub async fn download_or_local_snapshot(
             // Don't return an error if we fail, prevent side channel to check file presence
             let local_path = local_path.canonicalize().unwrap_or(local_path);
 
+            if !snapshots_dir.exists() {
+                fs::create_dir_all(snapshots_dir).map_err(|err| {
+                    StorageError::forbidden(format!(
+                        "Failed to create snapshots directory at {}: {err}",
+                        snapshots_dir.display(),
+                    ))
+                })?;
+            }
+
             // Prevent using arbitrary files from our file system, enforce the file to be in the
             // snapshots directory
-            if only_snapshot_dir {
-                if !snapshots_dir.exists() {
-                    fs::create_dir_all(snapshots_dir).map_err(|err| {
-                        StorageError::forbidden(format!(
-                            "Failed to create snapshots directory at {}: {err}",
-                            snapshots_dir.display(),
-                        ))
-                    })?;
-                }
-
-                let inside_snapshots_dir = snapshots_dir
-                    .canonicalize()
-                    .map_or(false, |snapshots_dir| local_path.starts_with(snapshots_dir));
-                if !inside_snapshots_dir {
-                    return Err(StorageError::forbidden(format!(
-                        "Snapshot file {local_path:?} must be inside snapshots directory",
-                    )));
-                }
+            let inside_snapshots_dir = snapshots_dir
+                .canonicalize()
+                .map_or(false, |snapshots_dir| local_path.starts_with(snapshots_dir));
+            if !inside_snapshots_dir {
+                return Err(StorageError::forbidden(format!(
+                    "Snapshot file {local_path:?} must be inside snapshots directory",
+                )));
             }
 
             Ok((local_path, None))

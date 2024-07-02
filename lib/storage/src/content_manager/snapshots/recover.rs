@@ -53,7 +53,6 @@ pub fn do_recover_from_snapshot(
     collection_name: &str,
     source: SnapshotRecover,
     access: Access,
-    only_snapshot_dir: bool,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     let multipass = access.check_global_access(AccessRequirements::new().manage())?;
@@ -68,7 +67,6 @@ pub fn do_recover_from_snapshot(
             &collection_name,
             collection_pass,
             source,
-            only_snapshot_dir,
             &client,
         )
         .await
@@ -81,7 +79,6 @@ async fn _do_recover_from_snapshot(
     collection_name: &str,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
-    only_snapshot_dir: bool,
     client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
     let SnapshotRecover {
@@ -99,7 +96,7 @@ async fn _do_recover_from_snapshot(
     let download_dir = toc.snapshots_download_tempdir()?;
     let snapshots_path = toc.snapshots_path_for_collection(collection_name);
     let (snapshot_path, snapshot_temp_path) =
-        download_or_local_snapshot(client, location, download_dir.path(), &snapshots_path, only_snapshot_dir).await?;
+        download_or_local_snapshot(client, location, download_dir.path(), &snapshots_path).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;

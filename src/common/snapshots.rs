@@ -133,7 +133,6 @@ pub async fn recover_shard_snapshot(
                             url,
                             download_dir.path(),
                             collection.snapshots_path(),
-                            false,
                         )
                         .await?;
 
