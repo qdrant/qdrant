@@ -98,8 +98,7 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let snapshots_path =
-        TableOfContent::collection_snapshots_path(Path::new(toc.snapshots_path()), collection_name);
+    let snapshots_path = toc.snapshots_path_for_collection(collection_name);
     let (snapshot_path, snapshot_temp_path) =
         download_snapshot(client, location, &snapshots_path, only_snapshot_dir).await?;
 
