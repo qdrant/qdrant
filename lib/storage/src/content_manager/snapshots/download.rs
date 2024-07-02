@@ -61,20 +61,17 @@ async fn download_file(
     Ok(temp_path)
 }
 
-/// Download a snapshot file an URI, return a file path to it
+/// Download remote snapshot file and return path to downloaded file.
+/// Downloaded file will be saved into `snapshots_dir`.
 ///
-/// For remote resources such as an URL, this downloads the given file and puts it in
-/// `snapshots_dir`. A path to the downloaded file is returned.
+/// If URL is a `file://` URL, the path to the local file is returned.
 ///
-/// For `file://` URIs a direct path is returned.
-///
-/// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
-/// downloaded file is deleted automatically. To keep the file `keep()` may be used.
+/// If remote file was downloaded, an optional `TempPath` is also returned. When `TempFile` is dropped, it will delete downloaded file automatically. See [`TempPath::keep`] and [`TempPath::persist`] to preserve the file.
 ///
 /// # Security
 ///
 /// A `file://` URI may point to arbitrary files on the file system, which could be a security
-/// concern. Set `strict_file` to `true` to enforce a local file to be inside `snapshots_dir`.
+/// concern. Set `only_snapshot_dir` to `true` to only accept local files inside the `snapshots_dir`.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_snapshot(
     client: &reqwest::Client,
