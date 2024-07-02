@@ -26,8 +26,9 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
-    Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal, SparseIndexParams,
-    SparseVectorParams, SparseVectorsConfig, VectorParamsDiff, VectorsConfigDiff,
+    Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal, ReshardingInfo,
+    SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -1562,6 +1563,16 @@ impl From<RemoteShardInfo> for api::grpc::qdrant::RemoteShardInfo {
     }
 }
 
+impl From<ReshardingInfo> for api::grpc::qdrant::ReshardingInfo {
+    fn from(value: ReshardingInfo) -> Self {
+        Self {
+            shard_id: value.shard_id,
+            peer_id: value.peer_id,
+            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
+        }
+    }
+}
+
 impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
     fn from(value: ShardTransferInfo) -> Self {
         Self {
@@ -1594,6 +1605,12 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
                 .into_iter()
                 .map(|shard| shard.into())
                 .collect(),
+            // TODO(resharding): enable on release:
+            // resharding_operations: value
+            //     .resharding_operations
+            //     .into_iter()
+            //     .map(|info| info.into())
+            //     .collect(),
         }
     }
 }

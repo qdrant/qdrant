@@ -914,6 +914,17 @@ pub struct ShardTransferInfo {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReshardingInfo {
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub peer_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionClusterInfoResponse {
     /// ID of this peer
     #[prost(uint64, tag = "1")]

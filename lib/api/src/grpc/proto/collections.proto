@@ -511,12 +511,20 @@ message ShardTransferInfo {
   bool sync = 4; // If `true` transfer is a synchronization of a replicas; If `false` transfer is a moving of a shard from one peer to another
 }
 
+message ReshardingInfo {
+  uint32 shard_id = 1;
+  uint64 peer_id = 2;
+  optional ShardKey shard_key = 3;
+}
+
 message CollectionClusterInfoResponse {
   uint64 peer_id = 1;  // ID of this peer
   uint64 shard_count = 2; // Total number of shards
   repeated LocalShardInfo local_shards = 3; // Local shards
   repeated RemoteShardInfo remote_shards = 4; // Remote shards
   repeated ShardTransferInfo shard_transfers = 5; // Shard transfers
+  // TODO(resharding): enable on release:
+  // repeated ReshardingInfo resharding_operations = 6; // Resharding operations
 }
 
 message MoveShard {

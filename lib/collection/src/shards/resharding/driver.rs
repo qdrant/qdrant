@@ -135,7 +135,7 @@ impl DriverState {
             Stage::S4_CommitHashring => "commit hash ring: switching reads and writes".into(),
             Stage::S5_PropagateDeletes => format!(
                 "propagate deletes: deleting migrated points from shards {:?}",
-                self.shards_to_migrate().collect::<Vec<_>>(),
+                self.shards_to_delete().collect::<Vec<_>>(),
             ),
             Stage::S6_Finalize => "finalize".into(),
             Stage::Finished => "finished".into(),
