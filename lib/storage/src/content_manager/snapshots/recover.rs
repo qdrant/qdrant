@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use collection::collection::Collection;
 use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfig;
