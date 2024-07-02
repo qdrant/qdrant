@@ -51,6 +51,8 @@ struct DriverState {
     key: ReshardKey,
     /// Stage each peer is currently in
     peers: HashMap<PeerId, Stage>,
+    /// List of shard IDs that must be migrated into the new shard
+    source_shard_ids: HashSet<ShardId>,
     /// List of shard IDs successfully migrated to the new shard
     migrated_shards: Vec<ShardId>,
     /// List of shard IDs in which we successfully deleted migrated points
@@ -58,10 +60,11 @@ struct DriverState {
 }
 
 impl DriverState {
-    pub fn new(key: ReshardKey, peers: &[PeerId]) -> Self {
+    pub fn new(key: ReshardKey, source_shard_ids: HashSet<ShardId>, peers: &[PeerId]) -> Self {
         Self {
             key,
             peers: HashMap::from_iter(peers.iter().map(|peer_id| (*peer_id, Stage::default()))),
+            source_shard_ids,
             migrated_shards: vec![],
             deleted_shards: vec![],
         }
@@ -114,8 +117,8 @@ impl DriverState {
     }
 
     /// Get all the shard IDs which points are sourced from.
-    pub fn source_shards(&self) -> impl Iterator<Item = ShardId> {
-        0..self.key.shard_id
+    pub fn source_shards(&self) -> impl Iterator<Item = ShardId> + '_ {
+        self.source_shard_ids.iter().copied()
     }
 
     /// Describe the current stage and state in a human readable string.
@@ -207,11 +210,26 @@ pub async fn drive_resharding(
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
     let to_shard_id = reshard_key.shard_id;
+    let hash_ring = shard_holder
+        .read()
+        .await
+        .rings
+        .get(&reshard_key.shard_key)
+        .cloned()
+        .unwrap();
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
     let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
-        DriverState::new(reshard_key.clone(), &consensus.peers())
+        let mut shard_ids = hash_ring.unique_nodes();
+        shard_ids.remove(&reshard_key.shard_id);
+
+        DriverState::new(reshard_key.clone(), shard_ids, &consensus.peers())
     })?;
     progress.lock().description.replace(state.read().describe());
+
+    log::debug!(
+        "Resharding {collection_id}:{to_shard_id} from shards {:?}",
+        state.read().source_shards().collect::<Vec<_>>(),
+    );
 
     // Stage 1: init
     if !completed_init(&state) {
