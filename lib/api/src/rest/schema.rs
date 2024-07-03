@@ -81,6 +81,9 @@ fn shard_key_example() -> Option<segment::types::ShardKey> {
     Some(ShardKey::from("shard-1"))
 }
 
+fn order_by_example() -> Option<segment::data_types::order_by::OrderValue> {
+    Some(segment::data_types::order_by::OrderValue::from(1))
+}
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
@@ -104,6 +107,7 @@ pub struct ScoredPoint {
     pub shard_key: Option<segment::types::ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "order_by_example")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 

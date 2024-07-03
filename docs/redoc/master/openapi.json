@@ -7418,7 +7418,8 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "example": 1
           }
         }
       },
