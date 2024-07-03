@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,14 +12,19 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, VectorRef, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
+use segment::json_path::JsonPathV2;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
+use segment::types::{
+    Indexes, PayloadContainer, PayloadKeyType, SegmentConfig, VectorDataConfig, VectorStorageType,
+};
+use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
 use crate::fixtures::segment::{
-    build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2, empty_segment,
+    build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2,
+    empty_segment, PAYLOAD_KEY,
 };
 
 #[test]
@@ -43,7 +49,7 @@ fn test_building_new_segment() {
     let segment2 = Arc::new(RwLock::new(segment2));
 
     builder
-        .update(&[segment1.clone(), segment2.clone()], &stopped)
+        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
         .unwrap();
 
     /* builder.update_from(&segment1, &stopped).unwrap();
@@ -86,6 +92,128 @@ fn test_building_new_segment() {
     );
 
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
+
+    // Test that our defragmentation algorithm and test works properly by checking for an error against
+    // a non defragmented segment.
+    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
+    assert!(check_points_defragmented(&merged_segment, &defragment_key).is_err());
+}
+
+#[test]
+fn test_building_new_defragmented_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+
+    let segment1 = build_segment_1(dir.path());
+    let mut segment2 = build_segment_2(dir.path());
+
+    let mut builder =
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+
+    // Include overlapping with segment1 to check the
+    segment2
+        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .unwrap();
+
+    let segment1 = Arc::new(RwLock::new(segment1));
+    let segment2 = Arc::new(RwLock::new(segment2));
+
+    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
+    builder.set_defragment_key(defragment_key.clone());
+
+    builder
+        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
+        .unwrap();
+
+    // Check what happens if segment building fails here
+
+    let segment_count = dir.path().read_dir().unwrap().count();
+
+    assert_eq!(segment_count, 2);
+
+    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+
+    assert_eq!(temp_segment_count, 1);
+
+    // Now we finalize building
+
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
+    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+
+    let new_segment_count = dir.path().read_dir().unwrap().count();
+
+    assert_eq!(new_segment_count, 3);
+
+    assert_eq!(
+        merged_segment.iter_points().count(),
+        merged_segment.available_point_count(),
+    );
+    assert_eq!(
+        merged_segment.available_point_count(),
+        segment1
+            .read()
+            .iter_points()
+            .chain(segment2.read().iter_points())
+            .unique()
+            .count(),
+    );
+
+    assert_eq!(merged_segment.point_version(3.into()), Some(100));
+
+    if let Err(err) = check_points_defragmented(&merged_segment, &defragment_key) {
+        panic!("{err}");
+    }
+}
+
+/// Iterates over the internal point ids of the merged segmend and checks that the
+/// points are grouped by the payload value.
+fn check_points_defragmented(
+    segment: &Segment,
+    defragment_key: &PayloadKeyType,
+) -> Result<(), &'static str> {
+    let merged_segment_id_tracker = segment.id_tracker.borrow();
+    let mut previous_key: Option<Value> = None;
+    let mut seen: Vec<Value> = vec![];
+    for internal_id in merged_segment_id_tracker.iter_internal() {
+        let external_id = merged_segment_id_tracker.external_id(internal_id).unwrap();
+        let payload = segment.payload(external_id).unwrap();
+        let key = payload.get_value(&defragment_key);
+
+        if key.is_empty() {
+            if !seen.is_empty() {
+                return Err("In a defragmented segment, points without index come first!");
+            }
+
+            continue;
+        }
+
+        let key = key[0].clone();
+
+        let prev = match &previous_key {
+            Some(previous) => previous,
+            None => {
+                previous_key = Some(key[0].clone());
+                continue;
+            }
+        };
+
+        if *prev == key {
+            continue;
+        }
+
+        if seen.contains(&key) {
+            return Err("Keys not defragmented");
+        }
+
+        seen.push(key.clone());
+        previous_key = Some(key);
+    }
+
+    Ok(())
 }
 
 #[test]
@@ -115,7 +243,7 @@ fn test_building_new_sparse_segment() {
     let segment2 = Arc::new(RwLock::new(segment2));
 
     builder
-        .update(&[segment1.clone(), segment2.clone()], &stopped)
+        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
         .unwrap();
 
     /* builder.update_from(&segment1, &stopped).unwrap();
@@ -188,7 +316,7 @@ fn estimate_build_time(
 
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
-    builder.update(&[segment], &stopped).unwrap();
+    builder.apply_from(&[segment], &stopped).unwrap();
 
     let now = Instant::now();
 

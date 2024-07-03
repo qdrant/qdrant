@@ -95,7 +95,7 @@ fn test_rebuild_with_removed_vectors() {
 
     let segment1 = Arc::new(RwLock::new(segment1));
 
-    builder.update(&[segment1, segment2], &stopped).unwrap();
+    builder.apply_from(&[segment1, segment2], &stopped).unwrap();
 
     /* builder.update_from(&segment1, &stopped).unwrap();
     builder.update_from(&segment2, &stopped).unwrap(); */

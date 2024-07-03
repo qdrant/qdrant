@@ -429,7 +429,7 @@ fn test_build_hnsw_using_quantization() {
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
 
     let segment1 = Arc::new(RwLock::new(segment1));
-    builder.update(&[segment1], &stopped).unwrap();
+    builder.apply_from(&[segment1], &stopped).unwrap();
 
     let built_segment: Segment = builder.build(permit, &stopped).unwrap();
 

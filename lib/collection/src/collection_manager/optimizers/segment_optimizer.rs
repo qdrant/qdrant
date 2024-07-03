@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,8 +18,8 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    ExtendedPointId, HnswConfig, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType,
-    PayloadStorageType, PointIdType, QuantizationConfig, SegmentConfig, VectorStorageType,
+    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
+    QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -421,7 +420,25 @@ pub trait SegmentOptimizer {
             })
             .collect();
 
-        segment_builder.update(&segments, stopped)?;
+        // TODO: use a different approach to select the key to defragment to
+        let mut defragment_key = None;
+        for segment in &segments {
+            if defragment_key.is_none() {
+                defragment_key = segment
+                    .read()
+                    .payload_index
+                    .borrow()
+                    .field_indexes
+                    .iter()
+                    .nth(0)
+                    .map(|i| i.0.clone());
+            }
+        }
+        if let Some(defragment_key) = defragment_key {
+            segment_builder.set_defragment_key(defragment_key);
+        }
+
+        segment_builder.apply_from(&segments, stopped)?;
 
         for field in proxy_deleted_indexes.read().iter() {
             segment_builder.remove_indexed_field(field);
@@ -679,33 +696,5 @@ pub trait SegmentOptimizer {
         }
         timer.set_success(true);
         Ok(true)
-    }
-}
-
-fn hash_value(val: &serde_json::Value) -> u64 {
-    let mut hash = DefaultHasher::default();
-    hash_value_to(val, &mut hash);
-    hash.finish()
-}
-
-fn hash_value_to<H: Hasher>(val: &serde_json::Value, hash: &mut H) {
-    match val {
-        serde_json::Value::Null => (),
-        serde_json::Value::Bool(b) => b.hash(hash),
-        serde_json::Value::Number(n) => n.hash(hash),
-        serde_json::Value::String(s) => s.hash(hash),
-        serde_json::Value::Array(a) => {
-            for i in a {
-                hash_value_to(i, hash);
-            }
-        }
-        serde_json::Value::Object(o) => {
-            // The 'preserve_order' feature for serde_json is enabled, so iterating
-            // here is ok.
-            for (k, v) in o {
-                k.hash(hash);
-                hash_value_to(v, hash);
-            }
-        }
     }
 }
