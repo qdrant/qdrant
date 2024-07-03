@@ -610,7 +610,7 @@ async fn stage_replicate(
             // Ensure we don't exceed the outgoing transfer limits
             let shard_holder = shard_holder.read().await;
             let (_, outgoing) = shard_holder.count_shard_transfer_io(&this_peer_id);
-            if outgoing < outgoing_limit {
+            if outgoing >= outgoing_limit {
                 log::trace!("Postponing resharding replication transfer to stay below transfer limit (outgoing: {outgoing})");
                 sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
                 continue;
