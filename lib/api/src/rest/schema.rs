@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::{JsonPath, JsonPathInterface};
-use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
+use segment::types::{Filter, Payload, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
@@ -71,12 +71,10 @@ fn vector_example() -> Option<VectorStruct> {
 }
 
 fn payload_example() -> Option<segment::types::Payload> {
-    Some(
-        serde_json::json!({
-            "city": "London",
-            "color": "green",
-        })
-    )
+    Some(Payload::from(serde_json::json!({
+        "city": "London",
+        "color": "green",
+    })))
 }
 
 /// Search result
