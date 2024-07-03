@@ -211,8 +211,8 @@ impl ShardReplicaSet {
 
         if active_remote_shards.is_empty() && !local_is_updatable {
             return Err(CollectionError::service_error(format!(
-                "The replica set for shard {} on peer {} has no active replica",
-                self.shard_id, this_peer_id
+                "The replica set for shard {} on peer {this_peer_id} has no active replica",
+                self.shard_id,
             )));
         }
 
@@ -297,7 +297,7 @@ impl ShardReplicaSet {
                 if echo_tag.peer_id != clock_tag.peer_id {
                     debug_assert!(
                         false,
-                        "Echoed clock tag peer_id does not match the original"
+                        "Echoed clock tag peer_id does not match the original",
                     );
                     return None;
                 }
@@ -305,7 +305,7 @@ impl ShardReplicaSet {
                 if echo_tag.clock_id != clock_tag.clock_id {
                     debug_assert!(
                         false,
-                        "Echoed clock tag clock_id does not match the original"
+                        "Echoed clock tag clock_id does not match the original",
                     );
                     return None;
                 }
