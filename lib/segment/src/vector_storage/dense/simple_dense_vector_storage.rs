@@ -241,9 +241,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         for (_, other_vector, other_deleted) in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            // let other_vector = other.get_vector(point_id);
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            // let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, other_deleted, Some(other_vector.as_ref()))?;

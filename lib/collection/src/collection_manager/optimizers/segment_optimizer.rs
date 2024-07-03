@@ -416,29 +416,34 @@ pub trait SegmentOptimizer {
             .iter()
             .map(|i| match i {
                 LockedSegment::Original(o) => o.clone(),
-                LockedSegment::Proxy(_) => todo!(),
+                LockedSegment::Proxy(_) => {
+                    panic!("Trying to optimize a segment that is already being optimized!")
+                }
             })
             .collect();
 
-        // TODO: use a different approach to select the key to defragment to
+        // TODO: use a different approach to select the key to use for defragmentation
         let mut defragment_key = None;
         for segment in &segments {
-            if defragment_key.is_none() {
-                defragment_key = segment
-                    .read()
-                    .payload_index
-                    .borrow()
-                    .field_indexes
-                    .iter()
-                    .nth(0)
-                    .map(|i| i.0.clone());
+            if defragment_key.is_some() {
+                break;
             }
+
+            defragment_key = segment
+                .read()
+                .payload_index
+                .borrow()
+                .field_indexes
+                .iter()
+                .nth(0)
+                .map(|i| i.0.clone());
         }
+
         if let Some(defragment_key) = defragment_key {
             segment_builder.set_defragment_key(defragment_key);
         }
 
-        segment_builder.apply_from(&segments, stopped)?;
+        segment_builder.update(&segments, stopped)?;
 
         for field in proxy_deleted_indexes.read().iter() {
             segment_builder.remove_indexed_field(field);

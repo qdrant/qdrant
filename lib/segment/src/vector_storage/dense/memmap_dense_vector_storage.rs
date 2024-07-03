@@ -193,7 +193,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         let mut deleted_ids = vec![];
         for (id, other_vector, other_deleted) in other_ids {
             check_process_stopped(stopped)?;
-            // let other_vector = other.get_vector(id);
             let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let raw_bites = mmap_ops::transmute_to_u8_slice(vector.as_ref());
             vectors_file.write_all(raw_bites)?;

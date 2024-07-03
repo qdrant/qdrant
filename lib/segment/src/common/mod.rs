@@ -1,5 +1,6 @@
 pub mod anonymize;
 pub mod error_logging;
+pub mod hashable_value;
 pub mod macros;
 pub mod mmap_bitslice_buffered_update_wrapper;
 pub mod mmap_slice_buffered_update_wrapper;
