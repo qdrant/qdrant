@@ -65,7 +65,7 @@ async fn download_file(
 /// Download remote snapshot file, or use local snapshot file.
 ///
 /// If an HTTP/HTTPS URL is provided, the snapshot file will be downloaded to `downloads_dir`.
-/// If an file URL is provided, the local file will be used directly.
+/// If a file URL is provided, the local file will be used directly.
 ///
 /// If remote file was downloaded, an optional `TempPath` is also returned. When `TempFile` is dropped, it will delete downloaded file automatically. See [`TempPath::keep`] and [`TempPath::persist`] to preserve the file.
 ///
@@ -110,7 +110,8 @@ pub async fn download_or_local_snapshot(
                 .map_or(false, |snapshots_dir| local_path.starts_with(snapshots_dir));
             if !inside_snapshots_dir {
                 return Err(StorageError::forbidden(format!(
-                    "Snapshot file {local_path:?} must be inside snapshots directory",
+                    "Snapshot file {} must be inside snapshots directory",
+                    local_path.display(),
                 )));
             }
 
