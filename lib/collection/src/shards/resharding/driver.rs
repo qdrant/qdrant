@@ -530,14 +530,14 @@ async fn migrate_local(
     );
 
     let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
-    transfer_resharding_stream_records(
+    let result = transfer_resharding_stream_records(
         Arc::clone(&shard_holder),
         progress,
         source_shard_id,
         target_shard,
         collection_id,
     )
-    .await?;
+    .await;
 
     // Unproxify forward proxy on local shard we just transferred
     // Normally consensus takes care of this, but we don't use consensus here
@@ -551,7 +551,7 @@ async fn migrate_local(
         replica_set.un_proxify_local().await?;
     }
 
-    Ok(())
+    result
 }
 
 /// Stage 3: replicate to match replication factor
