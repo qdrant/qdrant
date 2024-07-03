@@ -6,7 +6,7 @@ use itertools::Itertools;
 use super::gpu_candidates_heap::GpuCandidatesHeap;
 use super::gpu_links::GpuLinks;
 use super::gpu_nearest_heap::GpuNearestHeap;
-use super::gpu_vector_storage::{GpuVectorStorage, GpuVectorStorageElementType};
+use super::gpu_vector_storage::GpuVectorStorage;
 use super::gpu_visited_flags::GpuVisitedFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::gpu::get_gpu_max_candidates_count;
@@ -107,77 +107,85 @@ impl GpuSearchContext {
         )?;
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count, max_patched_points)?;
 
-        let greedy_search_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/run_greedy_search_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/run_greedy_search_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/run_greedy_search_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/run_greedy_search_binary.spv")
-                }
-            },
-        ));
+        let greedy_search_shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/iterators.comp"))
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_layout(gpu::LayoutSetBinding::Links, 2)
+                .with_shader_code(include_str!("./shaders/links.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+                .with_shader_code(include_str!("./shaders/search_context.comp"))
+                .with_shader_code(include_str!("./shaders/run_greedy_search.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .build()
+        );
 
-        let insert_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/run_insert_vector_binary.spv")
-                }
-            },
-        ));
+        let insert_shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/iterators.comp"))
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_layout(gpu::LayoutSetBinding::Links, 2)
+                .with_shader_code(include_str!("./shaders/links.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+                .with_shader_code(include_str!("./shaders/search_context.comp"))
+                .with_shader_code(include_str!("./shaders/run_insert_vector.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .build()
+        );
 
-        let search_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/test_hnsw_search_binary.spv")
-                }
-            },
-        ));
+        let search_shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/iterators.comp"))
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_layout(gpu::LayoutSetBinding::Links, 2)
+                .with_shader_code(include_str!("./shaders/links.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+                .with_shader_code(include_str!("./shaders/search_context.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_hnsw_search.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .build()
+        );
 
-        let patches_shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/run_get_patch_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/run_get_patch_binary.spv")
-                }
-            },
-        ));
+        let patches_shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/iterators.comp"))
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_layout(gpu::LayoutSetBinding::Links, 2)
+                .with_shader_code(include_str!("./shaders/links.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+                .with_shader_code(include_str!("./shaders/search_context.comp"))
+                .with_shader_code(include_str!("./shaders/run_get_patch.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .build()
+        );
 
         let allocation_timer = std::time::Instant::now();
         let GpuSearchContextGroupAllocation {
@@ -1092,23 +1100,25 @@ mod tests {
         );
 
         // Create test pipeline
-        let shader = Arc::new(gpu::Shader::new(
-            test.gpu_search_context.device.clone(),
-            match test.gpu_search_context.gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    include_bytes!("./shaders/compiled/test_heuristic_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    include_bytes!("./shaders/compiled/test_heuristic_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    include_bytes!("./shaders/compiled/test_heuristic_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    include_bytes!("./shaders/compiled/test_heuristic_binary.spv")
-                }
-            },
-        ));
+        let shader = Arc::new(
+            gpu::ShaderBuilder::new(test.gpu_search_context.device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/iterators.comp"))
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_layout(gpu::LayoutSetBinding::Links, 2)
+                .with_shader_code(include_str!("./shaders/links.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+                .with_shader_code(include_str!("./shaders/search_context.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_heuristic.comp"))
+                .with_element_type(test.gpu_search_context.gpu_vector_storage.element_type)
+                .build()
+        );
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)

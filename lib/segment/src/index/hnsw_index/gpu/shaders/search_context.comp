@@ -1,13 +1,6 @@
 #ifndef SEARCH_CONTEXT_HEADER
 #define SEARCH_CONTEXT_HEADER
 
-#include "common.comp"
-#include "vector_storage.comp"
-#include "links.comp"
-#include "nearest_heap.comp"
-#include "candidates_heap.comp"
-#include "visited_flags.comp"
-
 bool process_candidate(ScoredPoint scored_point) {
     bool not_presented = nearest_smaller.id != scored_point.id;
     bool was_added = push_nearest(scored_point);

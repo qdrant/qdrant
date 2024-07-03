@@ -44,8 +44,6 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
 #error "VECTOR_STORAGE_ELEMENT not defined"
 #endif
 
-#include "common.comp"
-
 layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
 readonly uniform VectorStorageParams {
     uint dim;

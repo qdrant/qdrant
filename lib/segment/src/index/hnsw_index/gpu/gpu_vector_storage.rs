@@ -20,14 +20,6 @@ struct GpuVectorParamsBuffer {
     count: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GpuVectorStorageElementType {
-    Float32,
-    Float16,
-    Uint8,
-    Binary,
-}
-
 pub struct GpuVectorStorage {
     pub device: Arc<gpu::Device>,
     pub vectors_buffer: Vec<Arc<gpu::Buffer>>,
@@ -36,7 +28,7 @@ pub struct GpuVectorStorage {
     pub descriptor_set: Arc<gpu::DescriptorSet>,
     pub dim: usize,
     pub count: usize,
-    pub element_type: GpuVectorStorageElementType,
+    pub element_type: gpu::GpuVectorStorageElementType,
 }
 
 impl GpuVectorStorage {
@@ -91,7 +83,7 @@ impl GpuVectorStorage {
                 let u32_count = bits_count / 32;
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
-                    GpuVectorStorageElementType::Binary,
+                    gpu::GpuVectorStorageElementType::Binary,
                     vector_storage.total_vector_count(),
                     |id| {
                         let vector = vector_storage.get_vector(id);
@@ -116,7 +108,7 @@ impl GpuVectorStorage {
                 let u32_count = bits_count / 32;
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
-                    GpuVectorStorageElementType::Binary,
+                    gpu::GpuVectorStorageElementType::Binary,
                     vector_storage.total_vector_count(),
                     |id| {
                         let vector = vector_storage.get_vector(id);
@@ -149,7 +141,7 @@ impl GpuVectorStorage {
                 if force_half_precision {
                     Self::new_typed::<VectorElementTypeHalf>(
                         device,
-                        GpuVectorStorageElementType::Float16,
+                        gpu::GpuVectorStorageElementType::Float16,
                         vector_storage.total_vector_count(),
                         |id| {
                             VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
@@ -160,7 +152,7 @@ impl GpuVectorStorage {
                 } else {
                     Self::new_typed::<VectorElementType>(
                         device,
-                        GpuVectorStorageElementType::Float32,
+                        gpu::GpuVectorStorageElementType::Float32,
                         vector_storage.total_vector_count(),
                         |id| Cow::Borrowed(vector_storage.get_dense(id)),
                     )
@@ -169,7 +161,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseSimpleByte(vector_storage) => {
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
-                    GpuVectorStorageElementType::Uint8,
+                    gpu::GpuVectorStorageElementType::Uint8,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -177,7 +169,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseSimpleHalf(vector_storage) => {
                 Self::new_typed::<VectorElementTypeHalf>(
                     device,
-                    GpuVectorStorageElementType::Float16,
+                    gpu::GpuVectorStorageElementType::Float16,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -186,7 +178,7 @@ impl GpuVectorStorage {
                 if force_half_precision {
                     Self::new_typed::<VectorElementTypeHalf>(
                         device,
-                        GpuVectorStorageElementType::Float16,
+                        gpu::GpuVectorStorageElementType::Float16,
                         vector_storage.total_vector_count(),
                         |id| {
                             VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
@@ -197,7 +189,7 @@ impl GpuVectorStorage {
                 } else {
                     Self::new_typed::<VectorElementType>(
                         device,
-                        GpuVectorStorageElementType::Float32,
+                        gpu::GpuVectorStorageElementType::Float32,
                         vector_storage.total_vector_count(),
                         |id| Cow::Borrowed(vector_storage.get_dense(id)),
                     )
@@ -206,7 +198,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseMemmapByte(vector_storage) => {
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
-                    GpuVectorStorageElementType::Uint8,
+                    gpu::GpuVectorStorageElementType::Uint8,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -214,7 +206,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseMemmapHalf(vector_storage) => {
                 Self::new_typed::<VectorElementTypeHalf>(
                     device,
-                    GpuVectorStorageElementType::Float16,
+                    gpu::GpuVectorStorageElementType::Float16,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -223,7 +215,7 @@ impl GpuVectorStorage {
                 if force_half_precision {
                     Self::new_typed::<VectorElementTypeHalf>(
                         device,
-                        GpuVectorStorageElementType::Float16,
+                        gpu::GpuVectorStorageElementType::Float16,
                         vector_storage.total_vector_count(),
                         |id| {
                             VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
@@ -234,7 +226,7 @@ impl GpuVectorStorage {
                 } else {
                     Self::new_typed::<VectorElementType>(
                         device,
-                        GpuVectorStorageElementType::Float32,
+                        gpu::GpuVectorStorageElementType::Float32,
                         vector_storage.total_vector_count(),
                         |id| Cow::Borrowed(vector_storage.get_dense(id)),
                     )
@@ -243,7 +235,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseAppendableMemmapByte(vector_storage) => {
                 Self::new_typed::<VectorElementTypeByte>(
                     device,
-                    GpuVectorStorageElementType::Uint8,
+                    gpu::GpuVectorStorageElementType::Uint8,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -251,7 +243,7 @@ impl GpuVectorStorage {
             VectorStorageEnum::DenseAppendableMemmapHalf(vector_storage) => {
                 Self::new_typed::<VectorElementTypeHalf>(
                     device,
-                    GpuVectorStorageElementType::Float16,
+                    gpu::GpuVectorStorageElementType::Float16,
                     vector_storage.total_vector_count(),
                     |id| Cow::Borrowed(vector_storage.get_dense(id)),
                 )
@@ -272,7 +264,7 @@ impl GpuVectorStorage {
 
     fn new_typed<'a, TElement: PrimitiveVectorElement>(
         device: Arc<gpu::Device>,
-        element_type: GpuVectorStorageElementType,
+        element_type: gpu::GpuVectorStorageElementType,
         count: usize,
         get_vector: impl Fn(PointOffsetType) -> Cow<'a, [TElement]>,
     ) -> gpu::GpuResult<Self> {
@@ -499,7 +491,7 @@ mod tests {
     fn test_gpu_vector_storage_scoring_impl(
         element_type: TestElementType,
         force_half_precision: bool,
-    ) -> GpuVectorStorageElementType {
+    ) -> gpu::GpuVectorStorageElementType {
         let num_vectors = 2048;
         let dim = 128;
         let capacity = 128;
@@ -548,27 +540,15 @@ mod tests {
             .add_storage_buffer(0, scores_buffer.clone())
             .build();
 
-        let shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    println!("Float32 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    println!("Float16 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    println!("Uint8 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    println!("Binary shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_binary.spv")
-                }
-            },
-        ));
+        let shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .build()
+        );
 
         let pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, descriptor_set_layout.clone())
@@ -637,25 +617,25 @@ mod tests {
     #[test]
     fn test_gpu_vector_storage_scoring() {
         let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float32, false);
-        assert_eq!(element, GpuVectorStorageElementType::Float32);
+        assert_eq!(element, gpu::GpuVectorStorageElementType::Float32);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_f16() {
         let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float16, false);
-        assert_eq!(element, GpuVectorStorageElementType::Float16);
+        assert_eq!(element, gpu::GpuVectorStorageElementType::Float16);
     }
 
     #[test]
     fn test_gpu_vector_storage_scoring_u8() {
         let element = test_gpu_vector_storage_scoring_impl(TestElementType::Uint8, false);
-        assert_eq!(element, GpuVectorStorageElementType::Uint8);
+        assert_eq!(element, gpu::GpuVectorStorageElementType::Uint8);
     }
 
     #[test]
     fn test_gpu_vector_storage_force_half_precision() {
         let element = test_gpu_vector_storage_scoring_impl(TestElementType::Float32, true);
-        assert_eq!(element, GpuVectorStorageElementType::Float16);
+        assert_eq!(element, gpu::GpuVectorStorageElementType::Float16);
     }
 
     #[test]
@@ -706,7 +686,7 @@ mod tests {
                 .unwrap();
         assert_eq!(
             gpu_vector_storage.element_type,
-            GpuVectorStorageElementType::Binary
+            gpu::GpuVectorStorageElementType::Binary
         );
 
         let scores_buffer = Arc::new(
@@ -726,27 +706,15 @@ mod tests {
             .add_storage_buffer(0, scores_buffer.clone())
             .build();
 
-        let shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            match gpu_vector_storage.element_type {
-                GpuVectorStorageElementType::Float32 => {
-                    println!("Float32 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_f32.spv")
-                }
-                GpuVectorStorageElementType::Float16 => {
-                    println!("Float16 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_f16.spv")
-                }
-                GpuVectorStorageElementType::Uint8 => {
-                    println!("Uint8 shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_u8.spv")
-                }
-                GpuVectorStorageElementType::Binary => {
-                    println!("Binary shader");
-                    include_bytes!("./shaders/compiled/test_vector_storage_binary.spv")
-                }
-            },
-        ));
+        let shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
+                .with_element_type(gpu_vector_storage.element_type)
+                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .build()
+        );
 
         let pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, descriptor_set_layout.clone())

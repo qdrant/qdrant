@@ -10,6 +10,69 @@ pub struct Shader {
     pub vk_shader_module: vk::ShaderModule,
 }
 
+pub struct ShaderBuilder {
+    device: Arc<Device>,
+    shader_code: String,
+    element_type: Option<GpuVectorStorageElementType>,
+    layout_bindings: Vec<(LayoutSetBinding, usize)>,
+}
+
+impl ShaderBuilder {
+    pub fn new(device: Arc<Device>) -> Self {
+        Self {
+            device,
+            shader_code: Default::default(),
+            element_type: None,
+            layout_bindings: Default::default(),
+        }
+    }
+
+    pub fn with_shader_code(&mut self, shader_code: &str) -> &mut Self {
+        self.shader_code.push_str("\n");
+        self.shader_code.push_str(shader_code);
+        self
+    }
+
+    pub fn with_element_type(&mut self, element_type: GpuVectorStorageElementType) -> &mut Self {
+        self.element_type = Some(element_type);
+        self
+    }
+
+    pub fn with_layout(&mut self, layout: LayoutSetBinding, binding: usize) -> &mut Self {
+        self.layout_bindings.push((layout, binding));
+        self
+    }
+
+    pub fn build(&self) -> Shader {
+        let mut options = shaderc::CompileOptions::new().unwrap();
+        options.set_optimization_level(shaderc::OptimizationLevel::Performance);
+        options.set_target_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_3 as u32);
+        options.set_target_spirv(shaderc::SpirvVersion::V1_3);
+
+        if let Some(element_type) = self.element_type {
+            match element_type {
+                GpuVectorStorageElementType::Float32 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT32", None),
+                GpuVectorStorageElementType::Float16 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT16", None),
+                GpuVectorStorageElementType::Uint8 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_UINT8", None),
+                GpuVectorStorageElementType::Binary => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_BINARY", None),
+            }
+        }
+
+        for (layout, binding) in &self.layout_bindings {
+            let s = binding.to_string();
+            options.add_macro_definition(layout.to_string(), Some(&s));
+        }
+
+        let timer = std::time::Instant::now();
+        let compiled = self.device.compiler.compile_into_spirv(
+            &self.shader_code, shaderc::ShaderKind::Compute,
+            "shader.glsl", "main", Some(&options)).unwrap();
+        log::debug!("Shader compilation took: {:?}", timer.elapsed());
+        Shader::new(self.device.clone(), compiled.as_binary_u8())
+    }
+
+}
+
 unsafe impl Send for Shader {}
 unsafe impl Sync for Shader {}
 

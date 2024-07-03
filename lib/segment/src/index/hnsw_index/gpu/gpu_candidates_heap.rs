@@ -119,10 +119,14 @@ mod tests {
         let gpu_candidates_heap =
             GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
-        let shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            include_bytes!("./shaders/compiled/test_candidates_heap_f32.spv"),
-        ));
+        let shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_candidates_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 1)
+                .build()
+        );
 
         let input_points_buffer = Arc::new(
             gpu::Buffer::new(

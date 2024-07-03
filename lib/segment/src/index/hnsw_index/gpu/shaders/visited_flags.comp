@@ -5,9 +5,6 @@
 #error "VISITED_FLAGS_LAYOUT_SET not defined"
 #endif
 
-#include "common.comp"
-#include "vector_storage.comp"
-
 layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 0)
 readonly uniform VisitedFlagsParams {
     uint capacity;

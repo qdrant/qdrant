@@ -5,8 +5,6 @@
 #error "NEAREST_HEAP_LAYOUT_SET not defined"
 #endif
 
-#include "common.comp"
-
 layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
 readonly uniform NearestHeapParams {
     uint capacity;

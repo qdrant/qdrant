@@ -132,10 +132,14 @@ mod tests {
         let mut context = gpu::Context::new(device.clone());
         let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), groups_count, ef, ef).unwrap();
 
-        let shader = Arc::new(gpu::Shader::new(
-            device.clone(),
-            include_bytes!("./shaders/compiled/test_nearest_heap_f32.spv"),
-        ));
+        let shader = Arc::new(
+            gpu::ShaderBuilder::new(device.clone())
+                .with_shader_code(include_str!("./shaders/common.comp"))
+                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+                .with_shader_code(include_str!("./shaders/tests/test_nearest_heap.comp"))
+                .with_layout(gpu::LayoutSetBinding::NearestHeap, 1)
+                .build()
+        );
 
         let input_points_buffer = Arc::new(
             gpu::Buffer::new(

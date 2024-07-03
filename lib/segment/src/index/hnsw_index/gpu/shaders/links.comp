@@ -5,9 +5,6 @@
 #error "LINKS_LAYOUT_SET not defined"
 #endif
 
-#include "common.comp"
-#include "iterators.comp"
-
 layout(set = LINKS_LAYOUT_SET, binding = 0)
 readonly uniform LinksParams {
     uint m;

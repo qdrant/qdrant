@@ -5,8 +5,6 @@
 #error "CANDIDATES_HEAP_LAYOUT_SET not defined"
 #endif
 
-#include "common.comp"
-
 layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 0)
 readonly uniform CandidatesHeapParams {
     uint capacity;

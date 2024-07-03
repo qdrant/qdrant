@@ -1,18 +1,3 @@
-#version 450
-
-#extension GL_KHR_shader_subgroup_basic : enable
-#extension GL_KHR_shader_subgroup_arithmetic : enable
-#extension GL_KHR_shader_subgroup_shuffle : enable
-#extension GL_KHR_shader_subgroup_shuffle_relative : enable
-#extension GL_KHR_shader_subgroup_ballot : enable
-#extension GL_KHR_shader_subgroup_vote : enable
-
-#include "../common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
-
-#define VECTOR_STORAGE_LAYOUT_SET 1
-#include "../vector_storage.comp"
-
 layout(set = 0, binding = 0) buffer ScoresData {
     float data[];
 } scores;

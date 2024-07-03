@@ -22,10 +22,13 @@ pub struct Device {
     pub compute_queues: Vec<Queue>,
     pub transfer_queues: Vec<Queue>,
     pub subgroup_size: usize,
+    pub compiler: shaderc::Compiler,
 }
 
 impl Device {
     pub fn new(instance: Arc<Instance>, vk_physical_device: vk::PhysicalDevice) -> Option<Device> {
+        let compiler = shaderc::Compiler::new().unwrap();
+
         #[allow(unused_mut)]
         let mut extensions_cstr: Vec<CString> =
             vec![CString::from(ash::vk::KhrMaintenance1Fn::name())];
@@ -161,6 +164,7 @@ impl Device {
                 compute_queues,
                 transfer_queues,
                 subgroup_size,
+                compiler,
             })
         } else {
             None
