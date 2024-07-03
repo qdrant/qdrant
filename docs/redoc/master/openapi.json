@@ -6189,11 +6189,104 @@
         "description": "Payload type with parameters",
         "anyOf": [
           {
-            "$ref": "#/components/schemas/TextIndexParams"
+            "$ref": "#/components/schemas/KeywordIndexParams"
           },
           {
             "$ref": "#/components/schemas/IntegerIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/FloatIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/GeoIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/TextIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/BoolIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/DatetimeIndexParams"
           }
+        ]
+      },
+      "KeywordIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/KeywordIndexType"
+          }
+        }
+      },
+      "KeywordIndexType": {
+        "type": "string",
+        "enum": [
+          "keyword"
+        ]
+      },
+      "IntegerIndexParams": {
+        "type": "object",
+        "required": [
+          "lookup",
+          "range",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/IntegerIndexType"
+          },
+          "lookup": {
+            "description": "If true - support direct lookups.",
+            "type": "boolean"
+          },
+          "range": {
+            "description": "If true - support ranges filters.",
+            "type": "boolean"
+          }
+        }
+      },
+      "IntegerIndexType": {
+        "type": "string",
+        "enum": [
+          "integer"
+        ]
+      },
+      "FloatIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/FloatIndexType"
+          }
+        }
+      },
+      "FloatIndexType": {
+        "type": "string",
+        "enum": [
+          "float"
+        ]
+      },
+      "GeoIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/GeoIndexType"
+          }
+        }
+      },
+      "GeoIndexType": {
+        "type": "string",
+        "enum": [
+          "geo"
         ]
       },
       "TextIndexParams": {
@@ -6242,31 +6335,38 @@
           "multilingual"
         ]
       },
-      "IntegerIndexParams": {
+      "BoolIndexParams": {
         "type": "object",
         "required": [
-          "lookup",
-          "range",
           "type"
         ],
         "properties": {
           "type": {
-            "$ref": "#/components/schemas/IntegerIndexType"
-          },
-          "lookup": {
-            "description": "If true - support direct lookups.",
-            "type": "boolean"
-          },
-          "range": {
-            "description": "If true - support ranges filters.",
-            "type": "boolean"
+            "$ref": "#/components/schemas/BoolIndexType"
           }
         }
       },
-      "IntegerIndexType": {
+      "BoolIndexType": {
         "type": "string",
         "enum": [
-          "integer"
+          "bool"
+        ]
+      },
+      "DatetimeIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/DatetimeIndexType"
+          }
+        }
+      },
+      "DatetimeIndexType": {
+        "type": "string",
+        "enum": [
+          "datetime"
         ]
       },
       "PointRequest": {
