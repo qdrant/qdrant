@@ -33,7 +33,7 @@ pprof = { workspace = true }
 
 [dependencies]
 bitpacking = "0.9.2"
-tempfile = "3.10.1"
+tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = "1.10.0"
 itertools = { workspace = true }
@@ -50,7 +50,7 @@ ordered-float = "4.2"
 thiserror = "1.0"
 atomic_refcell = "0.1.13"
 atomicwrites = "0.4.3"
-memmap2 = "0.9.4"
+memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
 geo = "0.28.0"

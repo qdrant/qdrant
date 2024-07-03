@@ -18,11 +18,11 @@ half = { workspace = true }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 num-traits = { workspace = true }
-memmap2 = "0.9.4"
+memmap2 = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = "3.10.1"
+tempfile = { workspace = true }
 ordered-float = "4.2"
 rand = { workspace = true }
 validator = { workspace = true }
