@@ -47,7 +47,7 @@ rusty-hook = "^0.11.2"
 parking_lot = { workspace = true, optional = true }
 
 thiserror = "1.0"
-log = "0.4"
+log = { workspace = true }
 colored = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -131,6 +131,7 @@ half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
 itertools = "0.13.0"
+log = "0.4.22"
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }

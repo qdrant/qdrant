@@ -11,6 +11,6 @@ publish = false
 
 [dependencies]
 memmap2 = "0.9.4"
-log = "0.4"
+log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
