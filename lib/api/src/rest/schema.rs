@@ -72,8 +72,10 @@ fn vector_example() -> Option<VectorStruct> {
 
 fn payload_example() -> Option<segment::types::Payload> {
     Some(
-        serde_json::from_str(r#"{"city": "London", "color": "green"}"#)
-            .expect("Failed to parse payload"),
+        serde_json::json!({
+            "city": "London",
+            "color": "green",
+        })
     )
 }
 
