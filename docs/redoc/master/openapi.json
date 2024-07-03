@@ -7406,7 +7406,8 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "example": "shard-1"
           },
           "order_value": {
             "description": "Order-by value",

@@ -77,6 +77,10 @@ fn payload_example() -> Option<segment::types::Payload> {
     })))
 }
 
+fn shard_key_example() -> Option<segment::types::ShardKey> {
+    Some(ShardKey::from("shard-1"))
+}
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
@@ -96,6 +100,7 @@ pub struct ScoredPoint {
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "shard_key_example")]
     pub shard_key: Option<segment::types::ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
