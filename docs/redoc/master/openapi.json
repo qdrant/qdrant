@@ -12040,7 +12040,8 @@
         "description": "Fusion algorithm allows to combine results of multiple prefetches. Available fusion algorithms: * `rrf` - Rank Reciprocal Fusion",
         "type": "string",
         "enum": [
-          "rrf"
+          "rrf",
+          "dbsf"
         ]
       },
       "QueryRequestBatch": {

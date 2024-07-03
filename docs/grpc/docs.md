@@ -4115,6 +4115,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | Name | Number | Description |
 | ---- | ------ | ----------- |
 | RRF | 0 | Reciprocal Rank Fusion |
+| DBSF | 1 | Distribution-Based Score Fusion |
 
 
 
