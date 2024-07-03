@@ -45,7 +45,10 @@ impl ShardQueryRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Fusion {
+    /// Reciprocal Rank Fusion
     Rrf,
+    /// Distribution-based score fusion
+    Dbsf,
 }
 
 /// Same as `Query`, but with the resolved vector references.
@@ -66,6 +69,7 @@ impl ScoringQuery {
         match self {
             ScoringQuery::Fusion(fusion) => match fusion {
                 Fusion::Rrf => true,
+                Fusion::Dbsf => true,
             },
             ScoringQuery::Vector(_) | ScoringQuery::OrderBy(_) => false,
         }
@@ -96,7 +100,7 @@ impl ScoringQuery {
                     }
                 }
                 ScoringQuery::Fusion(fusion) => match fusion {
-                    Fusion::Rrf => Order::LargeBetter,
+                    Fusion::Rrf | Fusion::Dbsf => Order::LargeBetter,
                 },
                 ScoringQuery::OrderBy(order_by) => Order::from(order_by.direction()),
             },
@@ -292,6 +296,7 @@ impl From<api::grpc::qdrant::Fusion> for Fusion {
     fn from(fusion: api::grpc::qdrant::Fusion) -> Self {
         match fusion {
             api::grpc::qdrant::Fusion::Rrf => Fusion::Rrf,
+            api::grpc::qdrant::Fusion::Dbsf => Fusion::Dbsf,
         }
     }
 }
@@ -300,6 +305,7 @@ impl From<Fusion> for api::grpc::qdrant::Fusion {
     fn from(fusion: Fusion) -> Self {
         match fusion {
             Fusion::Rrf => api::grpc::qdrant::Fusion::Rrf,
+            Fusion::Dbsf => api::grpc::qdrant::Fusion::Dbsf,
         }
     }
 }

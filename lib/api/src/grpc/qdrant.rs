@@ -5906,6 +5906,8 @@ impl RecommendStrategy {
 pub enum Fusion {
     /// Reciprocal Rank Fusion
     Rrf = 0,
+    /// Distribution-Based Score Fusion
+    Dbsf = 1,
 }
 impl Fusion {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5915,12 +5917,14 @@ impl Fusion {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Fusion::Rrf => "RRF",
+            Fusion::Dbsf => "DBSF",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "RRF" => Some(Self::Rrf),
+            "DBSF" => Some(Self::Dbsf),
             _ => None,
         }
     }

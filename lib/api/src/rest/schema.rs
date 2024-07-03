@@ -145,6 +145,7 @@ pub enum OrderByInterface {
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
+    Dbsf,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

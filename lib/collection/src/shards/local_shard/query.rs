@@ -7,6 +7,7 @@ use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
+use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
 
@@ -301,6 +302,7 @@ impl LocalShard {
 
         let fused = match fusion {
             Fusion::Rrf => rrf_scoring(sources),
+            Fusion::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 
         let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {
