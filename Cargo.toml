@@ -135,6 +135,7 @@ log = "0.4.22"
 memmap2 = "0.9.4"
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
+ph = "0.8.3"
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
@@ -156,6 +157,7 @@ tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.9", features = ["v4", "serde"] }
 validator = { version = "0.16.1", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
+zerocopy = { version = "0.7.34", features = ["derive"] }
 
 [[bin]]
 name = "schema_generator"
