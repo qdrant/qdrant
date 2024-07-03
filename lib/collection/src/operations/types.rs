@@ -344,10 +344,6 @@ pub struct ScrollRequestInternal {
 /// Scroll request, used as a part of query request
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryScrollRequestInternal {
-    /// Number of points to skip from the beginning of the result list
-    /// Warning: this is different from the offset in the regular scroll request
-    pub offset: usize,
-
     /// Page size. Default: 10
     pub limit: usize,
 
