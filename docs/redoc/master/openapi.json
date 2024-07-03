@@ -6221,7 +6221,7 @@
             "nullable": true
           },
           "lowercase": {
-            "description": "If true, lowercase all tokens. Default: true",
+            "description": "If true, lowercase all tokens. Default: true.",
             "type": "boolean",
             "nullable": true
           }
