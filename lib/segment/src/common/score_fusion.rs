@@ -51,14 +51,13 @@ pub fn score_fusion(
         })
         // weight each list of points
         .zip(weights)
-        .map(|(points, weight)| {
+        .flat_map(|(points, weight)| {
             points.into_iter().map(move |p| ScoredPoint {
                 score: p.score * weight,
                 ..p
             })
         })
         // combine to deduplicate
-        .flatten()
         .fold(
             HashMap::<PointIdType, ScoredPoint>::new(),
             |mut acc, point| {
@@ -104,7 +103,7 @@ pub fn min_max_norm(points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
 /// # Panics
 ///
 /// Panics if the given vector of points has less than 2 elements.
-fn welfords_mean_variance(points: &Vec<ScoredPoint>) -> (f32, f32) {
+fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
     debug_assert!(
         points.len() > 1,
         "Not enough points to calculate mean and variance"
@@ -122,7 +121,7 @@ fn welfords_mean_variance(points: &Vec<ScoredPoint>) -> (f32, f32) {
 
     let sample_variance = aggregate / (points.len() as f32 - 1.0);
 
-    return (mean, sample_variance);
+    (mean, sample_variance)
 }
 
 /// Estimates the mean and variance of the given points and normalizes them between 0.0 and 1.0, using the 3rd
@@ -177,7 +176,7 @@ mod tests {
                 .into_iter()
                 .enumerate()
                 .map(|(i, s)| point(i, s))
-                .collect();
+                .collect_vec();
             let (mean, variance) = welfords_mean_variance(&points);
 
             assert_close(mean, naive_mean);
