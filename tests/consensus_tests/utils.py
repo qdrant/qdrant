@@ -368,11 +368,28 @@ def check_collection_local_shards_count(peer_api_uri: str, collection_name: str,
     return local_shard_count == expected_local_shard_count
 
 
+def get_collection_local_shards_point_count(peer_api_uri: str, collection_name: str) -> int:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+    point_count = sum(map(lambda shard: shard["points_count"], collection_cluster_info["local_shards"]))
+    return point_count
+
+
 def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
                                            expected_shard_transfers_count: int, headers={}) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
     local_shard_count = len(collection_cluster_info["shard_transfers"])
     return local_shard_count == expected_shard_transfers_count
+
+
+def check_collection_resharding_operations_count(peer_api_uri: str, collection_name: str,
+                                           expected_resharding_operations_count: int, headers={}) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
+
+    # TODO(resharding): until resharding release, the resharding operations are not always exposed
+    # Once we do release, we can remove the zero fallback here
+    # See: <https://github.com/qdrant/qdrant/pull/4599>
+    local_resharding_count = len(collection_cluster_info["resharding_operations"]) if "resharding_operations" in collection_cluster_info else 0
+    return local_resharding_count == expected_resharding_operations_count
 
 
 def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
@@ -517,6 +534,15 @@ def wait_for_collection_shard_transfer_progress(peer_api_uri: str, collection_na
                  expected_transfer_total, wait_for_interval=0.1)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_collection_resharding_operations_count(peer_api_uri: str, collection_name: str,
+                                              expected_resharding_operations_count: int, headers={}):
+    try:
+        wait_for(check_collection_resharding_operations_count, peer_api_uri, collection_name, expected_resharding_operations_count, headers=headers)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
 
 

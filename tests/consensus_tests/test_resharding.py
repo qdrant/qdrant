@@ -1,0 +1,64 @@
+import multiprocessing
+import pathlib
+import random
+from time import sleep
+
+from .fixtures import upsert_random_points, create_collection
+from .utils import *
+
+COLLECTION_NAME = "test_collection"
+
+
+# Test resharding.
+#
+# On a static collection, this performs resharding a few times and asserts the
+# shard and point counts are correct.
+#
+# More specifically this starts at 1 shard, reshards 3 times and ends up with 4
+# shards.
+def test_resharding(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    num_points = 1000
+
+    # Prevent optimizers messing with point counts
+    env={
+        "QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS": "0",
+    }
+
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
+    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
+
+    # Create collection, insert points
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+    upsert_random_points(peer_api_uris[0], num_points)
+
+    # Assert node shard and point sum count
+    for uri in peer_api_uris:
+        assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
+        assert get_collection_local_shards_point_count(uri, COLLECTION_NAME) == num_points
+
+    # Reshard 3 times in sequence
+    for shard_count in range(2, 5):
+        # Start resharding
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+                "start_resharding": {
+                    "peer_id": first_peer_id,
+                    "shard_key": None,
+                }
+            })
+        assert_http_ok(r)
+
+        # Wait for resharding operation to start and stop
+        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+        # Assert node shard and point sum count
+        for uri in peer_api_uris:
+            assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
+            assert get_collection_local_shards_point_count(uri, COLLECTION_NAME) == num_points

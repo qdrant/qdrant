@@ -30,7 +30,6 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
 
 
 def check_data_consistency(data):
-
     assert(len(data) > 1)
 
     for i in range(len(data) - 1):
