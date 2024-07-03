@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::data_types::text_index::TextIndexParams;
+use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::inverted_index::{
     Document, InvertedIndex, ParsedQuery,
 };
@@ -242,7 +242,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::data_types::text_index::{TextIndexType, TokenizerType};
+    use crate::data_types::index::{TextIndexType, TokenizerType};
     use crate::json_path::path;
 
     fn filter_request(text: &str) -> FieldCondition {

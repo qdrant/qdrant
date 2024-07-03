@@ -4,8 +4,7 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use itertools::Itertools;
-use segment::data_types::integer_index::IntegerIndexType;
-use segment::data_types::text_index::TextIndexType;
+use segment::data_types::index::{IntegerIndexType, TextIndexType};
 use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
@@ -207,21 +206,19 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     }
 }
 
-impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
-    fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {
+impl From<segment::data_types::index::TokenizerType> for TokenizerType {
+    fn from(tokenizer_type: segment::data_types::index::TokenizerType) -> Self {
         match tokenizer_type {
-            segment::data_types::text_index::TokenizerType::Prefix => TokenizerType::Prefix,
-            segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
-            segment::data_types::text_index::TokenizerType::Multilingual => {
-                TokenizerType::Multilingual
-            }
-            segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
+            segment::data_types::index::TokenizerType::Prefix => TokenizerType::Prefix,
+            segment::data_types::index::TokenizerType::Whitespace => TokenizerType::Whitespace,
+            segment::data_types::index::TokenizerType::Multilingual => TokenizerType::Multilingual,
+            segment::data_types::index::TokenizerType::Word => TokenizerType::Word,
         }
     }
 }
 
-impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexParams {
-    fn from(params: segment::data_types::text_index::TextIndexParams) -> Self {
+impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::index::TextIndexParams) -> Self {
         let tokenizer = TokenizerType::from(params.tokenizer);
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
@@ -234,8 +231,8 @@ impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexPara
     }
 }
 
-impl From<segment::data_types::integer_index::IntegerIndexParams> for PayloadIndexParams {
-    fn from(params: segment::data_types::integer_index::IntegerIndexParams) -> Self {
+impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::index::IntegerIndexParams) -> Self {
         PayloadIndexParams {
             index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
                 lookup: params.lookup,
@@ -271,27 +268,25 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
     }
 }
 
-impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
+impl TryFrom<TokenizerType> for segment::data_types::index::TokenizerType {
     type Error = Status;
     fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
         match tokenizer_type {
             TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
-            TokenizerType::Prefix => Ok(segment::data_types::text_index::TokenizerType::Prefix),
+            TokenizerType::Prefix => Ok(segment::data_types::index::TokenizerType::Prefix),
             TokenizerType::Multilingual => {
-                Ok(segment::data_types::text_index::TokenizerType::Multilingual)
+                Ok(segment::data_types::index::TokenizerType::Multilingual)
             }
-            TokenizerType::Whitespace => {
-                Ok(segment::data_types::text_index::TokenizerType::Whitespace)
-            }
-            TokenizerType::Word => Ok(segment::data_types::text_index::TokenizerType::Word),
+            TokenizerType::Whitespace => Ok(segment::data_types::index::TokenizerType::Whitespace),
+            TokenizerType::Word => Ok(segment::data_types::index::TokenizerType::Word),
         }
     }
 }
 
-impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexParams {
+impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
     type Error = Status;
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
-        Ok(segment::data_types::text_index::TextIndexParams {
+        Ok(segment::data_types::index::TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::from_i32(params.tokenizer)
                 .map(|x| x.try_into())
@@ -303,10 +298,10 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     }
 }
 
-impl TryFrom<IntegerIndexParams> for segment::data_types::integer_index::IntegerIndexParams {
+impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexParams {
     type Error = Status;
     fn try_from(params: IntegerIndexParams) -> Result<Self, Self::Error> {
-        Ok(segment::data_types::integer_index::IntegerIndexParams {
+        Ok(segment::data_types::index::IntegerIndexParams {
             r#type: IntegerIndexType::Integer,
             lookup: params.lookup,
             range: params.range,

@@ -1,6 +1,6 @@
 use charabia::Tokenize;
 
-use crate::data_types::text_index::{TextIndexParams, TokenizerType};
+use crate::data_types::index::{TextIndexParams, TokenizerType};
 
 struct WhiteSpaceTokenizer;
 
@@ -137,7 +137,7 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_types::text_index::TextIndexType;
+    use crate::data_types::index::TextIndexType;
 
     #[test]
     fn test_whitespace_tokenizer() {
