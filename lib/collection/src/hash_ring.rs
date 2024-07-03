@@ -185,7 +185,7 @@ impl<T: Hash + Copy + PartialEq + Eq> HashRing<T> {
     pub fn unique_nodes(&self) -> HashSet<T> {
         match self {
             Self::Single(ring) => ring.unique_nodes(),
-            Self::Resharding { old: _, new } => new.unique_nodes(),
+            Self::Resharding { new, .. } => new.unique_nodes(),
         }
     }
 }
@@ -274,9 +274,7 @@ impl<T: Hash + Copy + PartialEq + Eq> Inner<T> {
     pub fn unique_nodes(&self) -> HashSet<T> {
         match self {
             Inner::Raw(ring) => ring.clone().into_iter().collect(),
-            Inner::Fair { ring, scale: _ } => {
-                ring.clone().into_iter().map(|(node, _)| node).collect()
-            }
+            Inner::Fair { ring, .. } => ring.clone().into_iter().map(|(node, _)| node).collect(),
         }
     }
 }
