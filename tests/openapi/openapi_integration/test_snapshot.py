@@ -488,7 +488,7 @@ def test_collection_snapshot_security():
         }
     )
     assert response.status_code == 403
-    assert response.json()["status"]["error"] == "Forbidden: Snapshot file \"/etc/passwd\" must be inside snapshots directory"
+    assert response.json()["status"]["error"] == "Forbidden: Snapshot file /etc/passwd must be inside snapshots directory"
 
     # Absolute paths must not be accessible through relative interface
     response = request_without_validation(
