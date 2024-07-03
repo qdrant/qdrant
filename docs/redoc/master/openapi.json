@@ -7374,7 +7374,11 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "example": {
+              "city": "London",
+              "color": "green"
+            }
           },
           "vector": {
             "description": "Vector of the point",

@@ -70,6 +70,13 @@ fn vector_example() -> Option<VectorStruct> {
     ]))
 }
 
+fn payload_example() -> Option<segment::types::Payload> {
+    Some(
+        serde_json::from_str(r#"{"city": "London", "color": "green"}"#)
+            .expect("Failed to parse payload"),
+    )
+}
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
@@ -81,6 +88,7 @@ pub struct ScoredPoint {
     pub score: common::types::ScoreType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "payload_example")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
