@@ -88,8 +88,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install requests python lib
-        run: pip install requests
+      - name: Install dependencies
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
