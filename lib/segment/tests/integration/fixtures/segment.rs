@@ -18,6 +18,8 @@ pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
+pub const PAYLOAD_KEY: &str = "color";
+
 #[allow(dead_code)]
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
@@ -44,7 +46,7 @@ pub fn build_segment_1(path: &Path) -> Segment {
         .upsert_point(5, 5.into(), only_default_vector(&vec5))
         .unwrap();
 
-    let payload_key = "color";
+    let payload_key = PAYLOAD_KEY;
 
     let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
@@ -95,7 +97,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
         .upsert_point(15, 15.into(), only_default_vector(&vec5))
         .unwrap();
 
-    let payload_key = "color";
+    let payload_key = PAYLOAD_KEY;
 
     let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
@@ -220,7 +222,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
         .upsert_point(5, 5.into(), collect_points_data(&vec5))
         .unwrap();
 
-    let payload_key = "color";
+    let payload_key = PAYLOAD_KEY;
 
     let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
@@ -305,7 +307,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
         )
         .unwrap();
 
-    let payload_key = "color";
+    let payload_key = PAYLOAD_KEY;
 
     let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
@@ -390,7 +392,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
         )
         .unwrap();
 
-    let payload_key = "color";
+    let payload_key = PAYLOAD_KEY;
 
     let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
