@@ -58,7 +58,7 @@ geohash = "0.13.1"
 num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
-rand = "0.8"
+rand = { workspace = true }
 bitvec = "1.0.1"
 seahash = "4.1.0"
 semver = { workspace = true }

@@ -28,7 +28,7 @@ pprof = { workspace = true }
 [dependencies]
 parking_lot = { workspace = true }
 
-rand = "0.8.5"
+rand = { workspace = true }
 thiserror = "1.0"
 serde = { workspace = true }
 serde_cbor = { workspace = true }
