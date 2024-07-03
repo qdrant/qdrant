@@ -77,8 +77,7 @@ fn test_rebuild_with_removed_vectors() {
 
     let segment2 = Arc::new(RwLock::new(segment2));
 
-    let segment2_read = segment2.clone();
-    let segment2_read = segment2_read.read();
+    let segment2_read = segment2.read();
     let mut reference = vec![];
 
     for i in 0..20 {
@@ -95,10 +94,9 @@ fn test_rebuild_with_removed_vectors() {
 
     let segment1 = Arc::new(RwLock::new(segment1));
 
-    builder.apply_from(&[segment1, segment2], &stopped).unwrap();
-
-    /* builder.update_from(&segment1, &stopped).unwrap();
-    builder.update_from(&segment2, &stopped).unwrap(); */
+    builder
+        .update(&[segment1, segment2.clone()], &stopped)
+        .unwrap();
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);

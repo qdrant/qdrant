@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -11,7 +12,6 @@ use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use parking_lot::RwLock;
-use serde_json::Value;
 
 use super::{
     create_id_tracker, create_payload_storage, create_sparse_vector_index,
@@ -20,6 +20,7 @@ use super::{
     open_vector_storage,
 };
 use crate::common::error_logging::LogError;
+use crate::common::hashable_value::HashableValue;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
@@ -126,10 +127,16 @@ impl SegmentBuilder {
         self.indexed_fields.insert(field, schema);
     }
 
-    /// Applies all unique points from the given segments. Since deduping happens locally in this
-    /// function, calling it multiple times with non disjunct segments will result in duplicate
-    /// points.
-    pub fn apply_from(
+    /// Update current segment builder with all (not deleted) vectors and payload from `segments`.
+    /// Also defragments if the `defragment_key` is set.
+    /// However only points in the same call get defragmented and grouped together.
+    /// Therefore this function should only be called once, unless this behavior is desired.
+    ///
+    /// # Result
+    ///
+    /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
+    ///
+    pub fn update(
         &mut self,
         segments: &[Arc<RwLock<Segment>>],
         stopped: &AtomicBool,
@@ -145,44 +152,20 @@ impl SegmentBuilder {
             .flat_map(|i| i.iter_points())
             .collect();
 
-        let mut latest_points = vec![];
-
-        // Find point with max version across all segments.
-        for point in unique_point_ids.iter() {
-            let mut max_verison = 0;
-            let mut seg_idx = 0;
-            let mut internal_id: Option<PointOffsetType> = None;
-            for (i, locked_seg) in locked_segments.iter().enumerate() {
-                if !locked_seg.has_point(*point) {
-                    continue;
-                }
-
-                let version = locked_seg.point_version(*point).unwrap_or_default();
-                if version > max_verison {
-                    max_verison = version;
-                    seg_idx = i;
-                    internal_id = locked_seg.get_internal_id(*point);
-                }
-            }
-
-            latest_points.push((*point, internal_id.unwrap(), seg_idx, max_verison));
-        }
+        let mut points_to_insert = merge_points(&locked_segments, unique_point_ids.iter().copied());
 
         // If payload key is set, sort the points to add.
         if let Some(payload_key) = &self.defragment_key {
-            let get_payload = |idx: usize, point: ExtendedPointId| -> Option<Value> {
-                locked_segments[idx]
-                    .payload(point)
-                    .ok()
-                    .and_then(|i| i.get_value(payload_key).first().cloned().cloned())
-            };
+            points_to_insert.sort_unstable_by_key(|pd| -> Option<u64> {
+                let payload = locked_segments[pd.segment_index]
+                    .payload(pd.external_id)
+                    .ok()?;
 
-            latest_points.sort_unstable_by(|(a_id, _, a_index, _), (b_id, _, b_index, _)| {
-                let a_payload = get_payload(*a_index, *a_id);
-                let b_payload = get_payload(*b_index, *b_id);
-                let a_hash = a_payload.map(|i| hash_value(&i));
-                let b_hash = b_payload.map(|i| hash_value(&i));
-                a_hash.cmp(&b_hash)
+                let payload_val = (*payload.get_value(payload_key).first()?).clone();
+
+                let mut hasher = AHasher::default();
+                HashableValue(payload_val).hash(&mut hasher);
+                Some(hasher.finish())
             });
         }
 
@@ -208,16 +191,13 @@ impl SegmentBuilder {
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?;
 
-            let mut iter = latest_points
-                .iter()
-                .map(|(_, internal_point_id, src_seg_index, _)| {
-                    let other_vector_storage = &other_vector_storages[*src_seg_index];
+            let mut iter = points_to_insert.iter().map(|point_data| {
+                let other_vector_storage = &other_vector_storages[point_data.segment_index];
+                let vec = other_vector_storage.get_vector(point_data.internal_id);
+                let deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
+                (point_data.internal_id, vec, deleted)
+            });
 
-                    let vec = other_vector_storage.get_vector(*internal_point_id);
-                    let deleted = other_vector_storage.is_deleted_vector(*internal_point_id);
-
-                    (*internal_point_id, vec, deleted)
-                });
             let internal_range = vector_storage.update_from(&mut iter, stopped)?;
 
             match new_internal_range.clone() {
@@ -238,30 +218,53 @@ impl SegmentBuilder {
             .collect();
 
         if let Some(new_internal_range) = new_internal_range {
-            assert_eq!(new_internal_range.len(), latest_points.len());
+            let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
-            let internal_id_iter = new_internal_range.zip(latest_points.iter());
-
-            for (new_internal_id, (external_id, old_internal_id, idx, version)) in internal_id_iter
-            {
+            for (new_internal_id, point_data) in internal_id_iter {
                 check_process_stopped(stopped)?;
 
-                match self.id_tracker.internal_id(*external_id) {
-                    Some(_existing_internal_id) => {
-                        unreachable!("unreachable unless called multiple times!");
-                    }
-                    None => {
-                        self.id_tracker.set_link(*external_id, new_internal_id)?;
-                        self.id_tracker
-                            .set_internal_version(new_internal_id, *version)?;
+                let old_internal_id = point_data.internal_id;
 
-                        let other_payload = payloads[*idx].payload(*old_internal_id)?;
-                        // Propagate payload to new segment
-                        if !other_payload.is_empty() {
-                            self.payload_storage
-                                .assign(new_internal_id, &other_payload)?;
+                let other_payload = payloads[point_data.segment_index].payload(old_internal_id)?;
+
+                match self.id_tracker.internal_id(point_data.external_id) {
+                    Some(existing_internal_id) => {
+                        let existing_external_version = self
+                            .id_tracker
+                            .internal_version(existing_internal_id)
+                            .unwrap();
+
+                        let remove_id = if existing_external_version < point_data.version {
+                            // Other version is the newest, remove the existing one and replace
+                            self.id_tracker.drop(point_data.external_id)?;
+                            self.id_tracker
+                                .set_link(point_data.external_id, new_internal_id)?;
+                            self.id_tracker
+                                .set_internal_version(new_internal_id, point_data.version)?;
+                            self.payload_storage.drop(existing_internal_id)?;
+
+                            existing_internal_id
+                        } else {
+                            // Old version is still good, do not move anything else
+                            // Mark newly added vector as removed
+                            new_internal_id
+                        };
+                        for vector_storage in self.vector_storages.values_mut() {
+                            vector_storage.delete_vector(remove_id)?;
                         }
                     }
+                    None => {
+                        self.id_tracker
+                            .set_link(point_data.external_id, new_internal_id)?;
+                        self.id_tracker
+                            .set_internal_version(new_internal_id, point_data.version)?;
+                    }
+                }
+
+                // Propagate payload to new segment
+                if !other_payload.is_empty() {
+                    self.payload_storage
+                        .assign(new_internal_id, &other_payload)?;
                 }
             }
         }
@@ -277,142 +280,6 @@ impl SegmentBuilder {
 
         Ok(true)
     }
-
-    /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
-    /// Perform index building at the end of update
-    ///
-    /// # Arguments
-    ///
-    /// * `other` - segment to add into construction
-    ///
-    /// # Result
-    ///
-    /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
-    ///
-    /* pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
-        self.version = cmp::max(self.version, other.version());
-
-        let other_id_tracker = other.id_tracker.borrow();
-        let other_vector_storages: HashMap<_, _> = other
-            .vector_data
-            .iter()
-            .map(|(vector_name, vector_data)| {
-                (vector_name.to_owned(), vector_data.vector_storage.borrow())
-            })
-            .collect();
-        let other_payload_index = other.payload_index.borrow();
-
-        let id_tracker = &mut self.id_tracker;
-
-        if self.vector_storages.len() != other_vector_storages.len() {
-            return Err(OperationError::service_error(
-                format!("Self and other segments have different vector names count. Self count: {}, other count: {}", self.vector_storages.len(), other_vector_storages.len()),
-            ));
-        }
-
-        let mut new_internal_range = None;
-        for (vector_name, vector_storage) in &mut self.vector_storages {
-            check_process_stopped(stopped)?;
-            let other_vector_storage = other_vector_storages.get(vector_name).ok_or_else(|| {
-                OperationError::service_error(format!(
-                    "Cannot update from other segment because if missing vector name {vector_name}"
-                ))
-            })?;
-            let internal_range = 0..2;
-            /* let internal_range = vector_storage.update_from(
-                other_vector_storage,
-                &mut other_id_tracker.iter_ids(),
-                stopped,
-            )?; */
-            match new_internal_range.clone() {
-                Some(new_internal_range) => {
-                    if new_internal_range != internal_range {
-                        return Err(OperationError::service_error(
-                            "Internal ids range mismatch between self segment vectors and other segment vectors",
-                        ));
-                    }
-                }
-                None => new_internal_range = Some(internal_range.clone()),
-            }
-        }
-
-        if let Some(new_internal_range) = new_internal_range {
-            let internal_id_iter = new_internal_range.zip(other_id_tracker.iter_ids());
-
-            for (new_internal_id, old_internal_id) in internal_id_iter {
-                check_process_stopped(stopped)?;
-
-                let external_id =
-                    if let Some(external_id) = other_id_tracker.external_id(old_internal_id) {
-                        external_id
-                    } else {
-                        log::warn!(
-                            "Cannot find external id for internal id {old_internal_id}, skipping"
-                        );
-                        continue;
-                    };
-
-                let other_version = other_id_tracker
-                    .internal_version(old_internal_id)
-                    .unwrap_or_else(|| {
-                        log::debug!(
-                            "Internal version not found for internal id {old_internal_id}, using 0"
-                        );
-                        0
-                    });
-
-                match id_tracker.internal_id(external_id) {
-                    None => {
-                        // New point, just insert
-                        id_tracker.set_link(external_id, new_internal_id)?;
-                        id_tracker.set_internal_version(new_internal_id, other_version)?;
-                        let other_payload = other_payload_index.payload(old_internal_id)?;
-                        // Propagate payload to new segment
-                        if !other_payload.is_empty() {
-                            self.payload_storage
-                                .assign(new_internal_id, &other_payload)?;
-                        }
-                    }
-                    Some(existing_internal_id) => {
-                        // Point exists in both: newly constructed and old segments, so we need to merge them
-                        // Based on version
-                        let existing_version =
-                            id_tracker.internal_version(existing_internal_id).unwrap();
-                        let remove_id = if existing_version < other_version {
-                            // Other version is the newest, remove the existing one and replace
-                            id_tracker.drop(external_id)?;
-                            id_tracker.set_link(external_id, new_internal_id)?;
-                            id_tracker.set_internal_version(new_internal_id, other_version)?;
-                            self.payload_storage.drop(existing_internal_id)?;
-                            let other_payload = other_payload_index.payload(old_internal_id)?;
-                            // Propagate payload to new segment
-                            if !other_payload.is_empty() {
-                                self.payload_storage
-                                    .assign(new_internal_id, &other_payload)?;
-                            }
-                            existing_internal_id
-                        } else {
-                            // Old version is still good, do not move anything else
-                            // Mark newly added vector as removed
-                            new_internal_id
-                        };
-                        for vector_storage in self.vector_storages.values_mut() {
-                            vector_storage.delete_vector(remove_id)?;
-                        }
-                    }
-                }
-            }
-        }
-
-        for (field, payload_schema) in other.payload_index.borrow().indexed_fields() {
-            self.indexed_fields.insert(field, payload_schema);
-        }
-
-        id_tracker.mapping_flusher()()?;
-        id_tracker.versions_flusher()()?;
-
-        Ok(true)
-    } */
 
     pub fn build(self, permit: CpuPermit, stopped: &AtomicBool) -> Result<Segment, OperationError> {
         let (temp_path, destination_path) = {
@@ -600,30 +467,56 @@ impl SegmentBuilder {
     }
 }
 
-fn hash_value(val: &Value) -> u64 {
-    let mut hash = AHasher::default();
-    hash_value_to(val, &mut hash);
-    hash.finish()
+/// All Point ids and metadata of a point.
+struct PositionedPointMetadata {
+    segment_index: usize,
+    internal_id: PointOffsetType,
+    external_id: ExtendedPointId,
+    version: SeqNumberType,
 }
 
-fn hash_value_to<H: Hasher>(val: &Value, hash: &mut H) {
-    match val {
-        Value::Null => (),
-        Value::Bool(b) => b.hash(hash),
-        Value::Number(n) => n.hash(hash),
-        Value::String(s) => s.hash(hash),
-        Value::Array(a) => {
-            for i in a {
-                hash_value_to(i, hash);
+/// Merges points from the given segments, picking always the point with the largest version.
+/// Every point id yielded by `point_ids` has to exist in at least one of the passed segments.
+///
+/// # Panics
+/// Panics if `point_ids` yields a point which is not held by any segment.
+fn merge_points<T, I>(segments: &[T], point_ids: I) -> Vec<PositionedPointMetadata>
+where
+    T: Deref<Target = Segment>,
+    I: Iterator<Item = ExtendedPointId>,
+{
+    let mut latest_points = vec![];
+
+    // Find point with max version across all segments.
+    for point in point_ids {
+        let mut max_verison = 0;
+        let mut segment_index = 0;
+        let mut internal_id: Option<PointOffsetType> = None;
+        for (i, locked_seg) in segments.iter().enumerate() {
+            let locked_seg = locked_seg.deref();
+
+            if !locked_seg.has_point(point) {
+                continue;
+            }
+
+            let version = locked_seg.point_version(point).unwrap_or_default();
+
+            if version >= max_verison {
+                max_verison = version;
+                segment_index = i;
+                internal_id = locked_seg.get_internal_id(point);
             }
         }
-        Value::Object(o) => {
-            // The 'preserve_order' feature for serde_json is enabled, so iterating
-            // this map is always in the same order.
-            for (k, v) in o {
-                k.hash(hash);
-                hash_value_to(v, hash);
-            }
-        }
+
+        let internal_id = internal_id.expect("Point was not found in the given segments");
+
+        latest_points.push(PositionedPointMetadata {
+            internal_id,
+            external_id: point,
+            segment_index,
+            version: max_verison,
+        })
     }
+
+    latest_points
 }

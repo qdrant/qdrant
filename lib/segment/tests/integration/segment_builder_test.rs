@@ -49,12 +49,11 @@ fn test_building_new_segment() {
     let segment2 = Arc::new(RwLock::new(segment2));
 
     builder
-        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
+        .update(
+            &[segment1.clone(), segment2.clone(), segment2.clone()],
+            &stopped,
+        )
         .unwrap();
-
-    /* builder.update_from(&segment1, &stopped).unwrap();
-    builder.update_from(&segment2, &stopped).unwrap();
-    builder.update_from(&segment2, &stopped).unwrap(); */
 
     // Check what happens if segment building fails here
 
@@ -124,7 +123,7 @@ fn test_building_new_defragmented_segment() {
     builder.set_defragment_key(defragment_key.clone());
 
     builder
-        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
+        .update(&[segment1.clone(), segment2.clone()], &stopped)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -169,48 +168,52 @@ fn test_building_new_defragmented_segment() {
     }
 }
 
-/// Iterates over the internal point ids of the merged segmend and checks that the
+/// Iterates over the internal point ids of the merged segment and checks that the
 /// points are grouped by the payload value.
 fn check_points_defragmented(
     segment: &Segment,
     defragment_key: &PayloadKeyType,
 ) -> Result<(), &'static str> {
-    let merged_segment_id_tracker = segment.id_tracker.borrow();
-    let mut previous_key: Option<Value> = None;
-    let mut seen: Vec<Value> = vec![];
-    for internal_id in merged_segment_id_tracker.iter_internal() {
-        let external_id = merged_segment_id_tracker.external_id(internal_id).unwrap();
-        let payload = segment.payload(external_id).unwrap();
-        let key = payload.get_value(&defragment_key);
+    let id_tracker = segment.id_tracker.borrow();
 
-        if key.is_empty() {
-            if !seen.is_empty() {
-                return Err("In a defragmented segment, points without index come first!");
+    // Previously seen group/value.
+    let mut previous_value: Option<Value> = None;
+
+    // keeps track of groups/values that have already been seen while iterating
+    let mut seen_values: Vec<Value> = vec![];
+
+    for internal_id in id_tracker.iter_internal() {
+        let external_id = id_tracker.external_id(internal_id).unwrap();
+        let payload = segment.payload(external_id).unwrap();
+        let values = payload.get_value(defragment_key);
+
+        if values.is_empty() {
+            if !seen_values.is_empty() {
+                return Err(
+                    "In a defragmented segment, points without a payload value should come first!",
+                );
             }
 
             continue;
         }
 
-        let key = key[0].clone();
+        let value = values[0].clone();
 
-        let prev = match &previous_key {
-            Some(previous) => previous,
-            None => {
-                previous_key = Some(key[0].clone());
-                continue;
-            }
+        let Some(prev) = previous_value.as_ref() else {
+            previous_value = Some(value);
+            continue;
         };
 
-        if *prev == key {
+        if *prev == value {
             continue;
         }
 
-        if seen.contains(&key) {
-            return Err("Keys not defragmented");
+        if seen_values.contains(&value) {
+            return Err("Segment not defragmented");
         }
 
-        seen.push(key.clone());
-        previous_key = Some(key);
+        seen_values.push(value.clone());
+        previous_value = Some(value);
     }
 
     Ok(())
@@ -243,12 +246,11 @@ fn test_building_new_sparse_segment() {
     let segment2 = Arc::new(RwLock::new(segment2));
 
     builder
-        .apply_from(&[segment1.clone(), segment2.clone()], &stopped)
+        .update(
+            &[segment1.clone(), segment2.clone(), segment2.clone()],
+            &stopped,
+        )
         .unwrap();
-
-    /* builder.update_from(&segment1, &stopped).unwrap();
-    builder.update_from(&segment2, &stopped).unwrap();
-    builder.update_from(&segment2, &stopped).unwrap(); */
 
     // Check what happens if segment building fails here
 
@@ -316,7 +318,7 @@ fn estimate_build_time(
 
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &segment_config).unwrap();
 
-    builder.apply_from(&[segment], &stopped).unwrap();
+    builder.update(&[segment], &stopped).unwrap();
 
     let now = Instant::now();
 

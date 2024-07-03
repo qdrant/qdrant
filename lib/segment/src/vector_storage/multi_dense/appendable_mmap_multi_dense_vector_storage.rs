@@ -263,8 +263,6 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         for (_, other_vector, other_deleted) in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
-            // let other_deleted = other.is_deleted_vector(point_id);
-            // let other_vector = other.get_vector(point_id);
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.offsets.len() as PointOffsetType;
             self.insert_vector(new_id, other_vector)?;
