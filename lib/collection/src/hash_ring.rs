@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::{any, fmt};
 
@@ -179,6 +180,16 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     }
 }
 
+impl<T: Hash + Copy + PartialEq + Eq> HashRing<T> {
+    /// Get unique nodes from the hashring
+    pub fn unique_nodes(&self) -> HashSet<T> {
+        match self {
+            Self::Single(ring) => ring.unique_nodes(),
+            Self::Resharding { new, .. } => new.unique_nodes(),
+        }
+    }
+}
+
 /// List type for shard IDs
 ///
 /// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect
@@ -254,6 +265,16 @@ impl<T: Hash + Copy> Inner<T> {
         match self {
             Inner::Raw(ring) => ring.len(),
             Inner::Fair { ring, scale } => ring.len() / *scale as usize,
+        }
+    }
+}
+
+impl<T: Hash + Copy + PartialEq + Eq> Inner<T> {
+    /// Get unique nodes from the hashring
+    pub fn unique_nodes(&self) -> HashSet<T> {
+        match self {
+            Inner::Raw(ring) => ring.clone().into_iter().collect(),
+            Inner::Fair { ring, .. } => ring.clone().into_iter().map(|(node, _)| node).collect(),
         }
     }
 }
