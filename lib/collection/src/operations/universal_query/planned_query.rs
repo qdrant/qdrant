@@ -137,8 +137,9 @@ impl PlannedQuery {
                     sources,
                     rescore_params: Some(RescoreParams {
                         rescore,
-                        limit,
-                        offset,
+                        // Final offset is handled at collection level
+                        limit: limit + offset,
+                        offset: 0,
                         score_threshold,
                         with_vector,
                         with_payload,
@@ -146,6 +147,10 @@ impl PlannedQuery {
                 }
             }
         } else {
+            // Final offset is handled at collection level
+            let limit = limit + offset;
+            let offset = 0;
+
             let sources = match query {
                 Some(ScoringQuery::Vector(query)) => {
                     // Everything should come from 1 core search
