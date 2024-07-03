@@ -11,6 +11,11 @@ pytest-timeout = "^2.2"
 requests = "^2.32"
 schemathesis = "^3.24.3"
 
+# consensus
+grpc-requests = "^0.1"
+grpc-interceptor = "^0.15"
+pyjwt = "^2.8"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

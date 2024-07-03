@@ -61,8 +61,6 @@ jobs:
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
 
-          pip install -r ./tests/consensus_tests/requirements.txt
-
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
@@ -71,7 +69,7 @@ jobs:
         run: ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: pytest ./tests/consensus_tests
+        run: poetry -C tests run pytest tests/consensus_tests
         timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
