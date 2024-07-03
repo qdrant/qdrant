@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
+use crate::entry::entry_point::SegmentIdBase;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
@@ -405,6 +406,8 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    let id = SegmentIdBase::from_path(segment_path)?;
+
     let database = open_segment_db(segment_path, config)?;
     let payload_storage = sp(create_payload_storage(database.clone(), config)?);
 
@@ -529,6 +532,7 @@ fn create_segment(
     };
 
     Ok(Segment {
+        id,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),

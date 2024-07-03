@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use common::types::TelemetryDetail;
 
-use crate::common::operation_error::{OperationResult, SegmentFailedState};
+use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -180,7 +181,7 @@ pub trait SegmentEntry {
     fn drop_data(self) -> OperationResult<()>;
 
     /// Path to data, owned by segment
-    fn data_path(&self) -> &Path;
+    fn data_path(&self) -> PathBuf;
 
     /// Delete field index, if exists
     fn delete_field_index(
@@ -224,66 +225,114 @@ pub trait SegmentEntry {
 
     /// Returns a human-readable, persistent identifier of a segment. Useful for logging/debugging.
     ///
-    /// The identifier has the following formats:
-    /// - for proxy segments: `<wrapped-segment-path>/<write-segment-path>`
-    /// - for appendable regular segments: `<segment-path>:rw`
-    /// - for non-appendable regular segments: `<segment-path>:ro`
-    fn id(&self) -> SegmentId<'_> {
-        SegmentId {
-            is_appendable: self.is_appendable(),
-            data_path: self.data_path(),
-            tmp_path: self.tmp_path(),
+    /// The identifier has the following format:
+    /// - for proxy segments: `<wrapped-segment-id>/<write-segment-id>`
+    /// - for appendable regular segments: `<segment-uuid>:rw`
+    /// - for non-appendable regular segments: `<segment-uuid>:ro`
+    fn id(&self) -> SegmentId;
+}
+
+#[derive(Clone, Debug)]
+pub struct SegmentId {
+    parts: smallvec::SmallVec<[SegmentIdPart; 2]>,
+}
+
+impl SegmentId {
+    pub fn new(id: SegmentIdBase, is_appendable: bool) -> Self {
+        Self {
+            parts: smallvec::smallvec![SegmentIdPart::new(id, is_appendable)],
         }
     }
 
-    /// Returns `true` if this segment is a `ProxySegment`. Otherwise returns `false`.
-    ///
-    /// This default impl is overridden by `ProxySegment`.
-    fn is_proxy(&self) -> bool {
-        false
-    }
-
-    /// Returns path to the inner `write_segment`, if this segment is a `ProxySegment`.
-    /// Otherwise, returns `None`.
-    ///
-    /// This default impl is overridden by `ProxySegment`.
-    fn tmp_path(&self) -> Option<&Path> {
-        None
+    pub fn append(mut self, mut other: Self) -> Self {
+        self.parts.append(&mut other.parts);
+        self
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct SegmentId<'a> {
-    is_appendable: bool,
-    data_path: &'a Path,
-    tmp_path: Option<&'a Path>,
-}
-
-impl<'a> fmt::Display for SegmentId<'a> {
+impl fmt::Display for SegmentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(tmp_path) = self.tmp_path {
-            write!(
-                f,
-                "{}/{}",
-                self.data_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("UNKNOWN"),
-                tmp_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("UNKNOWN"),
-            )
-        } else {
+        match self.parts.as_slice() {
+            [] => {
+                f.write_str("EMPTY")?;
+            }
+
+            [id] => {
+                write!(f, "{id:#}")?;
+            }
+
+            [first, rest @ ..] => {
+                write!(f, "{first}")?;
+
+                for part in rest {
+                    write!(f, "/{part}")?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SegmentIdPart {
+    id: SegmentIdBase,
+    is_appendable: bool,
+}
+
+impl SegmentIdPart {
+    pub fn new(id: SegmentIdBase, is_appendable: bool) -> Self {
+        Self { id, is_appendable }
+    }
+}
+
+impl fmt::Display for SegmentIdPart {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
             write!(
                 f,
                 "{}:{}",
-                self.data_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("UNKNOWN"),
-                if self.is_appendable { "rw" } else { "ro" },
+                self.id,
+                if self.is_appendable { "rw" } else { "ro" }
             )
+        } else {
+            write!(f, "{}", self.id)
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum SegmentIdBase {
+    Uuid(uuid::Uuid),
+    String(String),
+}
+
+impl SegmentIdBase {
+    pub fn from_path(path: &Path) -> OperationResult<Self> {
+        let basename = path
+            .file_name()
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "failed to parse segment id: segment path {} does not contain basename",
+                    path.display(),
+                ))
+            })?
+            .to_string_lossy();
+
+        let id = match uuid::Uuid::from_str(&basename) {
+            Ok(uuid) => Self::Uuid(uuid),
+            Err(_) => Self::String(basename.into_owned()),
+        };
+
+        Ok(id)
+    }
+}
+
+impl fmt::Display for SegmentIdBase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SegmentIdBase::Uuid(uuid) => uuid.fmt(f),
+            SegmentIdBase::String(str) => str.fmt(f),
         }
     }
 }

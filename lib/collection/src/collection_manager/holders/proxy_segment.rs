@@ -11,7 +11,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, Vector};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{SegmentEntry, SegmentId};
 use segment::index::field_index::CardinalityEstimation;
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -31,6 +31,7 @@ type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
 /// It writes all changed records into a temporary `write_segment` and keeps track on changed points
 pub struct ProxySegment {
+    id: SegmentId,
     pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,
     /// Internal mask of deleted points, specific to the wrapped segment
@@ -45,8 +46,6 @@ pub struct ProxySegment {
     created_indexes: LockedFieldsMap,
     last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
     wrapped_config: SegmentConfig,
-    data_path: PathBuf,
-    tmp_path: PathBuf,
 }
 
 impl ProxySegment {
@@ -57,6 +56,10 @@ impl ProxySegment {
         created_indexes: LockedFieldsMap,
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
+        let wrapped_id = segment.get().read().id();
+        let write_id = write_segment.get().read().id();
+        let id = wrapped_id.append(write_id);
+
         let deleted_mask = match &segment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_guard = raw_segment.read();
@@ -66,15 +69,10 @@ impl ProxySegment {
             LockedSegment::Proxy(_) => None,
         };
 
-        let (wrapped_config, data_path) = {
-            let segment = segment.get();
-            let segment = segment.read();
-            (segment.config().clone(), segment.data_path().to_path_buf())
-        };
-
-        let tmp_path = write_segment.get().read().data_path().to_path_buf();
+        let wrapped_config = segment.get().read().config().clone();
 
         ProxySegment {
+            id,
             write_segment,
             wrapped_segment: segment,
             deleted_mask,
@@ -83,8 +81,6 @@ impl ProxySegment {
             deleted_indexes,
             last_flushed_version: Arc::new(RwLock::new(None)),
             wrapped_config,
-            data_path,
-            tmp_path,
         }
     }
 
@@ -866,8 +862,8 @@ impl SegmentEntry for ProxySegment {
         self.wrapped_segment.drop_data()
     }
 
-    fn data_path(&self) -> &Path {
-        &self.data_path
+    fn data_path(&self) -> PathBuf {
+        self.wrapped_segment.get().read().data_path()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
@@ -1015,12 +1011,8 @@ impl SegmentEntry for ProxySegment {
             .fill_query_context(query_context)
     }
 
-    fn is_proxy(&self) -> bool {
-        true
-    }
-
-    fn tmp_path(&self) -> Option<&Path> {
-        Some(&self.tmp_path)
+    fn id(&self) -> SegmentId {
+        self.id.clone()
     }
 }
 

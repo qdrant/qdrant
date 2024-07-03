@@ -27,7 +27,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, Vector};
-use crate::entry::entry_point::SegmentEntry;
+use crate::entry::entry_point::{SegmentEntry, SegmentId, SegmentIdBase};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
@@ -70,6 +70,7 @@ impl StorageVersion for SegmentVersion {
 /// - Persists data
 /// - Keeps track of occurred errors
 pub struct Segment {
+    pub id: SegmentIdBase,
     /// Latest update operation number, applied to this segment
     /// If None, there were no updates and segment is empty
     pub version: Option<SeqNumberType>,
@@ -1690,8 +1691,8 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn data_path(&self) -> &Path {
-        &self.current_path
+    fn data_path(&self) -> PathBuf {
+        self.current_path.clone()
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
@@ -1912,6 +1913,10 @@ impl SegmentEntry for Segment {
                 vector_data.vector_index.borrow().fill_idf_statistics(idf);
             }
         }
+    }
+
+    fn id(&self) -> SegmentId {
+        SegmentId::new(self.id.clone(), self.is_appendable())
     }
 }
 
