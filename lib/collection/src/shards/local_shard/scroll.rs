@@ -48,7 +48,6 @@ impl LocalShard {
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
-            offset,
             limit,
             with_vector,
             filter,
@@ -56,7 +55,7 @@ impl LocalShard {
             with_payload,
         } = request;
 
-        let limit = limit + offset;
+        let limit = *limit;
 
         let offset_id = None;
 
@@ -74,7 +73,6 @@ impl LocalShard {
                 )
                 .await?
                 .into_iter()
-                .skip(*offset)
                 .map(|record| ScoredPoint {
                     id: record.id,
                     version: 0,
@@ -100,7 +98,6 @@ impl LocalShard {
                 records
                     .into_iter()
                     .zip(values)
-                    .skip(*offset)
                     .map(|(record, value)| ScoredPoint {
                         id: record.id,
                         version: 0,

@@ -167,6 +167,33 @@ def test_basic_scroll():
         assert record.get("id") == scored_point.get("id")
         assert record.get("payload") == scored_point.get("payload")
 
+def test_basic_scroll_offset():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "offset": 2, # skip first record, start at id 2
+        },
+    )
+    assert response.ok
+    scroll_result = response.json()["result"]["points"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "offset": 1, # skip one record
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]["points"]
+
+    for record, scored_point in zip(scroll_result, query_result):
+        assert record.get("id") == scored_point.get("id")
+        assert record.get("payload") == scored_point.get("payload")
 
 def test_basic_recommend_avg():
     response = request_with_validation(
