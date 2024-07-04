@@ -254,7 +254,7 @@ def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
 
 
 def get_collection_point_count(peer_api_uri: str, collection_name: str, exact: bool = False) -> int:
-    r = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": exact})
+    r = requests.post(f"{peer_api_uri}/collections/{collection_name}/points/count", json={"exact": exact})
     assert_http_ok(r)
     res = r.json()["result"]["count"]
     return res
@@ -378,7 +378,7 @@ def check_collection_local_shards_point_count(peer_api_uri: str, collection_name
 
     is_correct = point_count == expected_count
     if not is_correct:
-        print(f"Collection '{collection_name}' on peer {peer_api_uri}: {json.dumps(collection_cluster_info, indent=4)}")
+        print(f"Collection '{collection_name}' on peer {peer_api_uri} ({point_count} != {expected_count}): {json.dumps(collection_cluster_info, indent=4)}")
 
     return is_correct
 
