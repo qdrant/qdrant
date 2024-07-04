@@ -1284,6 +1284,12 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .assign_all(internal_id, full_payload)?;
+
+                tracing::info!(
+                    internal = true,
+                    "operation {op_num} set full payload for point {point_id}",
+                );
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -1306,6 +1312,12 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .assign(internal_id, payload, key)?;
+
+                tracing::info!(
+                    internal = true,
+                    "operation {op_num} set payload for point {point_id}",
+                );
+
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
