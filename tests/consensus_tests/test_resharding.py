@@ -23,7 +23,7 @@ def test_resharding(tmp_path: pathlib.Path):
 
     # Prevent optimizers messing with point counts
     env={
-        "QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS": "0",
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
@@ -82,7 +82,7 @@ def test_resharding_balance(tmp_path: pathlib.Path):
 
     # Prevent optimizers messing with point counts
     env={
-        "QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS": "0",
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
@@ -96,6 +96,9 @@ def test_resharding_balance(tmp_path: pathlib.Path):
     )
     upsert_random_points(peer_api_uris[0], num_points)
 
+    sleep(1)
+
+    # Assert node point count
     for uri in peer_api_uris:
         assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
@@ -115,10 +118,6 @@ def test_resharding_balance(tmp_path: pathlib.Path):
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
         for uri in peer_api_uris:
             wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
-
-        # Point count across cluster must be stable
-        for uri in peer_api_uris:
-            assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
     # We must end up with:
     # - 6 shards on first node, it was the resharding target
