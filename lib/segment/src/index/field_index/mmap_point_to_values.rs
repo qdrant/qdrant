@@ -1,10 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
+use memmap2::MmapMut;
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, transmute_from_u8};
 
 use crate::{common::operation_error::{OperationError, OperationResult}, types::{FloatPayloadType, GeoPoint, IntPayloadType}};
-
-use super::immutable_point_to_values::ImmutablePointToValues;
 
 pub trait MmapValue: Clone + Default {
     fn mmaped_size(&self) -> usize;
@@ -121,16 +121,54 @@ impl MmapValue for GeoPoint {
 // This structure doesn't support adding new values, only removing.
 // It's used in mmap field indices like `ImmutableMapIndex`, `ImmutableNumericIndex`, etc to store points-to-values map.
 pub struct MmapPointToValues<T: MmapValue> {
+    mmap: MmapMut,
+    ranges_offset: usize,
+    points_count: usize,
     phantom: std::marker::PhantomData<T>,
 }
 
+#[derive(Clone, Copy)]
+struct MmapRange {
+    start: u64,
+    count: u64,
+}
+
 impl<T: MmapValue> MmapPointToValues<T> {
-    pub fn from_vec(path: &Path, src: Vec<Vec<T>>) -> OperationResult<Self> {
-        todo!()
+    pub fn from_iter(
+        path: &Path,
+        iter: impl Iterator<Item = (PointOffsetType, Vec<T>)> + Clone,
+    ) -> OperationResult<Self> {
+        let points_count = iter.clone().count();
+        let header_size = std::mem::size_of::<MmapRange>();
+        let ranges_size = points_count * std::mem::size_of::<MmapRange>();
+        let values_size = iter.clone().map(|v| v.1.iter().map(|v| v.mmaped_size()).sum::<usize>()).sum::<usize>();
+        let file_size = header_size + ranges_size + values_size;
+
+        let file_name = Self::get_file_name(path);
+        create_and_ensure_length(&file_name, file_size)?;
+        let mmap = open_write_mmap(&file_name)?;
+
+        // fill mmap
+        
+        Ok(Self {
+            mmap,
+            ranges_offset: header_size,
+            points_count,
+            phantom: std::marker::PhantomData,
+        })
     }
 
-    pub fn from_immutable(path: &Path, src: ImmutablePointToValues<T>) -> OperationResult<Self> {
-        todo!()
+    pub fn open(path: &Path) -> OperationResult<Self> {
+        let file_name = Self::get_file_name(path);
+        let mmap = open_write_mmap(&file_name)?;
+        let header: MmapRange = *transmute_from_u8(mmap.get(0..std::mem::size_of::<MmapRange>()).unwrap());
+
+        Ok(Self {
+            mmap,
+            ranges_offset: header.start as usize,
+            points_count: header.count as usize,
+            phantom: std::marker::PhantomData,
+        })
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Vec<T>> {
@@ -139,6 +177,10 @@ impl<T: MmapValue> MmapPointToValues<T> {
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> Option<Vec<T>> {
         todo!()
+    }
+
+    fn get_file_name(path: &Path) -> PathBuf {
+        path.join("")
     }
 }
 
@@ -162,7 +204,7 @@ mod tests {
         ];
 
         let dir = Builder::new().prefix("mmap_point_to_values").tempdir().unwrap();
-        let mut point_to_values = MmapPointToValues::from_vec(dir.path(), values.clone()).unwrap();
+        let mut point_to_values = MmapPointToValues::from_iter(dir.path(), values.iter().enumerate().map(|(id, values)| (id as PointOffsetType, values))).unwrap();
 
         let check = |point_to_values: &MmapPointToValues<_>, values: &[Vec<_>]| {
             for (idx, values) in values.iter().enumerate() {
