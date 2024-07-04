@@ -528,3 +528,23 @@ pub struct SearchRequestInternal {
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
 }
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct QueryGroupsRequestInternal {
+    #[validate]
+    #[serde(flatten)]
+    pub internal_query: QueryRequestInternal,
+
+    #[serde(flatten)]
+    #[validate]
+    pub group_request: BaseGroupRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct QueryGroupsRequest {
+    #[validate]
+    #[serde(flatten)]
+    pub search_group_request: QueryGroupsRequestInternal,
+
+    pub shard_key: Option<ShardKeySelector>,
+}

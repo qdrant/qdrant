@@ -260,6 +260,7 @@ impl CheckableCollectionOperation for GroupRequest {
                 view.apply_filter(&mut s.filter);
             }
             SourceRequest::Recommend(r) => r.check_access(view, access)?,
+            SourceRequest::Query(q) => q.check_access(view, access)?,
         }
         access.check_with_lookup(&self.with_lookup)?;
         Ok(())
@@ -934,6 +935,7 @@ mod tests_ops {
                     s.filter = Some(PayloadConstraint::new_test("col").to_filter());
                 }
                 SourceRequest::Recommend(_) => unreachable!(),
+                SourceRequest::Query(_) => unreachable!(),
             },
         );
     }

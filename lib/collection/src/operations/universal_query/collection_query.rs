@@ -20,7 +20,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CollectionQueryRequest {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
@@ -54,7 +54,7 @@ pub struct CollectionQueryResolveRequest<'a> {
     pub using: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Query {
     /// Score points against some vector(s)
     Vector(VectorQuery<VectorInput>),
@@ -90,7 +90,7 @@ impl Query {
         Ok(scoring_query)
     }
 }
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VectorInput {
     Id(PointIdType),
     Vector(Vector),
@@ -105,7 +105,7 @@ impl VectorInput {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VectorQuery<T> {
     Nearest(T),
     RecommendAverageVector(RecoQuery<T>),
@@ -266,7 +266,7 @@ impl VectorQuery<Vector> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CollectionPrefetch {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,

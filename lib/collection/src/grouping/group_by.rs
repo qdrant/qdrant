@@ -2,27 +2,34 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 
-use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
+use api::rest::{
+    BaseGroupRequest, QueryGroupsRequestInternal, SearchGroupsRequestInternal,
+    SearchRequestInternal,
+};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint, WithPayloadInterface,
+    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint,
+    WithPayloadInterface, WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
-use super::types::CoreGroupRequest;
+use super::types::QueryGroupRequest;
 use crate::collection::Collection;
 use crate::common::fetch_vectors;
+use crate::common::fetch_vectors::build_vector_resolver_query;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionResult, PointGroup, RecommendGroupsRequestInternal, RecommendRequestInternal,
 };
-use crate::recommendations::recommend_into_core_search;
+use crate::operations::universal_query::collection_query::CollectionQueryRequest;
+use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::recommendations::recommend_into_query_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
@@ -31,6 +38,7 @@ const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 pub enum SourceRequest {
     Search(SearchRequestInternal),
     Recommend(RecommendRequestInternal),
+    Query(CollectionQueryRequest),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +68,7 @@ impl GroupRequest {
         let limit = match &source {
             SourceRequest::Search(request) => request.limit,
             SourceRequest::Recommend(request) => request.limit,
+            SourceRequest::Query(request) => request.limit,
         };
         Self {
             source,
@@ -70,19 +79,19 @@ impl GroupRequest {
         }
     }
 
-    pub async fn into_core_group_request<'a, F, Fut>(
+    pub async fn into_query_group_request<'a, F, Fut>(
         self,
         collection: &Collection,
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-    ) -> CollectionResult<CoreGroupRequest>
+    ) -> CollectionResult<QueryGroupRequest>
     where
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
     {
-        let core_search = match self.source {
-            SourceRequest::Search(search_req) => search_req.into(),
+        let query_search = match self.source {
+            SourceRequest::Search(search_req) => ShardQueryRequest::from(search_req),
             SourceRequest::Recommend(recommend_req) => {
                 let referenced_vectors = fetch_vectors::resolve_referenced_vectors_batch(
                     &[(recommend_req.clone(), shard_selection)],
@@ -92,12 +101,25 @@ impl GroupRequest {
                 )
                 .await?;
 
-                recommend_into_core_search(&collection.id, recommend_req, &referenced_vectors)?
+                recommend_into_query_search(&collection.id, recommend_req, &referenced_vectors)?
+            }
+            SourceRequest::Query(query_req) => {
+                // Lift nested prefetches to root queries for vector resolution
+                let resolver_requests = build_vector_resolver_query(&query_req, &shard_selection);
+
+                let referenced_vectors = fetch_vectors::resolve_referenced_vectors_batch(
+                    &resolver_requests,
+                    collection,
+                    collection_by_name,
+                    read_consistency,
+                )
+                .await?;
+                query_req.try_into_shard_request(&collection.id, &referenced_vectors)?
             }
         };
 
-        Ok(CoreGroupRequest {
-            source: core_search,
+        Ok(QueryGroupRequest {
+            source: query_search,
             group_by: self.group_by,
             group_size: self.group_size,
             limit: self.limit,
@@ -106,7 +128,7 @@ impl GroupRequest {
     }
 }
 
-impl CoreGroupRequest {
+impl QueryGroupRequest {
     /// Make `group_by` field selector work with as `with_payload`.
     fn group_by_to_payload_selector(&self, group_by: &JsonPath) -> WithPayloadInterface {
         WithPayloadInterface::Fields(vec![group_by.strip_wildcard_suffix()])
@@ -129,11 +151,11 @@ impl CoreGroupRequest {
         let with_group_by_payload = self.group_by_to_payload_selector(&self.group_by);
 
         // We're enriching the final results at the end, so we'll keep this minimal
-        request.with_payload = Some(with_group_by_payload);
-        request.with_vector = None;
+        request.with_payload = with_group_by_payload;
+        request.with_vector = WithVector::Bool(false);
 
         collection
-            .search(request, read_consistency, &shard_selection, timeout)
+            .query(request, read_consistency, shard_selection, timeout)
             .await
     }
 }
@@ -224,21 +246,49 @@ impl From<RecommendGroupsRequestInternal> for GroupRequest {
     }
 }
 
+impl From<QueryGroupsRequestInternal> for GroupRequest {
+    fn from(request: QueryGroupsRequestInternal) -> Self {
+        let QueryGroupsRequestInternal {
+            internal_query,
+            group_request:
+                BaseGroupRequest {
+                    group_by,
+                    group_size,
+                    limit,
+                    with_lookup: with_lookup_interface,
+                },
+        } = request;
+
+        let collection_query_request = CollectionQueryRequest::from(internal_query);
+
+        GroupRequest {
+            source: SourceRequest::Query(collection_query_request),
+            group_by,
+            group_size: group_size as usize,
+            limit: limit as usize,
+            with_lookup: with_lookup_interface.map(Into::into),
+        }
+    }
+}
+
 /// Uses the request to fill up groups of points.
 pub async fn group_by(
-    request: CoreGroupRequest,
+    request: QueryGroupRequest,
     collection: &Collection,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>> {
-    let score_ordering = if request.source.query.is_distance_scored() {
-        let vector_name = request.source.query.get_vector_name();
-        let collection_params = collection.collection_config.read().await;
-        let distance = collection_params.params.get_distance(vector_name)?;
-        distance.distance_order()
-    } else {
-        Order::LargeBetter
+    let mut score_ordering = Order::LargeBetter;
+
+    if let Some(query) = &request.source.query {
+        if query.is_distance_scored() {
+            if let Some(vector_name) = query.get_vector_name() {
+                let collection_params = collection.collection_config.read().await;
+                let distance = collection_params.params.get_distance(vector_name)?;
+                score_ordering = distance.distance_order()
+            }
+        }
     };
 
     let mut aggregator = GroupsAggregator::new(
@@ -383,8 +433,8 @@ pub async fn group_by(
     let enriched_points: HashMap<_, _> = collection
         .fill_search_result_with_payload(
             bare_points,
-            request.source.with_payload,
-            request.source.with_vector.unwrap_or_default(),
+            Some(request.source.with_payload),
+            request.source.with_vector,
             read_consistency,
             &shard_selection,
         )

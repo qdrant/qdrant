@@ -365,22 +365,36 @@ pub fn build_vector_resolver_queries(
 ) -> Vec<(CollectionQueryResolveRequest, ShardSelectorInternal)> {
     let mut resolve_prefetches = vec![];
     for (request, shard_selector) in requests_batch {
-        // resolve query for root query
-        if let Some(collection_query::Query::Vector(vector_query)) = &request.query {
-            let resolve_root = CollectionQueryResolveRequest {
-                vector_query,
-                lookup_from: request.lookup_from.clone(),
-                using: request.using.clone(),
-            };
-            resolve_prefetches.push((resolve_root, shard_selector.clone()));
-        }
+        build_vector_resolver_query(request, shard_selector)
+            .into_iter()
+            .for_each(|(resolve_request, shard_selector)| {
+                resolve_prefetches.push((resolve_request, shard_selector))
+            });
+    }
+    resolve_prefetches
+}
 
-        // flatten prefetches
-        for prefetch in &request.prefetch {
-            for flatten in prefetch.flatten_resolver_requests() {
-                resolve_prefetches.push((flatten, shard_selector.clone()));
-            }
+pub fn build_vector_resolver_query<'a>(
+    request: &'a CollectionQueryRequest,
+    shard_selector: &'a ShardSelectorInternal,
+) -> Vec<(CollectionQueryResolveRequest<'a>, ShardSelectorInternal)> {
+    let mut resolve_prefetches = vec![];
+    // resolve query for root query
+    if let Some(collection_query::Query::Vector(vector_query)) = &request.query {
+        let resolve_root = CollectionQueryResolveRequest {
+            vector_query,
+            lookup_from: request.lookup_from.clone(),
+            using: request.using.clone(),
+        };
+        resolve_prefetches.push((resolve_root, shard_selector.clone()));
+    }
+
+    // flatten prefetches
+    for prefetch in &request.prefetch {
+        for flatten in prefetch.flatten_resolver_requests() {
+            resolve_prefetches.push((flatten, shard_selector.clone()));
         }
     }
+
     resolve_prefetches
 }

@@ -29,6 +29,7 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     RecommendRequestInternal, UsingVector,
 };
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 
 fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
     let mut avg_dense = DenseVector::default();
@@ -172,6 +173,16 @@ pub fn recommend_into_core_search(
     request: RecommendRequestInternal,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
+    let query_request =
+        recommend_into_query_search(collection_name, request, all_vectors_records_map)?;
+    CoreSearchRequest::try_from(query_request)
+}
+
+pub fn recommend_into_query_search(
+    collection_name: &str,
+    request: RecommendRequestInternal,
+    all_vectors_records_map: &ReferencedVectors,
+) -> CollectionResult<ShardQueryRequest> {
     let reference_vectors_ids = request
         .positive
         .iter()
@@ -319,7 +330,7 @@ fn recommend_by_avg_vector(
     request: RecommendRequestInternal,
     reference_vectors_ids_to_exclude: Vec<ExtendedPointId>,
     all_vectors_records_map: &ReferencedVectors,
-) -> CollectionResult<CoreSearchRequest> {
+) -> CollectionResult<ShardQueryRequest> {
     let lookup_vector_name = request.get_lookup_vector_name();
 
     let RecommendRequestInternal {
@@ -361,11 +372,12 @@ fn recommend_by_avg_vector(
     let search_vector =
         avg_vector_for_recommendation(positive_vectors, negative_vectors.peekable())?;
 
-    Ok(CoreSearchRequest {
-        query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-            search_vector.clone(),
-            vector_name,
-        )),
+    let named_vector = NamedVectorStruct::new_from_vector(search_vector, vector_name);
+    let scoring_query = ScoringQuery::Vector(QueryEnum::Nearest(named_vector));
+
+    let request = ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(scoring_query),
         filter: Some(Filter {
             should: None,
             min_should: None,
@@ -375,20 +387,21 @@ fn recommend_by_avg_vector(
                 has_id: reference_vectors_ids_to_exclude.into_iter().collect(),
             })]),
         }),
-        with_payload,
-        with_vector,
+        with_payload: with_payload.unwrap_or_default(),
+        with_vector: with_vector.unwrap_or_default(),
         params,
         limit,
         score_threshold,
         offset: offset.unwrap_or_default(),
-    })
+    };
+    Ok(request)
 }
 
 fn recommend_by_best_score(
     request: RecommendRequestInternal,
     reference_vectors_ids_to_exclude: Vec<PointIdType>,
     all_vectors_records_map: &ReferencedVectors,
-) -> CoreSearchRequest {
+) -> ShardQueryRequest {
     let lookup_vector_name = request.get_lookup_vector_name();
 
     let RecommendRequestInternal {
@@ -429,8 +442,11 @@ fn recommend_by_best_score(
         }),
     });
 
-    CoreSearchRequest {
-        query,
+    let scoring_query = ScoringQuery::Vector(query);
+
+    ShardQueryRequest {
+        prefetches: vec![],
+        query: Some(scoring_query),
         filter: Some(Filter {
             should: None,
             min_should: None,
@@ -442,8 +458,8 @@ fn recommend_by_best_score(
         params,
         limit,
         offset: offset.unwrap_or_default(),
-        with_payload,
-        with_vector,
+        with_payload: with_payload.unwrap_or_default(),
+        with_vector: with_vector.unwrap_or_default(),
         score_threshold,
     }
 }

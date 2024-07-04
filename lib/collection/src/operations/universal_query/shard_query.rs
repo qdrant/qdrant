@@ -79,6 +79,14 @@ impl ScoringQuery {
         }
     }
 
+    /// Only when the distance is the scoring, this will return true.
+    pub fn is_distance_scored(&self) -> bool {
+        match self {
+            ScoringQuery::Vector(query) => query.is_distance_scored(),
+            ScoringQuery::Fusion(_) | ScoringQuery::OrderBy(_) => false,
+        }
+    }
+
     /// Returns the expected order of results, depending on the type of query
     pub fn order(
         opt_self: Option<&Self>,

@@ -47,6 +47,7 @@ use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::operations::query_enum::QueryEnum;
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -1745,6 +1746,61 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
             with_payload: request.with_payload,
             with_vector: request.with_vector,
             score_threshold: request.score_threshold,
+        }
+    }
+}
+
+impl TryFrom<ShardQueryRequest> for CoreSearchRequest {
+    type Error = CollectionError;
+
+    fn try_from(request: ShardQueryRequest) -> Result<Self, Self::Error> {
+        if let Some(query) = request.query {
+            match query {
+                ScoringQuery::Vector(query) => Ok(Self {
+                    query,
+                    filter: request.filter,
+                    params: request.params,
+                    limit: request.limit,
+                    offset: request.offset,
+                    with_payload: Some(request.with_payload),
+                    with_vector: Some(request.with_vector),
+                    score_threshold: request.score_threshold,
+                }),
+                _ => Err(CollectionError::BadInput {
+                    description: "Only vector queries are supported".to_string(),
+                }),
+            }
+        } else {
+            Err(CollectionError::BadInput {
+                description: "Query is missing".to_string(),
+            })
+        }
+    }
+}
+
+impl From<SearchRequestInternal> for ShardQueryRequest {
+    fn from(value: SearchRequestInternal) -> Self {
+        let SearchRequestInternal {
+            vector,
+            filter,
+            score_threshold,
+            limit,
+            offset,
+            params,
+            with_vector,
+            with_payload,
+        } = value;
+
+        Self {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(vector.into()))),
+            filter,
+            score_threshold,
+            limit,
+            offset: offset.unwrap_or_default(),
+            params,
+            with_vector: with_vector.unwrap_or_default(),
+            with_payload: with_payload.unwrap_or_default(),
         }
     }
 }
