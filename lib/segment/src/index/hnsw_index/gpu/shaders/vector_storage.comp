@@ -5,6 +5,10 @@
 #error "VECTOR_STORAGE_LAYOUT_SET not defined"
 #endif
 
+#ifndef DIM
+#error "DIM not defined"
+#endif
+
 #ifdef VECTOR_STORAGE_ELEMENT_FLOAT32
 
 #define VECTOR_STORAGE_ELEMENT_TYPE vec4
@@ -44,23 +48,12 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
 #error "VECTOR_STORAGE_ELEMENT not defined"
 #endif
 
-layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 0)
-readonly uniform VectorStorageParams {
-    uint dim;
-    uint count;
-    uint chunk_size;
-} vector_storage_params;
-
-#define COUNT vector_storage_params.count
-
-#define DIM vector_storage_params.dim
-
 #define STORAGES_COUNT 4
 
 #define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
 #define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
-    layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1 + STORAGE_INDEX) \
+    layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = STORAGE_INDEX) \
     readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
         VECTOR_STORAGE_ELEMENT_TYPE data[]; \
     } STORAGE(STORAGE_INDEX);

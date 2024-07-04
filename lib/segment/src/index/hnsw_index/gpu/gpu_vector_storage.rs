@@ -14,16 +14,9 @@ pub const ALIGNMENT: usize = 32 * 4;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 pub const STORAGES_COUNT: usize = 4;
 
-#[repr(C)]
-struct GpuVectorParamsBuffer {
-    dim: u32,
-    count: u32,
-}
-
 pub struct GpuVectorStorage {
     pub device: Arc<gpu::Device>,
     pub vectors_buffer: Vec<Arc<gpu::Buffer>>,
-    pub params_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
     pub dim: usize,
@@ -286,11 +279,6 @@ impl GpuVectorStorage {
             })
             .collect::<gpu::GpuResult<Vec<_>>>()?;
         println!("Storage buffer size {}", vectors_buffer[0].size);
-        let params_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Uniform,
-            std::mem::size_of::<GpuVectorParamsBuffer>(),
-        )?);
 
         let mut upload_context = gpu::Context::new(device.clone());
         let staging_buffer = Arc::new(gpu::Buffer::new(
@@ -304,20 +292,6 @@ impl GpuVectorStorage {
         );
 
         println!("capacity = {}, count = {}", capacity, count);
-        let params = GpuVectorParamsBuffer {
-            dim: capacity as u32,
-            count: count as u32,
-        };
-        staging_buffer.upload(&params, 0);
-        upload_context.copy_gpu_buffer(
-            staging_buffer.clone(),
-            params_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<GpuVectorParamsBuffer>(),
-        );
-        upload_context.run();
-        upload_context.wait_finish();
 
         for (storage_index, vector_buffer) in vectors_buffer.iter().enumerate() {
             let mut gpu_offset = 0;
@@ -388,18 +362,16 @@ impl GpuVectorStorage {
             element_type,
         );
 
-        let mut descriptor_set_layout_builder =
-            gpu::DescriptorSetLayout::builder().add_uniform_buffer(0);
+        let mut descriptor_set_layout_builder = gpu::DescriptorSetLayout::builder();
         for i in 0..STORAGES_COUNT {
-            descriptor_set_layout_builder = descriptor_set_layout_builder.add_storage_buffer(i + 1);
+            descriptor_set_layout_builder = descriptor_set_layout_builder.add_storage_buffer(i);
         }
         let descriptor_set_layout = descriptor_set_layout_builder.build(device.clone());
 
-        let mut descriptor_set_builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            .add_uniform_buffer(0, params_buffer.clone());
+        let mut descriptor_set_builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone());
         for (i, vector_buffer) in vectors_buffer.iter().enumerate() {
             descriptor_set_builder =
-                descriptor_set_builder.add_storage_buffer(i + 1, vector_buffer.clone());
+                descriptor_set_builder.add_storage_buffer(i, vector_buffer.clone());
         }
 
         let descriptor_set = descriptor_set_builder.build();
@@ -407,10 +379,9 @@ impl GpuVectorStorage {
         Ok(Self {
             device,
             vectors_buffer,
-            params_buffer,
             descriptor_set_layout,
             descriptor_set,
-            dim,
+            dim: capacity,
             count,
             element_type,
         })
@@ -494,7 +465,6 @@ mod tests {
     ) -> gpu::GpuVectorStorageElementType {
         let num_vectors = 2048;
         let dim = 128;
-        let capacity = 128;
         let test_point_id = 0usize;
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -547,6 +517,7 @@ mod tests {
                 .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+                .with_dim(gpu_vector_storage.dim)
                 .build()
         );
 
@@ -589,21 +560,6 @@ mod tests {
         let mut scores = vec![0.0f32; num_vectors];
         staging_buffer.download_slice(&mut scores, 0);
 
-        context.copy_gpu_buffer(
-            gpu_vector_storage.params_buffer.clone(),
-            staging_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<GpuVectorParamsBuffer>(),
-        );
-        context.run();
-        context.wait_finish();
-
-        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
-        staging_buffer.download(&mut vector_storage_params, 0);
-        assert_eq!(vector_storage_params.dim, capacity as u32);
-        assert_eq!(vector_storage_params.count, num_vectors as u32);
-
         let timer = std::time::Instant::now();
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[test_point_id], &points[i]);
@@ -642,7 +598,6 @@ mod tests {
     fn test_gpu_vector_storage_binary_quantization() {
         let num_vectors = 16;
         let dim = 1024;
-        let capacity = 128;
         let test_point_id = 0usize;
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -712,6 +667,7 @@ mod tests {
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
+                .with_dim(gpu_vector_storage.dim)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
                 .build()
         );
@@ -754,21 +710,6 @@ mod tests {
 
         let mut scores = vec![0.0f32; num_vectors];
         staging_buffer.download_slice(&mut scores, 0);
-
-        context.copy_gpu_buffer(
-            gpu_vector_storage.params_buffer.clone(),
-            staging_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<GpuVectorParamsBuffer>(),
-        );
-        context.run();
-        context.wait_finish();
-
-        let mut vector_storage_params = GpuVectorParamsBuffer { dim: 0, count: 0 };
-        staging_buffer.download(&mut vector_storage_params, 0);
-        assert_eq!(vector_storage_params.dim, capacity as u32);
-        assert_eq!(vector_storage_params.count, num_vectors as u32);
 
         let stopped = false.into();
         let point_deleted = BitVec::repeat(false, num_vectors);

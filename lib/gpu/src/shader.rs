@@ -15,6 +15,7 @@ pub struct ShaderBuilder {
     shader_code: String,
     element_type: Option<GpuVectorStorageElementType>,
     layout_bindings: Vec<(LayoutSetBinding, usize)>,
+    dim: Option<usize>,
 }
 
 impl ShaderBuilder {
@@ -24,6 +25,7 @@ impl ShaderBuilder {
             shader_code: Default::default(),
             element_type: None,
             layout_bindings: Default::default(),
+            dim: None,
         }
     }
 
@@ -35,6 +37,11 @@ impl ShaderBuilder {
 
     pub fn with_element_type(&mut self, element_type: GpuVectorStorageElementType) -> &mut Self {
         self.element_type = Some(element_type);
+        self
+    }
+
+    pub fn with_dim(&mut self, dim: usize) -> &mut Self {
+        self.dim = Some(dim);
         self
     }
 
@@ -59,8 +66,11 @@ impl ShaderBuilder {
         }
 
         for (layout, binding) in &self.layout_bindings {
-            let s = binding.to_string();
-            options.add_macro_definition(layout.to_string(), Some(&s));
+            options.add_macro_definition(layout.to_string(), Some(&binding.to_string()));
+        }
+
+        if let Some(dim) = self.dim {
+            options.add_macro_definition("DIM", Some(&dim.to_string()));
         }
 
         let timer = std::time::Instant::now();
