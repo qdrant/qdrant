@@ -16,6 +16,9 @@ pub struct ShaderBuilder {
     element_type: Option<GpuVectorStorageElementType>,
     layout_bindings: Vec<(LayoutSetBinding, usize)>,
     dim: Option<usize>,
+    nearest_heap_ef: Option<usize>,
+    nearest_heap_capacity: Option<usize>,
+    candidates_heap_capacity: Option<usize>,
 }
 
 impl ShaderBuilder {
@@ -26,6 +29,9 @@ impl ShaderBuilder {
             element_type: None,
             layout_bindings: Default::default(),
             dim: None,
+            nearest_heap_ef: None,
+            nearest_heap_capacity: None,
+            candidates_heap_capacity: None,
         }
     }
 
@@ -42,6 +48,21 @@ impl ShaderBuilder {
 
     pub fn with_dim(&mut self, dim: usize) -> &mut Self {
         self.dim = Some(dim);
+        self
+    }
+
+    pub fn with_nearest_heap_ef(&mut self, nearest_heap_ef: usize) -> &mut Self {
+        self.nearest_heap_ef = Some(nearest_heap_ef);
+        self
+    }
+
+    pub fn with_nearest_heap_capacity(&mut self, nearest_heap_capacity: usize) -> &mut Self {
+        self.nearest_heap_capacity = Some(nearest_heap_capacity);
+        self
+    }
+
+    pub fn with_candidates_heap_capacity(&mut self, candidates_heap_capacity: usize) -> &mut Self {
+        self.candidates_heap_capacity = Some(candidates_heap_capacity);
         self
     }
 
@@ -71,6 +92,18 @@ impl ShaderBuilder {
 
         if let Some(dim) = self.dim {
             options.add_macro_definition("DIM", Some(&dim.to_string()));
+        }
+
+        if let Some(nearest_heap_ef) = self.nearest_heap_ef {
+            options.add_macro_definition("NEAREST_HEAP_EF", Some(&nearest_heap_ef.to_string()));
+        }
+
+        if let Some(nearest_heap_capacity) = self.nearest_heap_capacity {
+            options.add_macro_definition("NEAREST_HEAP_CAPACITY", Some(&nearest_heap_capacity.to_string()));
+        }
+
+        if let Some(candidates_heap_capacity) = self.candidates_heap_capacity {
+            options.add_macro_definition("CANDIDATES_HEAP_CAPACITY", Some(&candidates_heap_capacity.to_string()));
         }
 
         let timer = std::time::Instant::now();

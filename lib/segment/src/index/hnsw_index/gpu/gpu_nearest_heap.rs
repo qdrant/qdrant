@@ -2,17 +2,10 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 
-#[repr(C)]
-struct GpuNearestHeapParamsBuffer {
-    capacity: u32,
-    ef: u32,
-}
-
 pub struct GpuNearestHeap {
     pub ef: usize,
     pub capacity: usize,
     pub device: Arc<gpu::Device>,
-    pub params_buffer: Arc<gpu::Buffer>,
     pub nearest_score_buffer: Arc<gpu::Buffer>,
     pub nearest_id_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
@@ -40,52 +33,21 @@ impl GpuNearestHeap {
             gpu::BufferType::Storage,
             buffers_elements_count * std::mem::size_of::<PointOffsetType>(),
         )?);
-        let params_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Uniform,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
-        )?);
-
-        let staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::CpuToGpu,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
-        )?);
-
-        let params = GpuNearestHeapParamsBuffer {
-            capacity: capacity as u32,
-            ef: ef as u32,
-        };
-        staging_buffer.upload(&params, 0);
-
-        let mut upload_context = gpu::Context::new(device.clone());
-        upload_context.copy_gpu_buffer(
-            staging_buffer.clone(),
-            params_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
-        );
-        upload_context.run();
-        upload_context.wait_finish();
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
-            .add_uniform_buffer(0)
+            .add_storage_buffer(0)
             .add_storage_buffer(1)
-            .add_storage_buffer(2)
             .build(device.clone());
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            .add_uniform_buffer(0, params_buffer.clone())
-            .add_storage_buffer(1, nearest_score_buffer.clone())
-            .add_storage_buffer(2, nearest_id_buffer.clone())
+            .add_storage_buffer(0, nearest_score_buffer.clone())
+            .add_storage_buffer(1, nearest_id_buffer.clone())
             .build();
 
         Ok(Self {
             ef,
             capacity,
             device,
-            params_buffer,
             nearest_score_buffer,
             nearest_id_buffer,
             descriptor_set_layout,
@@ -138,6 +100,8 @@ mod tests {
                 .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_nearest_heap.comp"))
                 .with_layout(gpu::LayoutSetBinding::NearestHeap, 1)
+                .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
+                .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .build()
         );
 

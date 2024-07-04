@@ -5,19 +5,17 @@
 #error "CANDIDATES_HEAP_LAYOUT_SET not defined"
 #endif
 
-layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 0)
-readonly uniform CandidatesHeapParams {
-    uint capacity;
-} candidates_heap_params;
+#ifndef CANDIDATES_HEAP_CAPACITY
+#error "CANDIDATES_HEAP_CAPACITY not defined"
+#endif
 
-layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 1)
+layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 0)
 buffer CandidatesScores {
     ScoredPoint data[];
 } candidates;
 
 uint candidates_count;
 
-#define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
 #define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * SUBGROUP_ID)
 
 ScoredPoint preprocess_candidates_heap_value(ScoredPoint scored_point) {

@@ -2,15 +2,9 @@ use std::sync::Arc;
 
 use common::types::ScoredPointOffset;
 
-#[repr(C)]
-struct GpuCandidatesHeapParamsBuffer {
-    capacity: u32,
-}
-
 pub struct GpuCandidatesHeap {
     pub capacity: usize,
     pub device: Arc<gpu::Device>,
-    pub params_buffer: Arc<gpu::Buffer>,
     pub candidates_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
@@ -30,48 +24,18 @@ impl GpuCandidatesHeap {
             gpu::BufferType::Storage,
             buffers_elements_count * std::mem::size_of::<ScoredPointOffset>(),
         )?);
-        let params_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Uniform,
-            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
-        )?);
-
-        let staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::CpuToGpu,
-            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
-        )?);
-
-        let params = GpuCandidatesHeapParamsBuffer {
-            capacity: ceiled_capacity as u32,
-        };
-        staging_buffer.upload(&params, 0);
-
-        let mut upload_context = gpu::Context::new(device.clone());
-        upload_context.copy_gpu_buffer(
-            staging_buffer.clone(),
-            params_buffer.clone(),
-            0,
-            0,
-            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
-        );
-        upload_context.run();
-        upload_context.wait_finish();
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
-            .add_uniform_buffer(0)
-            .add_storage_buffer(1)
+            .add_storage_buffer(0)
             .build(device.clone());
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            .add_uniform_buffer(0, params_buffer.clone())
-            .add_storage_buffer(1, candidates_buffer.clone())
+            .add_storage_buffer(0, candidates_buffer.clone())
             .build();
 
         Ok(Self {
             capacity: ceiled_capacity,
             device,
-            params_buffer,
             candidates_buffer,
             descriptor_set_layout,
             descriptor_set,
@@ -125,6 +89,7 @@ mod tests {
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_candidates_heap.comp"))
                 .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 1)
+                .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
                 .build()
         );
 

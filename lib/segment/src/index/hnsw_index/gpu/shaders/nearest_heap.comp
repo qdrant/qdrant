@@ -5,18 +5,20 @@
 #error "NEAREST_HEAP_LAYOUT_SET not defined"
 #endif
 
-layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
-readonly uniform NearestHeapParams {
-    uint capacity;
-    uint ef;
-} nearest_heap_params;
+#ifndef NEAREST_HEAP_CAPACITY
+#error "NEAREST_HEAP_CAPACITY not defined"
+#endif
 
-layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 1)
+#ifndef NEAREST_HEAP_EF
+#error "NEAREST_HEAP_EF not defined"
+#endif
+
+layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
 buffer NearestScores {
     float data[];
 } nearest_score;
 
-layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 2)
+layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 1)
 buffer NearestIds {
     uint data[];
 } nearest_id;
@@ -25,8 +27,6 @@ ScoredPoint nearest_smaller;
 uint nearest_smaller_index;
 uint nearest_count;
 
-#define NEAREST_HEAP_CAPACITY nearest_heap_params.capacity
-#define NEAREST_HEAP_EF nearest_heap_params.ef
 #define NEAREST_BUFFER_OFFSET (NEAREST_HEAP_CAPACITY * SUBGROUP_ID)
 
 void nearest_heap_init() {
