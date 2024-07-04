@@ -73,7 +73,7 @@ fn version_example() -> segment::types::SeqNumberType {
 }
 
 fn score_example() -> common::types::ScoreType {
-    1.1
+    1.25
 }
 
 fn payload_example() -> Option<segment::types::Payload> {
@@ -93,7 +93,7 @@ fn shard_key_example() -> Option<segment::types::ShardKey> {
     Some(ShardKey::from("region_1"))
 }
 
-fn order_by_example() -> Option<segment::data_types::order_by::OrderValue> {
+fn order_value_example() -> Option<segment::data_types::order_by::OrderValue> {
     Some(segment::data_types::order_by::OrderValue::from(1))
 }
 
@@ -123,7 +123,7 @@ pub struct ScoredPoint {
     pub shard_key: Option<segment::types::ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "order_by_example")]
+    #[schemars(example = "order_value_example")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
@@ -132,17 +132,22 @@ pub struct ScoredPoint {
 #[serde(rename_all = "snake_case")]
 pub struct Record {
     /// Id of the point
+    #[schemars(example = "id_example")]
     pub id: segment::types::PointIdType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "payload_example")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "vector_example")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "shard_key_example")]
     pub shard_key: Option<segment::types::ShardKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(example = "order_value_example")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
