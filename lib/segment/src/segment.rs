@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -371,9 +372,14 @@ impl Segment {
                 .internal_version(point_offset)
                 .map_or(false, |current_version| current_version > op_num)
             {
+                let point_id = self.id_tracker.borrow().external_id(point_offset);
+
+                let space = if point_id.is_some() { " " } else { "" };
+                let point_id: &dyn fmt::Display = point_id.as_ref().map_or(&"", |id| id);
+
                 tracing::info!(
                     internal = true,
-                    "point version {} is newer than operation version {op_num}",
+                    "point{space}{point_id} version {} is newer than operation version {op_num}",
                     self.id_tracker
                         .borrow()
                         .internal_version(point_offset)
