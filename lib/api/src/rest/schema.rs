@@ -64,10 +64,16 @@ pub enum ShardKeySelector {
     // ToDo: select by pattern
 }
 
-fn vector_example() -> Option<VectorStruct> {
-    Some(VectorStruct::Single(vec![
-        0.875, 0.140625, -0.15625, 0.96875,
-    ]))
+fn id_example() -> segment::types::PointIdType {
+    segment::types::PointIdType::Uuid(uuid::Uuid::new_v4())
+}
+
+fn version_example() -> segment::types::SeqNumberType {
+    1
+}
+
+fn score_example() -> common::types::ScoreType {
+    1.1
 }
 
 fn payload_example() -> Option<segment::types::Payload> {
@@ -77,21 +83,31 @@ fn payload_example() -> Option<segment::types::Payload> {
     })))
 }
 
+fn vector_example() -> Option<VectorStruct> {
+    Some(VectorStruct::Single(vec![
+        0.875, 0.140625, -0.15625, 0.96875,
+    ]))
+}
+
 fn shard_key_example() -> Option<segment::types::ShardKey> {
-    Some(ShardKey::from("shard-1"))
+    Some(ShardKey::from("region_1"))
 }
 
 fn order_by_example() -> Option<segment::data_types::order_by::OrderValue> {
     Some(segment::data_types::order_by::OrderValue::from(1))
 }
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
-    pub id: segment::types::PointIdType,
+    #[schemars(example = "id_example")]
+    pub id: segment::types::ExtendedPointId,
     /// Point version
+    #[schemars(example = "version_example")]
     pub version: segment::types::SeqNumberType,
     /// Points vector distance to the query vector
+    #[schemars(example = "score_example")]
     pub score: common::types::ScoreType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]

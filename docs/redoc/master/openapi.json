@@ -7358,12 +7358,14 @@
             "description": "Point version",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "example": 1
           },
           "score": {
             "description": "Points vector distance to the query vector",
             "type": "number",
-            "format": "float"
+            "format": "float",
+            "example": 1.100000023841858
           },
           "payload": {
             "description": "Payload - values assigned to the point",
@@ -7407,7 +7409,7 @@
                 "nullable": true
               }
             ],
-            "example": "shard-1"
+            "example": "region_1"
           },
           "order_value": {
             "description": "Order-by value",
