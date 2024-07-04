@@ -16,7 +16,8 @@ void main() {
     uint subgroup_index = SUBGROUP_ID;
     SearchRequest search_request = search_requests.data[subgroup_index];
 
-    float entry_score = similarity(search_request.id, search_request.entry);
+    set_vector_storage_target(search_request.id);
+    float entry_score = similarity(search_request.entry);
     search(search_request.id, ScoredPoint(search_request.entry, entry_score));
     uint count = run_heuristic();
 

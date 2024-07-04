@@ -32,7 +32,8 @@ void main() {
     uint subgroup_index = SUBGROUP_ID;
     Request request = requests.data[subgroup_index];
 
-    float entry_score = similarity(request.id, request.entry);
+    set_vector_storage_target(request.id);
+    float entry_score = similarity(request.entry);
     uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
     if (search_count == UINT_MAX) {
         // error while searching. propably candidates heap overflow
@@ -80,13 +81,14 @@ void main() {
                 patches.data[other_patches_offset] = request.id;
             }
         } else {
+            set_vector_storage_target(other_id);
             nearest_count = 0;
             LINKS_FOREACH(other_id) {
                 set_nearest(
                     nearest_count,
                     ScoredPoint(
                         LINKS_FOREACH_VALUE,
-                        similarity(other_id, LINKS_FOREACH_VALUE))
+                        similarity(LINKS_FOREACH_VALUE))
                 );
                 nearest_count++;
             }
@@ -94,7 +96,7 @@ void main() {
                 nearest_count,
                 ScoredPoint(
                     request.id,
-                    similarity(other_id, request.id))
+                    similarity(request.id))
             );
             nearest_count++;
 

@@ -71,7 +71,15 @@ VECTOR_STORAGE_DEFINE(3)
         ); \
     }
 
-float similarity(uint a, uint b) {
+uint vector_storage_target = 0;
+
+void set_vector_storage_target(uint target) {
+    vector_storage_target = target;
+}
+
+float similarity(uint a) {
+    uint b = vector_storage_target;
+
     float result = 0.0;
     uint d = DIM / 4;
     uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;

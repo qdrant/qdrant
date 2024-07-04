@@ -29,7 +29,7 @@ bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
         bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
 
         if (!is_visited) {
-            float score = similarity(point_id, link);
+            float score = similarity(link);
             ScoredPoint scored_point = ScoredPoint(link, score);
             bool success = process_candidate(scored_point);
             if (!success) {
@@ -45,6 +45,8 @@ bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
 }
 
 uint search(POINT_ID point_id, ScoredPoint entry) {
+    set_vector_storage_target(point_id);
+
     if (subgroupElect()) {
         mark_visited(point_id);
         mark_visited(entry.id);
@@ -67,6 +69,8 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
 }
 
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
+    set_vector_storage_target(point_id);
+
     bool changed = true;
     ScoredPoint result = entry;
 
@@ -84,7 +88,7 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
             }
             uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
 
-            float score = similarity(point_id, link);
+            float score = similarity(link);
             if (score > result.score) {
                 changed = true;
                 result = ScoredPoint(link, score);
@@ -103,11 +107,12 @@ uint run_heuristic() {
         }
 
         ScoredPoint current_closest = get_nearest(i);
+        set_vector_storage_target(current_closest.id);
         bool is_good = true;
 
         for (uint j = 0; j < result_count; j++) {
             ScoredPoint selected_point = get_nearest(j);
-            float dist_to_already_selected = similarity(current_closest.id, selected_point.id);
+            float dist_to_already_selected = similarity(selected_point.id);
             if (dist_to_already_selected > current_closest.score) {
                 is_good = false;
                 break;

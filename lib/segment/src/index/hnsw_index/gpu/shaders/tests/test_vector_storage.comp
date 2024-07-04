@@ -4,7 +4,8 @@ layout(set = 0, binding = 0) buffer ScoresData {
 
 void main() {
     uint idx = SUBGROUP_ID;
-    float score = similarity(0, idx);
+    set_vector_storage_target(0);
+    float score = similarity(idx);
     if (subgroupElect()) {
         scores.data[idx] = score;
     }
