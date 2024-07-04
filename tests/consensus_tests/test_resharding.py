@@ -66,6 +66,22 @@ def test_resharding(tmp_path: pathlib.Path):
             assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
             assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
+    sleep(1)
+
+    # Match all points on all nodes exactly
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)
+
 
 # Test resharding shard balancing.
 #
@@ -233,6 +249,24 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
     for uri in peer_api_uris:
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, expected_points)
 
+    sleep(1)
+
+    # Match all points on all nodes exactly
+    # Note: due to concurrent updates on all peers this check may fail, but I've
+    # not seen this yet. Once it does, we probably want to remove this.
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)
+
 
 def run_in_background(run, *args, **kwargs):
     p = multiprocessing.Process(target=run, args=args, kwargs=kwargs)
@@ -273,3 +307,26 @@ def delete_points_throttled(peer_url, collection_name, start=0, end=None):
         offset += count
 
         sleep(random.uniform(0.4, 0.6))
+
+
+def check_data_consistency(data):
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x.id for x in data_i["points"])
+            ids_j = set(x.id for x in data_j["points"])
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
