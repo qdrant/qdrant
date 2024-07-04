@@ -164,6 +164,7 @@ pub struct Record {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
+    #[schemars(example = "vector_example")]
     Default(segment::data_types::vectors::DenseVector),
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),

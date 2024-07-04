@@ -6686,7 +6686,13 @@
             "items": {
               "type": "number",
               "format": "float"
-            }
+            },
+            "example": [
+              0.875,
+              0.140625,
+              -0.15625,
+              0.96875
+            ]
           },
           {
             "$ref": "#/components/schemas/NamedVector"
@@ -6697,7 +6703,6 @@
         ]
       },
       "NamedVector": {
-        "description": "Dense vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -6706,7 +6711,16 @@
         "properties": {
           "name": {
             "description": "Name of vector data",
-            "type": "string"
+            "type": "string",
+            "example": {
+              "name": "image",
+              "vector": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ]
+            }
           },
           "vector": {
             "description": "Vector data",
@@ -6719,7 +6733,6 @@
         }
       },
       "NamedSparseVector": {
-        "description": "Sparse vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -6728,7 +6741,24 @@
         "properties": {
           "name": {
             "description": "Name of vector data",
-            "type": "string"
+            "type": "string",
+            "example": {
+              "name": "image",
+              "vector": {
+                "indices": [
+                  0,
+                  1,
+                  6,
+                  9
+                ],
+                "values": [
+                  0.875,
+                  0.140625,
+                  -0.15625,
+                  0.96875
+                ]
+              }
+            }
           },
           "vector": {
             "$ref": "#/components/schemas/SparseVector"
