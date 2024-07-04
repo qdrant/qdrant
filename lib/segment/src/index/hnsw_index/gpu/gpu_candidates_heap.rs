@@ -90,7 +90,7 @@ mod tests {
                 .with_shader_code(include_str!("./shaders/tests/test_candidates_heap.comp"))
                 .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 1)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
 
         let input_points_buffer = Arc::new(

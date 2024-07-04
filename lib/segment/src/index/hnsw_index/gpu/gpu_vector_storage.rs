@@ -518,7 +518,7 @@ mod tests {
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
                 .with_dim(gpu_vector_storage.dim)
-                .build()
+                .build(),
         );
 
         let pipeline = gpu::Pipeline::builder()
@@ -669,7 +669,7 @@ mod tests {
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
-                .build()
+                .build(),
         );
 
         let pipeline = gpu::Pipeline::builder()

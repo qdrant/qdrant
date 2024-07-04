@@ -155,7 +155,7 @@ impl GpuSearchContext {
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
 
         let insert_shader = Arc::new(
@@ -179,7 +179,7 @@ impl GpuSearchContext {
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
 
         let search_shader = Arc::new(
@@ -203,7 +203,7 @@ impl GpuSearchContext {
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
 
         let patches_shader = Arc::new(
@@ -227,7 +227,7 @@ impl GpuSearchContext {
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
 
         let greedy_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -1137,7 +1137,7 @@ mod tests {
                 .with_nearest_heap_capacity(test.gpu_search_context.gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(test.gpu_search_context.gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(test.gpu_search_context.gpu_candidates_heap.capacity)
-                .build()
+                .build(),
         );
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)

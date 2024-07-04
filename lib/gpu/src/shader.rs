@@ -74,15 +74,26 @@ impl ShaderBuilder {
     pub fn build(&self) -> Shader {
         let mut options = shaderc::CompileOptions::new().unwrap();
         options.set_optimization_level(shaderc::OptimizationLevel::Performance);
-        options.set_target_env(shaderc::TargetEnv::Vulkan, shaderc::EnvVersion::Vulkan1_3 as u32);
+        options.set_target_env(
+            shaderc::TargetEnv::Vulkan,
+            shaderc::EnvVersion::Vulkan1_3 as u32,
+        );
         options.set_target_spirv(shaderc::SpirvVersion::V1_3);
 
         if let Some(element_type) = self.element_type {
             match element_type {
-                GpuVectorStorageElementType::Float32 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT32", None),
-                GpuVectorStorageElementType::Float16 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT16", None),
-                GpuVectorStorageElementType::Uint8 => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_UINT8", None),
-                GpuVectorStorageElementType::Binary => options.add_macro_definition("VECTOR_STORAGE_ELEMENT_BINARY", None),
+                GpuVectorStorageElementType::Float32 => {
+                    options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT32", None)
+                }
+                GpuVectorStorageElementType::Float16 => {
+                    options.add_macro_definition("VECTOR_STORAGE_ELEMENT_FLOAT16", None)
+                }
+                GpuVectorStorageElementType::Uint8 => {
+                    options.add_macro_definition("VECTOR_STORAGE_ELEMENT_UINT8", None)
+                }
+                GpuVectorStorageElementType::Binary => {
+                    options.add_macro_definition("VECTOR_STORAGE_ELEMENT_BINARY", None)
+                }
             }
         }
 
@@ -99,21 +110,34 @@ impl ShaderBuilder {
         }
 
         if let Some(nearest_heap_capacity) = self.nearest_heap_capacity {
-            options.add_macro_definition("NEAREST_HEAP_CAPACITY", Some(&nearest_heap_capacity.to_string()));
+            options.add_macro_definition(
+                "NEAREST_HEAP_CAPACITY",
+                Some(&nearest_heap_capacity.to_string()),
+            );
         }
 
         if let Some(candidates_heap_capacity) = self.candidates_heap_capacity {
-            options.add_macro_definition("CANDIDATES_HEAP_CAPACITY", Some(&candidates_heap_capacity.to_string()));
+            options.add_macro_definition(
+                "CANDIDATES_HEAP_CAPACITY",
+                Some(&candidates_heap_capacity.to_string()),
+            );
         }
 
         let timer = std::time::Instant::now();
-        let compiled = self.device.compiler.compile_into_spirv(
-            &self.shader_code, shaderc::ShaderKind::Compute,
-            "shader.glsl", "main", Some(&options)).unwrap();
+        let compiled = self
+            .device
+            .compiler
+            .compile_into_spirv(
+                &self.shader_code,
+                shaderc::ShaderKind::Compute,
+                "shader.glsl",
+                "main",
+                Some(&options),
+            )
+            .unwrap();
         log::debug!("Shader compilation took: {:?}", timer.elapsed());
         Shader::new(self.device.clone(), compiled.as_binary_u8())
     }
-
 }
 
 unsafe impl Send for Shader {}

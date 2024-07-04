@@ -102,7 +102,7 @@ mod tests {
                 .with_layout(gpu::LayoutSetBinding::NearestHeap, 1)
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
-                .build()
+                .build(),
         );
 
         let input_points_buffer = Arc::new(
