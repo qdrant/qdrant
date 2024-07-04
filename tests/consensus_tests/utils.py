@@ -368,10 +368,16 @@ def check_collection_local_shards_count(peer_api_uri: str, collection_name: str,
     return local_shard_count == expected_local_shard_count
 
 
-def get_collection_local_shards_point_count(peer_api_uri: str, collection_name: str) -> int:
+def check_collection_local_shards_point_count(peer_api_uri: str, collection_name: str,
+                                            expected_count: int) -> int:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     point_count = sum(map(lambda shard: shard["points_count"], collection_cluster_info["local_shards"]))
-    return point_count
+
+    is_correct = point_count == expected_count
+    if not is_correct:
+        print(f"Collection '{collection_name}' on peer {peer_api_uri}: {json.dumps(collection_cluster_info, indent=4)}")
+
+    return is_correct
 
 
 def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,

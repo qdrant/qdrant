@@ -33,14 +33,16 @@ def test_resharding(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
     upsert_random_points(peer_api_uris[0], num_points)
+
+    sleep(1)
 
     # Assert node shard and point sum count
     for uri in peer_api_uris:
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
-        assert get_collection_local_shards_point_count(uri, COLLECTION_NAME) == num_points
+        assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
     # Reshard 3 times in sequence
     for shard_count in range(2, 5):
@@ -56,12 +58,13 @@ def test_resharding(tmp_path: pathlib.Path):
 
         # Wait for resharding operation to start and stop
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
-        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 0)
+        for uri in peer_api_uris:
+            wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
 
         # Assert node shard and point sum count
         for uri in peer_api_uris:
             assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
-            assert get_collection_local_shards_point_count(uri, COLLECTION_NAME) == num_points
+            assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
 
 # Test resharding shard balancing.
@@ -75,6 +78,8 @@ def test_resharding(tmp_path: pathlib.Path):
 def test_resharding_balance(tmp_path: pathlib.Path):
     assert_project_root()
 
+    num_points = 100
+
     # Prevent optimizers messing with point counts
     env={
         "QDRANT__STORAGE__OPTIMIZERS__MAX_OPTIMIZATION_THREADS": "0",
@@ -87,9 +92,12 @@ def test_resharding_balance(tmp_path: pathlib.Path):
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
-        peer_api_uris=peer_api_uris
+        peer_api_uris=peer_api_uris,
     )
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], num_points)
+
+    for uri in peer_api_uris:
+        assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
     # Reshard 5 times in sequence
     for _shard_count in range(2, 7):
@@ -105,7 +113,12 @@ def test_resharding_balance(tmp_path: pathlib.Path):
 
         # Wait for resharding operation to start and stop
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
-        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 0)
+        for uri in peer_api_uris:
+            wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
+
+        # Point count across cluster must be stable
+        for uri in peer_api_uris:
+            assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
     # We must end up with:
     # - 6 shards on first node, it was the resharding target
