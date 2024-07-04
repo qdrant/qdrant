@@ -136,9 +136,13 @@ def test_resharding_balance(tmp_path: pathlib.Path):
         for uri in peer_api_uris:
             wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
 
+        # Point count across cluster must be stable
+        for uri in peer_api_uris:
+            assert get_collection_point_count(uri, COLLECTION_NAME, exact=False) == num_points
+
     # We must end up with:
     # - 6 shards on first node, it was the resharding target
-    # - 3 shards on the other two nodes, 6 replicas spread over 2 nodes
+    # - 3 shards on the other two nodes, 6 replicas balanced over 2 nodes
     assert check_collection_local_shards_count(peer_api_uris[0], COLLECTION_NAME, 6)
     for uri in peer_api_uris[1:]:
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 3)
