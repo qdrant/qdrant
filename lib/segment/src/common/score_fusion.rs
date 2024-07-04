@@ -9,7 +9,7 @@ use crate::types::{Order, PointIdType, ScoredPoint};
 
 pub struct ScoreFusion {
     /// Defines how to combine the scores of the same point in different lists
-    pub method: CombMethod,
+    pub method: Aggregation,
     /// Defines how to normalize the scores in each list
     pub norm: Normalization,
     /// Multipliers for each list of scores
@@ -18,7 +18,9 @@ pub struct ScoreFusion {
     pub order: Order,
 }
 
-pub enum CombMethod {
+/// Defines how to combine the scores of the same point in different lists
+pub enum Aggregation {
+    /// Sums the scores
     Sum,
 }
 
@@ -63,7 +65,7 @@ pub fn score_fusion(
             |mut acc, point| {
                 acc.entry(point.id)
                     .and_modify(|entry| match method {
-                        CombMethod::Sum => entry.score += point.score,
+                        Aggregation::Sum => entry.score += point.score,
                     })
                     .or_insert(point);
 
@@ -81,6 +83,12 @@ pub fn score_fusion(
 
 /// Normalizes the scores of the given points between 0.0 and 1.0, using the given minimum and maximum scores as extremes.
 fn norm(mut points: Vec<ScoredPoint>, min: ScoreType, max: ScoreType) -> Vec<ScoredPoint> {
+    // Protect against division by zero
+    if min == max {
+        points.iter_mut().for_each(|p| p.score = 0.5);
+        return points;
+    }
+
     points.iter_mut().for_each(|p| {
         p.score = (p.score - min) / (max - min);
     });
