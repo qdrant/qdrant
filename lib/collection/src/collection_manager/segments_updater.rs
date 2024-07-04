@@ -43,7 +43,18 @@ pub(crate) fn delete_points(
         .apply_points(
             ids,
             |_| (),
-            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id),
+            |id, _idx, write_segment, ()| {
+                let _span = tracing::info_span!(
+                    "delete_points",
+                    operation = op_num,
+                    point.id = %id,
+                    segment.id = %write_segment.id(),
+                    internal = true
+                )
+                .entered();
+
+                write_segment.delete_point(op_num, id)
+            },
         )
         .map_err(Into::into)
 }

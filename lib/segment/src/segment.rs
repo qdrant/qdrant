@@ -1216,6 +1216,11 @@ impl SegmentEntry for Segment {
                     //     vector_storage.delete_vector(internal_id)?;
                     // }
 
+                    tracing::info!(
+                        internal = true,
+                        "operation {op_num} deleted point {point_id}"
+                    );
+
                     Ok((true, Some(internal_id)))
                 })
             }
