@@ -63,94 +63,60 @@ VECTOR_STORAGE_DEFINE(1)
 VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
-#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A, STORAGE_INDEX_B) \
-    for (uint i = 0; i < d; i += SUBGROUP_SIZE, aIndex += SUBGROUP_SIZE, bIndex += SUBGROUP_SIZE) { \
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A) \
+    for (uint i = 0; i < (d / SUBGROUP_SIZE); i += 1, aIndex += SUBGROUP_SIZE) { \
         result += VECTOR_STORAGE_SCORE_ELEMENT( \
             STORAGE(STORAGE_INDEX_A).data[aIndex], \
-            STORAGE(STORAGE_INDEX_B).data[bIndex] \
+            vector_cache[i] \
         ); \
     }
 
-uint vector_storage_target = 0;
+#define VECTOR_STORAGE_LOAD_CACHE(STORAGE_INDEX_A) \
+    for (uint i = 0; i < (d / SUBGROUP_SIZE); i += 1, aIndex += SUBGROUP_SIZE) { \
+        vector_cache[i] = STORAGE(STORAGE_INDEX_A).data[aIndex]; \
+    }
 
-void set_vector_storage_target(uint target) {
-    vector_storage_target = target;
-}
+VECTOR_STORAGE_ELEMENT_TYPE vector_cache[DIM / (4 * SUBGROUP_SIZE)];
 
-float similarity(uint a) {
-    uint b = vector_storage_target;
-
-    float result = 0.0;
+void set_vector_storage_target(uint a) {
     uint d = DIM / 4;
     uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;
-    uint bIndex = (b / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;
     uint storage_index_a = a % STORAGES_COUNT;
-    uint storage_index_b = b % STORAGES_COUNT;
 
     switch (storage_index_a) {
     case 0:
-        switch (storage_index_b) {
-        case 0:
-            VECTOR_STORAGE_SCORE_SUBGROUP(0, 0);
-            break;
-        case 1:
-            VECTOR_STORAGE_SCORE_SUBGROUP(0, 1);
-            break;
-        case 2:
-            VECTOR_STORAGE_SCORE_SUBGROUP(0, 2);
-            break;
-        case 3:
-            VECTOR_STORAGE_SCORE_SUBGROUP(0, 3);
-            break;
-        }
+        VECTOR_STORAGE_LOAD_CACHE(0);
         break;
     case 1:
-        switch (storage_index_b) {
-        case 0:
-            VECTOR_STORAGE_SCORE_SUBGROUP(1, 0);
-            break;
-        case 1:
-            VECTOR_STORAGE_SCORE_SUBGROUP(1, 1);
-            break;
-        case 2:
-            VECTOR_STORAGE_SCORE_SUBGROUP(1, 2);
-            break;
-        case 3:
-            VECTOR_STORAGE_SCORE_SUBGROUP(1, 3);
-            break;
-        }
+        VECTOR_STORAGE_LOAD_CACHE(1);
         break;
     case 2:
-        switch (storage_index_b) {
-        case 0:
-            VECTOR_STORAGE_SCORE_SUBGROUP(2, 0);
-            break;
-        case 1:
-            VECTOR_STORAGE_SCORE_SUBGROUP(2, 1);
-            break;
-        case 2:
-            VECTOR_STORAGE_SCORE_SUBGROUP(2, 2);
-            break;
-        case 3:
-            VECTOR_STORAGE_SCORE_SUBGROUP(2, 3);
-            break;
-        }
+        VECTOR_STORAGE_LOAD_CACHE(2);
         break;
     case 3:
-        switch (storage_index_b) {
-        case 0:
-            VECTOR_STORAGE_SCORE_SUBGROUP(3, 0);
-            break;
-        case 1:
-            VECTOR_STORAGE_SCORE_SUBGROUP(3, 1);
-            break;
-        case 2:
-            VECTOR_STORAGE_SCORE_SUBGROUP(3, 2);
-            break;
-        case 3:
-            VECTOR_STORAGE_SCORE_SUBGROUP(3, 3);
-            break;
-        }
+        VECTOR_STORAGE_LOAD_CACHE(3);
+        break;
+    }
+}
+
+float similarity(uint a) {
+    float result = 0.0;
+    uint d = DIM / 4;
+    uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;
+    uint storage_index_a = a % STORAGES_COUNT;
+
+    switch (storage_index_a) {
+    case 0:
+        VECTOR_STORAGE_SCORE_SUBGROUP(0);
+        break;
+    case 1:
+        VECTOR_STORAGE_SCORE_SUBGROUP(1);
+        break;
+    case 2:
+        VECTOR_STORAGE_SCORE_SUBGROUP(2);
+        break;
+    case 3:
+        VECTOR_STORAGE_SCORE_SUBGROUP(3);
         break;
     }
 
