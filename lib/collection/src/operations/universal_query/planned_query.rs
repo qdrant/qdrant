@@ -37,9 +37,6 @@ pub struct RescoreParams {
     /// Keep this many points from the top
     pub limit: usize,
 
-    /// How many points to skip in the final result set, after re-scoring
-    pub offset: usize,
-
     /// Keep only points with better score than this threshold
     pub score_threshold: Option<ScoreType>,
 
@@ -93,6 +90,8 @@ impl PlannedQuery {
             with_payload,
             params,
         } = request;
+        // Final offset is handled at collection level
+        let limit = limit + offset;
 
         let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
@@ -138,7 +137,6 @@ impl PlannedQuery {
                     rescore_params: Some(RescoreParams {
                         rescore,
                         limit,
-                        offset,
                         score_threshold,
                         with_vector,
                         with_payload,
@@ -155,7 +153,7 @@ impl PlannedQuery {
                         score_threshold,
                         with_vector: Some(with_vector),
                         with_payload: Some(with_payload),
-                        offset,
+                        offset: 0, // offset is handled at collection level
                         params,
                         limit,
                     };
@@ -176,7 +174,6 @@ impl PlannedQuery {
                         order_by: Some(OrderByInterface::Struct(order_by)),
                         limit,
                         filter,
-                        offset,
                         with_vector,
                         with_payload,
                     };
@@ -192,7 +189,6 @@ impl PlannedQuery {
                         order_by: None,
                         limit,
                         filter,
-                        offset,
                         with_vector,
                         with_payload,
                     };
@@ -222,7 +218,7 @@ fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
-    offset: usize, // Offset is added to all prefetches, so we make sure we have enough
+    root_offset: usize, // Offset is added to all prefetches, so we make sure we have enough
     propagate_filter: Option<Filter>, // Global filter to apply to all prefetches
     // Top-level fusion requests won't be merged on shard level, so we pass these params down one level to fetch on the sources.
     // Otherwise we would miss to fetch the payload and vector.
@@ -244,15 +240,21 @@ fn recurse_prefetches(
         } = prefetch;
 
         // Offset is replicated at each step from the root to the leaves
-        let limit = prefetch_limit + offset;
+        let limit = prefetch_limit + root_offset;
 
         // Filters are propagated into the leaves
         let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
         let source = if !prefetches.is_empty() {
             // This has nested prefetches. Recurse into them
-            let inner_sources =
-                recurse_prefetches(core_searches, scrolls, prefetches, offset, filter, None)?;
+            let inner_sources = recurse_prefetches(
+                core_searches,
+                scrolls,
+                prefetches,
+                root_offset,
+                filter,
+                None,
+            )?;
 
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
@@ -264,7 +266,6 @@ fn recurse_prefetches(
                     rescore,
                     limit,
                     score_threshold,
-                    offset: 0, // Only apply offset at the root
                     with_vector: with_vector.clone(),
                     with_payload: with_payload.clone(),
                 }),
@@ -303,7 +304,6 @@ fn recurse_prefetches(
                         with_vector: with_vector.clone(),
                         with_payload: with_payload.clone(),
                         limit,
-                        offset: 0,
                     };
 
                     let idx = scrolls.len();
@@ -318,7 +318,6 @@ fn recurse_prefetches(
                         with_vector: with_vector.clone(),
                         with_payload: with_payload.clone(),
                         limit,
-                        offset: 0,
                     };
 
                     let idx = scrolls.len();
@@ -451,7 +450,6 @@ mod tests {
                             )
                         )),
                         limit: 100,
-                        offset: 0,
                         score_threshold: None,
                         with_vector: WithVector::Bool(false),
                         with_payload: WithPayloadInterface::Bool(false),
@@ -467,7 +465,6 @@ mod tests {
                         )
                     )),
                     limit: 10,
-                    offset: 0,
                     score_threshold: None,
                     with_vector: WithVector::Bool(true),
                     with_payload: WithPayloadInterface::Bool(true),
@@ -504,8 +501,8 @@ mod tests {
                 )),
                 filter: Some(Filter::default()),
                 params: Some(SearchParams::default()),
-                limit: 10,
-                offset: 12,
+                limit: 22,
+                offset: 0,
                 with_vector: Some(WithVector::Bool(true)),
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 score_threshold: Some(0.5),
@@ -919,7 +916,6 @@ mod tests {
                             rescore_params: Some(RescoreParams {
                                 rescore: ScoringQuery::Fusion(Fusion::Rrf),
                                 limit: 10,
-                                offset: 0,
                                 score_threshold: None,
                                 with_vector: WithVector::Bool(true),
                                 with_payload: WithPayloadInterface::Bool(true),

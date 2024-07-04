@@ -206,7 +206,6 @@ impl LocalShard {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let RescoreParams {
             rescore,
-            offset,
             score_threshold,
             limit,
             with_vector,
@@ -223,11 +222,10 @@ impl LocalShard {
                     top_rrf
                         .into_iter()
                         .take_while(|point| point.score >= score_threshold)
-                        .skip(offset)
                         .take(limit)
                         .collect()
                 } else {
-                    top_rrf.into_iter().skip(offset).take(limit).collect()
+                    top_rrf.into_iter().take(limit).collect()
                 };
 
                 let filled_top_rrf = self
@@ -243,7 +241,6 @@ impl LocalShard {
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
                 let scroll_request = QueryScrollRequestInternal {
-                    offset,
                     limit,
                     filter: Some(filter),
                     with_payload,
@@ -273,7 +270,7 @@ impl LocalShard {
                     filter: Some(filter),
                     params: None,
                     limit,
-                    offset,
+                    offset: 0,
                     with_payload: Some(with_payload),
                     with_vector: Some(with_vector),
                     score_threshold,
