@@ -105,8 +105,17 @@ fn test_building_new_defragmented_segment() {
 
     let stopped = AtomicBool::new(false);
 
-    let segment1 = build_segment_1(dir.path());
+    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
+
+    let mut segment1 = build_segment_1(dir.path());
+    segment1
+        .create_field_index(7, &defragment_key, None)
+        .unwrap();
+
     let mut segment2 = build_segment_2(dir.path());
+    segment2
+        .create_field_index(17, &defragment_key, None)
+        .unwrap();
 
     let mut builder =
         SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
@@ -119,7 +128,6 @@ fn test_building_new_defragmented_segment() {
     let segment1 = Arc::new(RwLock::new(segment1));
     let segment2 = Arc::new(RwLock::new(segment2));
 
-    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
     builder.set_defragment_key(defragment_key.clone());
 
     builder
