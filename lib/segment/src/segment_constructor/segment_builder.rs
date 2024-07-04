@@ -145,19 +145,26 @@ impl SegmentBuilder {
             return Ok(true);
         }
 
-        let locked_segments: Vec<_> = segments.iter().map(|segment| segment.read()).collect();
+        let segment_guards: Vec<_> = segments.iter().map(|segment| segment.read()).collect();
 
-        let unique_point_ids: HashSet<_> = locked_segments
+        // ToDo: Combine HashSet with merge_points, so we only need one iteration over segment Ids
+        // ToDo:   to resolve te most recent point origin. Use HashMap<ExternalId, PositionedPointMetadata>
+        let unique_point_ids: HashSet<_> = segment_guards
             .iter()
             .flat_map(|i| i.iter_points())
             .collect();
 
-        let mut points_to_insert = merge_points(&locked_segments, unique_point_ids.iter().copied());
+        let mut points_to_insert = merge_points(&segment_guards, unique_point_ids.iter().copied());
 
         // If payload key is set, sort the points to add.
         if let Some(payload_key) = &self.defragment_key {
             points_to_insert.sort_unstable_by_key(|pd| -> Option<u64> {
-                let payload = locked_segments[pd.segment_index]
+                // ToDo: This function is called O(NlogN) times, so we might want to cache
+                // ToDo: HashMap<ExternalId, HashedId> and use it here, or `sort_by_cached_key`
+
+                // ToDo: Use payload index instead of payload
+
+                let payload = segment_guards[pd.segment_index]
                     .payload(pd.external_id)
                     .ok()?;
 
@@ -169,10 +176,10 @@ impl SegmentBuilder {
             });
         }
 
-        let src_segment_max_version = locked_segments.iter().map(|i| i.version()).max().unwrap();
+        let src_segment_max_version = segment_guards.iter().map(|i| i.version()).max().unwrap();
         self.version = cmp::max(self.version, src_segment_max_version);
 
-        let vector_storages: Vec<_> = locked_segments.iter().map(|i| &i.vector_data).collect();
+        let vector_storages: Vec<_> = segment_guards.iter().map(|i| &i.vector_data).collect();
 
         let mut new_internal_range = None;
         for (vector_name, vector_storage) in &mut self.vector_storages {
@@ -212,7 +219,7 @@ impl SegmentBuilder {
             }
         }
 
-        let payloads: Vec<_> = locked_segments
+        let payloads: Vec<_> = segment_guards
             .iter()
             .map(|i| i.payload_index.borrow())
             .collect();

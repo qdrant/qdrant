@@ -49,6 +49,9 @@ pub type IntPayloadType = i64;
 /// Type of datetime point payload
 pub type DateTimePayloadType = DateTimeWrapper;
 
+/// Name of the vector field
+pub type VectorName = String;
+
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd)]
 #[serde(transparent)]

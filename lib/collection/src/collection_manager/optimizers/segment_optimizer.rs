@@ -423,24 +423,20 @@ pub trait SegmentOptimizer {
             .collect();
 
         // TODO: use a different approach to select the key to use for defragmentation
-        let mut defragment_key = None;
         for segment in &segments {
-            if defragment_key.is_some() {
-                break;
-            }
-
-            defragment_key = segment
+            let defragment_key = segment
                 .read()
                 .payload_index
                 .borrow()
                 .field_indexes
                 .iter()
-                .nth(0)
-                .map(|i| i.0.clone());
-        }
+                .next()
+                .map(|(k, _)| k.clone());
 
-        if let Some(defragment_key) = defragment_key {
-            segment_builder.set_defragment_key(defragment_key);
+            if let Some(defragment_key) = defragment_key {
+                segment_builder.set_defragment_key(defragment_key);
+                break;
+            }
         }
 
         segment_builder.update(&segments, stopped)?;
