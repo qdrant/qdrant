@@ -363,9 +363,12 @@ def collection_exists_on_all_peers(collection_name: str, peer_api_uris: [str]) -
 
 def check_collection_local_shards_count(peer_api_uri: str, collection_name: str,
                                         expected_local_shard_count: int) -> bool:
+    return get_collection_local_shards_count(peer_api_uri, collection_name) == expected_local_shard_count
+
+
+def get_collection_local_shards_count(peer_api_uri: str, collection_name: str) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
-    local_shard_count = len(collection_cluster_info["local_shards"])
-    return local_shard_count == expected_local_shard_count
+    return len(collection_cluster_info["local_shards"])
 
 
 def check_collection_local_shards_point_count(peer_api_uri: str, collection_name: str,

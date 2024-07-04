@@ -98,12 +98,29 @@ def test_resharding_balance(tmp_path: pathlib.Path):
 
     sleep(1)
 
+    # This test assumes we have a replica for every shard on the first node
+    # If that is not the case, move the replica there now
+    if get_collection_local_shards_count(peer_api_uris[0], COLLECTION_NAME) == 0:
+        second_peer_id = get_cluster_info(peer_api_uris[1])['peer_id']
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+                "move_shard": {
+                    "shard_id": 0,
+                    "from_peer_id": second_peer_id,
+                    "to_peer_id": first_peer_id,
+                    "method": "stream_records",
+                }
+            })
+        assert_http_ok(r)
+        wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+        assert check_collection_local_shards_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
     # Assert node point count
     for uri in peer_api_uris:
         assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
     # Reshard 5 times in sequence
-    for _shard_count in range(2, 7):
+    for _shard_count in range(5):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
