@@ -1,7 +1,6 @@
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -20,10 +19,10 @@ use super::{
     open_vector_storage,
 };
 use crate::common::error_logging::LogError;
-use crate::common::hashable_value::HashableValue;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::PayloadIndex;
@@ -32,8 +31,7 @@ use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::load_segment;
 use crate::types::{
-    ExtendedPointId, PayloadContainer, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
-    SegmentState, SeqNumberType,
+    ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -147,34 +145,81 @@ impl SegmentBuilder {
 
         let segment_guards: Vec<_> = segments.iter().map(|segment| segment.read()).collect();
 
-        // ToDo: Combine HashSet with merge_points, so we only need one iteration over segment Ids
-        // ToDo:   to resolve te most recent point origin. Use HashMap<ExternalId, PositionedPointMetadata>
-        let unique_point_ids: HashSet<_> = segment_guards
+        let mut merged_points: HashMap<ExtendedPointId, PositionedPointMetadata> = HashMap::new();
+
+        for (segment_index, segment) in segment_guards.iter().enumerate() {
+            for external_id in segment.iter_points() {
+                let version = segment.point_version(external_id).unwrap_or(0);
+                merged_points
+                    .entry(external_id)
+                    .and_modify(|entry| {
+                        if entry.version < version {
+                            entry.segment_index = segment_index;
+                            entry.version = version;
+                        }
+                    })
+                    .or_insert_with(|| {
+                        let internal_id = segment.get_internal_id(external_id).unwrap();
+                        PositionedPointMetadata {
+                            segment_index,
+                            internal_id,
+                            version,
+                        }
+                    });
+            }
+        }
+
+        let payloads: Vec<_> = segment_guards
             .iter()
-            .flat_map(|i| i.iter_points())
+            .map(|i| i.payload_index.borrow())
             .collect();
 
-        let mut points_to_insert = merge_points(&segment_guards, unique_point_ids.iter().copied());
-
-        // If payload key is set, sort the points to add.
-        if let Some(payload_key) = &self.defragment_key {
-            points_to_insert.sort_unstable_by_key(|pd| -> Option<u64> {
-                // ToDo: This function is called O(NlogN) times, so we might want to cache
-                // ToDo: HashMap<ExternalId, HashedId> and use it here, or `sort_by_cached_key`
-
-                // ToDo: Use payload index instead of payload
-
-                let payload = segment_guards[pd.segment_index]
-                    .payload(pd.external_id)
-                    .ok()?;
-
-                let payload_val = (*payload.get_value(payload_key).first()?).clone();
-
+        let mut points_to_insert: Vec<_> = merged_points
+            .into_iter()
+            .map(|(external_id, pd)| {
                 let mut hasher = AHasher::default();
-                HashableValue(payload_val).hash(&mut hasher);
-                Some(hasher.finish())
-            });
-        }
+
+                // If payload key is set, sort the points to add. For this we fetch the payload and
+                // hash it.
+                let payload_index = self.defragment_key.as_ref().and_then(|defragment_key| {
+                    payloads[pd.segment_index].field_indexes.get(defragment_key)
+                });
+                if let Some(payload_indexes) = payload_index {
+                    // Try to find an index we can use for hashing.
+                    for payload_index in payload_indexes {
+                        match payload_index {
+                            FieldIndex::IntMapIndex(index) => {
+                                if let Some(numbers) = index.get_values(pd.internal_id) {
+                                    for number in numbers {
+                                        number.hash(&mut hasher);
+                                    }
+                                }
+                                break;
+                            }
+                            FieldIndex::KeywordIndex(index) => {
+                                if let Some(keywords) = index.get_values(pd.internal_id) {
+                                    for keyword in keywords {
+                                        keyword.hash(&mut hasher);
+                                    }
+                                }
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+
+                PositionedPointMetadataOrderable {
+                    segment_index: pd.segment_index,
+                    internal_id: pd.internal_id,
+                    external_id,
+                    version: pd.version,
+                    hash: hasher.finish(),
+                }
+            })
+            .collect();
+
+        points_to_insert.sort_unstable_by_key(|i| i.hash);
 
         let src_segment_max_version = segment_guards.iter().map(|i| i.version()).max().unwrap();
         self.version = cmp::max(self.version, src_segment_max_version);
@@ -201,8 +246,8 @@ impl SegmentBuilder {
             let mut iter = points_to_insert.iter().map(|point_data| {
                 let other_vector_storage = &other_vector_storages[point_data.segment_index];
                 let vec = other_vector_storage.get_vector(point_data.internal_id);
-                let deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
-                (point_data.internal_id, vec, deleted)
+                let vector_deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
+                (point_data.internal_id, vec, vector_deleted)
             });
 
             let internal_range = vector_storage.update_from(&mut iter, stopped)?;
@@ -218,11 +263,6 @@ impl SegmentBuilder {
                 None => new_internal_range = Some(internal_range.clone()),
             }
         }
-
-        let payloads: Vec<_> = segment_guards
-            .iter()
-            .map(|i| i.payload_index.borrow())
-            .collect();
 
         if let Some(new_internal_range) = new_internal_range {
             let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
@@ -474,56 +514,18 @@ impl SegmentBuilder {
     }
 }
 
-/// All Point ids and metadata of a point.
+/// Internal point ID and metadata of a point.
 struct PositionedPointMetadata {
+    segment_index: usize,
+    internal_id: PointOffsetType,
+    version: SeqNumberType,
+}
+
+/// All Point ids and metadata of a point including external id and a hash to sort it.
+struct PositionedPointMetadataOrderable {
     segment_index: usize,
     internal_id: PointOffsetType,
     external_id: ExtendedPointId,
     version: SeqNumberType,
-}
-
-/// Merges points from the given segments, picking always the point with the largest version.
-/// Every point id yielded by `point_ids` has to exist in at least one of the passed segments.
-///
-/// # Panics
-/// Panics if `point_ids` yields a point which is not held by any segment.
-fn merge_points<T, I>(segments: &[T], point_ids: I) -> Vec<PositionedPointMetadata>
-where
-    T: Deref<Target = Segment>,
-    I: Iterator<Item = ExtendedPointId>,
-{
-    let mut latest_points = vec![];
-
-    // Find point with max version across all segments.
-    for point in point_ids {
-        let mut max_verison = 0;
-        let mut segment_index = 0;
-        let mut internal_id: Option<PointOffsetType> = None;
-        for (i, locked_seg) in segments.iter().enumerate() {
-            let locked_seg = locked_seg.deref();
-
-            if !locked_seg.has_point(point) {
-                continue;
-            }
-
-            let version = locked_seg.point_version(point).unwrap_or_default();
-
-            if version >= max_verison {
-                max_verison = version;
-                segment_index = i;
-                internal_id = locked_seg.get_internal_id(point);
-            }
-        }
-
-        let internal_id = internal_id.expect("Point was not found in the given segments");
-
-        latest_points.push(PositionedPointMetadata {
-            internal_id,
-            external_id: point,
-            segment_index,
-            version: max_verison,
-        })
-    }
-
-    latest_points
+    hash: u64,
 }
