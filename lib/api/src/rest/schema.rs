@@ -64,10 +64,6 @@ pub enum ShardKeySelector {
     // ToDo: select by pattern
 }
 
-fn id_example() -> segment::types::PointIdType {
-    segment::types::PointIdType::Uuid(uuid::Uuid::new_v4())
-}
-
 fn version_example() -> segment::types::SeqNumberType {
     1
 }
@@ -101,7 +97,6 @@ fn order_value_example() -> Option<segment::data_types::order_by::OrderValue> {
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
-    #[schemars(example = "id_example")]
     pub id: segment::types::ExtendedPointId,
     /// Point version
     #[schemars(example = "version_example")]
@@ -132,7 +127,6 @@ pub struct ScoredPoint {
 #[serde(rename_all = "snake_case")]
 pub struct Record {
     /// Id of the point
-    #[schemars(example = "id_example")]
     pub id: segment::types::PointIdType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
