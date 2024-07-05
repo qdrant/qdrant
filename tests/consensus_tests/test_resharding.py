@@ -3,7 +3,7 @@ import pathlib
 import random
 from time import sleep
 
-from .fixtures import upsert_random_points, create_collection
+from .fixtures import upsert_random_points, create_collection, random_dense_vector
 from .utils import *
 
 COLLECTION_NAME = "test_collection"
@@ -351,7 +351,7 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
     check_data_consistency(data)
 
 
-# Test point scroll during resharding.
+# Test point scroll stability during resharding.
 #
 # On a static collection, this performs resharding a few times and asserts
 # scrolling remains stable on all peers during the whole process.
@@ -359,7 +359,7 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 1000
-    scroll_sample_size = 25
+    scroll_limit = 25
 
     # Prevent optimizers messing with point counts
     env={
@@ -384,14 +384,14 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
-    # Match all points on all nodes exactly
+    # Match scroll sample of points on all nodes exactly
     data = []
     for uri in peer_api_uris:
         r = requests.post(
             f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
-                "limit": scroll_sample_size,
+                "limit": scroll_limit,
                 "with_vectors": True,
-                "with_payload": True,
+                "with_payload": False,
             }
         )
         assert_http_ok(r)
@@ -413,15 +413,15 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         # Wait for resharding to start
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
-        # Continously assert point count on all peers, must be stable
+        # Continously assert point scroll samples on all peers, must be stable
         # Stop once all peers reported completed resharding
         while True:
-            # Match all points on all nodes exactly
+            # Match scroll sample of points on all nodes exactly
             data = []
             for uri in peer_api_uris:
                 r = requests.post(
                     f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
-                        "limit": scroll_sample_size,
+                        "limit": scroll_limit,
                         "with_vectors": True,
                         "with_payload": False,
                     }
@@ -429,6 +429,98 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
                 assert_http_ok(r)
                 data.append(r.json()["result"])
             check_data_consistency(data)
+
+            all_completed = True
+            for uri in peer_api_uris:
+                if not check_collection_resharding_operations_count(uri, COLLECTION_NAME, 0):
+                    all_completed = False
+                    break
+            if all_completed:
+                break
+
+        # Assert node shard count
+        for uri in peer_api_uris:
+            assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
+
+
+# Test point search stability during resharding.
+#
+# On a static collection, this performs resharding a few times and asserts
+# search remains stable on all peers during the whole process.
+def test_resharding_stable_search(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    num_points = 1000
+    search_limit = 10
+
+    # Prevent optimizers messing with point counts
+    env={
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
+    }
+
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
+    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
+
+    # Create collection, insert points
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+    upsert_random_points(peer_api_uris[0], num_points)
+
+    sleep(1)
+
+    # Assert node shard and point sum count
+    for uri in peer_api_uris:
+        assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
+        assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
+
+    # Match search sample of points on all nodes exactly
+    data = []
+    search_vector = random_dense_vector()
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/query", json={
+                "vector": search_vector,
+                "limit": search_limit,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_query_consistency(data)
+
+    # Reshard 3 times in sequence
+    for shard_count in range(2, 5):
+        # Start resharding
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+                "start_resharding": {
+                    "peer_id": first_peer_id,
+                    "shard_key": None,
+                }
+            })
+        assert_http_ok(r)
+
+        # Wait for resharding to start
+        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
+        # Continously assert point search samples on all peers, must be stable
+        # Stop once all peers reported completed resharding
+        while True:
+            # Match search sample of points on all nodes exactly
+            data = []
+            search_vector = random_dense_vector()
+            for uri in peer_api_uris:
+                r = requests.post(
+                    f"{uri}/collections/{COLLECTION_NAME}/points/query", json={
+                        "vector": search_vector,
+                        "limit": search_limit,
+                    }
+                )
+                assert_http_ok(r)
+                data.append(r.json()["result"])
+            check_query_consistency(data)
 
             all_completed = True
             for uri in peer_api_uris:
@@ -490,12 +582,12 @@ def check_data_consistency(data):
     for i in range(len(data) - 1):
         j = i + 1
 
-        data_i = data[i]
-        data_j = data[j]
+        data_i = data[i]["points"]
+        data_j = data[j]["points"]
 
         if data_i != data_j:
-            ids_i = set(x.id for x in data_i["points"])
-            ids_j = set(x.id for x in data_j["points"])
+            ids_i = set(x.id for x in data_i)
+            ids_j = set(x.id for x in data_j)
 
             diff = ids_i - ids_j
 
@@ -505,3 +597,33 @@ def check_data_consistency(data):
                 print(f"Diff len between {i} and {j}: {len(diff)}")
 
             assert False, "Data on all nodes should be consistent"
+
+
+def check_query_consistency(data):
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]["points"]
+        data_j = data[j]["points"]
+
+        for item in data_i:
+            if "version" in item:
+                del item["version"]
+        for item in data_j:
+            if "version" in item:
+                del item["version"]
+
+        if data_i != data_j:
+            ids_i = set(x["id"] for x in data_i)
+            ids_j = set(x["id"] for x in data_j)
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Query results on all nodes should be consistent"
