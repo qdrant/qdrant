@@ -7,7 +7,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use validator::ValidationError;
 
-use super::JsonPathInterface;
 use crate::common::anonymize::Anonymize;
 use crate::common::utils::{merge_map, MultiValue};
 
@@ -27,8 +26,11 @@ pub enum JsonPathItem {
     WildcardIndex,
 }
 
-impl JsonPathInterface for JsonPathV2 {
-    fn value_get<'a>(&self, json_map: &'a serde_json::Map<String, Value>) -> MultiValue<&'a Value> {
+impl JsonPathV2 {
+    pub fn value_get<'a>(
+        &self,
+        json_map: &'a serde_json::Map<String, Value>,
+    ) -> MultiValue<&'a Value> {
         let mut result = MultiValue::new();
         if let Some(value) = json_map.get(&self.first_key) {
             value_get(&self.rest, Some(value), &mut result);
@@ -36,7 +38,7 @@ impl JsonPathInterface for JsonPathV2 {
         result
     }
 
-    fn value_set<'a>(
+    pub fn value_set<'a>(
         path: Option<&Self>,
         dest: &'a mut serde_json::Map<String, Value>,
         src: &'a serde_json::Map<String, Value>,
@@ -48,7 +50,7 @@ impl JsonPathInterface for JsonPathV2 {
         }
     }
 
-    fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
+    pub fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
         let mut result = MultiValue::new();
         if let Some((rest1, restn)) = self.rest.split_first() {
             if let Some(value) = json_map.get_mut(&self.first_key) {
@@ -60,7 +62,7 @@ impl JsonPathInterface for JsonPathV2 {
         result
     }
 
-    fn value_filter(
+    pub fn value_filter(
         json_map: &serde_json::Map<String, Value>,
         filter: impl Fn(&Self, &Value) -> bool,
     ) -> serde_json::Map<String, Value> {
@@ -79,15 +81,15 @@ impl JsonPathInterface for JsonPathV2 {
         new_map
     }
 
-    fn validate_not_empty(&self) -> Result<(), ValidationError> {
+    pub fn validate_not_empty(&self) -> Result<(), ValidationError> {
         Ok(()) // It's validated during parsing
     }
 
-    fn head(&self) -> &str {
+    pub fn head(&self) -> &str {
         &self.first_key
     }
 
-    fn strip_wildcard_suffix(&self) -> Self {
+    pub fn strip_wildcard_suffix(&self) -> Self {
         match self.rest.split_last() {
             Some((JsonPathItem::WildcardIndex, rest)) => JsonPathV2 {
                 first_key: self.first_key.clone(),
@@ -97,7 +99,7 @@ impl JsonPathInterface for JsonPathV2 {
         }
     }
 
-    fn strip_prefix(&self, prefix: &Self) -> Option<Self> {
+    pub fn strip_prefix(&self, prefix: &Self) -> Option<Self> {
         if self.first_key != prefix.first_key {
             return None;
         }
@@ -130,7 +132,7 @@ impl JsonPathInterface for JsonPathV2 {
         }
     }
 
-    fn extend(&self, other: &Self) -> Self {
+    pub fn extend(&self, other: &Self) -> Self {
         let mut rest = Vec::with_capacity(self.rest.len() + 1 + other.rest.len());
         rest.extend_from_slice(&self.rest);
         rest.push(JsonPathItem::Key(other.first_key.clone()));
@@ -141,7 +143,7 @@ impl JsonPathInterface for JsonPathV2 {
         }
     }
 
-    fn array_key(&self) -> Self {
+    pub fn array_key(&self) -> Self {
         let mut result = JsonPathV2 {
             first_key: self.first_key.clone(),
             rest: Vec::with_capacity(self.rest.len() + 1),
@@ -153,13 +155,17 @@ impl JsonPathInterface for JsonPathV2 {
         result
     }
 
-    fn check_include_pattern(&self, pattern: &Self) -> bool {
+    pub fn check_include_pattern(&self, pattern: &Self) -> bool {
         self.first_key == pattern.first_key
             && self.rest.iter().zip(&pattern.rest).all(|(a, b)| a == b)
     }
 
-    fn check_exclude_pattern(&self, pattern: &Self) -> bool {
+    pub fn check_exclude_pattern(&self, pattern: &Self) -> bool {
         self.first_key == pattern.first_key && pattern.rest.starts_with(&self.rest)
+    }
+
+    pub fn extend_or_new(base: Option<&Self>, other: &Self) -> Self {
+        base.map_or_else(|| other.clone(), |base| base.extend(other))
     }
 }
 

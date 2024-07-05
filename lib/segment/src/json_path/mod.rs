@@ -1,60 +1,8 @@
-use std::fmt::Display;
-use std::str::FromStr;
-
-use serde_json::Value;
-use validator::ValidationError;
-
-use crate::common::utils::MultiValue;
-
 mod parse;
 mod v2;
 
-pub use v2::JsonPathV2;
-
-pub type JsonPath = JsonPathV2;
-
-pub trait JsonPathInterface: Sized + Clone + FromStr<Err = ()> + Display {
-    // Value operations
-
-    fn value_get<'a>(&self, json_map: &'a serde_json::Map<String, Value>) -> MultiValue<&'a Value>;
-
-    fn value_set<'a>(
-        path: Option<&Self>,
-        dest: &'a mut serde_json::Map<String, Value>,
-        src: &'a serde_json::Map<String, Value>,
-    );
-
-    fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value>;
-
-    fn value_filter(
-        json_map: &serde_json::Map<String, Value>,
-        filter: impl Fn(&Self, &Value) -> bool,
-    ) -> serde_json::Map<String, Value>;
-
-    // Path operations
-
-    fn validate_not_empty(&self) -> Result<(), ValidationError>;
-
-    /// Get the first part of a path.
-    /// E.g., `"a.b.c"` -> `"a"`, `"a[0].b"` -> `"a"`.
-    fn head(&self) -> &str;
-
-    fn strip_wildcard_suffix(&self) -> Self;
-
-    fn strip_prefix(&self, prefix: &Self) -> Option<Self>;
-
-    fn array_key(&self) -> Self;
-
-    fn extend(&self, other: &Self) -> Self;
-
-    fn check_include_pattern(&self, pattern: &Self) -> bool;
-
-    fn check_exclude_pattern(&self, pattern: &Self) -> bool;
-
-    fn extend_or_new(base: Option<&Self>, other: &Self) -> Self {
-        base.map_or_else(|| other.clone(), |base| base.extend(other))
-    }
-}
+use v2::JsonPathItem;
+pub use v2::JsonPathV2 as JsonPath;
 
 /// Create a new `JsonPath` from a string.
 ///

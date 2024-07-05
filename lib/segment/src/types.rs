@@ -34,7 +34,7 @@ use crate::data_types::order_by::OrderValue;
 use crate::data_types::vectors::VectorStructInternal;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
-use crate::json_path::{JsonPath, JsonPathInterface};
+use crate::json_path::JsonPath;
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 
@@ -956,7 +956,7 @@ impl Payload {
     }
 
     pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) -> OperationResult<()> {
-        JsonPathInterface::value_set(Some(key), &mut self.0, &value.0);
+        JsonPath::value_set(Some(key), &mut self.0, &value.0);
         Ok(())
     }
 

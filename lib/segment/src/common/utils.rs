@@ -117,7 +117,7 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
 #[cfg(test)]
 mod jsonpath_tests {
     use super::*;
-    use crate::json_path::{path, JsonPath, JsonPathInterface};
+    use crate::json_path::{path, JsonPath};
 
     fn json(str: &str) -> serde_json::Map<String, Value> {
         serde_json::from_str(str).unwrap()
@@ -570,7 +570,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("a")), &mut map, &src);
+        JsonPath::value_set(Some(&path("a")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -615,7 +615,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("a.b[1]")), &mut map, &src);
+        JsonPath::value_set(Some(&path("a.b[1]")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -664,7 +664,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("a.b[1]")), &mut map, &src);
+        JsonPath::value_set(Some(&path("a.b[1]")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -736,7 +736,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("key1.key2")), &mut map, &src);
+        JsonPath::value_set(Some(&path("key1.key2")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -755,12 +755,12 @@ mod jsonpath_tests {
     fn test_set_value_to_json_with_empty_dest_nested_array_index_key() {
         let mut map = json("{}");
         let src = json(r#" {"c": 1} "#);
-        JsonPathInterface::value_set(Some(&path("key1.key2[3]")), &mut map, &src);
+        JsonPath::value_set(Some(&path("key1.key2[3]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
 
         let mut map = json("{}");
         let src = json(r#" {"c": 1} "#);
-        JsonPathInterface::value_set(Some(&path("key1.key2[0]")), &mut map, &src);
+        JsonPath::value_set(Some(&path("key1.key2[0]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
     }
 
@@ -781,7 +781,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("key1.key2[].key3")), &mut map, &src);
+        JsonPath::value_set(Some(&path("key1.key2[].key3")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -812,7 +812,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path("a.b.c")), &mut map, &src);
+        JsonPath::value_set(Some(&path("a.b.c")), &mut map, &src);
 
         assert_eq!(
             map,

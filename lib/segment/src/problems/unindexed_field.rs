@@ -11,7 +11,7 @@ use strum::IntoEnumIterator as _;
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::json_path::{JsonPath, JsonPathInterface};
+use crate::json_path::JsonPath;
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface,

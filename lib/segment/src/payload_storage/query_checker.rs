@@ -11,7 +11,6 @@ use common::types::PointOffsetType;
 use crate::common::utils::{check_is_empty, check_is_null, IndexesMap};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
-use crate::json_path::JsonPathInterface as _;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;

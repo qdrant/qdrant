@@ -5,7 +5,7 @@ use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
-use segment::json_path::{JsonPath, JsonPathInterface, JsonPathV2};
+use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, Match, Payload, SearchParams, ShardKey,
     WithPayloadInterface, WithVector,
@@ -176,7 +176,7 @@ pub enum NamedVectorStruct {
 }
 
 fn order_by_interface_example() -> OrderByInterface {
-    OrderByInterface::Key(JsonPathV2::from_str("timestamp").unwrap())
+    OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap())
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]

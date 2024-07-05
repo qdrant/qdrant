@@ -8,7 +8,7 @@ use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
 
-use super::v2::{JsonPath, JsonPathItem};
+use super::{JsonPath, JsonPathItem};
 
 impl FromStr for JsonPath {
     type Err = ();
