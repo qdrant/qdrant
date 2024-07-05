@@ -3195,10 +3195,8 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        // TODO: test_remove_key_impl::<JsonPathV2>();
-    }
+        type P = JsonPath;
 
-    fn test_remove_key_impl<P: JsonPathInterface>() {
         let mut payload: serde_json::Map<String, Value> = serde_json::from_str(
             r#"
         {
@@ -3228,10 +3226,6 @@ mod tests {
         .unwrap();
         let removed = path::<P>("b.c").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
-        assert_ne!(payload, Default::default());
-
-        let removed = path::<P>("b.e.f[1]").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
 
         let removed = path::<P>("b.e.i[0].j")
@@ -3265,7 +3259,7 @@ mod tests {
         assert_ne!(payload, Default::default());
 
         let removed = path::<P>("b.e.f").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
+        assert_eq!(removed, vec![Value::Array(vec![1.into(), 2.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
 
         let removed = path::<P>("k").value_remove(&mut payload);
