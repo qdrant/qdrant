@@ -513,14 +513,10 @@ mod tests {
 
     #[test]
     fn test_is_affected_by_value_set() {
-        assert!(!JsonPath::new("a")
-            .is_affected_by_value_set(&serde_json::from_str(r#"{"b": 1, "c": 1}"#).unwrap(), None));
-        assert!(JsonPath::new("a")
-            .is_affected_by_value_set(&serde_json::from_str(r#"{"a": 1, "b": 1}"#).unwrap(), None));
-        assert!(JsonPath::new("a.x")
-            .is_affected_by_value_set(&serde_json::from_str(r#"{"a": {"y": 1}}"#).unwrap(), None));
-        assert!(!JsonPath::new("a.x")
-            .is_affected_by_value_set(&serde_json::from_str(r#"{"b": {"x": 1}}"#).unwrap(), None));
+        assert!(!JsonPath::new("a").is_affected_by_value_set(&json(r#"{"b": 1, "c": 1}"#), None));
+        assert!(JsonPath::new("a").is_affected_by_value_set(&json(r#"{"a": 1, "b": 1}"#), None));
+        assert!(JsonPath::new("a.x").is_affected_by_value_set(&json(r#"{"a": {"y": 1}}"#), None));
+        assert!(!JsonPath::new("a.x").is_affected_by_value_set(&json(r#"{"b": {"x": 1}}"#), None));
     }
 
     #[test]
@@ -542,19 +538,16 @@ mod tests {
             .iter()
             .map(|s| s.parse().unwrap())
             .collect();
-        let payloads: Vec<serde_json::Map<String, serde_json::Value>> = [
-            r#" {"b": 1} "#,
-            r#" {"a": 1, "b": 2} "#,
-            r#" {"a": [], "b": 1} "#,
-            r#" {"a": [1], "b": 2} "#,
-            r#" {"a": {}, "b": 1} "#,
-            r#" {"a": {"a": 1, "b": 2}, "b": 3} "#,
-            r#" {"a": [{"a": 1, "b": 2}, {"a": 3, "b": 4}], "b": 5} "#,
-            r#" {"a": [{"a": [1], "b": 2}, {"a": [3], "b": 4}], "b": 5} "#,
-        ]
-        .iter()
-        .map(|s| serde_json::from_str(s).unwrap())
-        .collect();
+        let payloads = vec![
+            json(r#"{"b": 1}"#),
+            json(r#"{"a": 1, "b": 2}"#),
+            json(r#"{"a": [], "b": 1}"#),
+            json(r#"{"a": [1], "b": 2}"#),
+            json(r#"{"a": {}, "b": 1}"#),
+            json(r#"{"a": {"a": 1, "b": 2}, "b": 3}"#),
+            json(r#"{"a": [{"a": 1, "b": 2}, {"a": 3, "b": 4}], "b": 5}"#),
+            json(r#"{"a": [{"a": [1], "b": 2}, {"a": [3], "b": 4}], "b": 5}"#),
+        ];
 
         for init_payload in &payloads {
             for indexed_path in &paths {
@@ -583,7 +576,7 @@ mod tests {
         JsonPath::value_set(
             path_to_set,
             &mut new_payload,
-            serde_json::json!({value_key: 100}).as_object().unwrap(),
+            &json(r#"{"value_key": 100}"#),
         );
         let new_values = indexed_path.value_get(&new_payload);
 
@@ -591,10 +584,8 @@ mod tests {
         let indexed_value_changed = init_values != new_values;
 
         // Our prediction
-        let is_affected = indexed_path.is_affected_by_value_set(
-            serde_json::json!({value_key: 100}).as_object().unwrap(),
-            path_to_set,
-        );
+        let is_affected =
+            indexed_path.is_affected_by_value_set(&json(r#"{"value_key": 100}"#), path_to_set);
 
         assert!(
             is_affected || !indexed_value_changed,
@@ -635,19 +626,14 @@ mod tests {
 
     #[test]
     fn test_get_nested_value_from_json_map() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
-                "a": {
-                    "b": {
-                        "c": 1
-                    }
-                },
+                "a": {"b": {"c": 1}},
                 "d": 2
             }
             "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             JsonPath::new("a.b").value_get(&map).into_vec(),
@@ -671,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_is_empty() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
                 {
                    "a": [
@@ -684,8 +670,7 @@ mod tests {
                    ]
                 }
             "#,
-        )
-        .unwrap();
+        );
         let multivalue = JsonPath::new("a[].b").value_get(&map);
         let is_empty = check_is_empty(multivalue.iter().copied());
 
@@ -707,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_get_nested_array_value_from_json_map() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
                 "a": {
@@ -721,8 +706,7 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
         // get JSON array
         assert_eq!(
@@ -833,7 +817,7 @@ mod tests {
 
     #[test]
     fn test_get_deeply_nested_array_value_from_json_map() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
                 "arr1": [
@@ -851,8 +835,7 @@ mod tests {
                 ]
             }
             "#,
-        )
-        .unwrap();
+        );
 
         // extract and flatten all elements from arrays
         assert_eq!(
@@ -867,7 +850,7 @@ mod tests {
 
     #[test]
     fn test_no_flatten_array_value_from_json_map() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
                 "arr": [
@@ -877,8 +860,7 @@ mod tests {
                 ]
             }
             "#,
-        )
-        .unwrap();
+        );
 
         // extract and retain structure for arrays arrays
         assert_eq!(
@@ -906,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_get_null_and_absent_values() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
                 "a": null,
@@ -914,8 +896,7 @@ mod tests {
                 "c": []
             }
             "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             JsonPath::new("a").value_get(&map).as_slice(),
@@ -948,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_filter_json() {
-        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let map = json(
             r#"
             {
                 "a": {
@@ -962,8 +943,7 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
         let res = JsonPath::value_filter(&map, |path, _value| {
             let path = path.to_string();
@@ -972,7 +952,7 @@ mod tests {
 
         assert_eq!(
             res,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
+            json(
                 r#"
                 {
                     "a": {
@@ -984,8 +964,7 @@ mod tests {
                     }
                 }
                 "#,
-            )
-            .unwrap()
+            ),
         );
     }
 
@@ -1009,7 +988,7 @@ mod tests {
 
     #[test]
     fn test_set_value_to_json_with_empty_key() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let mut map = json(
             r#"
             {
                 "a": {
@@ -1023,21 +1002,13 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            { "c": 5 }
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(None, &mut map, &src);
+        JsonPath::value_set(None, &mut map, &json(r#"{"c": 5}"#));
 
         assert_eq!(
             map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
+            json(
                 r#"
                 {
                     "a": {
@@ -1052,14 +1023,13 @@ mod tests {
                     "c": 5
                 }
                 "#,
-            )
-            .unwrap()
+            ),
         );
     }
 
     #[test]
     fn test_set_value_to_json_with_one_level_key() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let mut map = json(
             r#"
             {
                 "a": {
@@ -1073,21 +1043,13 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            { "b": 5 }
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("a")), &mut map, &src);
+        JsonPath::value_set(Some(&JsonPath::new("a")), &mut map, &json(r#"{"b": 5}"#));
 
         assert_eq!(
             map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
+            json(
                 r#"
                 {
                     "a": {
@@ -1097,14 +1059,13 @@ mod tests {
                     "g": ["g0", "g1", "g2"]
                 }
                 "#,
-            )
-            .unwrap()
+            ),
         );
     }
 
     #[test]
     fn test_set_value_to_json_with_array_index() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let mut map = json(
             r#"
             {
                 "a": {
@@ -1118,21 +1079,17 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            { "c": 5 }
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("a.b[1]")), &mut map, &src);
+        JsonPath::value_set(
+            Some(&JsonPath::new("a.b[1]")),
+            &mut map,
+            &json(r#"{"c": 5}"#),
+        );
 
         assert_eq!(
             map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
+            json(
                 r#"
                 {
                     "a": {
@@ -1146,14 +1103,13 @@ mod tests {
                     "g": ["g0", "g1", "g2"]
                 }
                 "#,
-            )
-            .unwrap()
+            ),
         );
     }
 
     #[test]
     fn test_set_value_to_json_with_empty_src() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+        let mut map = json(
             r#"
             {
                 "a": {
@@ -1167,21 +1123,13 @@ mod tests {
                 "g": ["g0", "g1", "g2"]
             }
             "#,
-        )
-        .unwrap();
+        );
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {}
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("a.b[1]")), &mut map, &src);
+        JsonPath::value_set(Some(&JsonPath::new("a.b[1]")), &mut map, &json(r#"{}"#));
 
         assert_eq!(
             map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
+            json(
                 r#"
                 {
                     "a": {
@@ -1195,152 +1143,74 @@ mod tests {
                     "g": ["g0", "g1", "g2"]
                 }
                 "#,
-            )
-            .unwrap()
+            ),
         );
     }
 
     #[test]
     fn test_set_value_to_json_with_empty_dest() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {
-            }
-            "#,
-        )
-        .unwrap();
+        let mut map = json(r#"{}"#);
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"c": 1}
-            "#,
-        )
-        .unwrap();
+        JsonPath::value_set(None, &mut map, &json(r#"{"c": 1}"#));
 
-        JsonPath::value_set(None, &mut map, &src);
-
-        assert_eq!(
-            map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
-                r#"
-                {
-                    "c": 1
-                }
-                "#,
-            )
-            .unwrap()
-        );
+        assert_eq!(map, json(r#"{"c": 1}"#));
     }
 
     #[test]
     fn test_set_value_to_json_with_empty_dest_nested_key() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {
-            }
-            "#,
-        )
-        .unwrap();
+        let mut map = json(r#"{}"#);
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"c": 1}
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("key1.key2")), &mut map, &src);
-
-        assert_eq!(
-            map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
-                r#"
-                {
-                    "key1": {"key2": { "c": 1 } }
-                }
-                "#,
-            )
-            .unwrap()
+        JsonPath::value_set(
+            Some(&JsonPath::new("key1.key2")),
+            &mut map,
+            &json(r#"{"c": 1}"#),
         );
+
+        assert_eq!(map, json(r#"{"key1": {"key2": {"c": 1}}}"#));
     }
 
     #[test]
     fn test_set_value_to_json_with_empty_dest_nested_array_index_key() {
         let mut map = json("{}");
-        let src = json(r#" {"c": 1} "#);
+        let src = json(r#"{"c": 1}"#);
         JsonPath::value_set(Some(&JsonPath::new("key1.key2[3]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
 
         let mut map = json("{}");
-        let src = json(r#" {"c": 1} "#);
+        let src = json(r#"{"c": 1}"#);
         JsonPath::value_set(Some(&JsonPath::new("key1.key2[0]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
     }
 
     #[test]
     fn test_expand_payload_with_non_existing_array() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {
-            }
-            "#,
-        )
-        .unwrap();
+        let mut map = json(r#"{}"#);
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"c": 1}
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("key1.key2[].key3")), &mut map, &src);
-
-        assert_eq!(
-            map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
-                r#"
-                {
-                    "key1": { "key2": [] }
-                }
-                "#,
-            )
-            .unwrap()
+        JsonPath::value_set(
+            Some(&JsonPath::new("key1.key2[].key3")),
+            &mut map,
+            &json(r#"{"c": 1}"#),
         );
+
+        assert_eq!(map, json(r#"{"key1": {"key2": [] }}"#));
     }
 
     #[test]
     fn test_replace_scalar_key_with_object() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"a": 10}
-            "#,
-        )
-        .unwrap();
+        let mut map = json(r#"{"a": 10}"#);
 
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"x": 1}
-            "#,
-        )
-        .unwrap();
-
-        JsonPath::value_set(Some(&JsonPath::new("a.b.c")), &mut map, &src);
-
-        assert_eq!(
-            map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
-                r#"
-                {"a": {"b": {"c": {"x": 1}}}}
-                "#,
-            )
-            .unwrap()
+        JsonPath::value_set(
+            Some(&JsonPath::new("a.b.c")),
+            &mut map,
+            &json(r#"{"x": 1}"#),
         );
+
+        assert_eq!(map, json(r#"{"a": {"b": {"c": {"x": 1}}}}"#));
     }
 
     #[test]
     fn test_remove_key() {
-        let mut payload: serde_json::Map<String, Value> = serde_json::from_str(
+        let mut payload = json(
             r#"
             {
                 "a": 1,
@@ -1364,8 +1234,7 @@ mod tests {
                 }
             }
             "#,
-        )
-        .unwrap();
+        );
         let removed = JsonPath::new("b.c").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
