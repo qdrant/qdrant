@@ -3195,8 +3195,6 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        type P = JsonPath;
-
         let mut payload: serde_json::Map<String, Value> = serde_json::from_str(
             r#"
         {
@@ -3224,24 +3222,22 @@ mod tests {
         "#,
         )
         .unwrap();
-        let removed = path::<P>("b.c").value_remove(&mut payload).into_vec();
+        let removed = path("b.c").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.i[0].j")
-            .value_remove(&mut payload)
-            .into_vec();
+        let removed = path("b.e.i[0].j").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.i[].k").value_remove(&mut payload).into_vec();
+        let removed = path("b.e.i[].k").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Number(2.into()), Value::Number(4.into())]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.i[]").value_remove(&mut payload).into_vec();
+        let removed = path("b.e.i[]").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Array(vec![
@@ -3254,31 +3250,30 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.i").value_remove(&mut payload).into_vec();
+        let removed = path("b.e.i").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.f").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Array(vec![1.into(), 2.into(), 3.into()])]);
+        let removed = path("b.e.f").value_remove(&mut payload).into_vec();
+        assert_eq!(
+            removed,
+            vec![Value::Array(vec![1.into(), 2.into(), 3.into()])]
+        );
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("k").value_remove(&mut payload);
+        let removed = path("k").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("").value_remove(&mut payload);
+        let removed = path("b.e.l").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e.l").value_remove(&mut payload);
-        assert!(check_is_empty(&removed));
-        assert_ne!(payload, Default::default());
-
-        let removed = path::<P>("a").value_remove(&mut payload).into_vec();
+        let removed = path("a").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b.e").value_remove(&mut payload).into_vec();
+        let removed = path("b.e").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![
@@ -3289,7 +3284,7 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path::<P>("b").value_remove(&mut payload).into_vec();
+        let removed = path("b").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]

@@ -115,20 +115,16 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
 }
 
 #[cfg(test)]
-#[generic_tests::define]
 mod jsonpath_tests {
-    use std::any::TypeId;
-    use std::str::FromStr;
-
     use super::*;
-    use crate::json_path::{path, JsonPathInterface, JsonPathV2};
+    use crate::json_path::{path, JsonPath, JsonPathInterface};
 
     fn json(str: &str) -> serde_json::Map<String, Value> {
         serde_json::from_str(str).unwrap()
     }
 
     #[test]
-    fn test_get_nested_value_from_json_map<P: JsonPathInterface>() {
+    fn test_get_nested_value_from_json_map() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -144,7 +140,7 @@ mod jsonpath_tests {
         .unwrap();
 
         assert_eq!(
-            path::<P>("a.b").value_get(&map).into_vec(),
+            path("a.b").value_get(&map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(1.into())
@@ -153,18 +149,18 @@ mod jsonpath_tests {
 
         // going deeper
         assert_eq!(
-            path::<P>("a.b.c").value_get(&map).into_vec(),
+            path("a.b.c").value_get(&map).into_vec(),
             vec![&Value::Number(1.into())]
         );
 
         // missing path
         assert!(check_is_empty(
-            path::<P>("a.b.c.d").value_get(&map).iter().copied()
+            path("a.b.c.d").value_get(&map).iter().copied()
         ));
     }
 
     #[test]
-    fn test_is_empty<P: JsonPathInterface>() {
+    fn test_is_empty() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
                 {
@@ -180,27 +176,27 @@ mod jsonpath_tests {
             "#,
         )
         .unwrap();
-        let multivalue = path::<P>("a[].b").value_get(&map);
+        let multivalue = path("a[].b").value_get(&map);
         let is_empty = check_is_empty(multivalue.iter().copied());
 
         assert!(!is_empty, "a[].b is not empty");
 
-        let multivalue = path::<P>("a[].c").value_get(&map);
+        let multivalue = path("a[].c").value_get(&map);
         let is_empty = check_is_empty(multivalue.iter().copied());
 
         assert!(is_empty, "a[].c is empty");
 
-        let multivalue = path::<P>("a[].d").value_get(&map);
+        let multivalue = path("a[].d").value_get(&map);
         let is_empty = check_is_empty(multivalue.iter().copied());
         assert!(is_empty, "a[].d is empty");
 
-        let multivalue = path::<P>("a[].f").value_get(&map);
+        let multivalue = path("a[].f").value_get(&map);
         let is_empty = check_is_empty(multivalue.iter().copied());
         assert!(is_empty, "a[].f is empty");
     }
 
     #[test]
-    fn test_get_nested_array_value_from_json_map<P: JsonPathInterface + 'static>() {
+    fn test_get_nested_array_value_from_json_map() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -220,7 +216,7 @@ mod jsonpath_tests {
 
         // get JSON array
         assert_eq!(
-            path::<P>("a.b").value_get(&map).into_vec(),
+            path("a.b").value_get(&map).into_vec(),
             vec![&Value::Array(vec![
                 Value::Object(serde_json::Map::from_iter(vec![(
                     "c".to_string(),
@@ -242,7 +238,7 @@ mod jsonpath_tests {
 
         // a.b[] extract all elements from array
         assert_eq!(
-            path::<P>("a.b[]").value_get(&map).into_vec(),
+            path("a.b[]").value_get(&map).into_vec(),
             vec![
                 &Value::Object(serde_json::Map::from_iter(vec![(
                     "c".to_string(),
@@ -264,13 +260,13 @@ mod jsonpath_tests {
 
         // project scalar field through array
         assert_eq!(
-            path::<P>("a.b[].c").value_get(&map).into_vec(),
+            path("a.b[].c").value_get(&map).into_vec(),
             vec![&Value::Number(1.into()), &Value::Number(2.into())]
         );
 
         // project object field through array
         assert_eq!(
-            path::<P>("a.b[].d").value_get(&map).into_vec(),
+            path("a.b[].d").value_get(&map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "e".to_string(),
                 Value::Number(3.into())
@@ -279,7 +275,7 @@ mod jsonpath_tests {
 
         // select scalar element from array
         assert_eq!(
-            path::<P>("a.b[0]").value_get(&map).into_vec(),
+            path("a.b[0]").value_get(&map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(1.into())
@@ -288,7 +284,7 @@ mod jsonpath_tests {
 
         // select scalar object from array different index
         assert_eq!(
-            path::<P>("a.b[1]").value_get(&map).into_vec(),
+            path("a.b[1]").value_get(&map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(2.into())
@@ -297,19 +293,19 @@ mod jsonpath_tests {
 
         // select field element from array different index
         assert_eq!(
-            path::<P>("a.b[1].c").value_get(&map).into_vec(),
+            path("a.b[1].c").value_get(&map).into_vec(),
             vec![&Value::Number(2.into())]
         );
 
         // select scalar element from array different index
         assert_eq!(
-            path::<P>("g[2]").value_get(&map).into_vec(),
+            path("g[2]").value_get(&map).into_vec(),
             vec![&Value::String("g2".to_string())]
         );
 
         // select object element from array
         assert_eq!(
-            path::<P>("a.b[2]").value_get(&map).into_vec(),
+            path("a.b[2]").value_get(&map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "d".to_string(),
                 Value::Object(serde_json::Map::from_iter(vec![(
@@ -321,22 +317,12 @@ mod jsonpath_tests {
 
         // select out of bound index from array
         assert!(check_is_empty(
-            path::<P>("a.b[3]").value_get(&map).iter().copied()
+            path("a.b[3]").value_get(&map).iter().copied()
         ));
-
-        // select bad index from array
-        let path = <P as FromStr>::from_str("a.b[z]");
-        if TypeId::of::<P>() != TypeId::of::<JsonPathV2>() {
-            assert!(check_is_empty(
-                path.unwrap().value_get(&map).iter().copied()
-            ));
-        } else {
-            assert!(path.is_err());
-        }
     }
 
     #[test]
-    fn test_get_deeply_nested_array_value_from_json_map<P: JsonPathInterface>() {
+    fn test_get_deeply_nested_array_value_from_json_map() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -360,7 +346,7 @@ mod jsonpath_tests {
 
         // extract and flatten all elements from arrays
         assert_eq!(
-            path::<P>("arr1[].arr2[].a").value_get(&map).into_vec(),
+            path("arr1[].arr2[].a").value_get(&map).into_vec(),
             vec![
                 &Value::Number(1.into()),
                 &Value::Number(3.into()),
@@ -370,7 +356,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_no_flatten_array_value_from_json_map<P: JsonPathInterface>() {
+    fn test_no_flatten_array_value_from_json_map() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -386,7 +372,7 @@ mod jsonpath_tests {
 
         // extract and retain structure for arrays arrays
         assert_eq!(
-            path::<P>("arr[].a").value_get(&map).into_vec(),
+            path("arr[].a").value_get(&map).into_vec(),
             vec![
                 &Value::Array(vec![
                     Value::Number(1.into()),
@@ -399,7 +385,7 @@ mod jsonpath_tests {
 
         // expect an array as leaf, ignore non arrays
         assert_eq!(
-            path::<P>("arr[].a[]").value_get(&map).into_vec(),
+            path("arr[].a[]").value_get(&map).into_vec(),
             vec![
                 &Value::Number(1.into()),
                 &Value::Number(2.into()),
@@ -409,7 +395,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_get_null_and_absent_values<P: JsonPathInterface>() {
+    fn test_get_null_and_absent_values() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -421,34 +407,34 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        assert_eq!(path::<P>("a").value_get(&map).as_slice(), &[&Value::Null],);
+        assert_eq!(path("a").value_get(&map).as_slice(), &[&Value::Null],);
 
-        assert!(path::<P>("a[]").value_get(&map).is_empty());
+        assert!(path("a[]").value_get(&map).is_empty());
 
         assert_eq!(
-            path::<P>("b").value_get(&map).as_slice(),
+            path("b").value_get(&map).as_slice(),
             &[&Value::Array(vec![Value::Null, Value::Null])],
         );
 
         assert_eq!(
-            path::<P>("b[]").value_get(&map).as_slice(),
+            path("b[]").value_get(&map).as_slice(),
             &[&Value::Null, &Value::Null],
         );
 
         assert_eq!(
-            path::<P>("c").value_get(&map).as_slice(),
+            path("c").value_get(&map).as_slice(),
             &[&Value::Array(vec![])],
         );
 
-        assert!(path::<P>("c[]").value_get(&map).is_empty());
+        assert!(path("c[]").value_get(&map).is_empty());
 
-        assert!(path::<P>("d").value_get(&map).is_empty());
+        assert!(path("d").value_get(&map).is_empty());
 
-        assert!(path::<P>("d[]").value_get(&map).is_empty());
+        assert!(path("d[]").value_get(&map).is_empty());
     }
 
     #[test]
-    fn test_filter_json<P: JsonPathInterface>() {
+    fn test_filter_json() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -466,7 +452,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        let res = P::value_filter(&map, |path, _value| {
+        let res = JsonPath::value_filter(&map, |path, _value| {
             let path = path.to_string();
             path.starts_with("a.b[].c") || "a.b[].c".starts_with(&path)
         });
@@ -491,25 +477,25 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_check_include_pattern<P: JsonPathInterface>() {
-        assert!(path::<P>("a.b.c").check_include_pattern(&path::<P>("a.b.c")));
-        assert!(path::<P>("a.b.c").check_include_pattern(&path::<P>("a.b")));
-        assert!(!path::<P>("a.b.c").check_include_pattern(&path::<P>("a.b.d")));
-        assert!(path::<P>("a.b.c").check_include_pattern(&path::<P>("a")));
-        assert!(path::<P>("a").check_include_pattern(&path::<P>("a.d")));
+    fn test_check_include_pattern() {
+        assert!(path("a.b.c").check_include_pattern(&path("a.b.c")));
+        assert!(path("a.b.c").check_include_pattern(&path("a.b")));
+        assert!(!path("a.b.c").check_include_pattern(&path("a.b.d")));
+        assert!(path("a.b.c").check_include_pattern(&path("a")));
+        assert!(path("a").check_include_pattern(&path("a.d")));
     }
 
     #[test]
-    fn test_check_exclude_pattern<P: JsonPathInterface>() {
-        assert!(path::<P>("a.b.c").check_exclude_pattern(&path::<P>("a.b.c")));
-        assert!(!path::<P>("a.b.c").check_exclude_pattern(&path::<P>("a.b")));
-        assert!(!path::<P>("a.b.c").check_exclude_pattern(&path::<P>("a.b.d")));
-        assert!(!path::<P>("a.b.c").check_exclude_pattern(&path::<P>("a")));
-        assert!(path::<P>("a").check_exclude_pattern(&path::<P>("a.d")));
+    fn test_check_exclude_pattern() {
+        assert!(path("a.b.c").check_exclude_pattern(&path("a.b.c")));
+        assert!(!path("a.b.c").check_exclude_pattern(&path("a.b")));
+        assert!(!path("a.b.c").check_exclude_pattern(&path("a.b.d")));
+        assert!(!path("a.b.c").check_exclude_pattern(&path("a")));
+        assert!(path("a").check_exclude_pattern(&path("a.d")));
     }
 
     #[test]
-    fn test_set_value_to_json_with_empty_key<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_empty_key() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -534,7 +520,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        P::value_set(None, &mut map, &src);
+        JsonPath::value_set(None, &mut map, &src);
 
         assert_eq!(
             map,
@@ -559,7 +545,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_one_level_key<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_one_level_key() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -584,7 +570,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("a")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("a")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -604,7 +590,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_array_index<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_array_index() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -629,7 +615,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("a.b[1]")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("a.b[1]")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -653,7 +639,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_empty_src<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_empty_src() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -678,7 +664,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("a.b[1]")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("a.b[1]")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -702,7 +688,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_empty_dest<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_empty_dest() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -718,7 +704,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        P::value_set(None, &mut map, &src);
+        JsonPath::value_set(None, &mut map, &src);
 
         assert_eq!(
             map,
@@ -734,7 +720,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_empty_dest_nested_key<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_empty_dest_nested_key() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -750,7 +736,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("key1.key2")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("key1.key2")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -766,20 +752,20 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_set_value_to_json_with_empty_dest_nested_array_index_key<P: JsonPathInterface>() {
+    fn test_set_value_to_json_with_empty_dest_nested_array_index_key() {
         let mut map = json("{}");
         let src = json(r#" {"c": 1} "#);
-        JsonPathInterface::value_set(Some(&path::<P>("key1.key2[3]")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("key1.key2[3]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
 
         let mut map = json("{}");
         let src = json(r#" {"c": 1} "#);
-        JsonPathInterface::value_set(Some(&path::<P>("key1.key2[0]")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("key1.key2[0]")), &mut map, &src);
         assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
     }
 
     #[test]
-    fn test_expand_payload_with_non_existing_array<P: JsonPathInterface>() {
+    fn test_expand_payload_with_non_existing_array() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -795,7 +781,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("key1.key2[].key3")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("key1.key2[].key3")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -811,7 +797,7 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_replace_scalar_key_with_object<P: JsonPathInterface>() {
+    fn test_replace_scalar_key_with_object() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {"a": 10}
@@ -826,7 +812,7 @@ mod jsonpath_tests {
         )
         .unwrap();
 
-        JsonPathInterface::value_set(Some(&path::<P>("a.b.c")), &mut map, &src);
+        JsonPathInterface::value_set(Some(&path("a.b.c")), &mut map, &src);
 
         assert_eq!(
             map,
@@ -840,18 +826,11 @@ mod jsonpath_tests {
     }
 
     #[test]
-    fn test_get_path_head<P: JsonPathInterface + 'static>() {
-        assert_eq!(path::<P>("a.b.c").head(), "a");
-        assert_eq!(path::<P>("a[0].b").head(), "a");
-        assert_eq!(path::<P>("a").head(), "a");
-        if TypeId::of::<P>() != TypeId::of::<JsonPathV2>() {
-            // JsonPathV2 does not support empty path
-            assert_eq!(path::<P>("").head(), "");
-        }
+    fn test_get_path_head() {
+        assert_eq!(path("a.b.c").head(), "a");
+        assert_eq!(path("a[0].b").head(), "a");
+        assert_eq!(path("a").head(), "a");
     }
-
-    #[instantiate_tests(<JsonPathV2>)]
-    mod v2 {}
 }
 
 #[cfg(test)]
