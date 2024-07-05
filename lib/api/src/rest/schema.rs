@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::{JsonPath, JsonPathInterface, JsonPathV2};
-use segment::types::{Filter, Payload, SearchParams, ShardKey, WithPayloadInterface, WithVector};
+use segment::types::{Condition, FieldCondition, Filter, Match, Payload, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
@@ -262,7 +262,48 @@ pub struct QueryRequestInternal {
     pub lookup_from: Option<LookupLocation>,
 }
 
+fn query_request_example() -> QueryRequest {
+    QueryRequest {
+        internal: QueryRequestInternal {
+            prefetch: None,
+            query: Some(QueryInterface::Nearest(VectorInput::DenseVector(vec![
+                0.875, 0.140625, -0.15625, 0.96875,
+            ]))),
+            using:Some("image_vector".to_string()),
+            filter: Some(Filter::new_must(
+                Condition::Field(FieldCondition::new_match(
+                    JsonPath::from_str("city").unwrap(),
+                    Match::new_text("Berlin"),
+                ))
+            )),
+            params: Some(
+                SearchParams {
+                    hnsw_ef: Some(100),
+                    exact: false,
+                    quantization: None,
+                    indexed_only: false,
+                }
+            ),
+            score_threshold: Some(1.25),
+            limit: Some(10),
+            offset: Some(0),
+            with_vector: Some(WithVector::Bool(true)),
+            with_payload: Some(WithPayloadInterface::Bool(true)),
+            lookup_from:{
+                Some(LookupLocation {
+                    collection: "collection_b".to_string(),
+                    vector: Some("image_vector".to_string()),
+                    shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
+                })
+            }
+        },
+        shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
+    }
+}
+
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[schemars(example = "query_request_example")]
 pub struct QueryRequest {
     #[validate]
     #[serde(flatten)]
