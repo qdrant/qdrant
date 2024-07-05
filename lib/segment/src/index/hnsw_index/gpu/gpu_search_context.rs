@@ -135,7 +135,7 @@ impl GpuSearchContext {
         );
 
         let greedy_search_shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/iterators.comp"))
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
@@ -152,6 +152,8 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/run_greedy_search.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
@@ -159,7 +161,7 @@ impl GpuSearchContext {
         );
 
         let insert_shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/iterators.comp"))
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
@@ -176,6 +178,8 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/run_insert_vector.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
@@ -183,7 +187,7 @@ impl GpuSearchContext {
         );
 
         let search_shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/iterators.comp"))
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
@@ -200,6 +204,8 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/tests/test_hnsw_search.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
@@ -207,7 +213,7 @@ impl GpuSearchContext {
         );
 
         let patches_shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/iterators.comp"))
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
@@ -224,6 +230,8 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/run_get_patch.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .with_nearest_heap_capacity(gpu_nearest_heap.capacity)
                 .with_nearest_heap_ef(gpu_nearest_heap.ef)
                 .with_candidates_heap_capacity(gpu_candidates_heap.capacity)
@@ -1117,27 +1125,34 @@ mod tests {
 
         // Create test pipeline
         let shader = Arc::new(
-            gpu::ShaderBuilder::new(test.gpu_search_context.device.clone())
-                .with_shader_code(include_str!("./shaders/common.comp"))
-                .with_shader_code(include_str!("./shaders/iterators.comp"))
-                .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
-                .with_shader_code(include_str!("./shaders/vector_storage.comp"))
-                .with_layout(gpu::LayoutSetBinding::Links, 2)
-                .with_shader_code(include_str!("./shaders/links.comp"))
-                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
-                .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
-                .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
-                .with_shader_code(include_str!("./shaders/visited_flags.comp"))
-                .with_shader_code(include_str!("./shaders/search_context.comp"))
-                .with_shader_code(include_str!("./shaders/tests/test_heuristic.comp"))
-                .with_element_type(test.gpu_search_context.gpu_vector_storage.element_type)
-                .with_dim(test.gpu_search_context.gpu_vector_storage.dim)
-                .with_nearest_heap_capacity(test.gpu_search_context.gpu_nearest_heap.capacity)
-                .with_nearest_heap_ef(test.gpu_search_context.gpu_nearest_heap.ef)
-                .with_candidates_heap_capacity(test.gpu_search_context.gpu_candidates_heap.capacity)
-                .build(),
+            gpu::ShaderBuilder::new(
+                test.gpu_search_context.device.clone(),
+                test.gpu_search_context
+                    .gpu_vector_storage
+                    .working_group_size,
+            )
+            .with_shader_code(include_str!("./shaders/common.comp"))
+            .with_shader_code(include_str!("./shaders/iterators.comp"))
+            .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
+            .with_shader_code(include_str!("./shaders/vector_storage.comp"))
+            .with_layout(gpu::LayoutSetBinding::Links, 2)
+            .with_shader_code(include_str!("./shaders/links.comp"))
+            .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
+            .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
+            .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+            .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
+            .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+            .with_shader_code(include_str!("./shaders/visited_flags.comp"))
+            .with_shader_code(include_str!("./shaders/search_context.comp"))
+            .with_shader_code(include_str!("./shaders/tests/test_heuristic.comp"))
+            .with_element_type(test.gpu_search_context.gpu_vector_storage.element_type)
+            .with_dim(test.gpu_search_context.gpu_vector_storage.dim)
+            .with_storages_count(test.gpu_search_context.gpu_vector_storage.storages_count)
+            .with_storage_size(test.gpu_search_context.gpu_vector_storage.storage_size)
+            .with_nearest_heap_capacity(test.gpu_search_context.gpu_nearest_heap.capacity)
+            .with_nearest_heap_ef(test.gpu_search_context.gpu_nearest_heap.ef)
+            .with_candidates_heap_capacity(test.gpu_search_context.gpu_candidates_heap.capacity)
+            .build(),
         );
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)

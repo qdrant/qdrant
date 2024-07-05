@@ -7,13 +7,20 @@
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
 
-//#define SUBGROUP_SIZE gl_SubgroupSize
-#define SUBGROUP_SIZE 32
+#ifndef SUBGROUP_SIZE
+#error "SUBGROUP_SIZE not defined"
+#endif
+
+#ifndef WORKING_GROUP_SIZE
+#error "WORKING_GROUP_SIZE not defined"
+#endif
+
+layout(local_size_x = WORKING_GROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
 #define SUBGROUP_ID (gl_GlobalInvocationID.x / SUBGROUP_SIZE)
 #define SUBGROUP_INVOCATION_ID gl_SubgroupInvocationID 
-
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define CONCAT(a, b) a##_##b
 
@@ -29,3 +36,7 @@ struct ScoredPoint {
     POINT_ID id;
     float score;
 };
+
+// TODO(gpu): measure WORKING_GROUP_SIZE and use it unstead of WORKING_GROUP_SIZE / SUBGROUP_SIZE
+// maybe use WORKING_GROUP_SIZE / 8 and return error is gl_SubgroupSize is smaller
+shared ScoredPoint merge_buffer[WORKING_GROUP_SIZE / SUBGROUP_SIZE];

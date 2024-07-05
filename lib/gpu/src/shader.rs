@@ -12,23 +12,29 @@ pub struct Shader {
 
 pub struct ShaderBuilder {
     device: Arc<Device>,
+    working_group_size: usize,
     shader_code: String,
     element_type: Option<GpuVectorStorageElementType>,
     layout_bindings: Vec<(LayoutSetBinding, usize)>,
     dim: Option<usize>,
+    storages_count: Option<usize>,
+    storage_size: Option<usize>,
     nearest_heap_ef: Option<usize>,
     nearest_heap_capacity: Option<usize>,
     candidates_heap_capacity: Option<usize>,
 }
 
 impl ShaderBuilder {
-    pub fn new(device: Arc<Device>) -> Self {
+    pub fn new(device: Arc<Device>, working_group_size: usize) -> Self {
         Self {
             device,
+            working_group_size,
             shader_code: Default::default(),
             element_type: None,
             layout_bindings: Default::default(),
             dim: None,
+            storages_count: None,
+            storage_size: None,
             nearest_heap_ef: None,
             nearest_heap_capacity: None,
             candidates_heap_capacity: None,
@@ -48,6 +54,16 @@ impl ShaderBuilder {
 
     pub fn with_dim(&mut self, dim: usize) -> &mut Self {
         self.dim = Some(dim);
+        self
+    }
+
+    pub fn with_storages_count(&mut self, storages_count: usize) -> &mut Self {
+        self.storages_count = Some(storages_count);
+        self
+    }
+
+    pub fn with_storage_size(&mut self, storage_size: usize) -> &mut Self {
+        self.storage_size = Some(storage_size);
         self
     }
 
@@ -80,6 +96,15 @@ impl ShaderBuilder {
         );
         options.set_target_spirv(shaderc::SpirvVersion::V1_3);
 
+        options.add_macro_definition(
+            "WORKING_GROUP_SIZE",
+            Some(&self.working_group_size.to_string()),
+        );
+        options.add_macro_definition(
+            "SUBGROUP_SIZE",
+            Some(&self.device.subgroup_size().to_string()),
+        );
+
         if let Some(element_type) = self.element_type {
             match element_type {
                 GpuVectorStorageElementType::Float32 => {
@@ -103,6 +128,14 @@ impl ShaderBuilder {
 
         if let Some(dim) = self.dim {
             options.add_macro_definition("DIM", Some(&dim.to_string()));
+        }
+
+        if let Some(storages_count) = self.storages_count {
+            options.add_macro_definition("STORAGES_COUNT", Some(&storages_count.to_string()));
+        }
+
+        if let Some(storage_size) = self.storage_size {
+            options.add_macro_definition("STORAGE_SIZE", Some(&storage_size.to_string()));
         }
 
         if let Some(nearest_heap_ef) = self.nearest_heap_ef {

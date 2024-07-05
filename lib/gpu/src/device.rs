@@ -22,6 +22,8 @@ pub struct Device {
     pub compute_queues: Vec<Queue>,
     pub transfer_queues: Vec<Queue>,
     pub subgroup_size: usize,
+    pub max_compute_work_group_size: [usize; 3],
+    pub max_buffer_size: usize,
     pub compiler: shaderc::Compiler,
 }
 
@@ -99,10 +101,18 @@ impl Device {
             )
         };
 
+        let max_compute_work_group_size;
+        let max_buffer_size;
         let subgroup_size = unsafe {
             let props = instance
                 .vk_instance
                 .get_physical_device_properties(vk_physical_device);
+            max_compute_work_group_size = [
+                props.limits.max_compute_work_group_size[0] as usize,
+                props.limits.max_compute_work_group_size[1] as usize,
+                props.limits.max_compute_work_group_size[2] as usize,
+            ];
+            max_buffer_size = props.limits.max_storage_buffer_range as usize;
             let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
             let mut props2 = vk::PhysicalDeviceProperties2::builder()
                 .push_next(&mut subgroup_properties)
@@ -164,6 +174,8 @@ impl Device {
                 compute_queues,
                 transfer_queues,
                 subgroup_size,
+                max_compute_work_group_size,
+                max_buffer_size,
                 compiler,
             })
         } else {
@@ -189,6 +201,14 @@ impl Device {
 
     pub fn subgroup_size(&self) -> usize {
         self.subgroup_size
+    }
+
+    pub fn max_compute_work_group_size(&self) -> [usize; 3] {
+        self.max_compute_work_group_size
+    }
+
+    pub fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
     }
 }
 

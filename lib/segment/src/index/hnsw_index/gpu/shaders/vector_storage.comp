@@ -9,37 +9,38 @@
 #error "DIM not defined"
 #endif
 
+#ifndef STORAGES_COUNT
+#error "STORAGES_COUNT not defined"
+#endif
+
+#ifndef STORAGE_SIZE
+#error "STORAGE_SIZE not defined"
+#endif
+
 #ifdef VECTOR_STORAGE_ELEMENT_FLOAT32
 
-#define VECTOR_STORAGE_ELEMENT_TYPE vec4
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+#define VECTOR_STORAGE_ELEMENT_TYPE float
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) a * b
 
 #endif
 
 #ifdef VECTOR_STORAGE_ELEMENT_FLOAT16
 
-#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
-#define VECTOR_STORAGE_ELEMENT_TYPE f16vec4
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot(a, b)
+#define VECTOR_STORAGE_ELEMENT_TYPE float16_t
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) float(a * b)
 
 #endif
 
 #ifdef VECTOR_STORAGE_ELEMENT_UINT8
 
-float dot_u8vec4(u8vec4 a, u8vec4 b) {
-    uint sum = uint(a.x) * uint(b.x) + uint(a.y) * uint(b.y) + uint(a.z) * uint(b.z) + uint(a.w) * uint(b.w);
-    return float(sum);
-}
-
-#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+#define VECTOR_STORAGE_ELEMENT_TYPE uint8_t
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) float(uint(a) * uint(b))
 
 #endif
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
 
-// uint = 4 * uint8_t, vec4 analogue for BQ
-#define VECTOR_STORAGE_ELEMENT_TYPE uint
+#define VECTOR_STORAGE_ELEMENT_TYPE uint8_t
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) float(bitCount(a ^ b))
 
 #endif
@@ -47,8 +48,6 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
 #ifndef VECTOR_STORAGE_ELEMENT_TYPE
 #error "VECTOR_STORAGE_ELEMENT not defined"
 #endif
-
-#define STORAGES_COUNT 4
 
 #define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
@@ -58,74 +57,183 @@ float dot_u8vec4(u8vec4 a, u8vec4 b) {
         VECTOR_STORAGE_ELEMENT_TYPE data[]; \
     } STORAGE(STORAGE_INDEX);
 
+#if STORAGES_COUNT > 0
 VECTOR_STORAGE_DEFINE(0)
+#endif
+
+#if STORAGES_COUNT > 1
 VECTOR_STORAGE_DEFINE(1)
+#endif
+
+#if STORAGES_COUNT > 2
 VECTOR_STORAGE_DEFINE(2)
+#endif
+
+#if STORAGES_COUNT > 3
 VECTOR_STORAGE_DEFINE(3)
+#endif
 
-#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A) \
-    for (uint i = 0; i < (d / SUBGROUP_SIZE); i += 1, aIndex += SUBGROUP_SIZE) { \
-        result += VECTOR_STORAGE_SCORE_ELEMENT( \
-            STORAGE(STORAGE_INDEX_A).data[aIndex], \
-            vector_cache[i] \
-        ); \
-    }
+#if STORAGES_COUNT > 4
+VECTOR_STORAGE_DEFINE(4)
+#endif
 
-#define VECTOR_STORAGE_LOAD_CACHE(STORAGE_INDEX_A) \
-    for (uint i = 0; i < (d / SUBGROUP_SIZE); i += 1, aIndex += SUBGROUP_SIZE) { \
-        vector_cache[i] = STORAGE(STORAGE_INDEX_A).data[aIndex]; \
-    }
+#if STORAGES_COUNT > 5
+VECTOR_STORAGE_DEFINE(5)
+#endif
 
-VECTOR_STORAGE_ELEMENT_TYPE vector_cache[DIM / (4 * SUBGROUP_SIZE)];
+#if STORAGES_COUNT > 6
+VECTOR_STORAGE_DEFINE(6)
+#endif
+
+#if STORAGES_COUNT > 7
+VECTOR_STORAGE_DEFINE(7)
+#endif
+
+#if DIM == WORKING_GROUP_SIZE
+
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
+    result = VECTOR_STORAGE_SCORE_ELEMENT( \
+            STORAGE(STORAGE_INDEX).data[index], \
+            vector_cache \
+        );
+
+#define VECTOR_STORAGE_LOAD_CACHE(STORAGE_INDEX) \
+    vector_cache = STORAGE(STORAGE_INDEX).data[index]; \
+
+VECTOR_STORAGE_ELEMENT_TYPE vector_cache;
+
+#else
+#error "TODO: Implement DIM != WORKING_GROUP_SIZE"
+#endif
 
 void set_vector_storage_target(uint a) {
-    uint d = DIM / 4;
-    uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;
-    uint storage_index_a = a % STORAGES_COUNT;
-
-    switch (storage_index_a) {
+#if STORAGES_COUNT == 1
+    uint index = a * DIM + gl_GlobalInvocationID.x;
+    VECTOR_STORAGE_LOAD_CACHE(0);
+#else
+    uint index = (a % STORAGE_SIZE) * DIM + gl_GlobalInvocationID.x;
+    uint storage_index = a / STORAGE_SIZE;
+    switch (storage_index) {
+#if STORAGES_COUNT > 0
     case 0:
         VECTOR_STORAGE_LOAD_CACHE(0);
         break;
+#endif
+#if STORAGES_COUNT > 1
     case 1:
         VECTOR_STORAGE_LOAD_CACHE(1);
         break;
+#endif
+#if STORAGES_COUNT > 2
     case 2:
         VECTOR_STORAGE_LOAD_CACHE(2);
         break;
+#endif
+#if STORAGES_COUNT > 3
     case 3:
         VECTOR_STORAGE_LOAD_CACHE(3);
         break;
+#endif
+#if STORAGES_COUNT > 4
+    case 4:
+        VECTOR_STORAGE_LOAD_CACHE(4);
+        break;
+#endif
+#if STORAGES_COUNT > 5
+    case 5:
+        VECTOR_STORAGE_LOAD_CACHE(5);
+        break;
+#endif
+#if STORAGES_COUNT > 6
+    case 6:
+        VECTOR_STORAGE_LOAD_CACHE(6);
+        break;
+#endif
+#if STORAGES_COUNT > 7
+    case 7:
+        VECTOR_STORAGE_LOAD_CACHE(7);
+        break;
+#endif
     }
+#endif
 }
 
 float similarity(uint a) {
     float result = 0.0;
-    uint d = DIM / 4;
-    uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOCATION_ID;
-    uint storage_index_a = a % STORAGES_COUNT;
-
-    switch (storage_index_a) {
+#if STORAGES_COUNT == 1
+    uint index = a * DIM + gl_GlobalInvocationID.x;
+    VECTOR_STORAGE_SCORE_SUBGROUP(0);
+#else
+    uint index = (a % STORAGE_SIZE) * DIM + gl_GlobalInvocationID.x;
+    uint storage_index = a / STORAGE_SIZE;
+    switch (storage_index) {
+#if STORAGES_COUNT > 0
     case 0:
         VECTOR_STORAGE_SCORE_SUBGROUP(0);
         break;
+#endif
+#if STORAGES_COUNT > 1
     case 1:
         VECTOR_STORAGE_SCORE_SUBGROUP(1);
         break;
+#endif
+#if STORAGES_COUNT > 2
     case 2:
         VECTOR_STORAGE_SCORE_SUBGROUP(2);
         break;
+#endif
+#if STORAGES_COUNT > 3
     case 3:
         VECTOR_STORAGE_SCORE_SUBGROUP(3);
         break;
+#endif
+#if STORAGES_COUNT > 4
+    case 4:
+        VECTOR_STORAGE_SCORE_SUBGROUP(4);
+        break;
+#endif
+#if STORAGES_COUNT > 5
+    case 5:
+        VECTOR_STORAGE_SCORE_SUBGROUP(5);
+        break;
+#endif
+#if STORAGES_COUNT > 6
+    case 6:
+        VECTOR_STORAGE_SCORE_SUBGROUP(6);
+        break;
+#endif
+#if STORAGES_COUNT > 7
+    case 7:
+        VECTOR_STORAGE_SCORE_SUBGROUP(7);
+        break;
+#endif
     }
+#endif
+
+    // calculate the sum of the scores in the subgroup
+    float subgroup_result = subgroupAdd(result);
+    if (subgroupElect()) {
+        // store subgroup result in the merge buffer
+        merge_buffer[gl_SubgroupID] = ScoredPoint(0, subgroup_result);
+    }
+    memoryBarrier();
+
+    // merge the subgroup results
+    if (gl_SubgroupID == 0) {
+        float s = gl_SubgroupID < gl_NumSubgroups ? merge_buffer[gl_SubgroupInvocationID].score : 0.0;
+        float group_result = subgroupAdd(s);
+        if (subgroupElect()) {
+            merge_buffer[0] = ScoredPoint(0, group_result);
+        }
+    }
+    barrier();
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
-    float xor_product = subgroupAdd(result);
-    float zeros_count = float(d * 32) - xor_product;
+    float xor_product = merge_buffer[0].score;
+    float zeros_count = float(DIM * 8) - xor_product;
     return zeros_count - xor_product;
 #else
-    return subgroupAdd(result);
+    return merge_buffer[0].score;
 #endif
 }
 

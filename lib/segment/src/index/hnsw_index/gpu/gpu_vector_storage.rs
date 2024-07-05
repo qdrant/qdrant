@@ -10,17 +10,18 @@ use crate::vector_storage::quantized::quantized_vectors::{
 };
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
-pub const ALIGNMENT: usize = 32 * 4;
-pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
-pub const STORAGES_COUNT: usize = 4;
+pub const UPLOAD_CHUNK_SIZE: usize = 128 * 1024 * 1024;
 
 pub struct GpuVectorStorage {
     pub device: Arc<gpu::Device>,
     pub vectors_buffer: Vec<Arc<gpu::Buffer>>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
+    pub working_group_size: usize,
     pub dim: usize,
     pub count: usize,
+    pub storages_count: usize,
+    pub storage_size: usize,
     pub element_type: gpu::GpuVectorStorageElementType,
 }
 
@@ -66,7 +67,7 @@ impl GpuVectorStorage {
                 log::warn!("GPU does not support product quantization, use original vector data");
                 Self::new_from_vector_storage(device, vector_storage, force_half_precision)
             }
-            QuantizedVectorStorage::BinaryRam(_) => {
+            QuantizedVectorStorage::BinaryRam(_) | QuantizedVectorStorage::BinaryMmap(_) => {
                 let first_vector = vector_storage.get_vector(0);
                 // TODO(gpu): remove unwrap
                 let first_dense: &[VectorElementType] =
@@ -86,30 +87,6 @@ impl GpuVectorStorage {
                             if *v > 0.0 {
                                 binary[i / 8] |= 1u8 << (i % 8);
                             }
-                        }
-                        Cow::Owned(binary)
-                    },
-                )
-            }
-            QuantizedVectorStorage::BinaryMmap(_) => {
-                let first_vector = vector_storage.get_vector(0);
-                // TODO(gpu): remove unwrap
-                let first_dense: &[VectorElementType] =
-                    first_vector.as_vec_ref().try_into().unwrap();
-                let bits_per_read = device.subgroup_size() * std::mem::size_of::<u32>() * 8;
-                let bits_count = first_dense.len().div_ceil(bits_per_read) * bits_per_read;
-                let u32_count = bits_count / 32;
-                Self::new_typed::<VectorElementTypeByte>(
-                    device,
-                    gpu::GpuVectorStorageElementType::Binary,
-                    vector_storage.total_vector_count(),
-                    |id| {
-                        let vector = vector_storage.get_vector(id);
-                        let dense: &[VectorElementType] = vector.as_vec_ref().try_into().unwrap();
-                        let mut binary = vec![0u8; u32_count * std::mem::size_of::<u32>()];
-                        for (i, v) in dense.iter().enumerate() {
-                            let bit = if *v > 0.0 { 1 } else { 0 };
-                            binary[i / 8] |= bit << (i % 8);
                         }
                         Cow::Owned(binary)
                     },
@@ -264,106 +241,103 @@ impl GpuVectorStorage {
         let timer = std::time::Instant::now();
 
         let dim = get_vector(0).len();
+        let dim = dim.div_ceil(device.subgroup_size()) * device.subgroup_size();
+        let working_group_size = dim;
+        let vector_size_bytes = dim * std::mem::size_of::<TElement>();
 
-        let capacity = Self::get_capacity(dim);
-        let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<TElement>());
+        let vectors_in_max_buffer = device.max_buffer_size() / vector_size_bytes;
+        let storages_count = count.div_ceil(vectors_in_max_buffer);
+        // TODO(gpu) use constant and proper error
+        if storages_count > 8 {
+            return Err(gpu::GpuError::NotSupported);
+        }
 
-        let points_in_storage_count = Self::get_points_in_storage_count(count);
-        let vectors_buffer: Vec<Arc<gpu::Buffer>> = (0..STORAGES_COUNT)
-            .map(|_| -> gpu::GpuResult<Arc<gpu::Buffer>> {
+        let vectors_buffer: Vec<_> = (0..storages_count)
+            .map(|i| -> gpu::GpuResult<Arc<gpu::Buffer>> {
+                let vectors_in_buffer_count = if i == storages_count - 1 {
+                    count - vectors_in_max_buffer * i
+                } else {
+                    vectors_in_max_buffer
+                };
                 Ok(Arc::new(gpu::Buffer::new(
                     device.clone(),
                     gpu::BufferType::Storage,
-                    points_in_storage_count * capacity * std::mem::size_of::<TElement>(),
+                    vectors_in_buffer_count * vector_size_bytes,
                 )?))
             })
             .collect::<gpu::GpuResult<Vec<_>>>()?;
-        println!("Storage buffer size {}", vectors_buffer[0].size);
 
-        let mut upload_context = gpu::Context::new(device.clone());
+        let upload_vectors_capacity = UPLOAD_CHUNK_SIZE / vector_size_bytes;
+        // TODO(gpu): use proper error
+        if upload_vectors_capacity == 0 {
+            return Err(gpu::GpuError::NotSupported);
+        }
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            upload_points_count * capacity * std::mem::size_of::<TElement>(),
+            upload_vectors_capacity * vector_size_bytes,
         )?);
-        println!(
-            "Staging buffer size {}, upload_points_count = {}",
-            staging_buffer.size, upload_points_count
+        log::trace!(
+            "GPU vector storage staging buffer size {}, upload_vectors_capacity = {}",
+            staging_buffer.size,
+            upload_vectors_capacity
         );
 
-        println!("capacity = {}, count = {}", capacity, count);
-
+        let mut upload_context = gpu::Context::new(device.clone());
+        let mut start_point_id: PointOffsetType = 0;
         for (storage_index, vector_buffer) in vectors_buffer.iter().enumerate() {
-            let mut gpu_offset = 0;
+            let mut gpu_buffer_offset = 0;
             let mut upload_size = 0;
-            let mut upload_points = 0;
-            let mut extended_vector = vec![TElement::default(); capacity];
-            for point_id in 0..count {
-                if point_id % STORAGES_COUNT != storage_index {
-                    continue;
-                }
+            let mut extended_vector = vec![TElement::default(); dim];
 
-                let vector = get_vector(point_id as PointOffsetType);
+            let storage_points_count = (vector_buffer.size / vector_size_bytes) as PointOffsetType;
+            for point_id in start_point_id..start_point_id + storage_points_count {
+                let vector = get_vector(point_id);
                 extended_vector[..vector.len()].copy_from_slice(&vector);
-                staging_buffer.upload_slice(
-                    &extended_vector,
-                    upload_points * capacity * std::mem::size_of::<TElement>(),
-                );
-                upload_size += capacity * std::mem::size_of::<TElement>();
-                upload_points += 1;
-
-                if upload_points == upload_points_count {
+                staging_buffer.upload_slice(&extended_vector, upload_size);
+                upload_size += vector_size_bytes;
+                if upload_size / vector_size_bytes == upload_vectors_capacity {
                     upload_context.copy_gpu_buffer(
                         staging_buffer.clone(),
-                        vector_buffer.clone(),
+                        vectors_buffer[storage_index].clone(),
                         0,
-                        gpu_offset,
+                        gpu_buffer_offset,
                         upload_size,
                     );
                     upload_context.run();
                     upload_context.wait_finish();
-
-                    println!(
-                        "Uploaded {} vectors, {} MB",
-                        upload_points,
-                        upload_size / 1024 / 1024,
-                    );
-
-                    gpu_offset += upload_size;
+                    gpu_buffer_offset += upload_size;
                     upload_size = 0;
-                    upload_points = 0;
                 }
             }
-            if upload_points > 0 {
+            if upload_size > 0 {
                 upload_context.copy_gpu_buffer(
                     staging_buffer.clone(),
                     vectors_buffer[storage_index].clone(),
                     0,
-                    gpu_offset,
+                    gpu_buffer_offset,
                     upload_size,
                 );
                 upload_context.run();
                 upload_context.wait_finish();
-
-                println!(
-                    "Uploaded {} vectors, {} MB",
-                    upload_points,
-                    upload_size / 1024 / 1024,
-                );
             }
+            start_point_id += storage_points_count;
         }
 
-        println!(
+        log::debug!(
             "Upload vector data to GPU time = {:?}, vector data size {} MB, element type: {:?}",
             timer.elapsed(),
-            STORAGES_COUNT * points_in_storage_count * capacity * std::mem::size_of::<TElement>()
+            vectors_buffer
+                .iter()
+                .map(|buffer| buffer.size)
+                .sum::<usize>()
                 / 1024
                 / 1024,
             element_type,
         );
 
         let mut descriptor_set_layout_builder = gpu::DescriptorSetLayout::builder();
-        for i in 0..STORAGES_COUNT {
+        for i in 0..storages_count {
             descriptor_set_layout_builder = descriptor_set_layout_builder.add_storage_buffer(i);
         }
         let descriptor_set_layout = descriptor_set_layout_builder.build(device.clone());
@@ -381,18 +355,15 @@ impl GpuVectorStorage {
             vectors_buffer,
             descriptor_set_layout,
             descriptor_set,
-            dim: capacity,
+            dim,
             count,
+            storages_count,
+            // it's okay to use max size because if it's not too big,
+            // we use singe buffer and avoid this definition
+            storage_size: vectors_in_max_buffer,
+            working_group_size,
             element_type,
         })
-    }
-
-    pub fn get_capacity(dim: usize) -> usize {
-        dim + (ALIGNMENT - dim % ALIGNMENT) % ALIGNMENT
-    }
-
-    pub fn get_points_in_storage_count(num_vectors: usize) -> usize {
-        (num_vectors + (STORAGES_COUNT - num_vectors % STORAGES_COUNT)) / STORAGES_COUNT
     }
 }
 
@@ -511,13 +482,15 @@ mod tests {
             .build();
 
         let shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .build(),
         );
 
@@ -532,7 +505,7 @@ mod tests {
             pipeline,
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
-        context.dispatch(num_vectors, 1, 1);
+        context.dispatch(1, num_vectors, 1);
 
         let timer = std::time::Instant::now();
         context.run();
@@ -662,12 +635,14 @@ mod tests {
             .build();
 
         let shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), gpu_vector_storage.working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_vector_storage.comp"))
                 .with_element_type(gpu_vector_storage.element_type)
                 .with_dim(gpu_vector_storage.dim)
+                .with_storages_count(gpu_vector_storage.storages_count)
+                .with_storage_size(gpu_vector_storage.storage_size)
                 .with_layout(gpu::LayoutSetBinding::VectorStorage, 1)
                 .build(),
         );
@@ -683,7 +658,7 @@ mod tests {
             pipeline,
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
-        context.dispatch(num_vectors, 1, 1);
+        context.dispatch(1, num_vectors, 1);
 
         let timer = std::time::Instant::now();
         context.run();

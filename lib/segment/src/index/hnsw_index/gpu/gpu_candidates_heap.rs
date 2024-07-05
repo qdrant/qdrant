@@ -84,7 +84,7 @@ mod tests {
             GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
         let shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone())
+            gpu::ShaderBuilder::new(device.clone(), 32)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_candidates_heap.comp"))
