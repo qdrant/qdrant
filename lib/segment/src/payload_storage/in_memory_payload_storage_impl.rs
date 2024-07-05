@@ -79,7 +79,6 @@ mod tests {
     use super::*;
     use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-    use crate::json_path::path;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
 
@@ -105,9 +104,9 @@ mod tests {
             should: None,
             min_should: None,
             must: Some(vec![
-                Condition::Field(FieldCondition::new_match(path("age"), 43.into())),
+                Condition::Field(FieldCondition::new_match(JsonPath::new("age"), 43.into())),
                 Condition::Field(FieldCondition::new_match(
-                    path("name"),
+                    JsonPath::new("name"),
                     "John Doe".to_string().into(),
                 )),
             ]),

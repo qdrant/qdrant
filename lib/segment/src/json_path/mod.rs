@@ -28,6 +28,16 @@ pub enum JsonPathItem {
 }
 
 impl JsonPath {
+    /// Create a new `JsonPath` from a string. For production code, use `FromStr::parse` instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the string is not a valid path. Thus, this function should only be used in tests.
+    #[cfg(feature = "testing")]
+    pub fn new(p: &str) -> Self {
+        p.parse().unwrap()
+    }
+
     pub fn value_get<'a>(
         &self,
         json_map: &'a serde_json::Map<String, Value>,
@@ -478,39 +488,29 @@ impl Anonymize for JsonPath {
     }
 }
 
-/// Create a new `JsonPath` from a string.
-///
-/// # Panics
-///
-/// Panics if the string is not a valid path. Thus, this function should only be used in tests.
-#[cfg(feature = "testing")]
-pub fn path(p: &str) -> JsonPath {
-    p.parse().unwrap()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_is_affected_by_value_set() {
-        assert!(!path("a")
+        assert!(!JsonPath::new("a")
             .is_affected_by_value_set(&serde_json::from_str(r#"{"b": 1, "c": 1}"#).unwrap(), None));
-        assert!(path("a")
+        assert!(JsonPath::new("a")
             .is_affected_by_value_set(&serde_json::from_str(r#"{"a": 1, "b": 1}"#).unwrap(), None));
-        assert!(path("a.x")
+        assert!(JsonPath::new("a.x")
             .is_affected_by_value_set(&serde_json::from_str(r#"{"a": {"y": 1}}"#).unwrap(), None));
-        assert!(!path("a.x")
+        assert!(!JsonPath::new("a.x")
             .is_affected_by_value_set(&serde_json::from_str(r#"{"b": {"x": 1}}"#).unwrap(), None));
     }
 
     #[test]
     fn test_is_affected_by_value_remove() {
-        assert!(path("a").is_affected_by_value_remove(&path("a")));
-        assert!(!path("a").is_affected_by_value_remove(&path("b")));
-        assert!(path("a.b").is_affected_by_value_remove(&path("a")));
-        assert!(path("a.b").is_affected_by_value_remove(&path("a.b")));
-        assert!(path("a.b").is_affected_by_value_remove(&path("a.b.c")));
+        assert!(JsonPath::new("a").is_affected_by_value_remove(&JsonPath::new("a")));
+        assert!(!JsonPath::new("a").is_affected_by_value_remove(&JsonPath::new("b")));
+        assert!(JsonPath::new("a.b").is_affected_by_value_remove(&JsonPath::new("a")));
+        assert!(JsonPath::new("a.b").is_affected_by_value_remove(&JsonPath::new("a.b")));
+        assert!(JsonPath::new("a.b").is_affected_by_value_remove(&JsonPath::new("a.b.c")));
     }
 
     /// This test checks that `is_affected_by_value_set` and `is_affected_by_value_remove` don't

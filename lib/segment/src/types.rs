@@ -2332,7 +2332,6 @@ mod tests {
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
     use crate::common::utils::check_is_empty;
-    use crate::json_path::path;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -2554,7 +2553,7 @@ mod tests {
     fn test_serialize_query() {
         let filter = Filter {
             must: Some(vec![Condition::Field(FieldCondition::new_match(
-                path("hello"),
+                JsonPath::new("hello"),
                 "world".to_owned().into(),
             ))]),
             must_not: None,
@@ -3222,22 +3221,28 @@ mod tests {
         "#,
         )
         .unwrap();
-        let removed = path("b.c").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.c").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.i[0].j").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e.i[0].j")
+            .value_remove(&mut payload)
+            .into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.i[].k").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e.i[].k")
+            .value_remove(&mut payload)
+            .into_vec();
         assert_eq!(
             removed,
             vec![Value::Number(2.into()), Value::Number(4.into())]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.i[]").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e.i[]")
+            .value_remove(&mut payload)
+            .into_vec();
         assert_eq!(
             removed,
             vec![Value::Array(vec![
@@ -3250,30 +3255,30 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.i").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e.i").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.f").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e.f").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Array(vec![1.into(), 2.into(), 3.into()])]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path("k").value_remove(&mut payload);
+        let removed = JsonPath::new("k").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e.l").value_remove(&mut payload);
+        let removed = JsonPath::new("b.e.l").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = path("a").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("a").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = path("b.e").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b.e").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![
@@ -3284,7 +3289,7 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = path("b").value_remove(&mut payload).into_vec();
+        let removed = JsonPath::new("b").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]
@@ -3310,14 +3315,14 @@ mod tests {
     #[test]
     fn merge_filters() {
         let condition1 = Condition::Field(FieldCondition::new_match(
-            path("summary"),
+            JsonPath::new("summary"),
             Match::new_text("Berlin"),
         ));
         let mut this = Filter::new_must(condition1.clone());
         this.should = Some(vec![condition1.clone()]);
 
         let condition2 = Condition::Field(FieldCondition::new_match(
-            path("city"),
+            JsonPath::new("city"),
             Match::new_value(ValueVariants::Keyword("Osaka".into())),
         ));
         let other = Filter::new_must(condition2.clone());
@@ -3361,7 +3366,8 @@ mod tests {
         });
 
         // include root & nested
-        let selector = PayloadSelector::new_include(vec![path("a"), path("b.e.f")]);
+        let selector =
+            PayloadSelector::new_include(vec![JsonPath::new("a"), JsonPath::new("b.e.f")]);
         let payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3386,7 +3392,7 @@ mod tests {
         });
 
         // handles duplicates
-        let selector = PayloadSelector::new_include(vec![path("a"), path("a")]);
+        let selector = PayloadSelector::new_include(vec![JsonPath::new("a"), JsonPath::new("a")]);
         let payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3395,7 +3401,7 @@ mod tests {
         assert_eq!(payload, expected.into());
 
         // ignore path that points to array
-        let selector = PayloadSelector::new_include(vec![path("b.f[0]")]);
+        let selector = PayloadSelector::new_include(vec![JsonPath::new("b.f[0]")]);
         let payload = selector.process(payload);
 
         // nothing included
@@ -3421,7 +3427,7 @@ mod tests {
             }
         });
 
-        let selector = PayloadSelector::new_include(vec![path("b.c")]);
+        let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c")]);
         let selected_payload = selector.process(payload.clone().into());
 
         let expected = json!({
@@ -3441,7 +3447,7 @@ mod tests {
         assert_eq!(selected_payload, expected.into());
 
         // with explicit array traversal ([] notation)
-        let selector = PayloadSelector::new_include(vec![path("b.c[].d")]);
+        let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c[].d")]);
         let selected_payload = selector.process(payload.clone().into());
 
         let expected = json!({
@@ -3455,7 +3461,7 @@ mod tests {
         assert_eq!(selected_payload, expected.into());
 
         // shortcuts implicit array traversal
-        let selector = PayloadSelector::new_include(vec![path("b.c.d")]);
+        let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c.d")]);
         let selected_payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3492,7 +3498,8 @@ mod tests {
         });
 
         // exclude
-        let selector = PayloadSelector::new_exclude(vec![path("a"), path("b.e.f")]);
+        let selector =
+            PayloadSelector::new_exclude(vec![JsonPath::new("a"), JsonPath::new("b.e.f")]);
         let payload = selector.process(payload.into());
 
         // root removal & nested removal
@@ -3530,7 +3537,7 @@ mod tests {
         });
 
         // handles duplicates
-        let selector = PayloadSelector::new_exclude(vec![path("a"), path("a")]);
+        let selector = PayloadSelector::new_exclude(vec![JsonPath::new("a"), JsonPath::new("a")]);
         let payload = selector.process(payload.into());
 
         // single removal
@@ -3543,7 +3550,7 @@ mod tests {
         assert_eq!(payload, expected.into());
 
         // ignore path that points to array
-        let selector = PayloadSelector::new_exclude(vec![path("b.f[0]")]);
+        let selector = PayloadSelector::new_exclude(vec![JsonPath::new("b.f[0]")]);
 
         let payload = selector.process(payload);
 

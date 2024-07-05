@@ -13,7 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::VectorIndex;
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -55,7 +55,11 @@ fn test_batch_and_single_request_equivalency() {
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
     segment
-        .create_field_index(0, &path(int_key), Some(&PayloadSchemaType::Integer.into()))
+        .create_field_index(
+            0,
+            &JsonPath::new(int_key),
+            Some(&PayloadSchemaType::Integer.into()),
+        )
         .unwrap();
 
     for n in 0..num_vectors {
@@ -80,7 +84,7 @@ fn test_batch_and_single_request_equivalency() {
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            path(int_key),
+            JsonPath::new(int_key),
             payload_value.into(),
         )));
 
@@ -168,7 +172,7 @@ fn test_batch_and_single_request_equivalency() {
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            path(int_key),
+            JsonPath::new(int_key),
             payload_value.into(),
         )));
 
