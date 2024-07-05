@@ -3,7 +3,6 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use parking_lot::Mutex;
@@ -16,7 +15,7 @@ use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    QueryScrollRequestInternal,
+    QueryScrollRequestInternal, ScrollOrder,
 };
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, Source,
@@ -230,7 +229,7 @@ impl LocalShard {
                     filter: Some(filter),
                     with_payload,
                     with_vector,
-                    order_by: Some(OrderByInterface::Struct(order_by)),
+                    scroll_order: ScrollOrder::ByField(order_by),
                 };
 
                 self.query_scroll_batch(

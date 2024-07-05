@@ -14,6 +14,8 @@ use io::storage_version::{StorageVersion, VERSION_FILE};
 use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use rocksdb::DB;
 use tar::Builder;
 use uuid::Uuid;
@@ -719,6 +721,15 @@ impl Segment {
             .collect()
     }
 
+    fn read_by_random_id(&self, limit: usize) -> Vec<PointIdType> {
+        self.id_tracker
+            .borrow()
+            .iter_random()
+            .map(|x| x.0)
+            .take(limit)
+            .collect()
+    }
+
     pub fn filtered_read_by_index(
         &self,
         offset: Option<PointIdType>,
@@ -876,6 +887,22 @@ impl Segment {
             .take(limit.unwrap_or(usize::MAX))
             .collect();
         Ok(reads)
+    }
+
+    pub fn filtered_read_by_random_stream(
+        &self,
+        limit: usize,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let filter_context = payload_index.filter_context(condition);
+        self.id_tracker
+            .borrow()
+            .iter_random()
+            .filter(move |(_, internal_id)| filter_context.check(*internal_id))
+            .map(|(external_id, _)| external_id)
+            .take(limit)
+            .collect()
     }
 
     /// Check consistency of the segment's data and repair it if possible.
@@ -1387,6 +1414,22 @@ impl SegmentEntry for Segment {
                     self.filtered_read_by_index_ordered(order_by, limit, filter)
                 } else {
                     self.filtered_read_by_value_stream(order_by, limit, Some(filter))
+                }
+            }
+        }
+    }
+
+    fn read_random_filtered(&self, limit: usize, filter: Option<&Filter>) -> Vec<PointIdType> {
+        match filter {
+            None => self.read_by_random_id(limit),
+            Some(condition) => {
+                if self.should_pre_filter(condition, Some(limit)) {
+                    let mut points = self.filtered_read_by_index(None, Some(limit), condition);
+                    let mut rng = thread_rng();
+                    points.shuffle(&mut rng);
+                    points
+                } else {
+                    self.filtered_read_by_random_stream(limit, condition)
                 }
             }
         }

@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
+use rand::seq::IteratorRandom;
 use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -13,7 +14,7 @@ use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
-    CollectionError, CollectionResult, QueryScrollRequestInternal, Record,
+    CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollOrder,
 };
 
 impl LocalShard {
@@ -51,7 +52,7 @@ impl LocalShard {
             limit,
             with_vector,
             filter,
-            order_by,
+            scroll_order,
             with_payload,
         } = request;
 
@@ -59,10 +60,8 @@ impl LocalShard {
 
         let offset_id = None;
 
-        let order_by = order_by.clone().map(OrderBy::from);
-
-        let point_results = match order_by {
-            None => self
+        let point_results = match scroll_order {
+            ScrollOrder::ById => self
                 .scroll_by_id(
                     offset_id,
                     limit,
@@ -83,7 +82,7 @@ impl LocalShard {
                     order_value: None,
                 })
                 .collect(),
-            Some(order_by) => {
+            ScrollOrder::ByField(order_by) => {
                 let (records, values) = self
                     .scroll_by_field(
                         limit,
@@ -91,7 +90,7 @@ impl LocalShard {
                         with_vector,
                         filter.as_ref(),
                         search_runtime_handle,
-                        &order_by,
+                        order_by,
                     )
                     .await?;
 
@@ -106,6 +105,30 @@ impl LocalShard {
                         vector: record.vector,
                         shard_key: record.shard_key,
                         order_value: Some(value),
+                    })
+                    .collect()
+            }
+            ScrollOrder::Random => {
+                let records = self
+                    .scroll_randomly(
+                        limit,
+                        with_payload,
+                        with_vector,
+                        filter.as_ref(),
+                        search_runtime_handle,
+                    )
+                    .await?;
+
+                records
+                    .into_iter()
+                    .map(|record| ScoredPoint {
+                        id: record.id,
+                        version: 0,
+                        score: 0.0,
+                        payload: record.payload,
+                        vector: record.vector,
+                        shard_key: record.shard_key,
+                        order_value: None,
                     })
                     .collect()
             }
@@ -218,5 +241,48 @@ impl LocalShard {
             .collect();
 
         Ok((ordered_records, values))
+    }
+
+    async fn scroll_randomly(
+        &self,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Record>> {
+        let segments = self.segments();
+
+        let (non_appendable, appendable) = segments.read().split_segments();
+
+        let read_filtered = |segment: LockedSegment| {
+            let filter = filter.cloned();
+
+            search_runtime_handle.spawn_blocking(move || {
+                segment
+                    .get()
+                    .read()
+                    .read_random_filtered(limit, filter.as_ref())
+            })
+        };
+
+        let all_reads = try_join_all(
+            non_appendable
+                .into_iter()
+                .map(read_filtered)
+                .chain(appendable.into_iter().map(read_filtered)),
+        )
+        .await?;
+
+        let point_ids = all_reads
+            .into_iter()
+            .flatten()
+            .choose_multiple(&mut rand::thread_rng(), limit);
+
+        let with_payload = WithPayload::from(with_payload_interface);
+        let records_map =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+        Ok(records_map.into_values().collect())
     }
 }

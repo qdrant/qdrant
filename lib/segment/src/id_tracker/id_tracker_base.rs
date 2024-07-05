@@ -67,6 +67,8 @@ pub trait IdTracker: fmt::Debug {
     /// - excludes removed points
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
+
     /// Iterate over internal IDs (offsets)
     ///
     /// - excludes removed points
@@ -243,6 +245,13 @@ impl IdTracker for IdTrackerEnum {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_ids(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_ids(),
+        }
+    }
+
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_random(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_random(),
         }
     }
 
