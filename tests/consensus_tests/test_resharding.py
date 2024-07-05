@@ -316,12 +316,12 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         # Wait for resharding to start
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
+        # Continously assert point count on all peers, must be stable
+        # Stop once all peers reported completed resharding
         while True:
-            # Continously assert point count on all peers, must be stable
             for uri in peer_api_uris:
                 assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
-            # Only stop looping if resharding completed on all nodes
             all_completed = True
             for uri in peer_api_uris:
                 if not check_collection_resharding_operations_count(uri, COLLECTION_NAME, 0):

@@ -356,7 +356,6 @@ impl Collection {
         let shards = shards_holder.select_shards(shard_selection)?;
 
         // Resharding filter to apply when resharding is active
-        // Applied to each shard request separately, because the resharding shard must not be filtered
         let resharding_filter = shards_holder.resharding_filter();
         let reshard_shard_id = shards_holder
             .resharding_state
@@ -364,22 +363,24 @@ impl Collection {
             .as_ref()
             .map(|state| state.shard_id);
 
+        // Create filtered request, which has resharding filter applied
+        // Should be used on all shards, except the new resharding shard
+        let mut filtered_request = request.clone();
+        merge_filters(&mut filtered_request.filter, resharding_filter.clone());
+        let filtered_request = Arc::new(filtered_request);
+
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|(shard, _shard_key)| {
-                let mut request = request.clone();
+                // Take the filtered request, or the original request for the resharding shard
+                let request = if Some(shard.shard_id) == reshard_shard_id {
+                    Arc::new(request.clone())
+                } else {
+                    filtered_request.clone()
+                };
 
-                // Merge resharding filter on all but the new resharding shard
-                if Some(shard.shard_id) != reshard_shard_id {
-                    merge_filters(&mut request.filter, resharding_filter.clone());
-                }
-
-                shard.count(
-                    Arc::new(request),
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                )
+                shard.count(request, read_consistency, shard_selection.is_shard_id())
             })
             .collect();
 
