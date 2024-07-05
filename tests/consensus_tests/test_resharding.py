@@ -321,6 +321,8 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         while True:
             for uri in peer_api_uris:
                 assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
+                cardinality_count = get_collection_point_count(uri, COLLECTION_NAME, exact=False)
+                assert cardinality_count >= num_points / 2 and cardinality_count < num_points * 2
 
             all_completed = True
             for uri in peer_api_uris:
