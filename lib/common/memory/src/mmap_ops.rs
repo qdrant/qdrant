@@ -121,6 +121,7 @@ where
         instant.elapsed()
     );
 }
+
 pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
 
@@ -137,6 +138,24 @@ pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     );
 
     unsafe { &*(v.as_ptr() as *const T) }
+}
+
+pub fn transmute_from_u8_mut<T>(v: &mut [u8]) -> &mut T {
+    debug_assert_eq!(v.len(), size_of::<T>());
+
+    debug_assert_eq!(
+        v.as_ptr().align_offset(align_of::<T>()),
+        0,
+        "transmuting byte slice {:p} into {}: \
+         required alignment is {} bytes, \
+         byte slice misaligned by {} bytes",
+        v.as_ptr(),
+        std::any::type_name::<T>(),
+        align_of::<T>(),
+        v.as_ptr().align_offset(align_of::<T>()),
+    );
+
+    unsafe { &mut *(v.as_mut_ptr() as *mut T) }
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
