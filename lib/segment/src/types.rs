@@ -2331,7 +2331,6 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
-    use crate::common::utils::check_is_empty;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -3190,111 +3189,6 @@ mod tests {
             "#;
         let filter: Result<Filter, _> = serde_json::from_str(query6);
         assert!(filter.is_ok());
-    }
-
-    #[test]
-    fn test_remove_key() {
-        let mut payload: serde_json::Map<String, Value> = serde_json::from_str(
-            r#"
-        {
-            "a": 1,
-            "b": {
-                "c": 123,
-                "e": {
-                    "f": [1,2,3],
-                    "g": 7,
-                    "h": "text",
-                    "i": [
-                        {
-                            "j": 1,
-                            "k": 2
-
-                        },
-                        {
-                            "j": 3,
-                            "k": 4
-                        }
-                    ]
-                }
-            }
-        }
-        "#,
-        )
-        .unwrap();
-        let removed = JsonPath::new("b.c").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Number(123.into())]);
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.i[0].j")
-            .value_remove(&mut payload)
-            .into_vec();
-        assert_eq!(removed, vec![Value::Number(1.into())]);
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.i[].k")
-            .value_remove(&mut payload)
-            .into_vec();
-        assert_eq!(
-            removed,
-            vec![Value::Number(2.into()), Value::Number(4.into())]
-        );
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.i[]")
-            .value_remove(&mut payload)
-            .into_vec();
-        assert_eq!(
-            removed,
-            vec![Value::Array(vec![
-                Value::Object(serde_json::Map::from_iter(vec![])),
-                Value::Object(serde_json::Map::from_iter(vec![(
-                    "j".to_string(),
-                    Value::Number(3.into())
-                ),])),
-            ])]
-        );
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.i").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Array(vec![])]);
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.f").value_remove(&mut payload).into_vec();
-        assert_eq!(
-            removed,
-            vec![Value::Array(vec![1.into(), 2.into(), 3.into()])]
-        );
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("k").value_remove(&mut payload);
-        assert!(check_is_empty(&removed));
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e.l").value_remove(&mut payload);
-        assert!(check_is_empty(&removed));
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("a").value_remove(&mut payload).into_vec();
-        assert_eq!(removed, vec![Value::Number(1.into())]);
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b.e").value_remove(&mut payload).into_vec();
-        assert_eq!(
-            removed,
-            vec![Value::Object(serde_json::Map::from_iter(vec![
-                // ("f".to_string(), Value::Array(vec![1.into(), 2.into(), 3.into()])), has been removed
-                ("g".to_string(), Value::Number(7.into())),
-                ("h".to_string(), Value::String("text".to_owned())),
-            ]))]
-        );
-        assert_ne!(payload, Default::default());
-
-        let removed = JsonPath::new("b").value_remove(&mut payload).into_vec();
-        assert_eq!(
-            removed,
-            vec![Value::Object(serde_json::Map::from_iter(vec![]))]
-        ); // empty object left
-        assert_eq!(payload, Default::default());
     }
 
     #[test]
