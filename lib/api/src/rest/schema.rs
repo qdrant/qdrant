@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
-use segment::json_path::{JsonPath, JsonPathInterface};
+use segment::json_path::{JsonPath, JsonPathInterface, JsonPathV2};
 use segment::types::{Filter, Payload, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -171,8 +172,13 @@ pub enum NamedVectorStruct {
     // No support for multi-dense vectors in search
 }
 
+fn order_by_interface_example() -> OrderByInterface {
+    OrderByInterface::Key(JsonPathV2::from_str("timestamp").unwrap())
+}
+
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(untagged)]
+#[schemars(example = "order_by_interface_example")]
 pub enum OrderByInterface {
     Key(JsonPath),
     Struct(OrderBy),

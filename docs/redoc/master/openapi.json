@@ -7771,7 +7771,8 @@
           {
             "$ref": "#/components/schemas/OrderBy"
           }
-        ]
+        ],
+        "example": "timestamp"
       },
       "OrderBy": {
         "type": "object",
