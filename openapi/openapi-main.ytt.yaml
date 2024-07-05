@@ -676,6 +676,43 @@ paths:
 
       responses: #@ response(array(reference("QueryResponse")))
 
+  /collections/{collection_name}/points/query/groups:
+    post:
+      tags:
+        - points
+      summary: Query points, grouped by a given payload field
+      description: Universally query points, grouped by a given payload field
+      operationId: query_points_groups
+      requestBody:
+        description: Describes the query to make to the collection
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryGroupsRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to query
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+
+      responses: #@ response(reference("GroupsResult"))
+
 components:
   securitySchemes:
     api-key:
