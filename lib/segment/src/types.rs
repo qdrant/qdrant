@@ -2332,7 +2332,7 @@ mod tests {
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
     use crate::common::utils::check_is_empty;
-    use crate::json_path::{path, JsonPathString};
+    use crate::json_path::path;
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -3195,7 +3195,6 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        test_remove_key_impl::<JsonPathString>();
         // TODO: test_remove_key_impl::<JsonPathV2>();
     }
 

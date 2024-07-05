@@ -121,7 +121,7 @@ mod jsonpath_tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::json_path::{path, JsonPathInterface, JsonPathString, JsonPathV2};
+    use crate::json_path::{path, JsonPathInterface, JsonPathV2};
 
     fn json(str: &str) -> serde_json::Map<String, Value> {
         serde_json::from_str(str).unwrap()
@@ -849,9 +849,6 @@ mod jsonpath_tests {
             assert_eq!(path::<P>("").head(), "");
         }
     }
-
-    #[instantiate_tests(<JsonPathString>)]
-    mod string {}
 
     #[instantiate_tests(<JsonPathV2>)]
     mod v2 {}
