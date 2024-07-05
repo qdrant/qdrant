@@ -38,6 +38,7 @@ impl JsonPath {
         p.parse().unwrap()
     }
 
+    /// Get values at a given JSON path from a JSON map.
     pub fn value_get<'a>(
         &self,
         json_map: &'a serde_json::Map<String, Value>,
@@ -49,6 +50,7 @@ impl JsonPath {
         result
     }
 
+    /// Set values at a given JSON path in a JSON map.
     pub fn value_set<'a>(
         path: Option<&Self>,
         dest: &'a mut serde_json::Map<String, Value>,
@@ -61,6 +63,7 @@ impl JsonPath {
         }
     }
 
+    /// Remove values at a given JSON path from a JSON map. Returns values that were removed.
     pub fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
         let mut result = MultiValue::new();
         if let Some((rest1, restn)) = self.rest.split_first() {
@@ -73,6 +76,7 @@ impl JsonPath {
         result
     }
 
+    /// Filter values in a JSON map based on a predicate.
     pub fn value_filter(
         json_map: &serde_json::Map<String, Value>,
         filter: impl Fn(&Self, &Value) -> bool,
@@ -92,6 +96,8 @@ impl JsonPath {
         new_map
     }
 
+    /// Remove the wildcard suffix from the path, if it exists.
+    /// E.g. `a.b[]` -> `a.b`.
     pub fn strip_wildcard_suffix(&self) -> Self {
         match self.rest.split_last() {
             Some((JsonPathItem::WildcardIndex, rest)) => JsonPath {
@@ -102,6 +108,7 @@ impl JsonPath {
         }
     }
 
+    /// If `self` starts with `prefix`, returns a new path with the prefix removed.
     pub fn strip_prefix(&self, prefix: &Self) -> Option<Self> {
         if self.first_key != prefix.first_key {
             return None;
@@ -135,6 +142,7 @@ impl JsonPath {
         }
     }
 
+    /// Extend the path with another path.
     pub fn extend(&self, other: &Self) -> Self {
         let mut rest = Vec::with_capacity(self.rest.len() + 1 + other.rest.len());
         rest.extend_from_slice(&self.rest);
@@ -146,6 +154,8 @@ impl JsonPath {
         }
     }
 
+    /// Returns a new path with an array key appended to the end.
+    /// E.g. `a.b` -> `a.b[]`.
     pub fn array_key(&self) -> Self {
         let mut result = JsonPath {
             first_key: self.first_key.clone(),
@@ -158,11 +168,17 @@ impl JsonPath {
         result
     }
 
+    /// Check if a path is included in a list of patterns.
+    ///
+    /// Basically, it checks if either the pattern or path is a prefix of the other.
     pub fn check_include_pattern(&self, pattern: &Self) -> bool {
         self.first_key == pattern.first_key
             && self.rest.iter().zip(&pattern.rest).all(|(a, b)| a == b)
     }
 
+    /// Check if a path should be excluded by a pattern.
+    ///
+    /// Basically, it checks if pattern is a prefix of path, but not the other way around.
     pub fn check_exclude_pattern(&self, pattern: &Self) -> bool {
         self.first_key == pattern.first_key && pattern.rest.starts_with(&self.rest)
     }
@@ -170,9 +186,7 @@ impl JsonPath {
     pub fn extend_or_new(base: Option<&Self>, other: &Self) -> Self {
         base.map_or_else(|| other.clone(), |base| base.extend(other))
     }
-}
 
-impl JsonPath {
     /// Check if a path is a compatible prefix of another path or vice versa.
     pub fn compatible(&self, other: &Self) -> bool {
         if self.first_key != other.first_key {
