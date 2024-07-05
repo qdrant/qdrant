@@ -824,13 +824,6 @@ mod jsonpath_tests {
             .unwrap()
         );
     }
-
-    #[test]
-    fn test_get_path_head() {
-        assert_eq!(path("a.b.c").head(), "a");
-        assert_eq!(path("a[0].b").head(), "a");
-        assert_eq!(path("a").head(), "a");
-    }
 }
 
 #[cfg(test)]

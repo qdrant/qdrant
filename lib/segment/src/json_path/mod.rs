@@ -82,10 +82,6 @@ impl JsonPath {
         new_map
     }
 
-    pub fn head(&self) -> &str {
-        &self.first_key
-    }
-
     pub fn strip_wildcard_suffix(&self) -> Self {
         match self.rest.split_last() {
             Some((JsonPathItem::WildcardIndex, rest)) => JsonPath {
