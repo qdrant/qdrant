@@ -1,4 +1,5 @@
 use std::any;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
@@ -25,9 +26,11 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
-use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::index::{
+    BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
+    KeywordIndexParams, TextIndexParams,
+};
 use crate::data_types::order_by::OrderValue;
-use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::VectorStructInternal;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -274,17 +277,10 @@ impl PayloadIndexInfo {
                 params: None,
                 points: points_count,
             },
-            PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
-                PayloadSchemaParams::Text(_) => PayloadIndexInfo {
-                    data_type: PayloadSchemaType::Text,
-                    params: Some(schema_params),
-                    points: points_count,
-                },
-                PayloadSchemaParams::Integer(_) => PayloadIndexInfo {
-                    data_type: PayloadSchemaType::Integer,
-                    params: Some(schema_params),
-                    points: points_count,
-                },
+            PayloadFieldSchema::FieldParams(schema_params) => PayloadIndexInfo {
+                data_type: schema_params.kind(),
+                params: Some(schema_params),
+                points: points_count,
             },
         }
     }
@@ -1160,20 +1156,49 @@ impl PayloadSchemaType {
     pub fn name(&self) -> &'static str {
         serde_variant::to_variant_name(&self).unwrap_or("unknown")
     }
+
+    pub fn expand(&self) -> PayloadSchemaParams {
+        match self {
+            Self::Keyword => PayloadSchemaParams::Keyword(KeywordIndexParams::default()),
+            Self::Integer => PayloadSchemaParams::Integer(IntegerIndexParams::default()),
+            Self::Float => PayloadSchemaParams::Float(FloatIndexParams::default()),
+            Self::Geo => PayloadSchemaParams::Geo(GeoIndexParams::default()),
+            Self::Text => PayloadSchemaParams::Text(TextIndexParams::default()),
+            Self::Bool => PayloadSchemaParams::Bool(BoolIndexParams::default()),
+            Self::Datetime => PayloadSchemaParams::Datetime(DatetimeIndexParams::default()),
+        }
+    }
 }
 
 /// Payload type with parameters
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadSchemaParams {
-    Text(TextIndexParams),
+    Keyword(KeywordIndexParams),
     Integer(IntegerIndexParams),
+    Float(FloatIndexParams),
+    Geo(GeoIndexParams),
+    Text(TextIndexParams),
+    Bool(BoolIndexParams),
+    Datetime(DatetimeIndexParams),
 }
 
 impl PayloadSchemaParams {
     /// Human readable type name
     pub fn name(&self) -> &'static str {
-        serde_variant::to_variant_name(&self).unwrap_or("unknown")
+        self.kind().name()
+    }
+
+    pub fn kind(&self) -> PayloadSchemaType {
+        match self {
+            PayloadSchemaParams::Keyword(_) => PayloadSchemaType::Keyword,
+            PayloadSchemaParams::Integer(_) => PayloadSchemaType::Integer,
+            PayloadSchemaParams::Float(_) => PayloadSchemaType::Float,
+            PayloadSchemaParams::Geo(_) => PayloadSchemaType::Geo,
+            PayloadSchemaParams::Text(_) => PayloadSchemaType::Text,
+            PayloadSchemaParams::Bool(_) => PayloadSchemaType::Bool,
+            PayloadSchemaParams::Datetime(_) => PayloadSchemaType::Datetime,
+        }
     }
 }
 
@@ -1185,22 +1210,10 @@ pub enum PayloadFieldSchema {
 }
 
 impl PayloadFieldSchema {
-    pub fn has_range_index(&self) -> bool {
+    pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
-
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
-            | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
-
-            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
-                range,
-                ..
-            })) => *range,
+            PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
+            PayloadFieldSchema::FieldParams(p) => Cow::Borrowed(p),
         }
     }
 
@@ -1223,20 +1236,15 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        let Some(params) = index_info.params else {
-            return Ok(PayloadFieldSchema::FieldType(index_info.data_type));
-        };
-
-        match (index_info.data_type, params) {
-            (PayloadSchemaType::Text, PayloadSchemaParams::Text(params)) => Ok(
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
-            ),
-            (PayloadSchemaType::Integer, PayloadSchemaParams::Integer(params)) => Ok(
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params)),
-            ),
-            (data_type, PayloadSchemaParams::Integer(_) | PayloadSchemaParams::Text(_)) => Err(
-                format!("Payload field with type {data_type:?} has unexpected params"),
-            ),
+        match index_info.params {
+            Some(params) if params.kind() == index_info.data_type => {
+                Ok(PayloadFieldSchema::FieldParams(params))
+            }
+            Some(_) => Err(format!(
+                "Payload field with type {:?} has unexpected params",
+                index_info.data_type,
+            )),
+            None => Ok(PayloadFieldSchema::FieldType(index_info.data_type)),
         }
     }
 }

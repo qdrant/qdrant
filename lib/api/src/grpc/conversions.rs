@@ -4,8 +4,10 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use itertools::Itertools;
-use segment::data_types::integer_index::IntegerIndexType;
-use segment::data_types::text_index::TextIndexType;
+use segment::data_types::index::{
+    BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
+    KeywordIndexType, TextIndexType,
+};
 use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
@@ -16,10 +18,11 @@ use uuid::Uuid;
 
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
-    raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
-    GeoLineString, GroupId, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
-    OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups, SearchPoints,
-    ShardKeySelector, SparseIndices, StartFrom, WithLookup,
+    raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
+    DatetimeIndexParams, DatetimeRange, Direction, FieldType, FloatIndexParams, GeoIndexParams,
+    GeoLineString, GroupId, KeywordIndexParams, LookupLocation, MultiVectorComparator,
+    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups,
+    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -207,21 +210,54 @@ impl From<(Instant, CollectionsResponse)> for ListCollectionsResponse {
     }
 }
 
-impl From<segment::data_types::text_index::TokenizerType> for TokenizerType {
-    fn from(tokenizer_type: segment::data_types::text_index::TokenizerType) -> Self {
+impl From<segment::data_types::index::TokenizerType> for TokenizerType {
+    fn from(tokenizer_type: segment::data_types::index::TokenizerType) -> Self {
         match tokenizer_type {
-            segment::data_types::text_index::TokenizerType::Prefix => TokenizerType::Prefix,
-            segment::data_types::text_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
-            segment::data_types::text_index::TokenizerType::Multilingual => {
-                TokenizerType::Multilingual
-            }
-            segment::data_types::text_index::TokenizerType::Word => TokenizerType::Word,
+            segment::data_types::index::TokenizerType::Prefix => TokenizerType::Prefix,
+            segment::data_types::index::TokenizerType::Whitespace => TokenizerType::Whitespace,
+            segment::data_types::index::TokenizerType::Multilingual => TokenizerType::Multilingual,
+            segment::data_types::index::TokenizerType::Word => TokenizerType::Word,
         }
     }
 }
 
-impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexParams {
-    fn from(params: segment::data_types::text_index::TextIndexParams) -> Self {
+impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams {
+    fn from(_params: segment::data_types::index::KeywordIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {})),
+        }
+    }
+}
+
+impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::index::IntegerIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
+                lookup: params.lookup,
+                range: params.range,
+            })),
+        }
+    }
+}
+
+impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
+    fn from(_params: segment::data_types::index::FloatIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {})),
+        }
+    }
+}
+
+impl From<segment::data_types::index::GeoIndexParams> for PayloadIndexParams {
+    fn from(_params: segment::data_types::index::GeoIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {})),
+        }
+    }
+}
+
+impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::index::TextIndexParams) -> Self {
         let tokenizer = TokenizerType::from(params.tokenizer);
         PayloadIndexParams {
             index_params: Some(IndexParams::TextIndexParams(TextIndexParams {
@@ -234,13 +270,18 @@ impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexPara
     }
 }
 
-impl From<segment::data_types::integer_index::IntegerIndexParams> for PayloadIndexParams {
-    fn from(params: segment::data_types::integer_index::IntegerIndexParams) -> Self {
+impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
+    fn from(_params: segment::data_types::index::BoolIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
-                lookup: params.lookup,
-                range: params.range,
-            })),
+            index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {})),
+        }
+    }
+}
+
+impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParams {
+    fn from(_params: segment::data_types::index::DatetimeIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {})),
         }
     }
 }
@@ -248,50 +289,112 @@ impl From<segment::data_types::integer_index::IntegerIndexParams> for PayloadInd
 impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
     fn from(schema: segment::types::PayloadIndexInfo) -> Self {
         PayloadSchemaInfo {
-            data_type: match schema.data_type {
-                segment::types::PayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
-                segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
-                segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
-                segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
-                segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
-                segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
-                segment::types::PayloadSchemaType::Datetime => PayloadSchemaType::Datetime,
-            }
-            .into(),
-            params: schema.params.map(|params| match params {
-                segment::types::PayloadSchemaParams::Text(text_index_params) => {
-                    text_index_params.into()
-                }
-                segment::types::PayloadSchemaParams::Integer(integer_params) => {
-                    integer_params.into()
-                }
-            }),
+            data_type: PayloadSchemaType::from(schema.data_type) as i32,
+            params: schema.params.map(|p| p.into()),
             points: Some(schema.points as u64),
         }
     }
 }
 
-impl TryFrom<TokenizerType> for segment::data_types::text_index::TokenizerType {
-    type Error = Status;
-    fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
-        match tokenizer_type {
-            TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
-            TokenizerType::Prefix => Ok(segment::data_types::text_index::TokenizerType::Prefix),
-            TokenizerType::Multilingual => {
-                Ok(segment::data_types::text_index::TokenizerType::Multilingual)
-            }
-            TokenizerType::Whitespace => {
-                Ok(segment::data_types::text_index::TokenizerType::Whitespace)
-            }
-            TokenizerType::Word => Ok(segment::data_types::text_index::TokenizerType::Word),
+impl From<segment::types::PayloadSchemaType> for PayloadSchemaType {
+    fn from(schema_type: segment::types::PayloadSchemaType) -> Self {
+        match schema_type {
+            segment::types::PayloadSchemaType::Keyword => PayloadSchemaType::Keyword,
+            segment::types::PayloadSchemaType::Integer => PayloadSchemaType::Integer,
+            segment::types::PayloadSchemaType::Float => PayloadSchemaType::Float,
+            segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
+            segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
+            segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
+            segment::types::PayloadSchemaType::Datetime => PayloadSchemaType::Datetime,
         }
     }
 }
 
-impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexParams {
+impl From<segment::types::PayloadSchemaType> for FieldType {
+    fn from(schema_type: segment::types::PayloadSchemaType) -> Self {
+        match schema_type {
+            segment::types::PayloadSchemaType::Keyword => FieldType::Keyword,
+            segment::types::PayloadSchemaType::Integer => FieldType::Integer,
+            segment::types::PayloadSchemaType::Float => FieldType::Float,
+            segment::types::PayloadSchemaType::Geo => FieldType::Geo,
+            segment::types::PayloadSchemaType::Text => FieldType::Text,
+            segment::types::PayloadSchemaType::Bool => FieldType::Bool,
+            segment::types::PayloadSchemaType::Datetime => FieldType::Datetime,
+        }
+    }
+}
+
+impl TryFrom<TokenizerType> for segment::data_types::index::TokenizerType {
+    type Error = Status;
+    fn try_from(tokenizer_type: TokenizerType) -> Result<Self, Self::Error> {
+        match tokenizer_type {
+            TokenizerType::Unknown => Err(Status::invalid_argument("unknown tokenizer type")),
+            TokenizerType::Prefix => Ok(segment::data_types::index::TokenizerType::Prefix),
+            TokenizerType::Multilingual => {
+                Ok(segment::data_types::index::TokenizerType::Multilingual)
+            }
+            TokenizerType::Whitespace => Ok(segment::data_types::index::TokenizerType::Whitespace),
+            TokenizerType::Word => Ok(segment::data_types::index::TokenizerType::Word),
+        }
+    }
+}
+
+impl From<segment::types::PayloadSchemaParams> for PayloadIndexParams {
+    fn from(params: segment::types::PayloadSchemaParams) -> Self {
+        match params {
+            segment::types::PayloadSchemaParams::Keyword(p) => p.into(),
+            segment::types::PayloadSchemaParams::Integer(p) => p.into(),
+            segment::types::PayloadSchemaParams::Float(p) => p.into(),
+            segment::types::PayloadSchemaParams::Geo(p) => p.into(),
+            segment::types::PayloadSchemaParams::Text(p) => p.into(),
+            segment::types::PayloadSchemaParams::Bool(p) => p.into(),
+            segment::types::PayloadSchemaParams::Datetime(p) => p.into(),
+        }
+    }
+}
+
+impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexParams {
+    type Error = Status;
+    fn try_from(_params: KeywordIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::KeywordIndexParams {
+            r#type: KeywordIndexType::Keyword,
+        })
+    }
+}
+
+impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexParams {
+    type Error = Status;
+    fn try_from(params: IntegerIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::IntegerIndexParams {
+            r#type: IntegerIndexType::Integer,
+            lookup: params.lookup,
+            range: params.range,
+        })
+    }
+}
+
+impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams {
+    type Error = Status;
+    fn try_from(_params: FloatIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::FloatIndexParams {
+            r#type: FloatIndexType::Float,
+        })
+    }
+}
+
+impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
+    type Error = Status;
+    fn try_from(_params: GeoIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::GeoIndexParams {
+            r#type: GeoIndexType::Geo,
+        })
+    }
+}
+
+impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
     type Error = Status;
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
-        Ok(segment::data_types::text_index::TextIndexParams {
+        Ok(segment::data_types::index::TextIndexParams {
             r#type: TextIndexType::Text,
             tokenizer: TokenizerType::from_i32(params.tokenizer)
                 .map(|x| x.try_into())
@@ -303,13 +406,20 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     }
 }
 
-impl TryFrom<IntegerIndexParams> for segment::data_types::integer_index::IntegerIndexParams {
+impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
     type Error = Status;
-    fn try_from(params: IntegerIndexParams) -> Result<Self, Self::Error> {
-        Ok(segment::data_types::integer_index::IntegerIndexParams {
-            r#type: IntegerIndexType::Integer,
-            lookup: params.lookup,
-            range: params.range,
+    fn try_from(_params: BoolIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::BoolIndexParams {
+            r#type: BoolIndexType::Bool,
+        })
+    }
+}
+
+impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexParams {
+    type Error = Status;
+    fn try_from(_params: DatetimeIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::DatetimeIndexParams {
+            r#type: DatetimeIndexType::Datetime,
         })
     }
 }
@@ -318,14 +428,29 @@ impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
     type Error = Status;
 
     fn try_from(value: IndexParams) -> Result<Self, Self::Error> {
-        match value {
-            IndexParams::TextIndexParams(text_index_params) => Ok(
-                segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?),
-            ),
-            IndexParams::IntegerIndexParams(integer_params) => Ok(
-                segment::types::PayloadSchemaParams::Integer(integer_params.try_into()?),
-            ),
-        }
+        Ok(match value {
+            IndexParams::KeywordIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Keyword(p.try_into()?)
+            }
+            IndexParams::IntegerIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Integer(p.try_into()?)
+            }
+            IndexParams::FloatIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Float(p.try_into()?)
+            }
+            IndexParams::GeoIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Geo(p.try_into()?)
+            }
+            IndexParams::TextIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Text(p.try_into()?)
+            }
+            IndexParams::BoolIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Bool(p.try_into()?)
+            }
+            IndexParams::DatetimeIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Datetime(p.try_into()?)
+            }
+        })
     }
 }
 
