@@ -6189,57 +6189,43 @@
         "description": "Payload type with parameters",
         "anyOf": [
           {
-            "$ref": "#/components/schemas/TextIndexParams"
+            "$ref": "#/components/schemas/KeywordIndexParams"
           },
           {
             "$ref": "#/components/schemas/IntegerIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/FloatIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/GeoIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/TextIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/BoolIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/DatetimeIndexParams"
           }
         ]
       },
-      "TextIndexParams": {
+      "KeywordIndexParams": {
         "type": "object",
         "required": [
           "type"
         ],
         "properties": {
           "type": {
-            "$ref": "#/components/schemas/TextIndexType"
-          },
-          "tokenizer": {
-            "$ref": "#/components/schemas/TokenizerType"
-          },
-          "min_token_len": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "max_token_len": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "lowercase": {
-            "description": "If true, lowercase all tokens. Default: true",
-            "type": "boolean",
-            "nullable": true
+            "$ref": "#/components/schemas/KeywordIndexType"
           }
         }
       },
-      "TextIndexType": {
+      "KeywordIndexType": {
         "type": "string",
         "enum": [
-          "text"
-        ]
-      },
-      "TokenizerType": {
-        "type": "string",
-        "enum": [
-          "prefix",
-          "whitespace",
-          "word",
-          "multilingual"
+          "keyword"
         ]
       },
       "IntegerIndexParams": {
@@ -6267,6 +6253,120 @@
         "type": "string",
         "enum": [
           "integer"
+        ]
+      },
+      "FloatIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/FloatIndexType"
+          }
+        }
+      },
+      "FloatIndexType": {
+        "type": "string",
+        "enum": [
+          "float"
+        ]
+      },
+      "GeoIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/GeoIndexType"
+          }
+        }
+      },
+      "GeoIndexType": {
+        "type": "string",
+        "enum": [
+          "geo"
+        ]
+      },
+      "TextIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/TextIndexType"
+          },
+          "tokenizer": {
+            "$ref": "#/components/schemas/TokenizerType"
+          },
+          "min_token_len": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_token_len": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "lowercase": {
+            "description": "If true, lowercase all tokens. Default: true.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "TextIndexType": {
+        "type": "string",
+        "enum": [
+          "text"
+        ]
+      },
+      "TokenizerType": {
+        "type": "string",
+        "enum": [
+          "prefix",
+          "whitespace",
+          "word",
+          "multilingual"
+        ]
+      },
+      "BoolIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/BoolIndexType"
+          }
+        }
+      },
+      "BoolIndexType": {
+        "type": "string",
+        "enum": [
+          "bool"
+        ]
+      },
+      "DatetimeIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/DatetimeIndexType"
+          }
+        }
+      },
+      "DatetimeIndexType": {
+        "type": "string",
+        "enum": [
+          "datetime"
         ]
       },
       "PointRequest": {

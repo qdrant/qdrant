@@ -11,7 +11,7 @@ use api::grpc::qdrant::{
 };
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
+use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -341,42 +341,13 @@ pub fn internal_create_index(
     let (field_type, field_index_params) = create_index
         .field_schema
         .map(|field_schema| match field_schema {
-            PayloadFieldSchema::FieldType(field_type) => (
-                match field_type {
-                    segment::types::PayloadSchemaType::Keyword => {
-                        api::grpc::qdrant::FieldType::Keyword as i32
-                    }
-                    segment::types::PayloadSchemaType::Integer => {
-                        api::grpc::qdrant::FieldType::Integer as i32
-                    }
-                    segment::types::PayloadSchemaType::Float => {
-                        api::grpc::qdrant::FieldType::Float as i32
-                    }
-                    segment::types::PayloadSchemaType::Geo => {
-                        api::grpc::qdrant::FieldType::Geo as i32
-                    }
-                    segment::types::PayloadSchemaType::Text => {
-                        api::grpc::qdrant::FieldType::Text as i32
-                    }
-                    segment::types::PayloadSchemaType::Bool => {
-                        api::grpc::qdrant::FieldType::Bool as i32
-                    }
-                    segment::types::PayloadSchemaType::Datetime => {
-                        api::grpc::qdrant::FieldType::Datetime as i32
-                    }
-                },
-                None,
+            PayloadFieldSchema::FieldType(field_type) => {
+                (api::grpc::qdrant::FieldType::from(field_type) as i32, None)
+            }
+            PayloadFieldSchema::FieldParams(field_params) => (
+                api::grpc::qdrant::FieldType::from(field_params.kind()) as i32,
+                Some(field_params.into()),
             ),
-            PayloadFieldSchema::FieldParams(field_params) => match field_params {
-                PayloadSchemaParams::Text(text_index_params) => (
-                    api::grpc::qdrant::FieldType::Text as i32,
-                    Some(text_index_params.into()),
-                ),
-                PayloadSchemaParams::Integer(integer_params) => (
-                    api::grpc::qdrant::FieldType::Integer as i32,
-                    Some(integer_params.into()),
-                ),
-            },
         })
         .map(|(field_type, field_params)| (Some(field_type), field_params))
         .unwrap_or((None, None));

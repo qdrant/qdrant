@@ -10,9 +10,7 @@ use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::json_path::JsonPath;
-use crate::types::{
-    FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
-};
+use crate::types::{FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams};
 
 /// Selects index types based on field type
 pub fn index_selector(
@@ -24,63 +22,45 @@ pub fn index_selector(
     let field: String = field.to_string();
     let field = field.as_str();
 
-    match payload_schema {
-        PayloadFieldSchema::FieldType(payload_type) => match payload_type {
-            PayloadSchemaType::Keyword => {
-                vec![FieldIndex::KeywordIndex(MapIndex::new(
-                    db,
-                    field,
-                    is_appendable,
-                ))]
-            }
-            PayloadSchemaType::Integer => vec![
-                FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable)),
+    match payload_schema.expand().as_ref() {
+        PayloadSchemaParams::Keyword(_) => vec![FieldIndex::KeywordIndex(MapIndex::new(
+            db,
+            field,
+            is_appendable,
+        ))],
+        PayloadSchemaParams::Integer(integer_params) => {
+            let lookup = integer_params
+                .lookup
+                .then(|| FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable)));
+            let range = integer_params.range.then(|| {
                 FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
                     db,
                     field,
                     is_appendable,
-                )),
-            ],
-            PayloadSchemaType::Float => {
-                vec![FieldIndex::FloatIndex(
-                    NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),
-                )]
-            }
-            PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
-                db,
-                field,
-                is_appendable,
-            ))],
-            PayloadSchemaType::Text => vec![FieldIndex::FullTextIndex(FullTextIndex::new(
-                db,
-                Default::default(),
-                field,
-                is_appendable,
-            ))],
-            PayloadSchemaType::Bool => vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))],
-            PayloadSchemaType::Datetime => {
-                vec![FieldIndex::DatetimeIndex(
-                    NumericIndex::<IntPayloadType>::new(db, field, is_appendable),
-                )]
-            }
-        },
-        PayloadFieldSchema::FieldParams(payload_params) => match payload_params {
-            PayloadSchemaParams::Text(text_index_params) => vec![FieldIndex::FullTextIndex(
-                FullTextIndex::new(db, text_index_params.clone(), field, is_appendable),
-            )],
-            PayloadSchemaParams::Integer(integer_params) => {
-                let lookup = integer_params.lookup.then(|| {
-                    FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable))
-                });
-                let range = integer_params.range.then(|| {
-                    FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
-                        db,
-                        field,
-                        is_appendable,
-                    ))
-                });
-                lookup.into_iter().chain(range).collect()
-            }
-        },
+                ))
+            });
+            lookup.into_iter().chain(range).collect()
+        }
+        PayloadSchemaParams::Float(_) => {
+            vec![FieldIndex::FloatIndex(
+                NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),
+            )]
+        }
+        PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
+            db,
+            field,
+            is_appendable,
+        ))],
+        PayloadSchemaParams::Text(text_index_params) => vec![FieldIndex::FullTextIndex(
+            FullTextIndex::new(db, text_index_params.clone(), field, is_appendable),
+        )],
+        PayloadSchemaParams::Bool(_) => {
+            vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))]
+        }
+        PayloadSchemaParams::Datetime(_) => {
+            vec![FieldIndex::DatetimeIndex(
+                NumericIndex::<IntPayloadType>::new(db, field, is_appendable),
+            )]
+        }
     }
 }

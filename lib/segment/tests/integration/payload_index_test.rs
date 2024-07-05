@@ -9,7 +9,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::integer_index::{IntegerIndexParams, IntegerIndexType};
+use segment::data_types::index::{IntegerIndexParams, IntegerIndexType};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;

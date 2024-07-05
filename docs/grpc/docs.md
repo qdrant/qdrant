@@ -8,6 +8,7 @@
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [BinaryQuantization](#qdrant-BinaryQuantization)
+    - [BoolIndexParams](#qdrant-BoolIndexParams)
     - [ChangeAliases](#qdrant-ChangeAliases)
     - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
     - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
@@ -26,16 +27,20 @@
     - [CreateShardKey](#qdrant-CreateShardKey)
     - [CreateShardKeyRequest](#qdrant-CreateShardKeyRequest)
     - [CreateShardKeyResponse](#qdrant-CreateShardKeyResponse)
+    - [DatetimeIndexParams](#qdrant-DatetimeIndexParams)
     - [DeleteAlias](#qdrant-DeleteAlias)
     - [DeleteCollection](#qdrant-DeleteCollection)
     - [DeleteShardKey](#qdrant-DeleteShardKey)
     - [DeleteShardKeyRequest](#qdrant-DeleteShardKeyRequest)
     - [DeleteShardKeyResponse](#qdrant-DeleteShardKeyResponse)
     - [Disabled](#qdrant-Disabled)
+    - [FloatIndexParams](#qdrant-FloatIndexParams)
+    - [GeoIndexParams](#qdrant-GeoIndexParams)
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
     - [IntegerIndexParams](#qdrant-IntegerIndexParams)
+    - [KeywordIndexParams](#qdrant-KeywordIndexParams)
     - [ListAliasesRequest](#qdrant-ListAliasesRequest)
     - [ListAliasesResponse](#qdrant-ListAliasesResponse)
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
@@ -340,6 +345,16 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+
+
+
+
+
+
+<a name="qdrant-BoolIndexParams"></a>
+
+### BoolIndexParams
+
 
 
 
@@ -664,6 +679,16 @@
 
 
 
+<a name="qdrant-DatetimeIndexParams"></a>
+
+### DatetimeIndexParams
+
+
+
+
+
+
+
 <a name="qdrant-DeleteAlias"></a>
 
 ### DeleteAlias
@@ -752,6 +777,26 @@
 
 
 
+<a name="qdrant-FloatIndexParams"></a>
+
+### FloatIndexParams
+
+
+
+
+
+
+
+<a name="qdrant-GeoIndexParams"></a>
+
+### GeoIndexParams
+
+
+
+
+
+
+
 <a name="qdrant-GetCollectionInfoRequest"></a>
 
 ### GetCollectionInfoRequest
@@ -813,6 +858,16 @@
 | ----- | ---- | ----- | ----------- |
 | lookup | [bool](#bool) |  | If true - support direct lookups. |
 | range | [bool](#bool) |  | If true - support ranges filters. |
+
+
+
+
+
+
+<a name="qdrant-KeywordIndexParams"></a>
+
+### KeywordIndexParams
+
 
 
 
@@ -1002,8 +1057,13 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
+| keyword_index_params | [KeywordIndexParams](#qdrant-KeywordIndexParams) |  | Parameters for keyword index |
 | integer_index_params | [IntegerIndexParams](#qdrant-IntegerIndexParams) |  | Parameters for integer index |
+| float_index_params | [FloatIndexParams](#qdrant-FloatIndexParams) |  | Parameters for float index |
+| geo_index_params | [GeoIndexParams](#qdrant-GeoIndexParams) |  | Parameters for geo index |
+| text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
+| bool_index_params | [BoolIndexParams](#qdrant-BoolIndexParams) |  | Parameters for bool index |
+| datetime_index_params | [DatetimeIndexParams](#qdrant-DatetimeIndexParams) |  | Parameters for datetime index |
 
 
 

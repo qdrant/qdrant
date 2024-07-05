@@ -10,7 +10,7 @@ use itertools::Itertools;
 use strum::IntoEnumIterator as _;
 
 use crate::common::operation_error::OperationError;
-use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::json_path::{JsonPathInterface, JsonPathV2};
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
