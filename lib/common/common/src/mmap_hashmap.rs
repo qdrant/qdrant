@@ -62,8 +62,10 @@ impl MmapHashMap {
         _ = file_size;
 
         // == Second pass ==
-
-        let mut bufw = io::BufWriter::new(File::create(path)?);
+        let file = tempfile::Builder::new()
+            .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
+            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
+        let mut bufw = io::BufWriter::new(&file);
 
         // 1. Header
         let header = Header {
@@ -101,7 +103,9 @@ impl MmapHashMap {
                 bufw.write_all(i.as_bytes())?;
             }
         }
-        bufw.flush()?;
+
+        drop(bufw);
+        file.persist(path)?;
 
         Ok(())
     }

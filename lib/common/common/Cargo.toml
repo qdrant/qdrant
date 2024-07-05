@@ -17,6 +17,7 @@ num_cpus = "1.16"
 ordered-float = "4.2"
 ph = { workspace = true }
 serde = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 validator = { workspace = true }
 lazy_static = "1.5.0"
@@ -26,7 +27,6 @@ zerocopy = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
-tempfile = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = "1.0"
