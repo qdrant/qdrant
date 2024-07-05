@@ -705,7 +705,6 @@ pub struct BaseGroupRequest {
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
     #[schemars(length(min = 1))]
-    #[validate(custom = "JsonPath::validate_not_empty")]
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group
@@ -793,7 +792,6 @@ pub struct QueryBaseGroupRequest {
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
     #[schemars(length(min = 1))]
-    #[validate(custom = "JsonPath::validate_not_empty")]
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group. Default is 3.

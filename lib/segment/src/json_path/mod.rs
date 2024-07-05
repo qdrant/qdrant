@@ -5,7 +5,6 @@ use schemars::schema::Schema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
-use validator::ValidationError;
 
 use crate::common::anonymize::Anonymize;
 use crate::common::utils::{merge_map, MultiValue};
@@ -81,10 +80,6 @@ impl JsonPath {
             }
         }
         new_map
-    }
-
-    pub fn validate_not_empty(&self) -> Result<(), ValidationError> {
-        Ok(()) // It's validated during parsing
     }
 
     pub fn head(&self) -> &str {

@@ -22,7 +22,6 @@ use crate::common::points::{
 #[derive(Deserialize, Validate)]
 struct FieldPath {
     #[serde(rename = "field_name")]
-    #[validate(custom = "JsonPath::validate_not_empty")]
     name: JsonPath,
 }
 
