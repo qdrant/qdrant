@@ -345,14 +345,4 @@ impl PayloadConstraint {
             ValueVariants::Keyword(format!("v_{name}")),
         )]))
     }
-
-    /// Create a dummy payload that matches this constraint.
-    pub fn to_test_payload(&self) -> segment::types::Payload {
-        segment::types::Payload(
-            self.0
-                .iter()
-                .map(|(path, value)| (path.to_string(), value.to_value()))
-                .collect(),
-        )
-    }
 }

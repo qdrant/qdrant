@@ -219,13 +219,6 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// Take shard
-    ///
-    /// remove shard and return ownership
-    pub fn take_shard(&mut self, shard_id: ShardId) -> Option<ShardReplicaSet> {
-        self.shards.remove(&shard_id)
-    }
-
     pub fn contains_shard(&self, shard_id: &ShardId) -> bool {
         self.shards.contains_key(shard_id)
     }
@@ -506,23 +499,6 @@ impl ShardHolder {
         Ok(res)
     }
 
-    pub fn target_shard(
-        &self,
-        shard_selection: Option<ShardId>,
-    ) -> CollectionResult<Vec<&ShardReplicaSet>> {
-        match shard_selection {
-            None => Ok(self.all_shards().collect()),
-            Some(shard_selection) => {
-                let shard_opt = self.get_shard(&shard_selection);
-                let shards = match shard_opt {
-                    None => vec![],
-                    Some(shard) => vec![shard],
-                };
-                Ok(shards)
-            }
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.shards.len()
     }
@@ -744,15 +720,6 @@ impl ShardHolder {
             }
         }
         res
-    }
-
-    pub async fn is_all_active(&self) -> bool {
-        self.get_shards().all(|(_, replica_set)| {
-            replica_set
-                .peers()
-                .into_iter()
-                .all(|(_, state)| state == ReplicaState::Active)
-        })
     }
 
     /// Count how many shard replicas are on the given peer.

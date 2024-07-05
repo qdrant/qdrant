@@ -21,15 +21,6 @@ pub enum Vector {
     MultiDense(MultiDenseVectorInternal),
 }
 
-impl Vector {
-    pub fn is_sparse(&self) -> bool {
-        match self {
-            Vector::Sparse(_) => true,
-            Vector::Dense(_) | Vector::MultiDense(_) => false,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
@@ -482,14 +473,6 @@ impl VectorStructInternal {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
             }
             VectorStructInternal::Named(v) => v.get(name).map(VectorRef::from),
-        }
-    }
-
-    pub fn into_all_vectors(self) -> NamedVectors<'static> {
-        match self {
-            VectorStructInternal::Single(v) => default_vector(v),
-            VectorStructInternal::MultiDense(v) => default_multi_vector(v),
-            VectorStructInternal::Named(v) => NamedVectors::from_map(v),
         }
     }
 }

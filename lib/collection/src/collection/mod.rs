@@ -731,10 +731,6 @@ impl Collection {
         self.request_shard_transfer_cb.deref()(shard_transfer)
     }
 
-    pub fn shared_storage_config(&self) -> Arc<SharedStorageConfig> {
-        self.shared_storage_config.clone()
-    }
-
     pub fn snapshots_path(&self) -> &Path {
         &self.snapshots_path
     }

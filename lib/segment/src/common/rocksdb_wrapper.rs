@@ -92,28 +92,6 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
     Ok(Arc::new(RwLock::new(db)))
 }
 
-pub fn create_db_cf_if_not_exists(
-    db: Arc<RwLock<DB>>,
-    store_cf_name: &str,
-) -> Result<(), rocksdb::Error> {
-    let mut db_mut = db.write();
-    if db_mut.cf_handle(store_cf_name).is_none() {
-        db_mut.create_cf(store_cf_name, &db_options())?;
-    }
-    Ok(())
-}
-
-pub fn recreate_cf(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Result<(), rocksdb::Error> {
-    let mut db_mut = db.write();
-
-    if db_mut.cf_handle(store_cf_name).is_some() {
-        db_mut.drop_cf(store_cf_name)?;
-    }
-
-    db_mut.create_cf(store_cf_name, &db_options())?;
-    Ok(())
-}
-
 impl DatabaseColumnWrapper {
     pub fn new(database: Arc<RwLock<DB>>, column_name: &str) -> Self {
         Self {

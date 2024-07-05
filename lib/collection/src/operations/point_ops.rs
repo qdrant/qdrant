@@ -80,24 +80,6 @@ pub struct Batch {
     pub payloads: Option<Vec<Option<Payload>>>,
 }
 
-impl Batch {
-    pub fn empty() -> Self {
-        Self {
-            ids: vec![],
-            vectors: BatchVectorStruct::Named(HashMap::new()),
-            payloads: Some(vec![]),
-        }
-    }
-
-    pub fn empty_no_payload() -> Self {
-        Self {
-            ids: vec![],
-            vectors: BatchVectorStruct::Named(HashMap::new()),
-            payloads: None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {

@@ -1889,40 +1889,6 @@ mod tests {
     use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
-    // no longer valid since users are now allowed to store arbitrary json objects.
-    // TODO(gvelo): add tests for invalid payload types on indexed fields.
-    // #[test]
-    // fn test_set_invalid_payload_from_json() {
-    //     let data1 = r#"
-    //     {
-    //         "invalid_data"
-    //     }"#;
-    //     let data2 = r#"
-    //     {
-    //         "array": [1, "hello"],
-    //     }"#;
-    //
-    //     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    //     let dim = 2;
-    //     let config = SegmentConfig {
-    //         vector_size: dim,
-    //         index: Indexes::Plain {},
-    //         payload_index: Some(PayloadIndexType::Plain),
-    //         storage_type: StorageType::InMemory,
-    //         distance: Distance::Dot,
-    //     };
-    //
-    //     let mut segment =
-    //         build_segment(dir.path(), &config, Arc::new(SchemaStorage::new())).unwrap();
-    //     segment.upsert_point(0, 0.into(), &[1.0, 1.0]).unwrap();
-    //
-    //     let result1 = segment.set_full_payload_with_json(0, 0.into(), &data1.to_string());
-    //     assert!(result1.is_err());
-    //
-    //     let result2 = segment.set_full_payload_with_json(0, 0.into(), &data2.to_string());
-    //     assert!(result2.is_err());
-    // }
-
     #[test]
     fn test_search_batch_equivalence_single() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

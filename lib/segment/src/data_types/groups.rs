@@ -67,14 +67,6 @@ impl TryFrom<&serde_json::Value> for GroupId {
 }
 
 impl GroupId {
-    pub fn as_i64(&self) -> Option<i64> {
-        match self {
-            GroupId::NumberI64(id) => Some(*id),
-            GroupId::NumberU64(id) => i64::try_from(*id).ok(),
-            GroupId::String(_) => None,
-        }
-    }
-
     pub fn as_u64(&self) -> Option<u64> {
         match self {
             GroupId::NumberI64(id) => u64::try_from(*id).ok(),

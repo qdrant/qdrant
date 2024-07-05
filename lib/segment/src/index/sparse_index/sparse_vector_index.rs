@@ -194,11 +194,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         Ok((loaded_config, inverted_index, indices_tracker))
     }
 
-    fn save_config(&self) -> OperationResult<()> {
-        let config_path = SparseIndexConfig::get_config_path(&self.path);
-        self.config.save(&config_path)
-    }
-
     fn build_inverted_index(
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,

@@ -1191,19 +1191,6 @@ impl From<tempfile::PathPersistError> for CollectionError {
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl Record {
-    pub fn vector_names(&self) -> Vec<&str> {
-        match &self.vector {
-            None => vec![],
-            Some(vectors) => match vectors {
-                VectorStructInternal::Single(_) => vec![DEFAULT_VECTOR_NAME],
-                VectorStructInternal::MultiDense(_) => vec![DEFAULT_VECTOR_NAME],
-                VectorStructInternal::Named(vectors) => {
-                    vectors.keys().map(|x| x.as_str()).collect()
-                }
-            },
-        }
-    }
-
     pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
             Some(VectorStructInternal::Single(vector)) => {
