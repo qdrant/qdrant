@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -23,8 +25,7 @@ impl Display for JsonPathString {
 
 impl JsonPathInterface for JsonPathString {
     fn value_get<'a>(&self, json_map: &'a serde_json::Map<String, Value>) -> MultiValue<&'a Value> {
-        #[allow(deprecated)]
-        crate::common::utils::get_value_from_json_map(&self.0, json_map)
+        unimplemented!()
     }
 
     fn value_set<'a>(
@@ -32,25 +33,18 @@ impl JsonPathInterface for JsonPathString {
         dest: &'a mut serde_json::Map<String, Value>,
         src: &'a serde_json::Map<String, Value>,
     ) {
-        #[allow(deprecated)]
-        crate::common::utils::set_value_to_json_map(
-            path.map(|p| p.0.as_str()).unwrap_or(""),
-            dest,
-            src,
-        )
+        unimplemented!()
     }
 
     fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
-        #[allow(deprecated)]
-        crate::common::utils::remove_value_from_json_map(&self.0, json_map)
+        unimplemented!()
     }
 
     fn value_filter(
         json_map: &serde_json::Map<String, Value>,
         filter: impl Fn(&Self, &Value) -> bool,
     ) -> serde_json::Map<String, Value> {
-        #[allow(deprecated)]
-        crate::common::utils::filter_json_values(json_map, filter)
+        unimplemented!()
     }
 
     fn validate_not_empty(&self) -> Result<(), ValidationError> {
@@ -96,11 +90,11 @@ impl JsonPathInterface for JsonPathString {
     }
 
     fn check_include_pattern(&self, pattern: &Self) -> bool {
-        crate::common::utils::check_include_pattern(&self.0, &pattern.0)
+        unimplemented!()
     }
 
     fn check_exclude_pattern(&self, pattern: &Self) -> bool {
-        crate::common::utils::check_exclude_pattern(&self.0, &pattern.0)
+        unimplemented!()
     }
 }
 
