@@ -40,7 +40,7 @@
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
 
-#define VECTOR_STORAGE_ELEMENT_TYPE uint8_t
+#define VECTOR_STORAGE_ELEMENT_TYPE uint
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) float(bitCount(a ^ b))
 
 #endif
@@ -216,7 +216,7 @@ float similarity(uint a) {
         // store subgroup result in the merge buffer
         merge_buffer[gl_SubgroupID] = ScoredPoint(0, subgroup_result);
     }
-    memoryBarrier();
+    barrier();
 
     // merge the subgroup results
     if (gl_SubgroupID == 0) {
@@ -230,7 +230,7 @@ float similarity(uint a) {
 
 #ifdef VECTOR_STORAGE_ELEMENT_BINARY
     float xor_product = merge_buffer[0].score;
-    float zeros_count = float(DIM * 8) - xor_product;
+    float zeros_count = float(DIM * 32) - xor_product;
     return zeros_count - xor_product;
 #else
     return merge_buffer[0].score;

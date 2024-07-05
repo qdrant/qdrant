@@ -75,17 +75,17 @@ impl GpuVectorStorage {
                 let bits_per_read = device.subgroup_size() * std::mem::size_of::<u32>() * 8;
                 let bits_count = first_dense.len().div_ceil(bits_per_read) * bits_per_read;
                 let u32_count = bits_count / 32;
-                Self::new_typed::<VectorElementTypeByte>(
+                Self::new_typed::<u32>(
                     device,
                     gpu::GpuVectorStorageElementType::Binary,
                     vector_storage.total_vector_count(),
                     |id| {
                         let vector = vector_storage.get_vector(id);
                         let dense: &[VectorElementType] = vector.as_vec_ref().try_into().unwrap();
-                        let mut binary = vec![0u8; u32_count * std::mem::size_of::<u32>()];
+                        let mut binary = vec![0u32; u32_count];
                         for (i, v) in dense.iter().enumerate() {
                             if *v > 0.0 {
-                                binary[i / 8] |= 1u8 << (i % 8);
+                                binary[i / 32] |= 1u32 << (i % 32);
                             }
                         }
                         Cow::Owned(binary)
@@ -232,7 +232,7 @@ impl GpuVectorStorage {
         }
     }
 
-    fn new_typed<'a, TElement: PrimitiveVectorElement>(
+    fn new_typed<'a, TElement: Sized + Default + Copy + Clone + 'static>(
         device: Arc<gpu::Device>,
         element_type: gpu::GpuVectorStorageElementType,
         count: usize,
