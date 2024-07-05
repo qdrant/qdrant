@@ -46,7 +46,7 @@ if [ "$MODE" == "distributed" ]; then
   sleep 10
 fi
 
-./tests/openapi_integration_test.sh
+pytest tests/openapi
 
 ./tests/basic_api_test.sh
 

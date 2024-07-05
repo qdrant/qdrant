@@ -36,7 +36,7 @@ jobs:
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests
-        run: ./tests/integration-tests.sh
+        run: poetry -C tests run ./tests/integration-tests.sh
         shell: bash
 
   test-consensus:
@@ -66,7 +66,7 @@ jobs:
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests - 1 peer
-        run: ./tests/integration-tests.sh distributed
+        run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
         run: poetry -C tests run pytest tests/consensus_tests
@@ -109,7 +109,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Run integration tests - multiple peers - compose
-        run: ./test_restart.sh
+        run: poetry run ./test_restart.sh
         working-directory: ./tests/consensus_tests
 
   test-tls-compose:

@@ -209,8 +209,8 @@ Here is a quick step-by-step guide:
 1. code endpoints and model in Rust
 2. change specs in `/openapi/*ytt.yaml`
 3. add new schema definitions to `src/schema_generator.rs`
-4. run `/tools/generate_openapi_models.sh` to generate specs
-5. update integration tests `tests/openapi/openapi_integration` and run them with `./tests/openapi_integration_test.sh`
+4. run `./tools/generate_openapi_models.sh` to generate specs
+5. update integration tests `tests/openapi/openapi_integration` and run them with `poetry -C tests install --sync && poetry -C tests run pytest tests/openapi`
 6. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 7. validate specs by browsing redoc on `http://localhost:8000/?v=master`
 8. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)

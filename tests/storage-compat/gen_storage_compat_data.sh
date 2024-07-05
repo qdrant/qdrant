@@ -37,7 +37,7 @@ until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collecti
 done
 
 # Run python script to populate db
-poetry -C tests run tests/storage-compat/populate_db.py
+tests/storage-compat/populate_db.py
 
 # Wait for indexing to finish
 sleep 1
