@@ -842,6 +842,7 @@ impl ShardHolder {
                 .await;
                 log::debug!("ShardReplicaSet.load: end");
 
+                log::debug!("require_migration check: start");
                 let mut require_migration = true;
                 match shard_type {
                     ShardType::Local => {
@@ -895,14 +896,18 @@ impl ShardHolder {
                         // nothing to do, replicate set should be loaded already
                     }
                 }
+                log::debug!("require_migration check: end");
+
                 // Migrate shard config to replica set
                 // Override existing shard configuration
+                log::debug!("ShardConfig.new_replica_set: start");
                 if require_migration {
                     ShardConfig::new_replica_set()
                         .save(&path)
                         .map_err(|e| panic!("Failed to save shard config {path:?}: {e}"))
                         .unwrap();
                 }
+                log::debug!("ShardConfig.new_replica_set: end");
 
                 // Change local shards stuck in Initializing state to Active
                 let local_peer_id = replica_set.this_peer_id();

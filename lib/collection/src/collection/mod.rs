@@ -254,8 +254,10 @@ impl Collection {
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
+        log::debug!("load_payload_index_schema: start");
         let payload_index_schema = Self::load_payload_index_schema(path)
             .expect("Can't load or initialize payload index schema");
+        log::debug!("load_payload_index_schema: end");
 
         Self {
             id: collection_id.clone(),

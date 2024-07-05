@@ -425,17 +425,33 @@ fn create_segment(
     };
      */
 
+    log::debug!(
+        "{:?}.MutableIdTracker.create: start",
+        segment_path.file_name()
+    );
     let id_tracker = sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
         database.clone(),
     )?));
+    log::debug!(
+        "{:?}.MutableIdTracker.create: end",
+        segment_path.file_name()
+    );
 
     let payload_index_path = get_payload_index_path(segment_path);
+    log::debug!(
+        "{:?}.StructPayloadIndex.open: start",
+        segment_path.file_name()
+    );
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage,
         id_tracker.clone(),
         &payload_index_path,
         appendable_flag,
     )?);
+    log::debug!(
+        "{:?}.StructPayloadIndex.open: end",
+        segment_path.file_name()
+    );
 
     log::debug!("{:?}.vector_data: start", segment_path.file_name());
     let mut vector_data = HashMap::new();
@@ -591,6 +607,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     }
 
     log::debug!("load_segment.{:?}: start", path.file_name());
+    log::debug!("{:?}.SegmentVersion.load: start", path.file_name());
     let Some(stored_version) = SegmentVersion::load(path)? else {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.
@@ -600,9 +617,11 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         );
         return Ok(None);
     };
+    log::debug!("{:?}.SegmentVersion.load: end", path.file_name());
 
     let app_version = SegmentVersion::current();
 
+    log::debug!("Migrating segment{:?}: start", path.file_name());
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
@@ -629,6 +648,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 
         SegmentVersion::save(path)?
     }
+    log::debug!("Migrating segment{:?}: end", path.file_name());
 
     log::debug!(
         "load_segment.{:?}.Segment.load_state: start",

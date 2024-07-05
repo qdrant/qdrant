@@ -315,6 +315,7 @@ impl LocalShard {
         let clocks = LocalShardClocks::load(shard_path)?;
 
         // Always make sure we have any appendable segments, needed for update operations
+        log::debug!("create_appendable_segment: start");
         if !segment_holder.has_appendable_segment() {
             debug_assert!(
                 false,
@@ -325,6 +326,7 @@ impl LocalShard {
             let collection_params = collection_config.read().await.params.clone();
             segment_holder.create_appendable_segment(&segments_path, &collection_params)?;
         }
+        log::debug!("create_appendable_segment: end");
 
         log::debug!("LocalShard.new: start");
         let local_shard = LocalShard::new(
@@ -339,9 +341,9 @@ impl LocalShard {
             update_runtime,
         )
         .await;
+        log::debug!("LocalShard.new: end");
 
         // Apply outstanding operations from WAL
-        log::debug!("LocalShard.new: end");
         log::debug!("local_shard.load_from_wal: start");
         local_shard.load_from_wal(collection_id).await?;
         log::debug!("local_shard.load_from_wal: end");
