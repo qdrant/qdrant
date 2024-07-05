@@ -931,23 +931,37 @@ def test_query_group():
         body={
             "prefetch": [],
             "limit": 3,
-            "query": [0.1, 0.2, 0.3, 0.4],
+            "query": [-1.9, 1.1, -1.1, 1.1],
             "using": "dense-image",
             "with_payload": True,
-            "group_by": "count",
+            "group_by": "city",
             "group_size": 2,
         },
     )
     groups = response.json()["result"]["groups"]
-    # found two groups
-    assert len(groups) == 2
+    # found 3 groups has requested with `limit`
+    assert len(groups) == 3
+
     # group 1
-    assert groups[0]["id"] == 0
-    assert len(groups[0]["hits"]) == 1
-    assert groups[0]["hits"][0]["id"] == 5
-    assert groups[0]["hits"][0]["payload"]["count"] == 0
+    assert groups[0]["id"] == "Berlin"
+    assert len(groups[0]["hits"]) == 2  # group_size
+    assert groups[0]["hits"][0]["id"] == 1
+    assert groups[0]["hits"][0]["payload"]["city"] == "Berlin"
+    assert groups[0]["hits"][1]["id"] == 3
+    assert groups[0]["hits"][1]["payload"]["city"] == ["Berlin", "Moscow"]
+
     # group 2
-    assert groups[1]["id"] == 1
-    assert len(groups[1]["hits"]) == 1
-    assert groups[1]["hits"][0]["id"] == 6
-    assert groups[1]["hits"][0]["payload"]["count"] == 1
+    assert groups[1]["id"] == "Moscow"
+    assert len(groups[1]["hits"]) == 2  # group_size
+    assert groups[1]["hits"][0]["id"] == 3
+    assert groups[1]["hits"][0]["payload"]["city"] == ["Berlin", "Moscow"]
+    assert groups[1]["hits"][1]["id"] == 4
+    assert groups[1]["hits"][1]["payload"]["city"] == ["London", "Moscow"]
+
+    # group 3
+    assert groups[2]["id"] == "London"
+    assert len(groups[2]["hits"]) == 2  # group_size
+    assert groups[2]["hits"][0]["id"] == 2
+    assert groups[2]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
+    assert groups[2]["hits"][1]["id"] == 4
+    assert groups[2]["hits"][1]["payload"]["city"] == ["London", "Moscow"]
