@@ -93,7 +93,7 @@ def test_query_validation():
     assert response.json()["status"]["error"] == "Bad request: Fusion queries cannot be combined with the 'using' field."
 
 
-def test_search_by_vector():
+def test_query_by_vector():
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -117,7 +117,7 @@ def test_search_by_vector():
     assert search_result == nearest_query_result
 
 
-def test_search_by_id():
+def test_query_by_id():
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -134,7 +134,7 @@ def test_search_by_id():
     assert top["id"] != 2  # id 2 is excluded from the results
 
 
-def test_filtered_search():
+def test_filtered_query():
     filter = {
         "must": [
             {
@@ -921,3 +921,33 @@ def test_sparse_dense_rerank_colbert():
     assert rerank_result[0]["id"] == 5
     assert rerank_result[1]["id"] == 2
     assert rerank_result[2]["id"] == 1
+
+
+def test_query_group():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [],
+            "limit": 3,
+            "query": [0.1, 0.2, 0.3, 0.4],
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "count",
+            "group_size": 2,
+        },
+    )
+    groups = response.json()["result"]["groups"]
+    # found two groups
+    assert len(groups) == 2
+    # group 1
+    assert groups[0]["id"] == 0
+    assert len(groups[0]["hits"]) == 1
+    assert groups[0]["hits"][0]["id"] == 5
+    assert groups[0]["hits"][0]["payload"]["count"] == 0
+    # group 2
+    assert groups[1]["id"] == 1
+    assert len(groups[1]["hits"]) == 1
+    assert groups[1]["hits"][0]["id"] == 6
+    assert groups[1]["hits"][0]["payload"]["count"] == 1

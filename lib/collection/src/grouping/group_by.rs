@@ -8,6 +8,7 @@ use api::rest::{
 };
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint,
@@ -249,7 +250,14 @@ impl From<RecommendGroupsRequestInternal> for GroupRequest {
 impl From<QueryGroupsRequestInternal> for GroupRequest {
     fn from(request: QueryGroupsRequestInternal) -> Self {
         let QueryGroupsRequestInternal {
-            internal_query,
+            prefetch,
+            query,
+            using,
+            filter,
+            params,
+            score_threshold,
+            with_vector,
+            with_payload,
             group_request:
                 BaseGroupRequest {
                     group_by,
@@ -259,7 +267,19 @@ impl From<QueryGroupsRequestInternal> for GroupRequest {
                 },
         } = request;
 
-        let collection_query_request = CollectionQueryRequest::from(internal_query);
+        let collection_query_request = CollectionQueryRequest {
+            prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
+            query: query.map(From::from),
+            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+            filter,
+            score_threshold,
+            limit: limit as usize,
+            offset: 0,
+            params,
+            with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+            with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+            lookup_from: None,
+        };
 
         GroupRequest {
             source: SourceRequest::Query(collection_query_request),

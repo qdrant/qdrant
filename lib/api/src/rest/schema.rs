@@ -531,9 +531,35 @@ pub struct SearchRequestInternal {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryGroupsRequestInternal {
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).
     #[validate]
-    #[serde(flatten)]
-    pub internal_query: QueryRequestInternal,
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Prefetch>")]
+    pub prefetch: Option<Vec<Prefetch>>,
+
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
+    #[validate]
+    pub query: Option<QueryInterface>,
+
+    /// Define which vector name to use for querying. If missing, the default vector is used.
+    pub using: Option<String>,
+
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[validate]
+    pub filter: Option<Filter>,
+
+    /// Search params for when there is no prefetch
+    #[validate]
+    pub params: Option<SearchParams>,
+
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Options for specifying which vectors to include into the response. Default is false.
+    pub with_vector: Option<WithVector>,
+
+    /// Options for specifying which payload to include or not. Default is false.
+    pub with_payload: Option<WithPayloadInterface>,
 
     #[serde(flatten)]
     #[validate]
