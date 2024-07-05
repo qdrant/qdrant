@@ -125,44 +125,58 @@ impl MmapHashMap {
         Ok(MmapHashMap { mmap, header, phf })
     }
 
-    /// Get the values associated with `key`. It will return `None` in the following cases:
-    /// - The key is not present in this hash map.
-    /// - The data is corrupted, e.g. invalid UTF-8 or wrong alignment. (should not happen during
-    ///   normal operation)
-    pub fn get(&self, key: &str) -> Option<&[u32]> {
-        let hash = self.phf.get(key)?;
+    /// Get the values associated with the `key`.
+    pub fn get(&self, key: &str) -> io::Result<Option<&[u32]>> {
+        let Some(hash) = self.phf.get(key) else {
+            return Ok(None);
+        };
 
-        let buckets = u64::slice_from(self.mmap.get(
-            self.header.buckets_pos as usize
-                ..self.header.buckets_pos as usize
-                    + self.header.buckets_count as usize * size_of::<u64>(),
-        )?)?;
-        let bucket_val = *buckets.get(hash as usize)?;
+        let bucket_val = self
+            .mmap
+            .get(
+                self.header.buckets_pos as usize
+                    ..self.header.buckets_pos as usize
+                        + self.header.buckets_count as usize * size_of::<u64>(),
+            )
+            .and_then(u64::slice_from)
+            .and_then(|buckets| buckets.get(hash as usize).copied())
+            .ok_or(io::ErrorKind::InvalidData)?;
 
-        let entry = &self.mmap.get(
-            self.header.buckets_pos as usize
-                + self.header.buckets_count as usize * size_of::<u64>()
-                + bucket_val as usize..,
-        )?;
+        let entry = self
+            .mmap
+            .get(
+                self.header.buckets_pos as usize
+                    + self.header.buckets_count as usize * size_of::<u64>()
+                    + bucket_val as usize..,
+            )
+            .ok_or(io::ErrorKind::InvalidData)?;
 
-        let key_len = u64::read_from(entry.get(0..size_of::<u64>())?)? as usize;
-        let values_len =
-            u64::read_from(entry.get(size_of::<u64>()..2 * size_of::<u64>())?)? as usize;
+        let key_len = entry
+            .get(0..size_of::<u64>())
+            .and_then(u64::read_from)
+            .ok_or(io::ErrorKind::InvalidData)? as usize;
+        let values_len = entry
+            .get(size_of::<u64>()..2 * size_of::<u64>())
+            .and_then(u64::read_from)
+            .ok_or(io::ErrorKind::InvalidData)? as usize;
 
-        let hash_key =
-            str::from_utf8(entry.get(2 * size_of::<u64>()..2 * size_of::<u64>() + key_len)?)
-                .ok()?;
-
-        if hash_key != key {
-            return None;
+        let hash_key = entry
+            .get(2 * size_of::<u64>()..2 * size_of::<u64>() + key_len)
+            .ok_or(io::ErrorKind::InvalidData)?;
+        if hash_key != key.as_bytes() {
+            return Ok(None);
         }
 
-        u32::slice_from(entry.get(
-            2 * size_of::<u64>() + key_len.next_multiple_of(4)
-                ..2 * size_of::<u64>()
-                    + key_len.next_multiple_of(4)
-                    + values_len * size_of::<u32>(),
-        )?)
+        let result = entry
+            .get(
+                2 * size_of::<u64>() + key_len.next_multiple_of(4)
+                    ..2 * size_of::<u64>()
+                        + key_len.next_multiple_of(4)
+                        + values_len * size_of::<u32>(),
+            )
+            .and_then(u32::slice_from)
+            .ok_or(io::ErrorKind::InvalidData)?;
+        Ok(Some(result))
     }
 }
 
@@ -222,12 +236,15 @@ mod tests {
         // Non-existing keys should return None
         for _ in 0..1000 {
             let key = rand_ident(&mut rng, |i| !map.contains_key(i));
-            assert!(mmap.get(&key).is_none());
+            assert!(mmap.get(&key).unwrap().is_none());
         }
 
         // Existing keys should return the correct values
         for (k, v) in map.into_iter() {
-            assert_eq!(mmap.get(&k).unwrap(), &v.into_iter().collect::<Vec<_>>());
+            assert_eq!(
+                mmap.get(&k).unwrap().unwrap(),
+                &v.into_iter().collect::<Vec<_>>()
+            );
         }
     }
 }
