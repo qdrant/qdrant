@@ -207,15 +207,10 @@ impl Collection {
 
     pub async fn scroll_by(
         &self,
-        mut request: ScrollRequestInternal,
+        request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<ScrollResult> {
-        merge_filters(
-            &mut request.filter,
-            self.shards_holder.read().await.resharding_filter(),
-        );
-
         let default_request = ScrollRequestInternal::default();
 
         let id_offset = request.offset;
@@ -252,7 +247,28 @@ impl Collection {
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
+
+            // Resharding filter to apply when resharding is active
+            let resharding_filter = shards_holder.resharding_filter();
+            let reshard_shard_id = shards_holder
+                .resharding_state
+                .read()
+                .as_ref()
+                .map(|state| state.shard_id);
+
+            // Take the filter and apply the resharding filter
+            // Should be used on all shards, except the new resharding shard
+            let mut filter = request.filter.clone();
+            merge_filters(&mut filter, resharding_filter.clone());
+
             let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+                // Take the updated filter, or the original filter for the resharding shard
+                let filter = if Some(shard.shard_id) == reshard_shard_id {
+                    &request.filter
+                } else {
+                    &filter
+                };
+
                 let shard_key = shard_key.cloned();
                 shard
                     .scroll_by(
@@ -260,7 +276,7 @@ impl Collection {
                         limit,
                         &with_payload_interface,
                         &with_vector,
-                        request.filter.as_ref(),
+                        filter.as_ref(),
                         read_consistency,
                         local_only,
                         order_by.as_ref(),
