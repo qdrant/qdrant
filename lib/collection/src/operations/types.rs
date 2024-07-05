@@ -1750,34 +1750,6 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
     }
 }
 
-impl TryFrom<ShardQueryRequest> for CoreSearchRequest {
-    type Error = CollectionError;
-
-    fn try_from(request: ShardQueryRequest) -> Result<Self, Self::Error> {
-        if let Some(query) = request.query {
-            match query {
-                ScoringQuery::Vector(query) => Ok(Self {
-                    query,
-                    filter: request.filter,
-                    params: request.params,
-                    limit: request.limit,
-                    offset: request.offset,
-                    with_payload: Some(request.with_payload),
-                    with_vector: Some(request.with_vector),
-                    score_threshold: request.score_threshold,
-                }),
-                _ => Err(CollectionError::BadInput {
-                    description: "Only vector queries are supported".to_string(),
-                }),
-            }
-        } else {
-            Err(CollectionError::BadInput {
-                description: "Query is missing".to_string(),
-            })
-        }
-    }
-}
-
 impl From<SearchRequestInternal> for ShardQueryRequest {
     fn from(value: SearchRequestInternal) -> Self {
         let SearchRequestInternal {
@@ -1798,6 +1770,33 @@ impl From<SearchRequestInternal> for ShardQueryRequest {
             score_threshold,
             limit,
             offset: offset.unwrap_or_default(),
+            params,
+            with_vector: with_vector.unwrap_or_default(),
+            with_payload: with_payload.unwrap_or_default(),
+        }
+    }
+}
+
+impl From<CoreSearchRequest> for ShardQueryRequest {
+    fn from(value: CoreSearchRequest) -> Self {
+        let CoreSearchRequest {
+            query,
+            filter,
+            score_threshold,
+            limit,
+            offset,
+            params,
+            with_vector,
+            with_payload,
+        } = value;
+
+        Self {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Vector(query)),
+            filter,
+            score_threshold,
+            limit,
+            offset,
             params,
             with_vector: with_vector.unwrap_or_default(),
             with_payload: with_payload.unwrap_or_default(),

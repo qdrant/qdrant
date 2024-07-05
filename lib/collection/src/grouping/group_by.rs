@@ -30,7 +30,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
-use crate::recommendations::recommend_into_query_search;
+use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
@@ -102,7 +102,9 @@ impl GroupRequest {
                 )
                 .await?;
 
-                recommend_into_query_search(&collection.id, recommend_req, &referenced_vectors)?
+                let core_search =
+                    recommend_into_core_search(&collection.id, recommend_req, &referenced_vectors)?;
+                ShardQueryRequest::from(core_search)
             }
             SourceRequest::Query(query_req) => {
                 // Lift nested prefetches to root queries for vector resolution
