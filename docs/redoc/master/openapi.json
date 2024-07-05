@@ -11963,7 +11963,8 @@
         "type": "string",
         "enum": [
           "rrf"
-        ]
+        ],
+        "example": "rrf"
       },
       "QueryRequestBatch": {
         "type": "object",
