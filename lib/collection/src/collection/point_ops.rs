@@ -422,15 +422,8 @@ impl Collection {
         let with_payload = WithPayload::from(with_payload_interface);
         let request = Arc::new(request);
 
-        #[allow(unused_assignments)]
-        let mut resharding_filter = None;
-
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
-
-            // Get resharding filter, while we hold the lock to shard holder
-            resharding_filter = shard_holder.resharding_filter_impl();
-
             let target_shards = shard_holder.select_shards(shard_selection)?;
             let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
                 let shard_key = shard_key.cloned();
@@ -460,11 +453,6 @@ impl Collection {
         let points = all_shard_collection_results
             .into_iter()
             .flatten()
-            // If resharding is in progress, and *read* hash-ring is committed, filter-out "resharded" points
-            .filter(|point| match &resharding_filter {
-                Some(filter) => filter.check(point.id),
-                None => true,
-            })
             // Add each point only once, deduplicate point IDs
             .filter(|point| covered_point_ids.insert(point.id))
             .collect();
