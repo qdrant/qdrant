@@ -316,7 +316,7 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         # Wait for resharding to start
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
-        # Continously assert point count on all peers, must be stable
+        # Continuously assert point count on all peers, must be stable
         # Stop once all peers reported completed resharding
         while True:
             for uri in peer_api_uris:
@@ -415,7 +415,7 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         # Wait for resharding to start
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
-        # Continously assert point scroll samples on all peers, must be stable
+        # Continuously assert point scroll samples on all peers, must be stable
         # Stop once all peers reported completed resharding
         while True:
             # Match scroll sample of points on all nodes exactly
@@ -445,15 +445,15 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
             assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
 
 
-# Test point search stability during resharding.
+# Test point query stability during resharding.
 #
 # On a static collection, this performs resharding a few times and asserts
-# search remains stable on all peers during the whole process.
-def test_resharding_stable_search(tmp_path: pathlib.Path):
+# query remains stable on all peers during the whole process.
+def test_resharding_stable_query(tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 1000
-    search_limit = 10
+    query_limit = 10
 
     # Prevent optimizers messing with point counts
     env={
@@ -485,7 +485,7 @@ def test_resharding_stable_search(tmp_path: pathlib.Path):
         r = requests.post(
             f"{uri}/collections/{COLLECTION_NAME}/points/query", json={
                 "vector": search_vector,
-                "limit": search_limit,
+                "limit": query_limit,
             }
         )
         assert_http_ok(r)
@@ -507,7 +507,7 @@ def test_resharding_stable_search(tmp_path: pathlib.Path):
         # Wait for resharding to start
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
-        # Continously assert point search samples on all peers, must be stable
+        # Continuously assert point search samples on all peers, must be stable
         # Stop once all peers reported completed resharding
         while True:
             # Match search sample of points on all nodes exactly
@@ -517,7 +517,7 @@ def test_resharding_stable_search(tmp_path: pathlib.Path):
                 r = requests.post(
                     f"{uri}/collections/{COLLECTION_NAME}/points/query", json={
                         "vector": search_vector,
-                        "limit": search_limit,
+                        "limit": query_limit,
                     }
                 )
                 assert_http_ok(r)
