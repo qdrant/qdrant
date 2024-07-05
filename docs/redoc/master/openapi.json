@@ -7805,6 +7805,11 @@
               }
             ]
           }
+        },
+        "example": {
+          "direction": "desc",
+          "key": "timestamp",
+          "start_from": 123
         }
       },
       "Direction": {
