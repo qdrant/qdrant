@@ -348,25 +348,35 @@ impl Collection {
 
     pub async fn count(
         &self,
-        mut request: CountRequestInternal,
+        request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CountResult> {
-        merge_filters(
-            &mut request.filter,
-            self.shards_holder.read().await.resharding_filter(),
-        );
-
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
 
-        let request = Arc::new(request);
+        // Resharding filter to apply when resharding is active
+        // Applied to each shard request separately, because the resharding shard must not be filtered
+        let resharding_filter = shards_holder.resharding_filter();
+        let reshard_shard_id = shards_holder
+            .resharding_state
+            .read()
+            .as_ref()
+            .map(|state| state.shard_id);
+
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|(shard, _shard_key)| {
+                let mut request = request.clone();
+
+                // Merge resharding filter on all but the new resharding shard
+                if Some(shard.shard_id) != reshard_shard_id {
+                    merge_filters(&mut request.filter, resharding_filter.clone());
+                }
+
                 shard.count(
-                    request.clone(),
+                    Arc::new(request),
                     read_consistency,
                     shard_selection.is_shard_id(),
                 )
@@ -446,6 +456,7 @@ impl Collection {
     }
 }
 
+#[inline]
 fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>) {
     if let Some(resharding_filter) = resharding_filter {
         *filter = Some(match filter.take() {
