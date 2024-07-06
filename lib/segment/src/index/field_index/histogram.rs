@@ -164,9 +164,6 @@ impl<T: Numericable> Histogram<T> {
     ///
     /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
-        // bound_map is unstable, but can be used here
-        // let from_ = from.map(|val| Point { val, idx: usize::MIN });
-
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
