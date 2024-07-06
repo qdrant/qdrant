@@ -397,7 +397,8 @@ impl GpuSearchContext {
             groups_count * std::mem::size_of::<PointOffsetType>(),
         )?);
 
-        let gpu_nearest_heap = GpuNearestHeap::new(ef, std::cmp::max(ef, m0 + 1), working_group_size)?;
+        let gpu_nearest_heap =
+            GpuNearestHeap::new(ef, std::cmp::max(ef, m0 + 1), working_group_size)?;
         let gpu_candidates_heap =
             GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
         let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;

@@ -4,11 +4,7 @@ pub struct GpuNearestHeap {
 }
 
 impl GpuNearestHeap {
-    pub fn new(
-        ef: usize,
-        capacity: usize,
-        working_group_size: usize,
-    ) -> gpu::GpuResult<Self> {
+    pub fn new(ef: usize, capacity: usize, working_group_size: usize) -> gpu::GpuResult<Self> {
         assert!(capacity >= ef);
         let capacity = capacity.div_ceil(working_group_size) * working_group_size;
         Ok(Self { ef, capacity })
