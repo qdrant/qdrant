@@ -13,10 +13,9 @@ layout(set = 0, binding = 2) buffer ScoresOuput {
 
 void main() {
     candidates_heap_init();
-    uint subgroup_index = SUBGROUP_ID;
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = gl_GlobalInvocationID.y * test_params.input_counts + i;
         ScoredPoint point = input_points.data[point_index];
         push_candidate(point);
     }
@@ -26,15 +25,15 @@ void main() {
     }
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = gl_GlobalInvocationID.y * test_params.input_counts + i;
         ScoredPoint point = input_points.data[point_index];
         push_candidate(point);
     }
 
-    uint output_index = subgroup_index * test_params.input_counts;
+    uint output_index = gl_GlobalInvocationID.y * test_params.input_counts;
     while (candidates_count > 0) {
         ScoredPoint candidate = pop_candidate();
-        if (subgroupElect()) {
+        if (gl_GlobalInvocationID.x == 0) {
             scores_output.data[output_index] = candidate;
         }
         output_index++;

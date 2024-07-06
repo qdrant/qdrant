@@ -64,6 +64,7 @@ mod tests {
         let points_count = 1024;
         let groups_count = 8;
         let inputs_count = points_count;
+        let working_group_size = 128;
 
         let mut rng = StdRng::seed_from_u64(42);
         let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
@@ -84,7 +85,7 @@ mod tests {
             GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
         let shader = Arc::new(
-            gpu::ShaderBuilder::new(device.clone(), 32)
+            gpu::ShaderBuilder::new(device.clone(), working_group_size)
                 .with_shader_code(include_str!("./shaders/common.comp"))
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_candidates_heap.comp"))
@@ -179,7 +180,7 @@ mod tests {
                 gpu_candidates_heap.descriptor_set.clone(),
             ],
         );
-        context.dispatch(groups_count, 1, 1);
+        context.dispatch(1, groups_count, 1);
         context.run();
         context.wait_finish();
 
