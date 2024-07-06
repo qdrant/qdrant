@@ -1,10 +1,6 @@
 #ifndef NEAREST_HEAP_HEADER
 #define NEAREST_HEAP_HEADER
 
-#ifndef NEAREST_HEAP_LAYOUT_SET
-#error "NEAREST_HEAP_LAYOUT_SET not defined"
-#endif
-
 #ifndef NEAREST_HEAP_CAPACITY
 #error "NEAREST_HEAP_CAPACITY not defined"
 #endif
@@ -13,22 +9,18 @@
 #error "NEAREST_HEAP_EF not defined"
 #endif
 
-ScoredPoint nearest_buffer[NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE];
+shared ScoredPoint nearest_buffer[NEAREST_HEAP_CAPACITY];
 ScoredPoint nearest_smaller;
 uint nearest_smaller_index;
 uint nearest_count;
 
 ScoredPoint get_nearest(uint i) {
-    if (gl_GlobalInvocationID.x == i / (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE)) {
-        merge_buffer[0] = nearest_buffer[i % (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE)];
-    }
-    barrier();
-    return merge_buffer[0];
+    return nearest_buffer[i];
 }
 
 void set_nearest(uint i, ScoredPoint scored_point) {
-    if (gl_GlobalInvocationID.x == i / (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE)) {
-        nearest_buffer[i % (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE)] = scored_point;
+    if (gl_GlobalInvocationID.x == 0) {
+        nearest_buffer[i] = scored_point;
     }
     barrier();
 }
@@ -38,25 +30,30 @@ ScoredPoint subgroup_find_smallest(ScoredPoint scored_point) {
     bool is_min_thread = scored_point.score == subgroup_smallest_score;
     uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
     uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
-    scored_point.score = subgroupShuffle(scored_point.score, subgroup_min_thread);
-    scored_point.id = subgroupShuffle(scored_point.id, subgroup_min_thread);
-    return scored_point;
+    return ScoredPoint(
+        subgroupShuffle(scored_point.id, subgroup_min_thread),
+        subgroupShuffle(scored_point.score, subgroup_min_thread)
+    );
+}
+
+ScoredPoint subgroup_find_largest(ScoredPoint scored_point) {
+    float subgroup_largest_score = subgroupMax(scored_point.score);
+    bool is_max_thread = scored_point.score == subgroup_largest_score;
+    uvec4 subgroup_max_threads = subgroupBallot(is_max_thread);
+    uint subgroup_max_thread = subgroupBallotFindLSB(subgroup_max_threads);
+    return ScoredPoint(
+        subgroupShuffle(scored_point.id, subgroup_max_thread),
+        subgroupShuffle(scored_point.score, subgroup_max_thread)
+    );
 }
 
 uint find_smallest() {
-    uint offset = gl_GlobalInvocationID.x * (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE);
-    ScoredPoint thread_smallest = ScoredPoint(
-        offset,
-        nearest_buffer[0].score
-    );
-    if (offset >= nearest_count) {
-        thread_largest.score = positive_infinity;
-    }
-    for (uint i = 1; i < NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE; i++) {
+    ScoredPoint thread_smallest = ScoredPoint(0, positive_infinity);
+    for (uint i = gl_GlobalInvocationID.x; i < nearest_count; i += WORKING_GROUP_SIZE) {
         ScoredPoint scored_point = nearest_buffer[i];
-        if (offset + i < nearest_count && scored_point.score < thread_smallest.score) {
+        if (scored_point.score < thread_smallest.score) {
             thread_smallest.score = scored_point.score;
-            thread_smallest.id = offset + i;
+            thread_smallest.id = i;
         }
     }
 
@@ -67,11 +64,12 @@ uint find_smallest() {
     barrier();
 
     if (gl_SubgroupID == 0) {
-        float s = gl_SubgroupInvocationID < gl_NumSubgroups ? 
+        ScoredPoint s = gl_SubgroupInvocationID < gl_NumSubgroups ? 
             merge_buffer[gl_SubgroupInvocationID] : 
             ScoredPoint(0, positive_infinity);
+        ScoredPoint group_result = subgroup_find_smallest(s);
         if (subgroupElect()) {
-            merge_buffer[0] = subgroup_find_smallest(s);
+            merge_buffer[0] = group_result;
         }
     }
     barrier();
@@ -79,30 +77,13 @@ uint find_smallest() {
     return merge_buffer[0].id;
 }
 
-ScoredPoint subgroup_find_largest(ScoredPoint scored_point) {
-    float subgroup_largest_score = subgroupMax(scored_point.score);
-    bool is_max_thread = scored_point.score == subgroup_largest_score;
-    uvec4 subgroup_max_threads = subgroupBallot(is_max_thread);
-    uint subgroup_max_thread = subgroupBallotFindLSB(subgroup_max_threads);
-    scored_point.score = subgroupShuffle(scored_point.score, subgroup_max_thread);
-    scored_point.id = subgroupShuffle(scored_point.id, subgroup_max_thread);
-    return scored_point;
-}
-
 uint find_largest(uint skip) {
-    uint offset = gl_GlobalInvocationID.x * (NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE);
-    ScoredPoint thread_largest = ScoredPoint(
-        offset,
-        nearest_buffer[0].score
-    );
-    if (offset >= nearest_count) {
-        thread_largest.score = negative_infinity;
-    }
-    for (uint i = 1; i < NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE; i++) {
+    ScoredPoint thread_largest = ScoredPoint(0, negative_infinity);
+    for (uint i = gl_GlobalInvocationID.x; i < nearest_count; i += WORKING_GROUP_SIZE) {
         ScoredPoint scored_point = nearest_buffer[i];
-        if (offset + i < nearest_count && scored_point.score > thread_largest.score) {
+        if (i >= skip && scored_point.score > thread_largest.score) {
             thread_largest.score = scored_point.score;
-            thread_largest.id = offset + i;
+            thread_largest.id = i;
         }
     }
 
@@ -113,11 +94,12 @@ uint find_largest(uint skip) {
     barrier();
 
     if (gl_SubgroupID == 0) {
-        float s = gl_SubgroupInvocationID < gl_NumSubgroups ? 
+        ScoredPoint s = gl_SubgroupInvocationID < gl_NumSubgroups ? 
             merge_buffer[gl_SubgroupInvocationID] : 
             ScoredPoint(0, negative_infinity);
+        ScoredPoint group_result = subgroup_find_largest(s);
         if (subgroupElect()) {
-            merge_buffer[0] = subgroup_find_largest(s);
+            merge_buffer[0] = group_result;
         }
     }
     barrier();
@@ -129,7 +111,7 @@ void nearest_heap_init() {
     nearest_count = 0;
     nearest_smaller_index = 0;
     nearest_smaller = ScoredPoint(UINT_MAX, positive_infinity);
-    for (uint i = 0; i < NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE; i++) {
+    for (uint i = gl_GlobalInvocationID.x; i < NEAREST_HEAP_CAPACITY; i += WORKING_GROUP_SIZE) {
         nearest_buffer[i] = ScoredPoint(UINT_MAX, positive_infinity);
     }
     barrier();
@@ -137,10 +119,11 @@ void nearest_heap_init() {
 
 // Push the nearest `ScoredPoint`. Returns true if the `ScoredPoint` was added.
 bool push_nearest(ScoredPoint scored_point) {
-    if (nearest_count == ef) {
+    if (nearest_count == NEAREST_HEAP_EF) {
         if (scored_point.score > nearest_smaller.score) {
             set_nearest(nearest_smaller_index, scored_point);
             nearest_smaller_index = find_smallest();
+            nearest_smaller = get_nearest(nearest_smaller_index);
             return true;
         } else {
             return false;

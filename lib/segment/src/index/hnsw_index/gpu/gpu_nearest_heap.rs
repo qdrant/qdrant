@@ -1,20 +1,24 @@
-use std::sync::Arc;
-
 pub struct GpuNearestHeap {
     pub ef: usize,
     pub capacity: usize,
 }
 
 impl GpuNearestHeap {
-    pub fn new(device: Arc<gpu::Device>, ef: usize, capacity: usize) -> gpu::GpuResult<Self> {
+    pub fn new(
+        ef: usize,
+        capacity: usize,
+        working_group_size: usize,
+    ) -> gpu::GpuResult<Self> {
         assert!(capacity >= ef);
-        let capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
+        let capacity = capacity.div_ceil(working_group_size) * working_group_size;
         Ok(Self { ef, capacity })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use common::types::{PointOffsetType, ScoredPointOffset};
     use rand::rngs::StdRng;
@@ -29,9 +33,9 @@ mod tests {
 
     #[test]
     fn test_gpu_nearest_heap() {
-        let ef = 100;
-        let points_count = 1024;
-        let groups_count = 8;
+        let ef = 200;
+        let points_count = 300;
+        let groups_count = 4;
         let inputs_count = points_count;
         let working_group_size = 128;
 
@@ -49,8 +53,7 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let mut context = gpu::Context::new(device.clone());
-        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), ef, ef).unwrap();
+        let gpu_nearest_heap = GpuNearestHeap::new(ef, ef, working_group_size).unwrap();
 
         let shader = Arc::new(
             gpu::ShaderBuilder::new(device.clone(), working_group_size)
@@ -71,6 +74,7 @@ mod tests {
             .unwrap(),
         );
 
+        let mut context = gpu::Context::new(device.clone());
         let upload_staging_buffer = Arc::new(
             gpu::Buffer::new(
                 device.clone(),
@@ -207,7 +211,7 @@ mod tests {
         for group in 0..groups_count {
             let mut nearest_group = Vec::new();
             for i in 0..ef {
-                nearest_group.push(nearest_gpu[group * gpu_nearest_heap.capacity + i]);
+                nearest_group.push(nearest_gpu[group * gpu_nearest_heap.ef + i]);
             }
             sorted_output_gpu.extend(nearest_group);
         }

@@ -127,6 +127,7 @@ impl GpuSearchContext {
             candidates_capacity,
             ef,
             m0,
+            gpu_vector_storage.working_group_size,
         )
         .map_err(|_| OperationError::service_error("Failed to allocate gpu data"))?;
         println!(
@@ -357,6 +358,7 @@ impl GpuSearchContext {
         candidates_capacity: usize,
         ef: usize,
         m0: usize,
+        working_group_size: usize,
     ) -> gpu::GpuResult<GpuSearchContextGroupAllocation> {
         while max_groups_count >= 1 {
             if let Ok(alloc) = Self::try_allocate_grouped_data(
@@ -366,6 +368,7 @@ impl GpuSearchContext {
                 candidates_capacity,
                 ef,
                 m0,
+                working_group_size,
             ) {
                 return Ok(alloc);
             }
@@ -381,6 +384,7 @@ impl GpuSearchContext {
         candidates_capacity: usize,
         ef: usize,
         m0: usize,
+        working_group_size: usize,
     ) -> gpu::GpuResult<GpuSearchContextGroupAllocation> {
         let requests_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -393,7 +397,7 @@ impl GpuSearchContext {
             groups_count * std::mem::size_of::<PointOffsetType>(),
         )?);
 
-        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), ef, std::cmp::max(ef, m0 + 1))?;
+        let gpu_nearest_heap = GpuNearestHeap::new(ef, std::cmp::max(ef, m0 + 1), working_group_size)?;
         let gpu_candidates_heap =
             GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
         let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;
