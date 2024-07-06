@@ -50,7 +50,6 @@ pub enum GpuVectorStorageElementType {
 pub enum LayoutSetBinding {
     VisitedFlags,
     VectorStorage,
-    NearestHeap,
     Links,
     CandidatesHeap,
 }
@@ -60,7 +59,6 @@ impl LayoutSetBinding {
         match self {
             LayoutSetBinding::VisitedFlags => "VISITED_FLAGS_LAYOUT_SET",
             LayoutSetBinding::VectorStorage => "VECTOR_STORAGE_LAYOUT_SET",
-            LayoutSetBinding::NearestHeap => "NEAREST_HEAP_LAYOUT_SET",
             LayoutSetBinding::Links => "LINKS_LAYOUT_SET",
             LayoutSetBinding::CandidatesHeap => "CANDIDATES_HEAP_LAYOUT_SET",
         }

@@ -142,11 +142,10 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_layout(gpu::LayoutSetBinding::Links, 2)
                 .with_shader_code(include_str!("./shaders/links.comp"))
-                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
                 .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 3)
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 4)
                 .with_shader_code(include_str!("./shaders/visited_flags.comp"))
                 .with_shader_code(include_str!("./shaders/search_context.comp"))
                 .with_shader_code(include_str!("./shaders/run_greedy_search.comp"))
@@ -168,11 +167,10 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_layout(gpu::LayoutSetBinding::Links, 2)
                 .with_shader_code(include_str!("./shaders/links.comp"))
-                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
                 .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 3)
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 4)
                 .with_shader_code(include_str!("./shaders/visited_flags.comp"))
                 .with_shader_code(include_str!("./shaders/search_context.comp"))
                 .with_shader_code(include_str!("./shaders/run_insert_vector.comp"))
@@ -194,11 +192,10 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_layout(gpu::LayoutSetBinding::Links, 2)
                 .with_shader_code(include_str!("./shaders/links.comp"))
-                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
                 .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 3)
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 4)
                 .with_shader_code(include_str!("./shaders/visited_flags.comp"))
                 .with_shader_code(include_str!("./shaders/search_context.comp"))
                 .with_shader_code(include_str!("./shaders/tests/test_hnsw_search.comp"))
@@ -220,11 +217,10 @@ impl GpuSearchContext {
                 .with_shader_code(include_str!("./shaders/vector_storage.comp"))
                 .with_layout(gpu::LayoutSetBinding::Links, 2)
                 .with_shader_code(include_str!("./shaders/links.comp"))
-                .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
                 .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+                .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 3)
                 .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+                .with_layout(gpu::LayoutSetBinding::VisitedFlags, 4)
                 .with_shader_code(include_str!("./shaders/visited_flags.comp"))
                 .with_shader_code(include_str!("./shaders/search_context.comp"))
                 .with_shader_code(include_str!("./shaders/run_get_patch.comp"))
@@ -253,9 +249,8 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(0, greedy_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(greedy_search_shader.clone())
             .build(device.clone());
 
@@ -274,9 +269,8 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(0, search_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(search_shader.clone())
             .build(device.clone());
 
@@ -297,9 +291,8 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(0, patches_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(patches_shader.clone())
             .build(device.clone());
 
@@ -320,9 +313,8 @@ impl GpuSearchContext {
             .add_descriptor_set_layout(0, insert_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout.clone())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(3, gpu_nearest_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(4, gpu_candidates_heap.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(5, gpu_visited_flags.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(3, gpu_candidates_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(4, gpu_visited_flags.descriptor_set_layout.clone())
             .add_shader(insert_shader.clone())
             .build(device.clone());
 
@@ -401,8 +393,7 @@ impl GpuSearchContext {
             groups_count * std::mem::size_of::<PointOffsetType>(),
         )?);
 
-        let gpu_nearest_heap =
-            GpuNearestHeap::new(device.clone(), groups_count, ef, std::cmp::max(ef, m0 + 1))?;
+        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), ef, std::cmp::max(ef, m0 + 1))?;
         let gpu_candidates_heap =
             GpuCandidatesHeap::new(device.clone(), groups_count, candidates_capacity)?;
         let gpu_visited_flags = GpuVisitedFlags::new(device.clone(), groups_count, points_count)?;
@@ -504,7 +495,6 @@ impl GpuSearchContext {
                 self.search_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set.clone(),
                 self.gpu_links.descriptor_set.clone(),
-                self.gpu_nearest_heap.descriptor_set.clone(),
                 self.gpu_candidates_heap.descriptor_set.clone(),
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
@@ -581,7 +571,6 @@ impl GpuSearchContext {
                 self.greedy_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set.clone(),
                 self.gpu_links.descriptor_set.clone(),
-                self.gpu_nearest_heap.descriptor_set.clone(),
                 self.gpu_candidates_heap.descriptor_set.clone(),
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
@@ -652,7 +641,6 @@ impl GpuSearchContext {
                 self.insert_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set.clone(),
                 self.gpu_links.descriptor_set.clone(),
-                self.gpu_nearest_heap.descriptor_set.clone(),
                 self.gpu_candidates_heap.descriptor_set.clone(),
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
@@ -702,7 +690,6 @@ impl GpuSearchContext {
                 self.patches_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set.clone(),
                 self.gpu_links.descriptor_set.clone(),
-                self.gpu_nearest_heap.descriptor_set.clone(),
                 self.gpu_candidates_heap.descriptor_set.clone(),
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
@@ -1137,11 +1124,10 @@ mod tests {
             .with_shader_code(include_str!("./shaders/vector_storage.comp"))
             .with_layout(gpu::LayoutSetBinding::Links, 2)
             .with_shader_code(include_str!("./shaders/links.comp"))
-            .with_layout(gpu::LayoutSetBinding::NearestHeap, 3)
             .with_shader_code(include_str!("./shaders/nearest_heap.comp"))
-            .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 4)
+            .with_layout(gpu::LayoutSetBinding::CandidatesHeap, 3)
             .with_shader_code(include_str!("./shaders/candidates_heap.comp"))
-            .with_layout(gpu::LayoutSetBinding::VisitedFlags, 5)
+            .with_layout(gpu::LayoutSetBinding::VisitedFlags, 4)
             .with_shader_code(include_str!("./shaders/visited_flags.comp"))
             .with_shader_code(include_str!("./shaders/search_context.comp"))
             .with_shader_code(include_str!("./shaders/tests/test_heuristic.comp"))
@@ -1183,19 +1169,12 @@ mod tests {
             .add_descriptor_set_layout(
                 3,
                 test.gpu_search_context
-                    .gpu_nearest_heap
-                    .descriptor_set_layout
-                    .clone(),
-            )
-            .add_descriptor_set_layout(
-                4,
-                test.gpu_search_context
                     .gpu_candidates_heap
                     .descriptor_set_layout
                     .clone(),
             )
             .add_descriptor_set_layout(
-                5,
+                4,
                 test.gpu_search_context
                     .gpu_visited_flags
                     .descriptor_set_layout
@@ -1213,10 +1192,6 @@ mod tests {
                     .descriptor_set
                     .clone(),
                 test.gpu_search_context.gpu_links.descriptor_set.clone(),
-                test.gpu_search_context
-                    .gpu_nearest_heap
-                    .descriptor_set
-                    .clone(),
                 test.gpu_search_context
                     .gpu_candidates_heap
                     .descriptor_set
