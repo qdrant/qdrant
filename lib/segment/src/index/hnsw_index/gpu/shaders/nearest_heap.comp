@@ -129,7 +129,7 @@ void nearest_heap_init() {
     nearest_count = 0;
     nearest_smaller_index = 0;
     nearest_smaller = ScoredPoint(UINT_MAX, positive_infinity);
-    for (uint i = 0; NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE; i++) {
+    for (uint i = 0; i < NEAREST_HEAP_CAPACITY / WORKING_GROUP_SIZE; i++) {
         nearest_buffer[i] = ScoredPoint(UINT_MAX, positive_infinity);
     }
     barrier();
