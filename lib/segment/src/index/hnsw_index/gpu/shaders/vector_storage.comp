@@ -220,7 +220,7 @@ float similarity(uint a) {
 
     // merge the subgroup results
     if (gl_SubgroupID == 0) {
-        float s = gl_SubgroupID < gl_NumSubgroups ? merge_buffer[gl_SubgroupInvocationID].score : 0.0;
+        float s = gl_SubgroupInvocationID < gl_NumSubgroups ? merge_buffer[gl_SubgroupInvocationID].score : 0.0;
         float group_result = subgroupAdd(s);
         if (subgroupElect()) {
             merge_buffer[0] = ScoredPoint(0, group_result);
