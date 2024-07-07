@@ -11758,7 +11758,13 @@
             "items": {
               "type": "number",
               "format": "float"
-            }
+            },
+            "example": [
+              0.875,
+              0.140625,
+              -0.15625,
+              0.96875
+            ]
           },
           {
             "$ref": "#/components/schemas/SparseVector"
@@ -11771,7 +11777,24 @@
                 "type": "number",
                 "format": "float"
               }
-            }
+            },
+            "example": [
+              [
+                1,
+                2,
+                3
+              ],
+              [
+                4,
+                5,
+                6
+              ],
+              [
+                7,
+                8,
+                9
+              ]
+            ]
           },
           {
             "$ref": "#/components/schemas/ExtendedPointId"

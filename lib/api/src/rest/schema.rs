@@ -198,11 +198,21 @@ pub enum Fusion {
     Rrf,
 }
 
+fn multi_dense_vector_example() -> MultiDenseVector {
+    vec![
+        vec![1.0, 2.0, 3.0],
+        vec![4.0, 5.0, 6.0],
+        vec![7.0, 8.0, 9.0],
+    ]
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum VectorInput {
+    #[schemars(example = "vector_example")]
     DenseVector(DenseVector),
     SparseVector(SparseVector),
+    #[schemars(example = "multi_dense_vector_example")]
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
 }
