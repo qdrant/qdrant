@@ -6,7 +6,7 @@ void main() {
     uint idx = gl_GlobalInvocationID.y;
     set_vector_storage_target(0);
     float score = similarity(idx);
-    if (subgroupElect()) {
+    if (gl_GlobalInvocationID.x == 0) {
         scores.data[idx] = score;
     }
 }

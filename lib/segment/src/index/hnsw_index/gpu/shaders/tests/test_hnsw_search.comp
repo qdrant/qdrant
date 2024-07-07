@@ -13,8 +13,7 @@ layout(set = 0, binding = 1) buffer SearchResults {
 
 void main() {
     search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    SearchRequest search_request = search_requests.data[subgroup_index];
+    SearchRequest search_request = search_requests.data[gl_GlobalInvocationID.y];
 
     set_vector_storage_target(search_request.id);
     float entry_score = similarity(search_request.entry);
@@ -22,8 +21,8 @@ void main() {
 
     barrier();
 
-    if (subgroupElect()) {
-        uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
+    if (gl_GlobalInvocationID.x == 0) {
+        uint result_index_offset = NEAREST_HEAP_EF * gl_GlobalInvocationID.y;
         uint i = 0;
         for (; i < count; i++) {
             search_results.data[result_index_offset + i] = get_nearest(i);

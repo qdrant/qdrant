@@ -20,15 +20,13 @@ buffer VisitedFlagsBuffer {
 #define VISITED_GENERATION visited_flags_params.generation
 
 bool is_visited(POINT_ID point_id) {
-    uint subgroup_index = SUBGROUP_ID;
-    uint index = subgroup_index * visited_flags_params.capacity + point_id;
+    uint index = gl_GlobalInvocationID.y * visited_flags_params.capacity + point_id;
     uint prev_generation = uint(visited_flags.data[index]);
     return prev_generation == VISITED_GENERATION;
 }
 
 void mark_visited(POINT_ID point_id) {
-    uint subgroup_index = SUBGROUP_ID;
-    uint index = subgroup_index * visited_flags_params.capacity + point_id;
+    uint index = gl_GlobalInvocationID.y * visited_flags_params.capacity + point_id;
     visited_flags.data[index] = uint8_t(VISITED_GENERATION);
 }
 

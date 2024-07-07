@@ -12,23 +12,27 @@ bool process_candidate(ScoredPoint scored_point) {
 
 bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
     uint links_count = LINKS_COUNT(candidate_id);
-    uint subgroup_link = 0;
-    bool subgroup_is_visited = true;
-    uint invocation = SUBGROUP_INVOCATION_ID;
+    //uint thread_link = gl_GlobalInvocationID.x < links_count ? GET_LINK(candidate_id, gl_GlobalInvocationID.x) : UINT_MAX;
+    //bool thread_is_visited = gl_GlobalInvocationID.x < links_count ? is_visited(thread_link) : true;
+    //if (!thread_is_visited && gl_GlobalInvocationID.x < links_count) {
+    //    mark_visited(thread_link);
+    //}
 
     for (uint i = 0; i < links_count; i++) {
-        if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-            subgroup_link = GET_LINK(candidate_id, i + invocation);
-            subgroup_is_visited = is_visited(subgroup_link);
-            if (!subgroup_is_visited) {
-                mark_visited(subgroup_link);
-            }
-        }
+        //if (gl_GlobalInvocationID.x == i) {
+        //    merge_buffer[0].id = thread_link;
+        //    merge_buffer[0].score = thread_is_visited ? 1.0 : 0.0;
+        //}
+        //barrier();
+        //uint link = merge_buffer[0].id;
+        //bool is_visited = merge_buffer[0].score == 1.0;
 
-        uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
-        bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
+        uint link = GET_LINK(candidate_id, i);
+        bool visited = is_visited(link);
 
-        if (!is_visited) {
+        if (!visited) {
+            mark_visited(link);
+
             float score = similarity(link);
             ScoredPoint scored_point = ScoredPoint(link, score);
             bool success = process_candidate(scored_point);
@@ -38,16 +42,11 @@ bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
         }
     }
 
-    // flush all changed visited flags
-    groupMemoryBarrier();
-
     return true;
 }
 
 uint search(POINT_ID point_id, ScoredPoint entry) {
-    set_vector_storage_target(point_id);
-
-    if (subgroupElect()) {
+    if (gl_GlobalInvocationID.x == 0) {
         mark_visited(point_id);
         mark_visited(entry.id);
     }
