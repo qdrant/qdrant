@@ -69,24 +69,21 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
 }
 
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
-    set_vector_storage_target(point_id);
-
     bool changed = true;
     ScoredPoint result = entry;
-
-    uint subgroup_link = 0;
-    uint invocation = SUBGROUP_INVOCATION_ID;
 
     while (changed) {
         changed = false;
 
         uint current = result.id;
         uint links_count = LINKS_COUNT(current);
+        uint thread_link = gl_GlobalInvocationID.x < links_count ? GET_LINK(current, gl_GlobalInvocationID.x) : UINT_MAX;
         for (uint i = 0; i < links_count; i++) {
-            if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-                subgroup_link = GET_LINK(current, i + invocation);
+            if (gl_GlobalInvocationID.x == i) {
+                merge_buffer[0].id = thread_link;
             }
-            uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
+            barrier();
+            uint link = merge_buffer[0].id;
 
             float score = similarity(link);
             if (score > result.score) {

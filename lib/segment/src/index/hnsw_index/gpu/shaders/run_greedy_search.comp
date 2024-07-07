@@ -12,15 +12,13 @@ layout(set = 0, binding = 1) buffer SearchResults {
 } search_results;
 
 void main() {
-    search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    SearchRequest search_request = search_requests.data[subgroup_index];
+    SearchRequest search_request = search_requests.data[gl_GlobalInvocationID.y];
 
     set_vector_storage_target(search_request.id);
     float entry_score = similarity(search_request.entry);
     ScoredPoint result = greedy_search(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
-    if (subgroupElect()) {
-        search_results.data[subgroup_index] = result.id;
+    if (gl_GlobalInvocationID.x == 0) {
+        search_results.data[gl_GlobalInvocationID.y] = result.id;
     }
 }

@@ -504,7 +504,7 @@ impl GpuSearchContext {
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
         );
-        self.context.dispatch(requests.len(), 1, 1);
+        self.context.dispatch(1, requests.len(), 1);
         self.run_context();
 
         // Download response
@@ -580,7 +580,7 @@ impl GpuSearchContext {
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
         );
-        self.context.dispatch(requests.len(), 1, 1);
+        self.context.dispatch(1, requests.len(), 1);
         self.run_context();
 
         self.updates_timer += timer.elapsed();
@@ -650,7 +650,7 @@ impl GpuSearchContext {
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
         );
-        self.context.dispatch(requests.len(), 1, 1);
+        self.context.dispatch(1, requests.len(), 1);
         self.run_context();
 
         self.patches_timer += timer.elapsed();
@@ -699,7 +699,7 @@ impl GpuSearchContext {
                 self.gpu_visited_flags.descriptor_set.clone(),
             ],
         );
-        self.context.dispatch(requests.len(), 1, 1);
+        self.context.dispatch(1, requests.len(), 1);
 
         let timer = std::time::Instant::now();
         self.run_context();
@@ -1207,7 +1207,7 @@ mod tests {
                     .clone(),
             ],
         );
-        test.gpu_search_context.context.dispatch(groups_count, 1, 1);
+        test.gpu_search_context.context.dispatch(1, groups_count, 1);
         test.gpu_search_context.run_context();
 
         // Download response
