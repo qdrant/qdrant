@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use memmap2::MmapMut;
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_from_u8_mut};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::{common::{operation_error::{OperationError, OperationResult}, Flusher}, types::{FloatPayloadType, GeoPoint, IntPayloadType}};
+use crate::{common::{mmap_type::MmapSlice, operation_error::{OperationError, OperationResult}, Flusher}, types::{FloatPayloadType, GeoPoint, IntPayloadType}};
 
 pub trait MmapValue: Clone + Default {
     fn mmaped_size(&self) -> usize;
@@ -85,7 +85,7 @@ impl MmapValue for String {
 
         let bytes = &bytes[..size];
 
-        let string = std::str::from_utf8(bytes).map_err(|_| OperationError::service_error(ERROR_MESSAGE))?;
+        let string = std::str::from_utf8(bytes).map_err(|_| OperationError::service_error("UFT8 conversion error. Is the storage corrupted?"))?;
         Ok(string.to_owned())
     }
 
@@ -123,16 +123,23 @@ impl MmapValue for GeoPoint {
 // It's used in mmap field indices like `ImmutableMapIndex`, `ImmutableNumericIndex`, etc to store points-to-values map.
 pub struct MmapPointToValues<T: MmapValue> {
     file_name: PathBuf,
-    mmap: MmapMut,
-    ranges_offset: usize,
-    points_count: usize,
+    mmap: MmapSlice<u8>,
+    header: Header,
     phantom: std::marker::PhantomData<T>,
 }
 
-#[derive(Clone, Copy)]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, AsBytes, FromBytes, FromZeroes)]
 struct MmapRange {
     start: u64,
     count: u64,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, AsBytes, FromBytes, FromZeroes)]
+struct Header {
+    ranges_start: u64,
+    points_count: u64,
 }
 
 impl<T: MmapValue> MmapPointToValues<T> {
@@ -141,7 +148,7 @@ impl<T: MmapValue> MmapPointToValues<T> {
         iter: impl Iterator<Item = (PointOffsetType, Vec<T>)> + Clone,
     ) -> OperationResult<Self> {
         let points_count = iter.clone().count();
-        let header_size = std::mem::size_of::<MmapRange>();
+        let header_size = std::mem::size_of::<Header>();
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
         let values_size = iter.clone().map(|v| v.1.iter().map(|v| v.mmaped_size()).sum::<usize>()).sum::<usize>();
         let file_size = header_size + ranges_size + values_size;
@@ -151,12 +158,16 @@ impl<T: MmapValue> MmapPointToValues<T> {
         let mmap = open_write_mmap(&file_name)?;
 
         // fill mmap
-        
+        let header = Header {
+            ranges_start: header_size as u64,
+            points_count: points_count as u64,
+        };
+
+        let mmap = unsafe { MmapSlice::try_from(mmap)? };
         Ok(Self {
             file_name,
             mmap,
-            ranges_offset: header_size,
-            points_count,
+            header,
             phantom: std::marker::PhantomData,
         })
     }
@@ -164,13 +175,15 @@ impl<T: MmapValue> MmapPointToValues<T> {
     pub fn open(path: &Path) -> OperationResult<Self> {
         let file_name = Self::get_file_name(path);
         let mmap = open_write_mmap(&file_name)?;
-        let header: MmapRange = *transmute_from_u8(mmap.get(0..std::mem::size_of::<MmapRange>()).unwrap());
+        let header = Header::read_from_prefix(mmap.as_ref()).ok_or(OperationError::InconsistentStorage {
+            description: format!("Error while field index header conversion")
+        })?;
+        let mmap = unsafe { MmapSlice::try_from(mmap)? };
 
         Ok(Self {
             file_name,
             mmap,
-            ranges_offset: header.start as usize,
-            points_count: header.count as usize,
+            header,
             phantom: std::marker::PhantomData,
         })
     }
@@ -183,32 +196,43 @@ impl<T: MmapValue> MmapPointToValues<T> {
         vec![self.file_name.clone()]
     }
 
-    pub fn get_values(&self, point_id: PointOffsetType) -> OperationResult<impl Iterator<Item = T>> {
-        let range = self.get_range(point_id)?;
-        Ok(self.get_values_from_range(range))
+    pub fn get_values(&self, point_id: PointOffsetType) -> OperationResult<Box<dyn Iterator<Item = T> + '_>> {
+        let range = if point_id < self.header.points_count as PointOffsetType {
+            let range_offset = (self.header.ranges_start as usize) + (point_id as usize) * std::mem::size_of::<MmapRange>();
+            self
+                .mmap
+                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
+                .and_then(|bytes| MmapRange::read_from(bytes))
+                .unwrap_or_default()
+        } else {
+            MmapRange { start: 0, count: 0 }
+        };
+
+        let bytes: &[u8] = self.mmap.as_ref();
+        let read_value = move |range: MmapRange| -> Option<(T, MmapRange)> {
+            if range.count > 0 {
+                let value = T::read_from_mmap(bytes, range.start as usize).unwrap();
+                let range = MmapRange { start: range.start + value.mmaped_size() as u64, count: range.count - 1 };
+                Some((value, range))
+            } else {
+                None
+            }
+        };
+        Ok(Box::new(std::iter::successors(read_value(range), move |range| read_value(range.1)).map(|(value, _)| value)))
     }
 
     pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<Vec<T>> {
-        let point_id = point_id as usize;
-        let range: &mut MmapRange = transmute_from_u8_mut(self.mmap.get_mut(
-            (point_id + 1) * std::mem::size_of::<MmapRange>()..(point_id + 2) * std::mem::size_of::<MmapRange>()
-        ).unwrap());
-        let values = self.get_values_from_range(range.clone()).collect_vec();
-        *range = MmapRange { start: 0, count: 0 };
+        let values = self.get_values(point_id)?.collect_vec();
+
+        // change points values range to empty
+        let range_offset = (self.header.ranges_start as usize) + (point_id as usize) * std::mem::size_of::<MmapRange>();
+        self
+            .mmap
+            .get_mut(range_offset..range_offset + std::mem::size_of::<MmapRange>())
+            .and_then(|bytes| MmapRange::mut_from(bytes))
+            .map(|range| *range = MmapRange { start: 0, count: 0 });
+
         Ok(values)
-    }
-
-    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<MmapRange> {
-        let point_id = point_id as usize;
-        Ok(*transmute_from_u8(self.mmap.get(
-            (point_id + 1) * std::mem::size_of::<MmapRange>()..(point_id + 2) * std::mem::size_of::<MmapRange>()
-        ).unwrap()))
-    }
-
-    pub fn get_values_from_range(&self, range: MmapRange) -> impl Iterator<Item = T> {
-        std::iter::successors(Some(range), |range| {
-            todo!()
-        })
     }
 
     fn get_file_name(path: &Path) -> PathBuf {
@@ -237,11 +261,11 @@ mod tests {
         ];
 
         let dir = Builder::new().prefix("mmap_point_to_values").tempdir().unwrap();
-        let mut point_to_values = MmapPointToValues::from_iter(dir.path(), values.iter().enumerate().map(|(id, values)| (id as PointOffsetType, values))).unwrap();
+        let mut point_to_values = MmapPointToValues::from_iter(dir.path(), values.clone().into_iter().enumerate().map(|(id, values)| (id as PointOffsetType, values))).unwrap();
 
         let check = |point_to_values: &MmapPointToValues<_>, values: &[Vec<_>]| {
             for (idx, values) in values.iter().enumerate() {
-                let v = point_to_values.get_values(idx as PointOffsetType).unwrap();
+                let v = point_to_values.get_values(idx as PointOffsetType).unwrap().collect_vec();
                 assert_eq!(&v, values);
             }
         };
