@@ -212,7 +212,7 @@ bool push_candidate_impl(ScoredPoint scored_point) {
     return true;
 }
 
-ScoredPoint pop_candidate2() {
+ScoredPoint pop_candidate() {
     if (gl_SubgroupID == 0) {
         ScoredPoint result = pop_candidate_impl();
         if (subgroupElect()) {
@@ -230,7 +230,7 @@ ScoredPoint pop_candidate2() {
     return candidate;
 }
 
-bool push_candidate2(ScoredPoint scored_point) {
+bool push_candidate(ScoredPoint scored_point) {
     if (gl_SubgroupID == 0) {
         bool result = push_candidate_impl(scored_point);
         if (subgroupElect()) {
@@ -244,7 +244,7 @@ bool push_candidate2(ScoredPoint scored_point) {
 }
 
 
-ScoredPoint pop_candidate() {
+ScoredPoint pop_candidate2() {
     if (gl_GlobalInvocationID.x == 0) {
         uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
         ScoredPoint result = candidates.data[buffer_offset];
@@ -269,7 +269,7 @@ ScoredPoint pop_candidate() {
     return merge_buffer[0];
 }
 
-bool push_candidate(ScoredPoint scored_point) {
+bool push_candidate2(ScoredPoint scored_point) {
     if (gl_GlobalInvocationID.x == 0) {
         uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
         candidates.data[buffer_offset + candidates_count] = scored_point;
