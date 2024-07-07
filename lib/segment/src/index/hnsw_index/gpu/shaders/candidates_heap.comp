@@ -118,7 +118,7 @@ ScoredPoint pop_candidate_impl() {
     if (subgroupElect()) {
         candidates.data[buffer_offset + candidates_count - 1] = ScoredPoint(0, positive_infinity);
     }
-    groupMemoryBarrier();
+    subgroupMemoryBarrier();
     candidates_count--;
 
     if (candidates_count == 0) {
@@ -168,7 +168,7 @@ ScoredPoint pop_candidate_impl() {
     }
 
     candidates_heap_write(buffer_offset, node_index, node_value);
-    groupMemoryBarrier();
+    subgroupMemoryBarrier();
     return preprocess_candidates_heap_value(first_candidate);
 }
 
@@ -208,7 +208,7 @@ bool push_candidate_impl(ScoredPoint scored_point) {
 
     candidates_heap_write(buffer_offset, node_index, node_value);
     candidates_count++;
-    groupMemoryBarrier();
+    subgroupMemoryBarrier();
     return true;
 }
 
