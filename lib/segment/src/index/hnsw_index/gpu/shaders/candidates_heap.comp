@@ -16,7 +16,7 @@ buffer CandidatesScores {
 
 uint candidates_count;
 
-#define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * SUBGROUP_ID)
+#define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * gl_GlobalInvocationID.y)
 
 ScoredPoint preprocess_candidates_heap_value(ScoredPoint scored_point) {
     scored_point.score = -scored_point.score; // TODO: revert direction
@@ -96,16 +96,18 @@ void candidates_heap_write(uint buffer_offset, uint node_index, ScoredPoint valu
 void candidates_heap_init() {
     candidates_count = 0;
 
-    uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
-    uint capacity = CANDIDATES_HEAP_CAPACITY;
-    for (uint i = SUBGROUP_INVOCATION_ID; i < capacity; i += SUBGROUP_SIZE) {
-        uint buffer_index = buffer_offset + i;
-        candidates.data[buffer_index] = ScoredPoint(0, positive_infinity);
+    if (gl_SubgroupID == 0) {
+        uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+        uint capacity = CANDIDATES_HEAP_CAPACITY;
+        for (uint i = SUBGROUP_INVOCATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+            uint buffer_index = buffer_offset + i;
+            candidates.data[buffer_index] = ScoredPoint(0, positive_infinity);
+        }
     }
-    groupMemoryBarrier();
+    barrier();
 }
 
-ScoredPoint pop_candidate() {
+ScoredPoint pop_candidate_impl() {
     if (candidates_count == 0) {
         return ScoredPoint(0, 0.0);
     }
@@ -170,7 +172,7 @@ ScoredPoint pop_candidate() {
     return preprocess_candidates_heap_value(first_candidate);
 }
 
-bool push_candidate(ScoredPoint scored_point) {
+bool push_candidate_impl(ScoredPoint scored_point) {
     scored_point = preprocess_candidates_heap_value(scored_point);
     if (candidates_count == CANDIDATES_HEAP_CAPACITY) {
         return false;
@@ -208,6 +210,37 @@ bool push_candidate(ScoredPoint scored_point) {
     candidates_count++;
     groupMemoryBarrier();
     return true;
+}
+
+ScoredPoint pop_candidate() {
+    if (gl_SubgroupID == 0) {
+        ScoredPoint result = pop_candidate_impl();
+        if (subgroupElect()) {
+            merge_buffer[0] = result;
+        }
+    }
+    barrier();
+    ScoredPoint candidate = merge_buffer[0];
+
+    if (gl_GlobalInvocationID.x == 0) {
+        merge_buffer[0].id = candidates_count;
+    }
+    barrier();
+    candidates_count = merge_buffer[0].id;
+    return candidate;
+}
+
+bool push_candidate(ScoredPoint scored_point) {
+    if (gl_SubgroupID == 0) {
+        bool result = push_candidate_impl(scored_point);
+        if (subgroupElect()) {
+            merge_buffer[0].id = candidates_count;
+            merge_buffer[0].score = result ? 1.0 : 0.0;
+        }
+    }
+    barrier();
+    candidates_count = merge_buffer[0].id;
+    return merge_buffer[0].score == 1.0;
 }
 
 #endif

@@ -80,7 +80,6 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let mut context = gpu::Context::new(device.clone());
         let gpu_candidates_heap =
             GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
@@ -103,6 +102,7 @@ mod tests {
             .unwrap(),
         );
 
+        let mut context = gpu::Context::new(device.clone());
         let upload_staging_buffer = Arc::new(
             gpu::Buffer::new(
                 device.clone(),
