@@ -12046,6 +12046,100 @@
               "$ref": "#/components/schemas/QueryRequest"
             }
           }
+        },
+        "example": {
+          "searches": [
+            {
+              "filter": {
+                "min_should": null,
+                "must": [
+                  {
+                    "geo_bounding_box": null,
+                    "geo_polygon": null,
+                    "geo_radius": null,
+                    "key": "city",
+                    "match": {
+                      "text": "Berlin"
+                    },
+                    "range": null,
+                    "values_count": null
+                  }
+                ],
+                "must_not": null,
+                "should": null
+              },
+              "limit": 10,
+              "lookup_from": {
+                "collection": "collection_b",
+                "shard_key": "region_1",
+                "vector": "image_vector"
+              },
+              "offset": 0,
+              "params": {
+                "exact": false,
+                "hnsw_ef": 100,
+                "indexed_only": false,
+                "quantization": null
+              },
+              "prefetch": null,
+              "query": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ],
+              "score_threshold": 1.25,
+              "shard_key": "region_1",
+              "using": "image_vector",
+              "with_payload": true,
+              "with_vector": true
+            },
+            {
+              "filter": {
+                "min_should": null,
+                "must": [
+                  {
+                    "geo_bounding_box": null,
+                    "geo_polygon": null,
+                    "geo_radius": null,
+                    "key": "city",
+                    "match": {
+                      "text": "New York"
+                    },
+                    "range": null,
+                    "values_count": null
+                  }
+                ],
+                "must_not": null,
+                "should": null
+              },
+              "limit": 10,
+              "lookup_from": {
+                "collection": "collection_c",
+                "shard_key": "region_2",
+                "vector": "code_vector"
+              },
+              "offset": 0,
+              "params": {
+                "exact": false,
+                "hnsw_ef": 100,
+                "indexed_only": false,
+                "quantization": null
+              },
+              "prefetch": null,
+              "query": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ],
+              "score_threshold": 1.25,
+              "shard_key": "region_1",
+              "using": "code_vector",
+              "with_payload": true,
+              "with_vector": true
+            }
+          ]
         }
       },
       "QueryResponse": {
