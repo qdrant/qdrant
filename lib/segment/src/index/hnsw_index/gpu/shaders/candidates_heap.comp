@@ -212,7 +212,7 @@ bool push_candidate_impl(ScoredPoint scored_point) {
     return true;
 }
 
-ScoredPoint pop_candidate() {
+ScoredPoint pop_candidate2() {
     if (gl_SubgroupID == 0) {
         ScoredPoint result = pop_candidate_impl();
         if (subgroupElect()) {
@@ -230,7 +230,7 @@ ScoredPoint pop_candidate() {
     return candidate;
 }
 
-bool push_candidate(ScoredPoint scored_point) {
+bool push_candidate2(ScoredPoint scored_point) {
     if (gl_SubgroupID == 0) {
         bool result = push_candidate_impl(scored_point);
         if (subgroupElect()) {
@@ -241,6 +241,42 @@ bool push_candidate(ScoredPoint scored_point) {
     barrier();
     candidates_count = merge_buffer[0].id;
     return merge_buffer[0].score == 1.0;
+}
+
+
+ScoredPoint pop_candidate() {
+    if (gl_GlobalInvocationID.x == 0) {
+        uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+        ScoredPoint result = candidates.data[buffer_offset];
+        uint result_index = 0;
+
+        for (uint i = 0; i < candidates_count; i++) {
+            ScoredPoint current = candidates.data[buffer_offset + i];
+            if (current.score > result.score) {
+                result = current;
+                result_index = i;
+            }
+        }
+
+        ScoredPoint last = candidates.data[buffer_offset + candidates_count - 1];
+        candidates.data[buffer_offset + result_index] = last;
+        candidates.data[buffer_offset + candidates_count - 1] = ScoredPoint(0, positive_infinity);
+
+        merge_buffer[0] = result;
+    }
+    barrier();
+    candidates_count -= 1;
+    return merge_buffer[0];
+}
+
+bool push_candidate(ScoredPoint scored_point) {
+    if (gl_GlobalInvocationID.x == 0) {
+        uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+        candidates.data[buffer_offset + candidates_count] = scored_point;
+    }
+    barrier();
+    candidates_count += 1;
+    return true;
 }
 
 #endif

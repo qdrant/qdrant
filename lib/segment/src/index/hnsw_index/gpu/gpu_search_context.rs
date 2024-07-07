@@ -95,7 +95,6 @@ impl GpuSearchContext {
         let instance = Arc::new(gpu::Instance::new("qdrant", debug_messenger, false).unwrap());
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
-        let context = gpu::Context::new(device.clone());
         let points_count = vector_storage.total_vector_count();
         let candidates_capacity = get_gpu_max_candidates_count(); //points_count;
 
@@ -319,6 +318,7 @@ impl GpuSearchContext {
             .add_shader(insert_shader.clone())
             .build(device.clone());
 
+        let context = gpu::Context::new(device.clone());
         Ok(Self {
             gpu_vector_storage,
             gpu_links,

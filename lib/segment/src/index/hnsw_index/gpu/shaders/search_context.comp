@@ -12,23 +12,23 @@ bool process_candidate(ScoredPoint scored_point) {
 
 bool process_candidate(POINT_ID point_id, POINT_ID candidate_id) {
     uint links_count = LINKS_COUNT(candidate_id);
-    //uint thread_link = gl_GlobalInvocationID.x < links_count ? GET_LINK(candidate_id, gl_GlobalInvocationID.x) : UINT_MAX;
-    //bool thread_is_visited = gl_GlobalInvocationID.x < links_count ? is_visited(thread_link) : true;
-    //if (!thread_is_visited && gl_GlobalInvocationID.x < links_count) {
-    //    mark_visited(thread_link);
-    //}
+    uint thread_link = gl_GlobalInvocationID.x < links_count ? GET_LINK(candidate_id, gl_GlobalInvocationID.x) : UINT_MAX;
+    bool thread_is_visited = gl_GlobalInvocationID.x < links_count ? is_visited(thread_link) : true;
+    if (!thread_is_visited && gl_GlobalInvocationID.x < links_count) {
+        mark_visited(thread_link);
+    }
 
     for (uint i = 0; i < links_count; i++) {
-        //if (gl_GlobalInvocationID.x == i) {
-        //    merge_buffer[0].id = thread_link;
-        //    merge_buffer[0].score = thread_is_visited ? 1.0 : 0.0;
-        //}
-        //barrier();
-        //uint link = merge_buffer[0].id;
-        //bool is_visited = merge_buffer[0].score == 1.0;
+        if (gl_GlobalInvocationID.x == i) {
+            merge_buffer[0].id = thread_link;
+            merge_buffer[0].score = thread_is_visited ? 1.0 : 0.0;
+        }
+        barrier();
+        uint link = merge_buffer[0].id;
+        bool visited = merge_buffer[0].score == 1.0;
 
-        uint link = GET_LINK(candidate_id, i);
-        bool visited = is_visited(link);
+        //uint link = GET_LINK(candidate_id, i);
+        //bool visited = is_visited(link);
 
         if (!visited) {
             mark_visited(link);
@@ -52,7 +52,7 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
     }
     push_nearest(entry);
     push_candidate(entry);
-    
+
     while (candidates_count > 0) {
         ScoredPoint candidate = pop_candidate();
         if (candidate.score < nearest_smaller.score) {
@@ -104,6 +104,7 @@ uint run_heuristic() {
 
         ScoredPoint current_closest = get_nearest(i);
         set_vector_storage_target(current_closest.id);
+        barrier();
         bool is_good = true;
 
         for (uint j = 0; j < result_count; j++) {
@@ -114,6 +115,7 @@ uint run_heuristic() {
                 break;
             }
         }
+        barrier();
 
         if (is_good) {
             set_nearest(result_count, current_closest);

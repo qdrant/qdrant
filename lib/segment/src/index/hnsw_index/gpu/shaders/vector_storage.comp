@@ -103,6 +103,7 @@ VECTOR_STORAGE_DEFINE(7)
 VECTOR_STORAGE_ELEMENT_TYPE vector_cache;
 
 #else
+// TODO(gpu): Implement DIM != WORKING_GROUP_SIZE
 #error "TODO: Implement DIM != WORKING_GROUP_SIZE"
 #endif
 

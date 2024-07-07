@@ -16,21 +16,19 @@ layout(set = 0, binding = 2) buffer NewEntries {
 } new_entries;
 
 void clear_patches() {
-    uint subgroup_index = SUBGROUP_ID;
     uint patch_size = LEVEL_M + 2; // id + links_count + links
     uint all_patches_size = (LEVEL_M + 1) * patch_size;
-    uint patches_offset = subgroup_index * all_patches_size;
-    for (uint i = SUBGROUP_INVOCATION_ID; i < all_patches_size; i += SUBGROUP_SIZE) {
+    uint patches_offset = gl_GlobalInvocationID.y * all_patches_size;
+    for (uint i = gl_GlobalInvocationID.x; i < all_patches_size; i += WORKING_GROUP_SIZE) {
         patches.data[patches_offset + i] = UINT_MAX;
     }
-    groupMemoryBarrier();
+    barrier();
 }
 
 void main() {
     clear_patches();
     search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    Request request = requests.data[subgroup_index];
+    Request request = requests.data[gl_GlobalInvocationID.y];
 
     set_vector_storage_target(request.id);
     float entry_score = similarity(request.entry);
@@ -40,11 +38,11 @@ void main() {
         return;
     }
 
-    if (subgroupElect()) {
+    if (gl_GlobalInvocationID.x == 0) {
         if (search_count > 0) {
-            new_entries.data[subgroup_index] = get_nearest(0).id;
+            new_entries.data[gl_GlobalInvocationID.y] = get_nearest(0).id;
         } else {
-            new_entries.data[subgroup_index] = request.entry;
+            new_entries.data[gl_GlobalInvocationID.y] = request.entry;
         }
     }
 
@@ -52,24 +50,24 @@ void main() {
 
     uint patch_size = LEVEL_M + 2; // id + links_count + links
     uint all_patches_size = (LEVEL_M + 1) * patch_size;
-    uint patches_offset = subgroup_index * all_patches_size;
+    uint patches_offset = gl_GlobalInvocationID.y * all_patches_size;
     
     // write request.id patch
-    if (subgroupElect()) {
+    if (gl_GlobalInvocationID.x == 0) {
         patches.data[patches_offset] = request.id;
         patches.data[patches_offset + 1] = count;
         for (uint i = 0; i < count; i++) {
             patches.data[patches_offset + i + 2] = get_nearest(i).id;
         }
     }
-    groupMemoryBarrier();
+    barrier();
 
     for (uint i = 0; i < count; i++) {
         uint other_id = patches.data[patches_offset + i + 2];
         uint other_links_count = LINKS_COUNT(other_id);
         uint other_patches_offset = patches_offset + (i + 1) * patch_size;
         if (other_links_count < LEVEL_M) {
-            if (subgroupElect()) {
+            if (gl_GlobalInvocationID.x == 0) {
                 patches.data[other_patches_offset] = other_id;
                 other_patches_offset++;
                 patches.data[other_patches_offset] = other_links_count + 1;
@@ -102,20 +100,22 @@ void main() {
 
             sort_nearest();
             uint other_new_links_count = run_heuristic();
+            barrier();
 
-            if (subgroupElect()) {
+            if (gl_GlobalInvocationID.x == 0) {
                 patches.data[other_patches_offset] = other_id;
                 other_patches_offset++;
                 patches.data[other_patches_offset] = other_new_links_count;
                 other_patches_offset++;
             }
             for (uint j = 0; j < other_new_links_count; j++) {
-                if (subgroupElect()) {
+                if (gl_GlobalInvocationID.x == 0) {
                     uint l = get_nearest(j).id;
                     patches.data[other_patches_offset] = l;
                     other_patches_offset++;
                 }
             }
         }
+        barrier();
     }
 }
