@@ -99,9 +99,16 @@ impl Collection {
 
                 let result = if let Some(ScoringQuery::Fusion(fusion)) = &request.query {
                     // If the root query is a Fusion, the returned results correspond to each the prefetches.
-                    match fusion {
+                    let mut fused = match fusion {
                         Fusion::Rrf => rrf_scoring(merged_intermediates),
+                    };
+                    if let Some(score_threshold) = request.score_threshold {
+                        fused = fused
+                            .into_iter()
+                            .take_while(|point| point.score >= score_threshold)
+                            .collect();
                     }
+                    fused
                 } else {
                     // Otherwise, it will be a list with a single list of scored points.
                     debug_assert_eq!(merged_intermediates.len(), 1);
