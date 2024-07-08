@@ -11877,6 +11877,14 @@
           "nearest": {
             "$ref": "#/components/schemas/VectorInput"
           }
+        },
+        "example": {
+          "nearest": [
+            0.875,
+            0.140625,
+            -0.15625,
+            0.96875
+          ]
         }
       },
       "RecommendQuery": {
@@ -11887,6 +11895,27 @@
         "properties": {
           "recommend": {
             "$ref": "#/components/schemas/RecommendInput"
+          }
+        },
+        "example": {
+          "recommend": {
+            "negative": [
+              [
+                0.4749999940395355,
+                0.44062501192092896,
+                -0.2562499940395355,
+                0.3687500059604645
+              ]
+            ],
+            "positive": [
+              [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ]
+            ],
+            "strategy": "average_vector"
           }
         }
       },
@@ -11930,6 +11959,32 @@
         "properties": {
           "discover": {
             "$ref": "#/components/schemas/DiscoverInput"
+          }
+        },
+        "example": {
+          "discover": {
+            "context": [
+              {
+                "negative": [
+                  0.4749999940395355,
+                  0.44062501192092896,
+                  -0.2562499940395355,
+                  0.3687500059604645
+                ],
+                "positive": [
+                  0.875,
+                  0.140625,
+                  -0.15625,
+                  0.96875
+                ]
+              }
+            ],
+            "target": [
+              0.875,
+              0.140625,
+              -0.15625,
+              0.96875
+            ]
           }
         }
       },
@@ -11986,6 +12041,24 @@
           "context": {
             "$ref": "#/components/schemas/ContextInput"
           }
+        },
+        "example": {
+          "context": [
+            {
+              "negative": [
+                0.4749999940395355,
+                0.44062501192092896,
+                -0.2562499940395355,
+                0.3687500059604645
+              ],
+              "positive": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ]
+            }
+          ]
         }
       },
       "ContextInput": {
@@ -12013,6 +12086,9 @@
           "order_by": {
             "$ref": "#/components/schemas/OrderByInterface"
           }
+        },
+        "example": {
+          "order_by": "timestamp"
         }
       },
       "FusionQuery": {
@@ -12024,6 +12100,9 @@
           "fusion": {
             "$ref": "#/components/schemas/Fusion"
           }
+        },
+        "example": {
+          "fusion": "rrf"
         }
       },
       "Fusion": {

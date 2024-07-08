@@ -430,38 +430,97 @@ pub enum Query {
     Fusion(FusionQuery),
 }
 
+fn nearest_query_example() -> NearestQuery {
+    NearestQuery {
+        nearest: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "nearest_query_example")]
 pub struct NearestQuery {
     pub nearest: VectorInput,
 }
 
+fn recommend_query_example() -> RecommendQuery {
+    RecommendQuery {
+        recommend: RecommendInput {
+            positive: Some(vec![VectorInput::DenseVector(vec![
+                0.875, 0.140625, -0.15625, 0.96875,
+            ])]),
+            negative: Some(vec![VectorInput::DenseVector(vec![
+                0.475, 0.440625, -0.25625, 0.36875,
+            ])]),
+            strategy: Some(RecommendStrategy::AverageVector),
+        },
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "recommend_query_example")]
 pub struct RecommendQuery {
     pub recommend: RecommendInput,
 }
 
+fn discover_query_example() -> DiscoverQuery {
+    DiscoverQuery {
+        discover: DiscoverInput {
+            target: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+            context: Some(vec![ContextPair {
+                positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+                negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
+            }]),
+        },
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "discover_query_example")]
 pub struct DiscoverQuery {
     pub discover: DiscoverInput,
 }
 
+fn context_query_example() -> ContextQuery {
+    ContextQuery {
+        context: ContextInput(Some(vec![ContextPair {
+            positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+            negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
+        }])),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "context_query_example")]
 pub struct ContextQuery {
     pub context: ContextInput,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub struct OrderByQuery {
-    pub order_by: OrderByInterface,
+fn order_by_query_example() -> OrderByQuery {
+    OrderByQuery {
+        order_by: OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap()),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "order_by_query_example")]
+pub struct OrderByQuery {
+    pub order_by: OrderByInterface,
+}
+
+fn fusion_query_example() -> FusionQuery {
+    FusionQuery {
+        fusion: Fusion::Rrf,
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(example = "fusion_query_example")]
 pub struct FusionQuery {
     pub fusion: Fusion,
 }
