@@ -1556,19 +1556,39 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        let _span =
+            tracing::info_span!("flush", segment.id = %self.id(), internal = true).entered();
+
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
         if !sync && self.is_background_flushing() {
+            tracing::info!(
+                internal = true,
+                "skip flushing: background flush is already in progress: {}",
+                current_persisted_version.unwrap_or(0),
+            );
+
             return Ok(current_persisted_version.unwrap_or(0));
         }
 
         let mut background_flush_lock = self.lock_flushing()?;
         match (self.version, current_persisted_version) {
             (None, _) => {
+                tracing::info!(
+                    internal = true,
+                    "skip flushing: segment is empty: {}",
+                    current_persisted_version.unwrap_or(0),
+                );
+
                 // Segment is empty, nothing to flush
                 return Ok(current_persisted_version.unwrap_or(0));
             }
             (Some(version), Some(persisted_version)) => {
                 if !force && version == persisted_version {
+                    tracing::info!(
+                        internal = true,
+                        "skip flushing: segment is already flushed: {persisted_version}",
+                    );
+
                     // Segment is already flushed
                     return Ok(persisted_version);
                 }
@@ -1587,9 +1607,6 @@ impl SegmentEntry for Segment {
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
-
-        let _span =
-            tracing::info_span!("flush", segment.id = %self.id(), internal = true).entered();
 
         // Flush order is important:
         //
