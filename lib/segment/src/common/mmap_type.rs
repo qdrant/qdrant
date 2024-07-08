@@ -24,7 +24,7 @@
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::{mem, slice};
+use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
@@ -70,6 +70,14 @@ where
     /// `r#type`. That must be used instead. The sole purpose of this is to keep ownership of the
     /// mmap, and to allow properly cleaning up when this struct is dropped.
     mmap: Arc<MmapMut>,
+}
+
+impl<T: ?Sized> fmt::Debug for MmapType<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MmapType")
+            .field("mmap", &self.mmap)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<T> MmapType<T>
@@ -198,6 +206,14 @@ where
     mmap: MmapType<[T]>,
 }
 
+impl<T> fmt::Debug for MmapSlice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MmapSlice")
+            .field("mmap", &self.mmap)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<T> MmapSlice<T> {
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
     ///
@@ -259,6 +275,7 @@ impl<T> DerefMut for MmapSlice<T> {
 /// [`BitSlice`] on a memory mapped file
 ///
 /// Functions as if it is a [`BitSlice`] because this implements [`Deref`] and [`DerefMut`].
+#[derive(Debug)]
 pub struct MmapBitSlice {
     mmap: MmapType<BitSlice>,
 }

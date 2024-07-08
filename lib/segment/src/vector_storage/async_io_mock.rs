@@ -5,6 +5,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 
 // This is a mock implementation of the async_io module for those platforms that don't support io_uring.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct UringReader<T: PrimitiveVectorElement> {
     _phantom: std::marker::PhantomData<T>,
 }

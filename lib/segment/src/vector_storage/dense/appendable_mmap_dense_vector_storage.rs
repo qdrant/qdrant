@@ -20,6 +20,7 @@ use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
+#[derive(Debug)]
 pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors: ChunkedMmapVectors<T>,
     deleted: DynamicMmapFlags,

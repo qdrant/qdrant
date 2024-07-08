@@ -46,7 +46,7 @@ for lvl > 0:
 links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct GraphLinksFileHeader {
     pub point_count: u64,
     pub levels_count: u64,
@@ -400,7 +400,7 @@ pub trait GraphLinks: Default {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct GraphLinksRam {
     // all flattened links of all levels
     links: Vec<PointOffsetType>,
@@ -500,7 +500,7 @@ impl GraphLinks for GraphLinksRam {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct GraphLinksMmap {
     mmap: Option<Arc<Mmap>>,
     header: GraphLinksFileHeader,

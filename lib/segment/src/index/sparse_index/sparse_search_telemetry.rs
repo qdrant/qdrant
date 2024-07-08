@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 
+#[derive(Debug)]
 pub struct SparseSearchesTelemetry {
     pub filtered_sparse: Arc<Mutex<OperationDurationsAggregator>>,
     pub unfiltered_sparse: Arc<Mutex<OperationDurationsAggregator>>,

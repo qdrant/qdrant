@@ -11,6 +11,7 @@ use crate::types::Payload;
 
 /// In-memory implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load
+#[derive(Debug)]
 pub struct SimplePayloadStorage {
     pub(crate) payload: HashMap<PointOffsetType, Payload>,
     pub(crate) db_wrapper: DatabaseColumnWrapper,

@@ -1,5 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -69,6 +70,7 @@ impl StorageVersion for SegmentVersion {
 /// - Keeps track of point versions
 /// - Persists data
 /// - Keeps track of occurred errors
+#[derive(Debug)]
 pub struct Segment {
     /// Latest update operation number, applied to this segment
     /// If None, there were no updates and segment is empty
@@ -97,6 +99,12 @@ pub struct VectorData {
     pub vector_index: Arc<AtomicRefCell<VectorIndexEnum>>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+}
+
+impl fmt::Debug for VectorData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VectorData").finish_non_exhaustive()
+    }
 }
 
 impl VectorData {
@@ -1539,7 +1547,7 @@ impl SegmentEntry for Segment {
 
         // Flush order is important:
         //
-        // 1. Flush id mapping. So during recovery the point will be recovered er in proper segment.
+        // 1. Flush id mapping. So during recovery the point will be recovered in proper segment.
         // 2. Flush vectors and payloads.
         // 3. Flush id versions last. So presence of version indicates that all other data is up-to-date.
         //

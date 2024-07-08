@@ -57,6 +57,7 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
     point_id.into()
 }
 
+#[derive(Debug)]
 pub struct SimpleIdTracker {
     deleted: BitVec,
     internal_to_external: Vec<PointIdType>,

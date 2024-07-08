@@ -21,7 +21,7 @@ pub const DB_VERSIONS_CF: &str = "version";
 /// If there is no Column Family specified, key-value pair is associated with Column Family "default".
 pub const DB_DEFAULT_CF: &str = "default";
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DatabaseColumnWrapper {
     pub database: Arc<RwLock<DB>>,
     pub column_name: String,

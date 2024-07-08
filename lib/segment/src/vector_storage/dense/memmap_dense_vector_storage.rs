@@ -28,6 +28,7 @@ const DELETED_PATH: &str = "deleted.dat";
 /// but possible to mark some vectors as removed
 ///
 /// Mem-mapped storage can only be constructed from another storage
+#[derive(Debug)]
 pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors_path: PathBuf,
     deleted_path: PathBuf,

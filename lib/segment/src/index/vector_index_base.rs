@@ -55,6 +55,7 @@ pub trait VectorIndex {
     ) -> OperationResult<()>;
 }
 
+#[derive(Debug)]
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),

@@ -24,6 +24,7 @@ pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 type StoredSparseVector = StoredRecord<SparseVector>;
 
 /// In-memory vector storage with on-update persistence using `store`
+#[derive(Debug)]
 pub struct SimpleSparseVectorStorage {
     db_wrapper: DatabaseColumnWrapper,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
