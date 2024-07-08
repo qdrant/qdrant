@@ -12154,6 +12154,44 @@
               "$ref": "#/components/schemas/ScoredPoint"
             }
           }
+        },
+        "example": {
+          "points": [
+            {
+              "id": 1,
+              "order_value": 1,
+              "payload": {
+                "city": "London",
+                "color": "green"
+              },
+              "score": 1.25,
+              "shard_key": "region_1",
+              "vector": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ],
+              "version": 1
+            },
+            {
+              "id": 2,
+              "order_value": 1,
+              "payload": {
+                "city": "Berlin",
+                "color": "red"
+              },
+              "score": 1.25,
+              "shard_key": "region_1",
+              "vector": [
+                0.4749999940395355,
+                0.44062501192092896,
+                -0.2562499940395355,
+                0.3687500059604645
+              ],
+              "version": 1
+            }
+          ]
         }
       }
     }

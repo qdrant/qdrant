@@ -360,7 +360,43 @@ pub struct QueryRequestBatch {
     pub searches: Vec<QueryRequest>,
 }
 
+fn query_response_example() -> QueryResponse {
+    QueryResponse {
+        points: vec![
+            ScoredPoint {
+                id: segment::types::ExtendedPointId::from(1),
+                version: 1,
+                score: 1.25,
+                payload: Some(Payload::from(serde_json::json!({
+                    "city": "London",
+                    "color": "green",
+                }))),
+                vector: Some(VectorStruct::Single(vec![
+                    0.875, 0.140625, -0.15625, 0.96875,
+                ])),
+                shard_key: Some(ShardKey::from("region_1")),
+                order_value: Some(segment::data_types::order_by::OrderValue::from(1)),
+            },
+            ScoredPoint {
+                id: segment::types::ExtendedPointId::from(2),
+                version: 1,
+                score: 1.25,
+                payload: Some(Payload::from(serde_json::json!({
+                    "city": "Berlin",
+                    "color": "red",
+                }))),
+                vector: Some(VectorStruct::Single(vec![
+                    0.475, 0.440625, -0.25625, 0.36875,
+                ])),
+                shard_key: Some(ShardKey::from("region_1")),
+                order_value: Some(segment::data_types::order_by::OrderValue::from(1)),
+            },
+        ],
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
+#[schemars(example = "query_response_example")]
 pub struct QueryResponse {
     pub points: Vec<ScoredPoint>,
 }
