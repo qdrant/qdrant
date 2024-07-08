@@ -23,12 +23,20 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install dependencies
-        run: sudo apt-get install clang
+        run: |
+          sudo apt-get install clang
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests
-        run: ./tests/integration-tests.sh
+        run: poetry -C tests run ./tests/integration-tests.sh
         shell: bash
 
   test-consensus:
@@ -49,15 +57,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install python deps
-        run: pip install -r ./tests/consensus_tests/requirements.txt
+      - name: Install dependencies
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Build
         run: cargo build --features "service_debug data-consistency-check"
       - name: Run integration tests - 1 peer
-        run: ./tests/integration-tests.sh distributed
+        run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: pytest ./tests/consensus_tests
+        run: poetry -C tests run pytest tests/consensus_tests
         timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
@@ -76,8 +88,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install requests python lib
-        run: pip install requests
+      - name: Install dependencies
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -93,7 +109,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Run integration tests - multiple peers - compose
-        run: ./test_restart.sh
+        run: poetry run ./test_restart.sh
         working-directory: ./tests/consensus_tests
 
   test-tls-compose:
