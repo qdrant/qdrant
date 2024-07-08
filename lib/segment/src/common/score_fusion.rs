@@ -175,7 +175,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn welford_calc_vs_naive(scores in prop::collection::vec(0.0..100.0f32, 2..1000)) {
+        fn welford_calc_vs_naive(scores in prop::collection::vec(-100.0..100.0f32, 2..1000)) {
             let naive_mean = scores.iter().sum::<f32>() / scores.len() as f32;
             let naive_variance = scores.iter().map(|p| (p - naive_mean).powi(2)).sum::<f32>()
                 / (scores.len() - 1) as f32;
