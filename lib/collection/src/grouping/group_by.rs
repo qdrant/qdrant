@@ -11,8 +11,8 @@ use indexmap::IndexSet;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint,
-    WithPayloadInterface, WithVector,
+    AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
+    WithVector,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
@@ -29,7 +29,7 @@ use crate::operations::types::{
     CollectionResult, PointGroup, RecommendGroupsRequestInternal, RecommendRequestInternal,
 };
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
-use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
@@ -301,17 +301,8 @@ pub async fn group_by(
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>> {
-    let mut score_ordering = Order::LargeBetter;
-
-    if let Some(query) = &request.source.query {
-        if query.is_distance_scored() {
-            if let Some(vector_name) = query.get_vector_name() {
-                let collection_params = collection.collection_config.read().await;
-                let distance = collection_params.params.get_distance(vector_name)?;
-                score_ordering = distance.distance_order()
-            }
-        }
-    };
+    let collection_params = collection.collection_config.read().await.params.clone();
+    let score_ordering = ScoringQuery::order(request.source.query.as_ref(), &collection_params)?;
 
     let mut aggregator = GroupsAggregator::new(
         request.limit,
