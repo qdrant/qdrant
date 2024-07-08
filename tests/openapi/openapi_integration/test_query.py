@@ -378,3 +378,45 @@ def test_basic_rrf():
         assert expected["id"] == result["id"]
         assert expected.get("payload") == result.get("payload")
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
+        
+
+@pytest.mark.parametrize("body", [
+    {
+        "prefetch": [
+            { "query": [0.1, 0.2, 0.3, 0.4] },
+            { "query": [0.5, 0.6, 0.7, 0.8] },
+        ],
+        "query": {"fusion": "rrf"},
+    },
+    { "query": [0.1, 0.2, 0.3, 0.4] }
+])
+def test_score_threshold(body):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            **body
+        },
+    )
+    assert response.ok, response.json()
+    points = response.json()["result"]["points"]
+    
+    assert len(points) == 8
+    score_threshold = points[3]["score"]
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "score_threshold": score_threshold,
+            **body
+        },
+    )
+    assert response.ok, response.json()
+    points = response.json()["result"]["points"]
+    
+    assert len(points) < 8
+    for point in points:
+        assert point["score"] >= score_threshold
