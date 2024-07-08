@@ -386,7 +386,7 @@ fn sparse_vector_index_ram_filtered_search() {
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     payload_index
-        .set_indexed(&JsonPath::new(field_name), Keyword.into())
+        .set_indexed(&JsonPath::new(field_name), Keyword)
         .unwrap();
     drop(payload_index);
 

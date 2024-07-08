@@ -21,7 +21,7 @@ pub trait PayloadIndex {
     fn set_indexed(
         &mut self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: impl Into<PayloadFieldSchema>,
     ) -> OperationResult<()>;
 
     /// Remove index
