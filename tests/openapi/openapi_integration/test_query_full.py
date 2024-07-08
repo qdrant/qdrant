@@ -923,7 +923,7 @@ def test_sparse_dense_rerank_colbert():
     assert rerank_result[2]["id"] == 1
 
 
-def test_query_group():
+def test_nearest_query_group():
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
         method="POST",
@@ -965,3 +965,115 @@ def test_query_group():
     assert groups[2]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
     assert groups[2]["hits"][1]["id"] == 4
     assert groups[2]["hits"][1]["payload"]["city"] == ["London", "Moscow"]
+
+
+@pytest.mark.parametrize("strategy", [
+    "best_score",
+    "average_vector",
+])
+def test_recommend_group(strategy):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4],
+            "negative": [3],
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "strategy": strategy,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+    recommend_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "recommend": {
+                    "positive": [1, 2, 3, 4],
+                    "negative": [3],
+                },
+            },
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "strategy": strategy,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    assert recommend_result == query_result, f"{recommend_result} != {query_result}"
+
+
+@pytest.mark.parametrize("direction", [
+    "asc",
+    "desc",
+])
+def test_order_by_group(direction):
+    # will check equivalence of scroll and query result with order_by group
+    # where query uses a single result per group
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "order_by": {
+                "key": "count",
+                "direction": direction,
+            },
+            "limit": 50,
+        },
+    )
+    assert response.ok, response.text
+    scroll_result = response.json()["result"]["points"]
+
+    # keep only first result per payload value
+    seen_payloads = set()
+    filtered_scroll_result = []
+    for record in scroll_result:
+        if record["payload"]["count"] in seen_payloads:
+            continue
+        else:
+            seen_payloads.add(record["payload"]["count"])
+            filtered_scroll_result.append(record)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "order_by": {
+                    "key": "count",
+                    "direction": direction,
+                }
+            },
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "count",
+            "group_size": 1,
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    # flatten group result to match scroll result
+    flatten_query_result = []
+    for group in query_result["groups"]:
+        flatten_query_result.extend(group["hits"])
+
+    for record, scored_point in zip(filtered_scroll_result, flatten_query_result):
+        assert record.get("id") == scored_point.get("id")
+        assert record.get("payload") == scored_point.get("payload")
