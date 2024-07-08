@@ -290,13 +290,7 @@ fn query_request_example() -> QueryRequest {
             offset: Some(0),
             with_vector: Some(WithVector::Bool(true)),
             with_payload: Some(WithPayloadInterface::Bool(true)),
-            lookup_from: {
-                Some(LookupLocation {
-                    collection: "collection_b".to_string(),
-                    vector: Some("image_vector".to_string()),
-                    shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
-                })
-            },
+            lookup_from: Some(lookup_location_example()),
         },
         shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
     }
@@ -339,13 +333,7 @@ fn query_request_batch_example() -> QueryRequestBatch {
                     offset: Some(0),
                     with_vector: Some(WithVector::Bool(true)),
                     with_payload: Some(WithPayloadInterface::Bool(true)),
-                    lookup_from: {
-                        Some(LookupLocation {
-                            collection: "collection_c".to_string(),
-                            vector: Some("code_vector".to_string()),
-                            shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_2"))),
-                        })
-                    },
+                    lookup_from: Some(lookup_location_example()),
                 },
                 shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
             },
@@ -445,15 +433,7 @@ pub struct NearestQuery {
 
 fn recommend_query_example() -> RecommendQuery {
     RecommendQuery {
-        recommend: RecommendInput {
-            positive: Some(vec![VectorInput::DenseVector(vec![
-                0.875, 0.140625, -0.15625, 0.96875,
-            ])]),
-            negative: Some(vec![VectorInput::DenseVector(vec![
-                0.475, 0.440625, -0.25625, 0.36875,
-            ])]),
-            strategy: Some(RecommendStrategy::AverageVector),
-        },
+        recommend: recommend_input_example(),
     }
 }
 
@@ -466,13 +446,7 @@ pub struct RecommendQuery {
 
 fn discover_query_example() -> DiscoverQuery {
     DiscoverQuery {
-        discover: DiscoverInput {
-            target: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-            context: Some(vec![ContextPair {
-                positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-                negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
-            }]),
-        },
+        discover: discover_input_example(),
     }
 }
 
@@ -485,10 +459,7 @@ pub struct DiscoverQuery {
 
 fn context_query_example() -> ContextQuery {
     ContextQuery {
-        context: ContextInput(Some(vec![ContextPair {
-            positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-            negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
-        }])),
+        context: context_input_example(),
     }
 }
 
@@ -570,15 +541,39 @@ pub struct Prefetch {
 ///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
 ///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
 ///   the `max_pos_score`.
+
+fn recommend_strategy_average_vector_example() -> RecommendStrategy {
+    RecommendStrategy::AverageVector
+}
+
+fn recommend_strategy_best_score_example() -> RecommendStrategy {
+    RecommendStrategy::BestScore
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
+    #[schemars(example = "recommend_strategy_average_vector_example")]
     AverageVector,
+    #[schemars(example = "recommend_strategy_best_score_example")]
     BestScore,
 }
 
+fn recommend_input_example() -> RecommendInput {
+    RecommendInput {
+        positive: Some(vec![VectorInput::DenseVector(vec![
+            0.875, 0.140625, -0.15625, 0.96875,
+        ])]),
+        negative: Some(vec![VectorInput::DenseVector(vec![
+            0.475, 0.440625, -0.25625, 0.36875,
+        ])]),
+        strategy: Some(RecommendStrategy::AverageVector),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(example = "recommend_input_example")]
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
     pub positive: Option<Vec<VectorInput>>,
@@ -599,7 +594,18 @@ impl RecommendInput {
     }
 }
 
+fn discover_input_example() -> DiscoverInput {
+    DiscoverInput {
+        target: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+        context: Some(vec![ContextPair {
+            positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+            negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
+        }]),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[schemars(example = "discover_input_example")]
 pub struct DiscoverInput {
     /// Use this as the primary search objective
     #[validate]
@@ -612,7 +618,12 @@ pub struct DiscoverInput {
     pub context: Option<Vec<ContextPair>>,
 }
 
+fn context_input_example() -> ContextInput {
+    ContextInput(Some(vec![context_pair_example()]))
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(example = "context_input_example")]
 pub struct ContextInput(
     /// Search space will be constrained by these pairs of vectors
     #[serde(with = "MaybeOneOrMany")]
@@ -620,7 +631,15 @@ pub struct ContextInput(
     pub Option<Vec<ContextPair>>,
 );
 
+fn context_pair_example() -> ContextPair {
+    ContextPair {
+        positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
+        negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[schemars(example = "context_pair_example")]
 pub struct ContextPair {
     /// A positive vector
     #[validate]
@@ -637,7 +656,16 @@ impl ContextPair {
     }
 }
 
+fn lookup_location_example() -> LookupLocation {
+    LookupLocation {
+        collection: "collection_b".to_string(),
+        vector: Some("image_vector".to_string()),
+        shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[schemars(example = "lookup_location_example")]
 pub struct WithLookup {
     /// Name of the collection to use for points lookup
     #[serde(rename = "collection")]

@@ -7648,11 +7648,21 @@
         ]
       },
       "RecommendStrategy": {
-        "description": "How to use positive and negative examples to find the results, default is `average_vector`:\n\n* `average_vector` - Average positive and negative vectors and create a single query with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.\n\n* `best_score` - Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just the `max_pos_score`.",
-        "type": "string",
-        "enum": [
-          "average_vector",
-          "best_score"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "average_vector"
+            ],
+            "example": "average_vector"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "best_score"
+            ],
+            "example": "best_score"
+          }
         ]
       },
       "UsingVector": {
@@ -11007,6 +11017,11 @@
               }
             ]
           }
+        },
+        "example": {
+          "collection": "collection_b",
+          "shard_key": "region_1",
+          "vector": "image_vector"
         }
       },
       "RecommendGroupsRequest": {
@@ -11949,6 +11964,25 @@
               }
             ]
           }
+        },
+        "example": {
+          "negative": [
+            [
+              0.4749999940395355,
+              0.44062501192092896,
+              -0.2562499940395355,
+              0.3687500059604645
+            ]
+          ],
+          "positive": [
+            [
+              0.875,
+              0.140625,
+              -0.15625,
+              0.96875
+            ]
+          ],
+          "strategy": "average_vector"
         }
       },
       "DiscoverQuery": {
@@ -12015,6 +12049,30 @@
               }
             ]
           }
+        },
+        "example": {
+          "context": [
+            {
+              "negative": [
+                0.4749999940395355,
+                0.44062501192092896,
+                -0.2562499940395355,
+                0.3687500059604645
+              ],
+              "positive": [
+                0.875,
+                0.140625,
+                -0.15625,
+                0.96875
+              ]
+            }
+          ],
+          "target": [
+            0.875,
+            0.140625,
+            -0.15625,
+            0.96875
+          ]
         }
       },
       "ContextPair": {
@@ -12030,6 +12088,20 @@
           "negative": {
             "$ref": "#/components/schemas/VectorInput"
           }
+        },
+        "example": {
+          "negative": [
+            0.4749999940395355,
+            0.44062501192092896,
+            -0.2562499940395355,
+            0.3687500059604645
+          ],
+          "positive": [
+            0.875,
+            0.140625,
+            -0.15625,
+            0.96875
+          ]
         }
       },
       "ContextQuery": {
@@ -12074,6 +12146,22 @@
           },
           {
             "nullable": true
+          }
+        ],
+        "example": [
+          {
+            "negative": [
+              0.4749999940395355,
+              0.44062501192092896,
+              -0.2562499940395355,
+              0.3687500059604645
+            ],
+            "positive": [
+              0.875,
+              0.140625,
+              -0.15625,
+              0.96875
+            ]
           }
         ]
       },
@@ -12194,9 +12282,9 @@
               },
               "limit": 10,
               "lookup_from": {
-                "collection": "collection_c",
-                "shard_key": "region_2",
-                "vector": "code_vector"
+                "collection": "collection_b",
+                "shard_key": "region_1",
+                "vector": "image_vector"
               },
               "offset": 0,
               "params": {
