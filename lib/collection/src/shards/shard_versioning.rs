@@ -44,18 +44,6 @@ async fn shards_versions(
     Ok(all_versions)
 }
 
-pub async fn drop_old_shards(collection_path: &Path, shard_id: ShardId) -> CollectionResult<()> {
-    for (_version, old_path) in shards_versions(collection_path, shard_id)
-        .await?
-        .into_iter()
-        .skip(1)
-    {
-        // delete old shard's data folder
-        tokio::fs::remove_dir_all(&old_path).await?;
-    }
-    Ok(())
-}
-
 pub fn versioned_shard_path(
     collection_path: &Path,
     shard_id: ShardId,

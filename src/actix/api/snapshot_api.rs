@@ -35,13 +35,6 @@ use crate::common;
 use crate::common::collections::*;
 use crate::common::http_client::HttpClient;
 
-#[derive(Deserialize, Validate)]
-struct SnapshotPath {
-    #[serde(rename = "snapshot_name")]
-    #[validate(length(min = 1))]
-    name: String,
-}
-
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,

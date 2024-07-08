@@ -357,29 +357,3 @@ pub fn generate_diverse_nested_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payl
     })
     .into()
 }
-
-pub const NESTED_ARRAY_1: &str = "arr1";
-pub const NESTED_ARRAY_2: &str = "arr2";
-pub const NESTED_ARRAY_3: &str = "arr3";
-
-pub fn generate_nested_array_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
-    json!({
-        NESTED_ARRAY_1: [
-            random_json(rnd_gen),
-            random_json(rnd_gen),
-            random_json(rnd_gen),
-            random_json(rnd_gen),
-        ],
-        NESTED_ARRAY_2: [
-            {
-                   NESTED_ARRAY_3: [
-                       random_json(rnd_gen),
-                       random_json(rnd_gen),
-                       random_json(rnd_gen),
-                       random_json(rnd_gen),
-                   ]
-            }
-        ]
-    })
-    .into()
-}

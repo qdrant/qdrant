@@ -118,28 +118,6 @@ where
 {
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
     ///
-    /// # Warning
-    ///
-    /// This does not support slices, because those cannot be transmuted directly because it has
-    /// extra parts. See [`MmapSlice`], [`MmapType::slice_from`] and
-    /// [`std::slice::from_raw_parts`].
-    ///
-    /// # Safety
-    ///
-    /// Unsafe because malformed data in the mmap may break type `T` resulting in undefined
-    /// behavior.
-    ///
-    /// # Panics
-    ///
-    /// - panics when the size of the mmap isn't a multiple of size `T`
-    /// - panics when the mmap data is not correctly aligned for type `T`
-    /// - See: [`mmap_to_slice_unbounded`]
-    pub unsafe fn slice_from(mmap_with_slice: MmapMut) -> Self {
-        Self::try_slice_from(mmap_with_slice).unwrap()
-    }
-
-    /// Transform a mmap into a typed slice mmap of type `&[T]`.
-    ///
     /// Returns an error when the mmap has an incorrect size.
     ///
     /// # Warning

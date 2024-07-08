@@ -104,11 +104,6 @@ impl RecoverableWal {
         self.newest_clocks.lock().await.to_recovery_point()
     }
 
-    #[cfg(test)]
-    pub async fn cutoff_point(&self) -> RecoveryPoint {
-        self.oldest_clocks.lock().await.to_recovery_point()
-    }
-
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,

@@ -25,9 +25,7 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    FieldCondition, GeoBoundingBox, GeoPoint, GeoRadius, PayloadKeyType, PolygonWrapper,
-};
+use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -153,24 +151,6 @@ impl GeoMapIndex {
             GeoMapIndex::Mutable(index) => index.get_values(idx),
             GeoMapIndex::Immutable(index) => index.get_values(idx),
         }
-    }
-
-    pub fn check_radius(&self, idx: PointOffsetType, radius: &GeoRadius) -> bool {
-        self.get_values(idx)
-            .map(|values| values.iter().any(|x| radius.check_point(x)))
-            .unwrap_or(false)
-    }
-
-    pub fn check_box(&self, idx: PointOffsetType, bbox: &GeoBoundingBox) -> bool {
-        self.get_values(idx)
-            .map(|values| values.iter().any(|x| bbox.check_point(x)))
-            .unwrap_or(false)
-    }
-
-    pub fn check_polygon(&self, idx: PointOffsetType, polygon: &PolygonWrapper) -> bool {
-        self.get_values(idx)
-            .map(|values| values.iter().any(|x| polygon.check_point(x)))
-            .unwrap_or(false)
     }
 
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
@@ -488,7 +468,7 @@ mod tests {
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::json_path::path;
     use crate::types::test_utils::build_polygon;
-    use crate::types::{GeoLineString, GeoPolygon, GeoRadius};
+    use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius};
 
     const NYC: GeoPoint = GeoPoint {
         lat: 40.75798,

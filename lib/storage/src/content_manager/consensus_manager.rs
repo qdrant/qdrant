@@ -717,10 +717,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.persistent.read().peer_address_by_id()
     }
 
-    pub fn peer_metadata_by_id(&self) -> PeerMetadataById {
-        self.persistent.read().peer_metadata_by_id()
-    }
-
     pub fn peer_count(&self) -> usize {
         self.persistent.read().peer_address_by_id.read().len()
     }

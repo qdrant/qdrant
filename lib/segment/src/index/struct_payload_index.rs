@@ -36,8 +36,6 @@ use crate::types::{
     PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
 };
 
-pub const PAYLOAD_FIELD_INDEX_PATH: &str = "fields";
-
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 pub struct StructPayloadIndex {
     /// Payload storage

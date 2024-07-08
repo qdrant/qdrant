@@ -14,15 +14,6 @@ impl StoppingGuard {
         }
     }
 
-    pub fn check_is_stopped(&self) -> bool {
-        self.is_stopped.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn stop(&self) {
-        self.is_stopped
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-
     pub fn get_is_stopped(&self) -> Arc<AtomicBool> {
         self.is_stopped.clone()
     }
