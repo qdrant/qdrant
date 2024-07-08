@@ -22,7 +22,7 @@ impl ScoreFusion {
     /// Params for the distribution-based score fusion
     pub fn dbsf() -> Self {
         Self {
-            method: CombMethod::Sum,
+            method: Aggregation::Sum,
             norm: Normalization::Distr,
             weights: vec![],
             order: Order::LargeBetter,
