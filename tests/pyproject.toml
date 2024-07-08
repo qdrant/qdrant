@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "qdrant-test-deps"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+grpc-interceptor = "^0.15"
+grpc-requests = "^0.1"
+more-itertools = "^10.2"
+pyjwt = "^2.8"
+pytest = "^7.4.4"
+pytest-timeout = "^2.2"
+requests = "^2.32"
+schemathesis = "^3.24.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
