@@ -634,7 +634,11 @@ impl LocalShard {
                     }
                 }
             }
-            segments.flush_all(true)?;
+
+            // Force a flush after re-applying WAL operations, to ensure we maintain on-disk data
+            // consistency, if we happened to only apply *past* operations to a segment with newer
+            // version.
+            segments.flush_all(true, true)?;
         }
 
         bar.finish();

@@ -817,13 +817,13 @@ impl SegmentEntry for ProxySegment {
         true
     }
 
-    fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
+    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
         let deleted_points_guard = self.deleted_points.read();
         let deleted_indexes_guard = self.deleted_indexes.read();
         let created_indexes_guard = self.created_indexes.read();
 
-        let wrapped_version = self.wrapped_segment.get().read().flush(sync)?;
-        let write_segment_version = self.write_segment.get().read().flush(sync)?;
+        let wrapped_version = self.wrapped_segment.get().read().flush(sync, force)?;
+        let write_segment_version = self.write_segment.get().read().flush(sync, force)?;
 
         let is_all_empty = deleted_points_guard.is_empty()
             && deleted_indexes_guard.is_empty()
@@ -1696,7 +1696,7 @@ mod tests {
         //   - `wrapped_segment` is flushed
         //   - `ProxySegment::flush` returns `wrapped_segment`'s persisted version
 
-        let flushed_version = proxy_segment.flush(true).unwrap();
+        let flushed_version = proxy_segment.flush(true, false).unwrap();
         let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
         assert_eq!(Some(flushed_version), wrapped_segment_persisted_version);
 
@@ -1727,7 +1727,7 @@ mod tests {
             )
             .unwrap();
 
-        let flushed_version = proxy_segment.flush(true).unwrap();
+        let flushed_version = proxy_segment.flush(true, false).unwrap();
         let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
         let write_segment_persisted_version = *write_segment.read().persisted_version.lock();
 
@@ -1762,7 +1762,7 @@ mod tests {
             )
             .unwrap();
 
-        let flushed_version = proxy_segment.flush(true).unwrap();
+        let flushed_version = proxy_segment.flush(true, false).unwrap();
         let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
         let write_segment_persisted_version = *write_segment.read().persisted_version.lock();
 
