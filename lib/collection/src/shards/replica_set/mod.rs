@@ -827,7 +827,7 @@ impl ShardReplicaSet {
 
     /// Locally disable given peer
     ///
-    /// Disables the peer and notifies consnesus periodically.
+    /// Disables the peer and notifies consensus periodically.
     ///
     /// Prevents disabling the last peer (according to consensus).
     fn add_locally_disabled(&self, peer_id: PeerId) {
