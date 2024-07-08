@@ -14,8 +14,8 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
-    DiscoverRequestBatch, DiscoverRequestInternal, GroupsResult, PointRequestInternal,
-    RecommendGroupsRequestInternal, Record, ScrollRequestInternal, ScrollResult, UpdateResult,
+    DiscoverRequestBatch, GroupsResult, PointRequestInternal, RecommendGroupsRequestInternal,
+    Record, ScrollRequestInternal, ScrollResult, UpdateResult,
 };
 use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use collection::operations::vector_ops::{
@@ -876,26 +876,6 @@ pub async fn do_recommend_point_groups(
         request.into(),
         read_consistency,
         shard_selection,
-        access,
-        timeout,
-    )
-    .await
-}
-
-pub async fn do_discover_points(
-    toc: &TableOfContent,
-    collection_name: &str,
-    request: DiscoverRequestInternal,
-    read_consistency: Option<ReadConsistency>,
-    shard_selector: ShardSelectorInternal,
-    access: Access,
-    timeout: Option<Duration>,
-) -> Result<Vec<ScoredPoint>, StorageError> {
-    toc.discover(
-        collection_name,
-        request,
-        read_consistency,
-        shard_selector,
         access,
         timeout,
     )

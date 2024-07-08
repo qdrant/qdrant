@@ -136,23 +136,6 @@ pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
     checksum_path.into()
 }
 
-pub async fn list_snapshots_in_directory(
-    directory: &Path,
-) -> CollectionResult<Vec<SnapshotDescription>> {
-    let mut entries = tokio::fs::read_dir(directory).await?;
-    let mut snapshots = Vec::new();
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-
-        if !path.is_dir() && path.extension().map_or(false, |ext| ext == "snapshot") {
-            snapshots.push(get_snapshot_description(&path).await?);
-        }
-    }
-
-    Ok(snapshots)
-}
-
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 pub struct ShardSnapshotRecover {
     pub location: ShardSnapshotLocation,

@@ -11,10 +11,6 @@ use crate::operations::CollectionUpdateOperations;
 pub struct CollectionUpdater {}
 
 impl CollectionUpdater {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     fn handle_update_result(
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,

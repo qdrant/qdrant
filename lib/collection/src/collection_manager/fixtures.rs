@@ -1,30 +1,23 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use common::cpu::CpuPermit;
 use parking_lot::RwLock;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     build_multivec_segment, build_simple_segment,
 };
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 use serde_json::json;
-use tempfile::Builder;
 
-use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::{
-    OptimizerThresholds, SegmentOptimizer,
-};
+use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -262,40 +255,4 @@ pub(crate) fn get_indexing_optimizer(
         Default::default(),
         Default::default(),
     )
-}
-
-pub fn optimize_segment(segment: Segment) -> LockedSegment {
-    let dir = Builder::new().prefix("segment_dir_tmp").tempdir().unwrap();
-
-    let segments_dir = segment.current_path.parent().unwrap().to_owned();
-
-    let dim = segment.segment_config.vector_data.get("").unwrap().size;
-
-    let mut holder = SegmentHolder::default();
-
-    let segment_id = holder.add_new(segment);
-
-    let optimizer = get_indexing_optimizer(&segments_dir, dir.path(), dim);
-
-    let locked_holder: Arc<parking_lot::lock_api::RwLock<_, _>> = Arc::new(RwLock::new(holder));
-
-    let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
-
-    optimizer
-        .optimize(
-            locked_holder.clone(),
-            vec![segment_id],
-            permit,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-
-    let mut holder = locked_holder.write();
-
-    let segment_id = *holder.non_appendable_segments_ids().first().unwrap();
-
-    let mut segments = holder.remove(&[segment_id]);
-
-    segments.pop().unwrap()
 }

@@ -1,7 +1,7 @@
 use std::any;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -37,13 +37,11 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = JsonPath;
 pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
 /// Sequential number of modification, applied to segment
 pub type SeqNumberType = u64;
-pub type TagType = u64;
 /// Type of float point payload
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
@@ -652,27 +650,10 @@ impl Default for HnswConfig {
     }
 }
 
-impl Indexes {
-    pub fn default_hnsw() -> Self {
-        Indexes::Hnsw(Default::default())
-    }
-}
-
 impl Default for Indexes {
     fn default() -> Self {
         Indexes::Plain {}
     }
-}
-
-/// Type of payload index
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
-#[serde(tag = "type", content = "options", rename_all = "snake_case")]
-pub enum PayloadIndexType {
-    // Do not index anything, just keep of what should be indexed later
-    #[default]
-    Plain,
-    // Build payload index. Index is saved on disc, but index itself is in RAM
-    Struct,
 }
 
 /// Type of payload storage
@@ -714,20 +695,6 @@ impl SegmentConfig {
         self.vector_data
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
-    }
-
-    pub fn distance(&self, vector_name: &str) -> Option<Distance> {
-        let distance = self
-            .vector_data
-            .get(vector_name)
-            .map(|config| config.distance);
-        if distance.is_none() {
-            self.sparse_vector_data
-                .get(vector_name)
-                .map(|_config| SPARSE_VECTOR_DISTANCE)
-        } else {
-            distance
-        }
     }
 
     /// Check if any vector storages are indexed
@@ -998,10 +965,6 @@ impl Payload {
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
-
-    pub fn iter(&self) -> serde_json::map::Iter {
-        self.0.iter()
-    }
 }
 
 impl PayloadContainer for Map<String, Value> {
@@ -1117,25 +1080,6 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
 pub enum PayloadVariant<T> {
     List(Vec<T>),
     Value(T),
-}
-
-impl<T: Clone> PayloadVariant<T> {
-    pub fn to_list(&self) -> Vec<T> {
-        match self {
-            PayloadVariant::Value(x) => vec![x.clone()],
-            PayloadVariant::List(vec) => vec.clone(),
-        }
-    }
-}
-
-/// Json representation of a payload
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum JsonPayload {
-    Keyword(PayloadVariant<String>),
-    Integer(PayloadVariant<IntPayloadType>),
-    Float(PayloadVariant<FloatPayloadType>),
-    Geo(PayloadVariant<GeoPoint>),
 }
 
 /// All possible names of payload types
@@ -1716,19 +1660,6 @@ impl GeoPolygon {
             polygon: Polygon::new(exterior_line, interior_lines),
         }
     }
-
-    pub fn new(exterior: &GeoLineString, interiors: &Vec<GeoLineString>) -> OperationResult<Self> {
-        Self::validate_line_string(exterior)?;
-
-        for interior in interiors {
-            Self::validate_line_string(interior)?;
-        }
-
-        Ok(GeoPolygon {
-            exterior: exterior.clone(),
-            interiors: Some(interiors.to_vec()),
-        })
-    }
 }
 
 impl TryFrom<GeoPolygonShadow> for GeoPolygon {
@@ -2217,15 +2148,6 @@ pub struct WithPayload {
 pub struct MinShould {
     pub conditions: Vec<Condition>,
     pub min_count: usize,
-}
-
-impl MinShould {
-    pub fn new_min_should(condition: Condition, min_count: usize) -> Self {
-        MinShould {
-            conditions: vec![condition],
-            min_count,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
@@ -3631,8 +3553,6 @@ mod tests {
         assert_eq!(payload, expected.into());
     }
 }
-
-pub type TheMap<K, V> = BTreeMap<K, V>;
 
 #[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]

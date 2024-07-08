@@ -40,11 +40,6 @@ impl BufferStore {
                 .collect(),
         }
     }
-
-    #[allow(dead_code)]
-    pub fn new_empty() -> Self {
-        Self { buffers: vec![] }
-    }
 }
 
 pub struct UringReader<T: PrimitiveVectorElement> {

@@ -69,11 +69,6 @@ pub async fn retrieve_points_with_locked_collection(
         }
     }
 }
-#[derive(Eq, PartialEq, Hash)]
-pub struct PointRef<'a> {
-    pub collection_name: Option<&'a String>,
-    pub point_id: PointIdType,
-}
 
 pub type CollectionName = String;
 
@@ -168,10 +163,6 @@ pub struct ReferencedPoints<'coll_name> {
 }
 
 impl<'coll_name> ReferencedPoints<'coll_name> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.ids_per_collection.is_empty() && self.vector_names_per_collection.is_empty()
     }

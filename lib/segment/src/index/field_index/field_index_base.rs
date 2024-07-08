@@ -172,20 +172,6 @@ impl FieldIndex {
         }
     }
 
-    #[allow(dead_code)]
-    fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
-        match self {
-            FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::BinaryIndex(ref mut payload_field_index) => payload_field_index,
-            FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index,
-        }
-    }
-
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index.load(),

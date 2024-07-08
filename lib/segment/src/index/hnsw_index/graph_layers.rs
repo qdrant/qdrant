@@ -19,7 +19,6 @@ use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 
 pub type LinkContainer = Vec<PointOffsetType>;
-pub type LinkContainerRef<'a> = &'a [PointOffsetType];
 pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
