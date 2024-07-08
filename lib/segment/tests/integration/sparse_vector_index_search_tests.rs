@@ -597,7 +597,7 @@ fn sparse_vector_index_persistence_test() {
             .upsert_point(n as SeqNumberType, idx, named_vector)
             .unwrap();
     }
-    segment.flush(true).unwrap();
+    segment.flush(true, false).unwrap();
 
     let search_vector = random_sparse_vector(&mut rnd, dim);
     let query_vector: QueryVector = search_vector.into();

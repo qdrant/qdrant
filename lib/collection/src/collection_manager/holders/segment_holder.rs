@@ -647,7 +647,7 @@ impl<'s> SegmentHolder {
     ///
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
-    pub fn flush_all(&self, sync: bool) -> OperationResult<SeqNumberType> {
+    pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
         // Grab and keep to segment RwLock's until the end of this function
         let segments = self.segment_locks(self.segment_flush_ordering())?;
 
@@ -697,7 +697,7 @@ impl<'s> SegmentHolder {
         // Flush and release each segment
         for read_segment in segment_reads {
             let segment_version = read_segment.version();
-            let segment_persisted_version = read_segment.flush(sync)?;
+            let segment_persisted_version = read_segment.flush(sync, force)?;
 
             if segment_version > segment_persisted_version {
                 has_unsaved = true;

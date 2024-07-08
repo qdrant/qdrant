@@ -906,7 +906,7 @@ impl Segment {
 
         // Flush entire segment if needed
         if !internal_ids_to_delete.is_empty() {
-            self.flush(true)?;
+            self.flush(true, true)?;
         }
         Ok(())
     }
@@ -1504,7 +1504,7 @@ impl SegmentEntry for Segment {
         self.appendable_flag
     }
 
-    fn flush(&self, sync: bool) -> OperationResult<SeqNumberType> {
+    fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
         if !sync && self.is_background_flushing() {
             return Ok(current_persisted_version.unwrap_or(0));
@@ -1517,7 +1517,7 @@ impl SegmentEntry for Segment {
                 return Ok(current_persisted_version.unwrap_or(0));
             }
             (Some(version), Some(persisted_version)) => {
-                if version == persisted_version {
+                if !force && version == persisted_version {
                     // Segment is already flushed
                     return Ok(persisted_version);
                 }
@@ -1731,7 +1731,7 @@ impl SegmentEntry for Segment {
         }
 
         // flush segment to capture latest state
-        self.flush(true)?;
+        self.flush(true, false)?;
 
         // use temp_path for intermediary files
         let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
@@ -2179,10 +2179,10 @@ mod tests {
 
         let payload: Payload = serde_json::from_str(data).unwrap();
         segment.set_full_payload(0, 0.into(), &payload).unwrap();
-        segment.flush(false).unwrap();
+        segment.flush(false, false).unwrap();
 
         // call flush second time to check that background flush finished successful
-        segment.flush(true).unwrap();
+        segment.flush(true, false).unwrap();
     }
 
     #[test]
