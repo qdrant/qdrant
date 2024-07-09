@@ -19,7 +19,7 @@ pub(super) struct GroupsAggregator {
     grouped_by: JsonPath,
     max_groups: usize,
     full_groups: HashSet<GroupId>,
-    groups_best_point: HashMap<GroupId, PointIdType>, // keep track of the best point per group
+    group_best_scores: HashMap<GroupId, ScoredPoint>,
     all_ids: HashSet<ExtendedPointId>,
     order: Order,
 }
@@ -37,7 +37,7 @@ impl GroupsAggregator {
             grouped_by,
             max_groups: groups,
             full_groups: HashSet::with_capacity(groups),
-            groups_best_point: HashMap::with_capacity(groups),
+            group_best_scores: HashMap::with_capacity(groups),
             all_ids: HashSet::with_capacity(groups * group_size),
             order,
         }
@@ -94,19 +94,18 @@ impl GroupsAggregator {
             }
 
             // Insert score if better than the group best score
-            self.groups_best_point
+            self.group_best_scores
                 .entry(group_key.clone())
-                .and_modify(|p_id| {
-                    let other_score: &ScoredPoint = self.groups[&group_key].get(p_id).unwrap();
+                .and_modify(|other_score| {
                     let ordering = match self.order {
                         Order::LargeBetter => point.cmp(other_score),
-                        Order::SmallBetter => other_score.cmp(&point),
+                        Order::SmallBetter => (*other_score).cmp(&point),
                     };
                     if ordering == Ordering::Greater {
-                        *p_id = point.id;
+                        *other_score = point.clone();
                     }
                 })
-                .or_insert(point.id);
+                .or_insert(point.clone());
         }
         Ok(())
     }
@@ -127,11 +126,7 @@ impl GroupsAggregator {
 
     /// Return `max_groups` number of keys of the groups with the best score
     fn best_group_keys(&self) -> Vec<GroupId> {
-        let mut pairs: Vec<_> = self
-            .groups_best_point
-            .iter()
-            .map(|(k, v)| (k, self.groups[k].get(v).unwrap()))
-            .collect();
+        let mut pairs: Vec<_> = self.group_best_scores.iter().collect();
 
         pairs.sort_unstable_by(|(_, score1), (_, score2)| match self.order {
             Order::LargeBetter => score2.cmp(score1),
