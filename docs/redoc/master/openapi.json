@@ -202,20 +202,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "time": {
-                      "type": "number",
-                      "format": "float",
-                      "description": "Time spent to process this request"
-                    },
-                    "status": {
-                      "type": "string"
-                    },
-                    "result": {
                       "$ref": "#/components/schemas/VersionInfo"
-                    }
-                  }
                 }
               }
             }
