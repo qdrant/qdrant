@@ -355,16 +355,6 @@ impl ShardReplicaSet {
         self.replica_state.read().peers()
     }
 
-    /// Peers in Active or Resharding state
-    ///
-    /// If resharding, there will be only one shard in resharding state meaning none are active
-    /// (yet).
-    fn active_or_resharding_peers(&self) -> impl Iterator<Item = PeerId> {
-        self.peers().into_iter().filter_map(|(peer_id, state)| {
-            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(peer_id)
-        })
-    }
-
     pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
@@ -830,12 +820,13 @@ impl ShardReplicaSet {
     /// Disables the peer and notifies consensus periodically.
     ///
     /// Prevents disabling the last peer (according to consensus).
-    fn add_locally_disabled(&self, peer_id: PeerId) {
+    fn add_locally_disabled(&self, state: &ReplicaSetState, peer_id: PeerId) {
+        let other_peers = state
+            .active_or_resharding_peers()
+            .filter(|id| id != &peer_id);
+
         // Prevent disabling last peer in consensus
         {
-            let other_peers = self
-                .active_or_resharding_peers()
-                .filter(|id| id != &peer_id);
             let locally_disabled_peers = self.locally_disabled_peers.read();
             if !locally_disabled_peers.is_disabled(peer_id)
                 && locally_disabled_peers.is_all_disabled(other_peers)
@@ -859,7 +850,9 @@ impl ShardReplicaSet {
         let mut locally_disabled_peers = self.locally_disabled_peers.write();
 
         // Check that we are not trying to disable the last active peer
-        if locally_disabled_peers.is_all_disabled(self.active_or_resharding_peers()) {
+        if locally_disabled_peers
+            .is_all_disabled(self.replica_state.read().active_or_resharding_peers())
+        {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled_peers.clear();
         } else {
@@ -945,13 +938,15 @@ impl ReplicaSetState {
         self.peers
             .iter()
             .filter_map(|(peer_id, state)| {
-                if *state == ReplicaState::Active {
-                    Some(*peer_id)
-                } else {
-                    None
-                }
+                matches!(state, ReplicaState::Active).then_some(*peer_id)
             })
             .collect()
+    }
+
+    pub fn active_or_resharding_peers(&self) -> impl Iterator<Item = PeerId> + '_ {
+        self.peers.iter().filter_map(|(peer_id, state)| {
+            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(*peer_id)
+        })
     }
 
     pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
