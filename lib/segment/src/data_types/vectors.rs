@@ -529,7 +529,7 @@ fn named_sparse_vector_example() -> NamedSparseVector {
             indices: vec![0, 1, 6, 9],
             values: vec![0.875, 0.140625, -0.15625, 0.96875],
         },
-        name: "image".to_string(),
+        name: "keyword".to_string(),
     }
 }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate, PartialEq)]

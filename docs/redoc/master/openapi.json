@@ -6743,7 +6743,7 @@
             "description": "Name of vector data",
             "type": "string",
             "example": {
-              "name": "image",
+              "name": "keyword",
               "vector": {
                 "indices": [
                   0,
@@ -7409,7 +7409,7 @@
             "description": "Points vector distance to the query vector",
             "type": "number",
             "format": "float",
-            "example": 1.25
+            "example": 0.75
           },
           "payload": {
             "description": "Payload - values assigned to the point",
@@ -11708,7 +11708,7 @@
             -0.15625,
             0.96875
           ],
-          "score_threshold": 1.25,
+          "score_threshold": 0.25,
           "shard_key": "region_1",
           "using": "image_vector",
           "with_payload": true,
@@ -12255,7 +12255,7 @@
                 -0.15625,
                 0.96875
               ],
-              "score_threshold": 1.25,
+              "score_threshold": 0.25,
               "shard_key": "region_1",
               "using": "image_vector",
               "with_payload": true,
@@ -12300,7 +12300,7 @@
                 -0.15625,
                 0.96875
               ],
-              "score_threshold": 1.25,
+              "score_threshold": 0.25,
               "shard_key": "region_1",
               "using": "code_vector",
               "with_payload": true,
@@ -12331,7 +12331,7 @@
                 "city": "London",
                 "color": "green"
               },
-              "score": 1.25,
+              "score": 0.25,
               "shard_key": "region_1",
               "vector": [
                 0.875,
@@ -12348,7 +12348,7 @@
                 "city": "Berlin",
                 "color": "red"
               },
-              "score": 1.25,
+              "score": 0.25,
               "shard_key": "region_1",
               "vector": [
                 0.4749999940395355,

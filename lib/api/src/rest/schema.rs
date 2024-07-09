@@ -73,7 +73,7 @@ fn version_example() -> segment::types::SeqNumberType {
 }
 
 fn score_example() -> common::types::ScoreType {
-    1.25
+    0.75
 }
 
 fn payload_example() -> Option<segment::types::Payload> {
@@ -285,7 +285,7 @@ fn query_request_example() -> QueryRequest {
                 quantization: None,
                 indexed_only: false,
             }),
-            score_threshold: Some(1.25),
+            score_threshold: Some(0.25),
             limit: Some(10),
             offset: Some(0),
             with_vector: Some(WithVector::Bool(true)),
@@ -328,7 +328,7 @@ fn query_request_batch_example() -> QueryRequestBatch {
                         quantization: None,
                         indexed_only: false,
                     }),
-                    score_threshold: Some(1.25),
+                    score_threshold: Some(0.25),
                     limit: Some(10),
                     offset: Some(0),
                     with_vector: Some(WithVector::Bool(true)),
@@ -354,7 +354,7 @@ fn query_response_example() -> QueryResponse {
             ScoredPoint {
                 id: segment::types::ExtendedPointId::from(1),
                 version: 1,
-                score: 1.25,
+                score: 0.25,
                 payload: Some(Payload::from(serde_json::json!({
                     "city": "London",
                     "color": "green",
@@ -368,7 +368,7 @@ fn query_response_example() -> QueryResponse {
             ScoredPoint {
                 id: segment::types::ExtendedPointId::from(2),
                 version: 1,
-                score: 1.25,
+                score: 0.25,
                 payload: Some(Payload::from(serde_json::json!({
                     "city": "Berlin",
                     "color": "red",
