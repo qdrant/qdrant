@@ -1,38 +1,69 @@
+#[cfg(any(test, feature = "testing"))]
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
-use std::io::{self, Cursor, Write as _};
+use std::hash::Hash;
+use std::io::{self, Cursor, Write};
+use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::Path;
 use std::str;
 
 use memmap2::Mmap;
 use ph::fmph::Function;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use rand::rngs::StdRng;
-#[cfg(test)]
-use rand::{Rng as _, SeedableRng as _};
+#[cfg(any(test, feature = "testing"))]
+use rand::Rng as _;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// On-disk hash map baked by a memory-mapped file.
-pub struct MmapHashMap {
+///
+/// The layout of the memory-mapped file is as follows:
+///
+/// | header     | phf | padding       | buckets | entries   |
+/// |------------|-----|---------------|---------|-----------|
+/// | [`Header`] |     | `u8[0..4095]` | `u32[]` | See below |
+///
+/// ## Entry format for the `str` key
+///
+/// | key    | `'\0xff'` | padding | values_len | values  |
+/// |--------|-----------|---------|------------|---------|
+/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `u32[]` |
+///
+/// ## Entry format for the `u32` key
+///
+/// | key   | values_len | values  |
+/// |-------|------------|---------|
+/// | `u32` | `u32`      | `u32[]` |
+pub struct MmapHashMap<K: ?Sized> {
     mmap: Mmap,
     header: Header,
     phf: Function,
+    _phantom: PhantomData<K>,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, AsBytes, FromBytes, FromZeroes)]
 struct Header {
+    key_type: [u8; 8],
     buckets_pos: u64,
     buckets_count: u64,
 }
 
 const PADDING_SIZE: usize = 4096;
 
-impl MmapHashMap {
+type BucketOffset = u64;
+pub type Value = u32;
+
+impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
     /// Save `map` contents to `path`.
-    pub fn create(path: &Path, map: BTreeMap<String, BTreeSet<u32>>) -> io::Result<()> {
-        let phf = Function::from(map.keys().collect::<Vec<_>>().as_slice());
+    pub fn create<'a, 'b>(
+        path: &'a Path,
+        map: impl Iterator<Item = (&'b K, impl ExactSizeIterator<Item = Value> + 'b)> + Clone,
+    ) -> io::Result<()> {
+        let keys_vec = map.clone().map(|(k, _)| k).collect::<Vec<_>>();
+        let keys_count = keys_vec.len();
+        let phf = Function::from(keys_vec);
 
         // == First pass ==
 
@@ -49,14 +80,15 @@ impl MmapHashMap {
 
         // 4. Buckets
         let buckets_pos = file_size;
-        file_size += map.len() * size_of::<u64>();
+        file_size += keys_count * size_of::<BucketOffset>();
 
         // 5. Data
-        let mut buckets = vec![0u64; map.len()];
+        let mut buckets = vec![0 as BucketOffset; keys_count];
         let mut last_bucket = 0;
-        for (k, v) in map.iter() {
-            buckets[phf.get(k).expect("Key not found in phf") as usize] = last_bucket as u64;
-            last_bucket += entry_size(k, v);
+        for (k, v) in map.clone() {
+            buckets[phf.get(k).expect("Key not found in phf") as usize] =
+                last_bucket as BucketOffset;
+            last_bucket += Self::entry_bytes(k, v.len()).0;
         }
         file_size += last_bucket;
         _ = file_size;
@@ -69,8 +101,9 @@ impl MmapHashMap {
 
         // 1. Header
         let header = Header {
+            key_type: K::name(),
             buckets_pos: buckets_pos as u64,
-            buckets_count: map.len() as u64,
+            buckets_count: keys_count as u64,
         };
         bufw.write_all(header.as_bytes())?;
 
@@ -85,22 +118,16 @@ impl MmapHashMap {
 
         // 5. Data
         let mut pos = 0;
-        for (k, v) in map.iter() {
-            buckets.push(pos as u64);
-            pos += entry_size(k, v);
+        for (key, values) in map {
+            buckets.push(pos as BucketOffset);
 
-            // Lengths
-            bufw.write_all((k.len() as u64).as_bytes())?;
-            bufw.write_all((v.len() as u64).as_bytes())?;
-
-            // Key
-            bufw.write_all(k.as_bytes())?;
-
-            bufw.write_all(zeroes(k.len().next_multiple_of(4) - k.len()))?;
-
-            // Values
-            for i in v.iter() {
-                bufw.write_all(i.as_bytes())?;
+            let (entry_size, padding) = Self::entry_bytes(key, values.len());
+            pos += entry_size;
+            key.write(&mut bufw)?;
+            bufw.write_all(zeroes(padding))?;
+            bufw.write_all((values.len() as Value).as_bytes())?;
+            for i in values {
+                bufw.write_all(AsBytes::as_bytes(&i))?;
             }
         }
 
@@ -108,6 +135,14 @@ impl MmapHashMap {
         file.persist(path)?;
 
         Ok(())
+    }
+
+    fn entry_bytes(key: &K, values_len: usize) -> (usize, usize) {
+        let key_size = key.write_bytes();
+        let padding_bytes = key_size.next_multiple_of(size_of::<Value>()) - key_size;
+        let total_bytes =
+            key_size + padding_bytes + size_of::<Value>() + values_len * size_of::<Value>();
+        (total_bytes, padding_bytes)
     }
 
     /// Load the hash map from file.
@@ -120,17 +155,34 @@ impl MmapHashMap {
 
         let header = Header::read_from_prefix(mmap.as_ref()).ok_or(io::ErrorKind::InvalidData)?;
 
+        if header.key_type != K::name() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Key type mismatch",
+            ));
+        }
+
         let phf = Function::read(&mut Cursor::new(
             &mmap
                 .get(size_of::<Header>()..header.buckets_pos as usize)
                 .ok_or(io::ErrorKind::InvalidData)?,
         ))?;
 
-        Ok(MmapHashMap { mmap, header, phf })
+        Ok(MmapHashMap {
+            mmap,
+            header,
+            phf,
+            _phantom: PhantomData,
+        })
+    }
+
+    pub fn keys_count(&self) -> usize {
+        self.header.buckets_count as usize
     }
 
     /// Get the values associated with the `key`.
-    pub fn get(&self, key: &str) -> io::Result<Option<&[u32]>> {
+    #[inline(never)]
+    pub fn get(&self, key: &K) -> io::Result<Option<&[Value]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
         };
@@ -140,9 +192,9 @@ impl MmapHashMap {
             .get(
                 self.header.buckets_pos as usize
                     ..self.header.buckets_pos as usize
-                        + self.header.buckets_count as usize * size_of::<u64>(),
+                        + self.header.buckets_count as usize * size_of::<BucketOffset>(),
             )
-            .and_then(u64::slice_from)
+            .and_then(BucketOffset::slice_from)
             .and_then(|buckets| buckets.get(hash as usize).copied())
             .ok_or(io::ErrorKind::InvalidData)?;
 
@@ -150,45 +202,98 @@ impl MmapHashMap {
             .mmap
             .get(
                 self.header.buckets_pos as usize
-                    + self.header.buckets_count as usize * size_of::<u64>()
+                    + self.header.buckets_count as usize * size_of::<BucketOffset>()
                     + bucket_val as usize..,
             )
             .ok_or(io::ErrorKind::InvalidData)?;
+        let entry_start = entry.as_ptr() as usize;
 
-        let key_len = entry
-            .get(0..size_of::<u64>())
-            .and_then(u64::read_from)
-            .ok_or(io::ErrorKind::InvalidData)? as usize;
-        let values_len = entry
-            .get(size_of::<u64>()..2 * size_of::<u64>())
-            .and_then(u64::read_from)
-            .ok_or(io::ErrorKind::InvalidData)? as usize;
-
-        let hash_key = entry
-            .get(2 * size_of::<u64>()..2 * size_of::<u64>() + key_len)
-            .ok_or(io::ErrorKind::InvalidData)?;
-        if hash_key != key.as_bytes() {
+        if !key.matches(entry) {
             return Ok(None);
         }
+        let entry = &entry[key.write_bytes()..];
 
-        let result = entry
-            .get(
-                2 * size_of::<u64>() + key_len.next_multiple_of(4)
-                    ..2 * size_of::<u64>()
-                        + key_len.next_multiple_of(4)
-                        + values_len * size_of::<u32>(),
-            )
-            .and_then(u32::slice_from)
+        let padding = {
+            let pos = entry.as_ptr() as usize - entry_start;
+            pos.next_multiple_of(4) - pos
+        };
+        let entry = entry.get(padding..).ok_or(io::ErrorKind::InvalidData)?;
+
+        let values_len = Value::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
+        let entry = entry
+            .get(size_of::<Value>()..size_of::<Value>() + values_len * size_of::<Value>())
             .ok_or(io::ErrorKind::InvalidData)?;
+        let result = Value::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
         Ok(Some(result))
     }
 }
 
-fn entry_size(key: &str, values: &BTreeSet<u32>) -> usize {
-    2 * size_of::<u64>()
-        + key.as_bytes().len().next_multiple_of(4)
-        + values.len() * size_of::<u32>()
+/// A key that can be stored in the hash map.
+pub trait Key: Sync + Hash {
+    fn name() -> [u8; 8];
+
+    /// Returns number of bytes which `write` will write.
+    fn write_bytes(&self) -> usize;
+
+    /// Write the key to `buf`.
+    fn write(&self, buf: &mut impl Write) -> io::Result<()>;
+
+    /// Check whether the first [`Key::write_bytes()`] of `buf` match the key.
+    fn matches(&self, buf: &[u8]) -> bool;
 }
+
+impl Key for str {
+    fn name() -> [u8; 8] {
+        *b"str\0\0\0\0\0"
+    }
+
+    fn write_bytes(&self) -> usize {
+        self.len() + 1
+    }
+
+    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
+        buf.write_all(self.as_bytes())?;
+        buf.write_all(&[0xff])?; // Not a valid UTF-8 byte
+        Ok(())
+    }
+
+    fn matches(&self, buf: &[u8]) -> bool {
+        if buf.len() < self.write_bytes() {
+            return false;
+        }
+        &buf[..self.len()] == self.as_bytes() && buf[self.len()] == 0xff
+    }
+}
+
+macro_rules! impl_key {
+    ($t:ty) => {
+        impl Key for $t {
+            fn name() -> [u8; 8] {
+                let name = stringify!($t).as_bytes();
+                let mut result = [0; 8];
+                result[..name.len()].copy_from_slice(name);
+                result
+            }
+
+            fn write_bytes(&self) -> usize {
+                size_of::<$t>()
+            }
+
+            fn write(&self, buf: &mut impl Write) -> io::Result<()> {
+                buf.write_all(AsBytes::as_bytes(self))
+            }
+
+            fn matches(&self, buf: &[u8]) -> bool {
+                if buf.len() < self.write_bytes() {
+                    return false;
+                }
+                &buf[..size_of::<$t>()] == AsBytes::as_bytes(self)
+            }
+        }
+    };
+}
+
+impl_key!(i64);
 
 /// Returns a reference to a slice of zeroes of length `len`.
 #[inline]
@@ -197,56 +302,74 @@ fn zeroes(len: usize) -> &'static [u8] {
     &ZEROES[..len]
 }
 
-#[cfg(test)]
-fn random_map(rng: &mut StdRng, count: usize) -> BTreeMap<String, BTreeSet<u32>> {
+#[cfg(any(test, feature = "testing"))]
+pub fn gen_map<T: Eq + Ord + Hash>(
+    rng: &mut StdRng,
+    gen_key: impl Fn(&mut StdRng) -> T,
+    count: usize,
+) -> BTreeMap<T, BTreeSet<u32>> {
     let mut map = BTreeMap::new();
 
     for _ in 0..count {
-        let ident = rand_ident(rng, |ident| !map.contains_key(ident));
+        let key = repeat_until(|| gen_key(rng), |key| !map.contains_key(key));
         let set = (0..rng.gen_range(1..=100))
             .map(|_| rng.gen_range(0..=1000))
             .collect::<BTreeSet<_>>();
-        map.insert(ident, set);
+        map.insert(key, set);
     }
 
     map
 }
 
-#[cfg(test)]
-fn rand_ident(rng: &mut StdRng, cond: impl Fn(&str) -> bool) -> String {
-    loop {
-        let ident = (0..rng.gen_range(5..=32))
-            .map(|_| rng.gen_range(b'a'..=b'z') as char)
-            .collect::<String>();
-        if cond(&ident) {
-            return ident;
-        }
-    }
+#[cfg(any(test, feature = "testing"))]
+pub fn gen_ident(rng: &mut StdRng) -> String {
+    (0..rng.gen_range(5..=32))
+        .map(|_| rng.gen_range(b'a'..=b'z') as char)
+        .collect()
+}
+
+#[cfg(any(test, feature = "testing"))]
+fn repeat_until<T>(mut f: impl FnMut() -> T, cond: impl Fn(&T) -> bool) -> T {
+    std::iter::from_fn(|| Some(f())).find(|v| cond(v)).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng as _;
+
     use super::*;
 
     #[test]
     fn test_mmap_hash() {
+        test_mmap_hash_impl(gen_ident, |s| s.as_str());
+        test_mmap_hash_impl(|rng| rng.gen::<i64>(), |i| i);
+    }
+
+    fn test_mmap_hash_impl<K: Key + ?Sized + 'static, K1: Ord + Hash>(
+        gen: impl Clone + Fn(&mut StdRng) -> K1,
+        as_ref: impl Fn(&K1) -> &K,
+    ) {
         let mut rng = StdRng::seed_from_u64(42);
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
-        let map = random_map(&mut rng, 1000);
-        MmapHashMap::create(&tmpdir.path().join("map"), map.clone()).unwrap();
-        let mmap = MmapHashMap::open(&tmpdir.path().join("map")).unwrap();
+        let map = gen_map(&mut rng, gen.clone(), 1000);
+        MmapHashMap::<K>::create(
+            &tmpdir.path().join("map"),
+            map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
+        )
+        .unwrap();
+        let mmap = MmapHashMap::<K>::open(&tmpdir.path().join("map")).unwrap();
 
         // Non-existing keys should return None
         for _ in 0..1000 {
-            let key = rand_ident(&mut rng, |i| !map.contains_key(i));
-            assert!(mmap.get(&key).unwrap().is_none());
+            let key = repeat_until(|| gen(&mut rng), |key| !map.contains_key(key));
+            assert!(mmap.get(as_ref(&key)).unwrap().is_none());
         }
 
         // Existing keys should return the correct values
         for (k, v) in map.into_iter() {
             assert_eq!(
-                mmap.get(&k).unwrap().unwrap(),
+                mmap.get(as_ref(&k)).unwrap().unwrap(),
                 &v.into_iter().collect::<Vec<_>>()
             );
         }

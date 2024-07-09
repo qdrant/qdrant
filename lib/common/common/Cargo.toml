@@ -16,6 +16,7 @@ testing = []
 num_cpus = "1.16"
 ordered-float = "4.2"
 ph = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
@@ -26,8 +27,13 @@ semver = { workspace = true }
 zerocopy = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+common = { path = ".", features = ["testing"] }
+criterion = "0.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = "1.0"
 thread-priority = "1.1"
+
+[[bench]]
+name = "mmap_hashmap"
+harness = false
