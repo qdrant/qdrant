@@ -378,22 +378,20 @@ impl Collection {
             .as_ref()
             .map(|state| state.shard_id);
 
-        // Create filtered request, which has resharding filter applied
+        // Create a request with resharding filtering a normal and resharding filter
         // Should be used on all shards, except the new resharding shard
-        let mut filtered_request = request.clone();
-        merge_filters(&mut filtered_request.filter, resharding_filter.clone());
-        let filtered_request = Arc::new(filtered_request);
+        let (normal_request, reshard_request) =
+            normal_and_resharding_count_request(request, resharding_filter);
 
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|(shard, _shard_key)| {
-                // Take the filtered request, or the original request for the resharding shard
-                let request = if Some(shard.shard_id) == reshard_shard_id {
-                    Arc::new(request.clone())
-                } else {
-                    filtered_request.clone()
-                };
+                // Take resharding request if available on existing shards, otherwise take normal request
+                let request = reshard_request
+                    .clone()
+                    .filter(|_| Some(shard.shard_id) != reshard_shard_id)
+                    .unwrap_or_else(|| normal_request.clone());
 
                 shard.count(request, read_consistency, shard_selection.is_shard_id())
             })
@@ -467,6 +465,28 @@ fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>)
             Some(filter) => filter.merge_owned(resharding_filter),
             None => resharding_filter,
         });
+    }
+}
+
+/// Merge a regular and resharding filter
+///
+/// The first element is always the given `filter`.
+///
+/// The second element is the `filter` with `resharding_filter` merged into it. It's None if no
+/// resharding filter was given.
+///
+/// This function minimizes cloning of the filter to when it's strictly necessary.
+#[inline]
+fn normal_and_resharding_count_request(
+    mut request: CountRequestInternal,
+    resharding_filter: Option<Filter>,
+) -> (Arc<CountRequestInternal>, Option<Arc<CountRequestInternal>>) {
+    match resharding_filter {
+        None => (Arc::new(request), None),
+        Some(resharding_filter) => (Arc::new(request.clone()), {
+            merge_filters(&mut request.filter, Some(resharding_filter));
+            Some(Arc::new(request))
+        }),
     }
 }
 
