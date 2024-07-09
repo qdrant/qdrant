@@ -25,6 +25,7 @@ use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;
 
 /// In-memory vector storage with on-update persistence using `store`
+#[derive(Debug)]
 pub struct SimpleDenseVectorStorage<T: PrimitiveVectorElement> {
     dim: usize,
     distance: Distance,

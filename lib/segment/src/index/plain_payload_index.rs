@@ -201,6 +201,7 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 }
 
+#[derive(Debug)]
 pub struct PlainIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,

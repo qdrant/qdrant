@@ -25,6 +25,7 @@ use crate::types::{PayloadSchemaType, PointIdType, SeqNumberType};
 /// Warn: Use for tests only
 ///
 /// This struct mimics the interface of `PointsIterator` and `IdTracker` only for basic cases
+#[derive(Debug)]
 pub struct FixtureIdTracker {
     ids: Vec<PointOffsetType>,
     deleted: BitVec,

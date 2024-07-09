@@ -41,6 +41,7 @@ use crate::vector_storage::{
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = true;
 
+#[derive(Debug)]
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     config: SparseIndexConfig,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,

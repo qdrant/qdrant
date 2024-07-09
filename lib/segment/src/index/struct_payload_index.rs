@@ -37,6 +37,7 @@ use crate::types::{
 };
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
+#[derive(Debug)]
 pub struct StructPayloadIndex {
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
