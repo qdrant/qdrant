@@ -54,6 +54,6 @@ uuid = { workspace = true }
 url = "2.5.2"
 reqwest = { workspace = true }
 tempfile = { workspace = true }
-async-trait = "0.1.80"
+async-trait = "0.1.81"
 
 tracing = { workspace = true, optional = true }
