@@ -173,10 +173,10 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn get_values_count(&self) -> usize {
+    fn total_unique_values_count(&self) -> usize {
         match self {
-            NumericIndex::Mutable(index) => index.get_values_count(),
-            NumericIndex::Immutable(index) => index.get_values_count(),
+            NumericIndex::Mutable(index) => index.total_unique_values_count(),
+            NumericIndex::Immutable(index) => index.total_unique_values_count(),
         }
     }
 
@@ -206,10 +206,17 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
             NumericIndex::Mutable(index) => index.get_values(idx),
             NumericIndex::Immutable(index) => index.get_values(idx),
+        }
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        match self {
+            NumericIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
+            NumericIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -258,7 +265,7 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         let min_estimation = histogram_estimation.0;
         let max_estimation = histogram_estimation.2;
 
-        let total_values = self.get_values_count();
+        let total_values = self.total_unique_values_count();
         // Example: points_count = 1000, total values = 2000, values_count = 500
         // min = max(1, 500 - (2000 - 1000)) = 1
         // exp = 500 / (2000 / 1000) = 250
@@ -302,14 +309,8 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.values_count(idx) == 0
     }
 }
 
@@ -389,7 +390,8 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         let mut pre_lower_bound: Option<Bound<T>> = None;
         let mut payload_conditions = Vec::new();
 
-        let value_per_point = self.get_values_count() as f64 / self.get_points_count() as f64;
+        let value_per_point =
+            self.total_unique_values_count() as f64 / self.get_points_count() as f64;
         let effective_threshold = (threshold as f64 * value_per_point) as usize;
 
         loop {

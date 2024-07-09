@@ -374,7 +374,6 @@ impl<'a> NumericFieldIndex<'a> {
                     .get_values(idx)
                     .into_iter()
                     .flatten()
-                    .copied()
                     .map(OrderValue::Int),
             ),
             NumericFieldIndex::FloatIndex(index) => Box::new(
@@ -382,7 +381,6 @@ impl<'a> NumericFieldIndex<'a> {
                     .get_values(idx)
                     .into_iter()
                     .flatten()
-                    .copied()
                     .map(OrderValue::Float),
             ),
         }

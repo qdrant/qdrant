@@ -146,10 +146,20 @@ impl GeoMapIndex {
         self.db_wrapper().flusher()
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[GeoPoint]> {
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
             GeoMapIndex::Mutable(index) => index.get_values(idx),
             GeoMapIndex::Immutable(index) => index.get_values(idx),
+        }
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        match self {
+            GeoMapIndex::Mutable(index) => index.values_count(idx),
+            GeoMapIndex::Immutable(index) => index.values_count(idx),
         }
     }
 
@@ -271,14 +281,8 @@ impl GeoMapIndex {
         Box::new(edge_region.into_iter())
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.values_count(idx) == 0
     }
 }
 
@@ -346,8 +350,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                 move |point| {
                     self.get_values(*point)
                         .unwrap()
-                        .iter()
-                        .any(|point| geo_condition_copy.check_point(point))
+                        .any(|point| geo_condition_copy.check_point(&point))
                 },
             )));
         }
@@ -359,8 +362,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                 move |point| {
                     self.get_values(*point)
                         .unwrap()
-                        .iter()
-                        .any(|point| geo_condition_copy.check_point(point))
+                        .any(|point| geo_condition_copy.check_point(&point))
                 },
             )));
         }
@@ -372,8 +374,7 @@ impl PayloadFieldIndex for GeoMapIndex {
                 move |point| {
                     self.get_values(*point)
                         .unwrap()
-                        .iter()
-                        .any(|point| geo_condition_copy.check_point(point))
+                        .any(|point| geo_condition_copy.check_point(&point))
                 },
             )));
         }
@@ -785,14 +786,19 @@ mod tests {
             check_fn: F,
             is_appendable: bool,
         ) where
-            F: Fn(&GeoPoint) -> bool,
+            F: Fn(GeoPoint) -> bool,
         {
             let field_index = build_random_index(1000, 5, is_appendable);
 
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
-                .map(|idx| (idx, field_index.get_values(idx).unwrap()))
-                .filter(|(_idx, geo_points)| geo_points.iter().any(&check_fn))
-                .map(|(idx, _geo_points)| idx as PointOffsetType)
+                .filter_map(|idx| {
+                    let mut geo_points_iter = field_index.get_values(idx).unwrap();
+                    if geo_points_iter.any(&check_fn) {
+                        Some(idx as PointOffsetType)
+                    } else {
+                        None
+                    }
+                })
                 .collect_vec();
 
             assert!(!matched_points.is_empty());
@@ -813,7 +819,7 @@ mod tests {
         };
         check_geo_indexed_filtering(
             condition_for_geo_radius("test", geo_radius.clone()),
-            |geo_point| geo_radius.check_point(geo_point),
+            |geo_point| geo_radius.check_point(&geo_point),
             is_appendable,
         );
 
@@ -826,7 +832,7 @@ mod tests {
         ]);
         check_geo_indexed_filtering(
             condition_for_geo_polygon("test", geo_polygon.clone()),
-            |geo_point| geo_polygon.convert().check_point(geo_point),
+            |geo_point| geo_polygon.convert().check_point(&geo_point),
             is_appendable,
         );
     }
