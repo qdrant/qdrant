@@ -1077,3 +1077,44 @@ def test_order_by_group(direction):
     for record, scored_point in zip(filtered_scroll_result, flatten_query_result):
         assert record.get("id") == scored_point.get("id")
         assert record.get("payload") == scored_point.get("payload")
+
+
+def test_discover_group():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [],
+            "limit": 2,
+            "query": {
+                "discover": {
+                    "target": 5,
+                    "context": [{"positive": 3, "negative": 4}],
+                }
+            },
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+
+    groups = response.json()["result"]["groups"]
+    # found 2 groups has requested with `limit`
+    assert len(groups) == 2
+
+    # group 1
+    assert groups[0]["id"] == "Berlin"
+    assert len(groups[0]["hits"]) == 2  # group_size
+    assert groups[0]["hits"][0]["id"] == 1
+    assert groups[0]["hits"][0]["payload"]["city"] == "Berlin"
+    assert groups[0]["hits"][1]["id"] == 2
+    assert groups[0]["hits"][1]["payload"]["city"] == ["Berlin", "London"]
+
+    # group 2
+    assert groups[1]["id"] == "London"
+    assert len(groups[1]["hits"]) == 1
+    assert groups[1]["hits"][0]["id"] == 2
+    assert groups[1]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
