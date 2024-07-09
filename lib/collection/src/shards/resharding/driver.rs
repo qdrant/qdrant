@@ -877,8 +877,10 @@ async fn stage_propagate_deletes(
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids });
 
+            // Wait on all updates here, not just the last batch
+            // If we don't wait on all updates it somehow results in inconsistent deletes
             replica_set
-                .update_with_consistency(operation, offset.is_none(), WriteOrdering::Weak)
+                .update_with_consistency(operation, true, WriteOrdering::Weak)
                 .await?;
 
             if offset.is_none() {
