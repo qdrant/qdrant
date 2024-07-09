@@ -825,24 +825,23 @@ impl ShardReplicaSet {
             .active_or_resharding_peers()
             .filter(|id| id != &peer_id);
 
+        let mut locally_disabled_peers_guard = self.locally_disabled_peers.upgradable_read();
+
         // Prevent disabling last peer in consensus
         {
-            let locally_disabled_peers = self.locally_disabled_peers.read();
-            if !locally_disabled_peers.is_disabled(peer_id)
-                && locally_disabled_peers.is_all_disabled(other_peers)
+            if !locally_disabled_peers_guard.is_disabled(peer_id)
+                && locally_disabled_peers_guard.is_all_disabled(other_peers)
             {
                 log::warn!("Cannot locally disable last active peer {peer_id} for replica");
                 return;
             }
         }
 
-        if self
-            .locally_disabled_peers
-            .write()
-            .disable_peer_and_notify_if_elapsed(peer_id)
-        {
-            self.notify_peer_failure(peer_id);
-        }
+        locally_disabled_peers_guard.with_upgraded(|locally_disabled_peers| {
+            if locally_disabled_peers.disable_peer_and_notify_if_elapsed(peer_id) {
+                self.notify_peer_failure(peer_id);
+            }
+        });
     }
 
     /// Make sure that locally disabled peers do not contradict the consensus
