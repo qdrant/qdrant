@@ -49,6 +49,7 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
     }
 }
 
+#[derive(Debug)]
 pub struct MultivectorOffsetsStorageMmap {
     path: PathBuf,
     offsets: MmapSlice<MultivectorOffset>,
@@ -83,6 +84,7 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     }
 }
 
+#[derive(Debug)]
 pub struct QuantizedMultivectorStorage<TEncodedQuery, QuantizedStorage, TMultivectorOffsetsStorage>
 where
     TEncodedQuery: Sized,

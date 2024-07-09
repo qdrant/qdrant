@@ -27,6 +27,7 @@ struct MultivectorMmapOffset {
     capacity: PointOffsetType,
 }
 
+#[derive(Debug)]
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors: ChunkedMmapVectors<T>,
     offsets: ChunkedMmapVectors<MultivectorMmapOffset>,

@@ -3,6 +3,7 @@ use std::path::Path;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 
+#[derive(Debug)]
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
 }

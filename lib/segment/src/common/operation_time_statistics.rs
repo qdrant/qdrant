@@ -49,6 +49,7 @@ pub struct OperationDurationStatistics {
     pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
+#[derive(Debug)]
 pub struct OperationDurationsAggregator {
     ok_count: usize,
     fail_count: usize,

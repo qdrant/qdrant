@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -45,6 +46,20 @@ pub struct SimpleMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
+}
+
+impl<T: fmt::Debug + PrimitiveVectorElement> fmt::Debug for SimpleMultiDenseVectorStorage<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SimpleMultiDenseVectorStorage")
+            .field("dim", &self.dim)
+            .field("distance", &self.distance)
+            .field("multi_vector_config", &self.multi_vector_config)
+            .field("vectors", &self.vectors)
+            .field("vectors_metadata", &self.vectors_metadata)
+            .field("db_wrapper", &self.db_wrapper)
+            .field("deleted_count", &self.deleted_count)
+            .finish_non_exhaustive()
+    }
 }
 
 pub fn open_simple_multi_dense_vector_storage(

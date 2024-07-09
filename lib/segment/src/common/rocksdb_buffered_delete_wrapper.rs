@@ -13,6 +13,7 @@ use crate::common::Flusher;
 /// This might be required to guarantee consistency of the database component.
 /// E.g. copy-on-write implementation should guarantee that data in the `write` component is
 /// persisted before it is removed from the `copy` component.
+#[derive(Debug)]
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
     deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,

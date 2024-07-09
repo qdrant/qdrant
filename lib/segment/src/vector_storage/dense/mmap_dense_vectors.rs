@@ -25,6 +25,7 @@ const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Mem-mapped file for dense vectors
+#[derive(Debug)]
 pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     pub dim: usize,
     pub num_vectors: usize,

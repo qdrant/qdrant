@@ -118,6 +118,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }
 
+#[derive(Debug)]
 pub enum VectorStorageEnum {
     DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
     DenseSimpleByte(SimpleDenseVectorStorage<VectorElementTypeByte>),

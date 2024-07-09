@@ -15,6 +15,7 @@ pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
 // if dimension is too high, use this capacity
 const MIN_CHUNK_CAPACITY: usize = 16;
 
+#[derive(Debug)]
 pub struct ChunkedVectors<T> {
     /// Vector's dimension.
     ///

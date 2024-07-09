@@ -1,3 +1,5 @@
+use std::fmt;
+
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
@@ -19,7 +21,7 @@ const SEED: u64 = 0b101100001101111000111001010100101000101100110100101001000111
 /// This tracker is used to convert external (i.e. user-facing) point id into internal point id
 /// as well as for keeping track on point version
 /// Internal ids are useful for contiguous-ness
-pub trait IdTracker {
+pub trait IdTracker: fmt::Debug {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType>;
 
     fn set_internal_version(
@@ -146,6 +148,7 @@ pub trait IdTracker {
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
 
+#[derive(Debug)]
 pub enum IdTrackerEnum {
     MutableIdTracker(SimpleIdTracker),
     ImmutableIdTracker(SimpleIdTracker),
