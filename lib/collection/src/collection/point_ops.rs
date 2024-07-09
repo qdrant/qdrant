@@ -256,18 +256,17 @@ impl Collection {
                 .as_ref()
                 .map(|state| state.shard_id);
 
-            // Take the filter and apply the resharding filter
-            // Should be used on all shards, except the new resharding shard
-            let mut filter = request.filter.clone();
-            merge_filters(&mut filter, resharding_filter.clone());
+            // Create a normal and resharding filter
+            // Resharding filter must be used on existing shards if resharding is active
+            let (normal_filter, reshard_filter) =
+                normal_and_resharding_filter(request.filter, resharding_filter);
 
             let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                // Take the updated filter, or the original filter for the resharding shard
-                let filter = if Some(shard.shard_id) == reshard_shard_id {
-                    &request.filter
-                } else {
-                    &filter
-                };
+                // Take resharding filter if available on existing shards, otherwise take normal filter
+                let filter = reshard_filter
+                    .as_ref()
+                    .filter(|_| Some(shard.shard_id) != reshard_shard_id)
+                    .or(normal_filter.as_ref());
 
                 let shard_key = shard_key.cloned();
                 shard
@@ -276,7 +275,7 @@ impl Collection {
                         limit,
                         &with_payload_interface,
                         &with_vector,
-                        filter.as_ref(),
+                        filter,
                         read_consistency,
                         local_only,
                         order_by.as_ref(),
@@ -468,5 +467,28 @@ fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>)
             Some(filter) => filter.merge_owned(resharding_filter),
             None => resharding_filter,
         });
+    }
+}
+
+/// Merge a regular and resharding filter
+///
+/// The first element is always the given `filter`.
+///
+/// The second element is the `filter` with `resharding_filter` merged into it. It's None if no
+/// resharding filter was given.
+///
+/// This function minimizes cloning of the filter to when it's strictly necessary.
+#[inline]
+fn normal_and_resharding_filter(
+    filter: Option<Filter>,
+    resharding_filter: Option<Filter>,
+) -> (Option<Filter>, Option<Filter>) {
+    match (filter, resharding_filter) {
+        (filter, None) => (filter, None),
+        (Some(filter), Some(resharding_filter)) => (
+            Some(filter.clone()),
+            Some(filter.merge_owned(resharding_filter)),
+        ),
+        (None, Some(resharding_filter)) => (None, Some(resharding_filter)),
     }
 }
