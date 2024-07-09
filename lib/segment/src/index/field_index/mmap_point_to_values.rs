@@ -11,9 +11,9 @@ use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
-    "Not enough bytes to operate with mmaped file `point_to_values.bin`. Is the storage corrupted?";
+    "Not enough bytes to operate with memmaped file `point_to_values.bin`. Is the storage corrupted?";
 
-/// Trait for values that can be stored in mmaped file. It's used in `MmapPointToValues` to store values.
+/// Trait for values that can be stored in memmaped file. It's used in `MmapPointToValues` to store values.
 /// Lifetime `'a` is used to define lifetime for `&'a str` case
 pub trait MmapValue<'a>: Clone + Default + 'a {
     fn mmaped_size(&self) -> usize;
@@ -123,8 +123,8 @@ impl<'a> MmapValue<'a> for &'a str {
     }
 }
 
-/// Flattened mmaped points-to-values map
-/// It's an analogue of `Vec<Vec<N>>` but in mmaped file.
+/// Flattened memmaped points-to-values map
+/// It's an analogue of `Vec<Vec<N>>` but in memmaped file.
 /// This structure doesn't support adding new values, only removing.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
@@ -252,7 +252,7 @@ impl MmapPointToValues {
         };
 
         // second, define iteration step for values
-        // iteration step gets remainder range from mmaped file and returns next range with left range
+        // iteration step gets remainder range from memmaped file and returns next range with left range
         let bytes: &[u8] = self.mmap.as_ref();
         let read_value = move |range: MmapRange| -> Option<(OperationResult<T>, MmapRange)> {
             if range.count > 0 {
