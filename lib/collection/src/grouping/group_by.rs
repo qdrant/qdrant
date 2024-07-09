@@ -3,8 +3,8 @@ use std::future::Future;
 use std::time::Duration;
 
 use api::rest::{
-    BaseGroupRequest, QueryGroupsRequestInternal, SearchGroupsRequestInternal,
-    SearchRequestInternal,
+    BaseGroupRequest, QueryBaseGroupRequest, QueryGroupsRequestInternal,
+    SearchGroupsRequestInternal, SearchRequestInternal,
 };
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
@@ -261,7 +261,7 @@ impl From<QueryGroupsRequestInternal> for GroupRequest {
             with_vector,
             with_payload,
             group_request:
-                BaseGroupRequest {
+                QueryBaseGroupRequest {
                     group_by,
                     group_size,
                     limit,
@@ -275,7 +275,7 @@ impl From<QueryGroupsRequestInternal> for GroupRequest {
             using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
             filter,
             score_threshold,
-            limit: limit as usize,
+            limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
             offset: 0,
             params,
             with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
@@ -286,8 +286,8 @@ impl From<QueryGroupsRequestInternal> for GroupRequest {
         GroupRequest {
             source: SourceRequest::Query(collection_query_request),
             group_by,
-            group_size: group_size as usize,
-            limit: limit as usize,
+            group_size: group_size.unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
+            limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
             with_lookup: with_lookup_interface.map(Into::into),
         }
     }

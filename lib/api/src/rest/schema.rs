@@ -529,6 +529,27 @@ pub struct SearchRequestInternal {
     pub score_threshold: Option<ScoreType>,
 }
 
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+pub struct QueryBaseGroupRequest {
+    /// Payload field to group by, must be a string or number field.
+    /// If the field contains more than 1 value, all values will be used for grouping.
+    /// One point can be in multiple groups.
+    #[schemars(length(min = 1))]
+    #[validate(custom = "JsonPath::validate_not_empty")]
+    pub group_by: JsonPath,
+
+    /// Maximum amount of points to return per group. Default is 3.
+    #[validate(range(min = 1))]
+    pub group_size: Option<usize>,
+
+    /// Maximum amount of groups to return. Default is 10.
+    #[validate(range(min = 1))]
+    pub limit: Option<usize>,
+
+    /// Look for points in another collection using the group ids
+    pub with_lookup: Option<WithLookupInterface>,
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryGroupsRequestInternal {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).
@@ -563,7 +584,7 @@ pub struct QueryGroupsRequestInternal {
 
     #[serde(flatten)]
     #[validate]
-    pub group_request: BaseGroupRequest,
+    pub group_request: QueryBaseGroupRequest,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

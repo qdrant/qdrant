@@ -12169,9 +12169,7 @@
       "QueryGroupsRequest": {
         "type": "object",
         "required": [
-          "group_by",
-          "group_size",
-          "limit"
+          "group_by"
         ],
         "properties": {
           "shard_key": {
@@ -12274,16 +12272,18 @@
             "minLength": 1
           },
           "group_size": {
-            "description": "Maximum amount of points to return per group",
+            "description": "Maximum amount of points to return per group. Default is 3.",
             "type": "integer",
-            "format": "uint32",
-            "minimum": 1
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
           },
           "limit": {
-            "description": "Maximum amount of groups to return",
+            "description": "Maximum amount of groups to return. Default is 10.",
             "type": "integer",
-            "format": "uint32",
-            "minimum": 1
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
           },
           "with_lookup": {
             "description": "Look for points in another collection using the group ids",

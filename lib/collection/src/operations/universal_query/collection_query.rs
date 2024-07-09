@@ -39,6 +39,8 @@ pub struct CollectionQueryRequest {
 impl CollectionQueryRequest {
     pub const DEFAULT_LIMIT: usize = 10;
 
+    pub const DEFAULT_GROUP_SIZE: usize = 3;
+
     pub const DEFAULT_OFFSET: usize = 0;
 
     pub const DEFAULT_WITH_VECTOR: WithVector = WithVector::Bool(false);
