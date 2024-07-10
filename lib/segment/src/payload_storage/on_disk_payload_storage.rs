@@ -49,8 +49,6 @@ impl OnDiskPayloadStorage {
         let key = serde_cbor::to_vec(&point_id).unwrap();
         self.db_wrapper
             .get_pinned(&key, |raw| serde_cbor::from_slice(raw))?
-            // Don't return the payload if a removal is pending flush
-            .filter(|_| !self.db_wrapper.is_pending_removal(key))
             .transpose()
             .map_err(OperationError::from)
     }

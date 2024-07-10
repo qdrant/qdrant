@@ -58,7 +58,7 @@ impl DatabaseColumnScheduledDeleteWrapper {
         Ok(())
     }
 
-    pub fn is_pending_removal<K>(&self, key: K) -> bool
+    fn is_pending_removal<K>(&self, key: K) -> bool
     where
         K: AsRef<[u8]>,
     {
@@ -86,6 +86,9 @@ impl DatabaseColumnScheduledDeleteWrapper {
     where
         F: FnOnce(&[u8]) -> T,
     {
+        if self.is_pending_removal(key) {
+            return Ok(None);
+        }
         self.db.get_pinned(key, f)
     }
 
