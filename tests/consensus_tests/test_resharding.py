@@ -178,7 +178,8 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 1000
-    num_upserts = 100
+    num_inserts = 1000
+    num_updates = 500
     num_deletes = 33
 
     # Prevent optimizers messing with point counts
@@ -207,14 +208,14 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
     # During resharding, keep pushing updates into the collection
     update_tasks = [
         # Upsert new points on all peers
-        run_in_background(upsert_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=10000, end=10000 + num_upserts),
-        run_in_background(upsert_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=20000, end=20000 + num_upserts),
-        run_in_background(upsert_points_throttled, peer_api_uris[2], COLLECTION_NAME, start=30000, end=30000 + num_upserts),
+        run_in_background(upsert_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=10000, end=10000 + num_inserts),
+        run_in_background(upsert_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=20000, end=20000 + num_inserts),
+        run_in_background(upsert_points_throttled, peer_api_uris[2], COLLECTION_NAME, start=30000, end=30000 + num_inserts),
         # Update existing points on the first peer
-        run_in_background(upsert_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=0, end=num_upserts),
-        # Delete points on the first two peers
-        run_in_background(delete_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=500, end=500 + num_deletes),
-        run_in_background(delete_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=600, end=600 + num_deletes),
+        run_in_background(upsert_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=0, end=num_updates),
+        # Delete points on the first two peers, don't overlap with updates
+        run_in_background(delete_points_throttled, peer_api_uris[0], COLLECTION_NAME, start=num_updates, end=num_updates + num_deletes),
+        run_in_background(delete_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=num_updates + num_deletes, end=num_updates + num_deletes * 2),
     ]
 
     # Reshard 3 times in sequence
@@ -245,7 +246,7 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
 
     # Assert node shard and point sum count
     # Expects base points + 3x upserts - 2x deletes
-    expected_points = num_points + num_upserts * 3 - num_deletes * 2
+    expected_points = num_points + num_inserts * 3 - num_deletes * 2
     for uri in peer_api_uris:
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, expected_points)
 
@@ -275,7 +276,7 @@ def run_in_background(run, *args, **kwargs):
 
 
 def upsert_points_throttled(peer_url, collection_name, start=0, end=None):
-    batch_size = 3
+    batch_size = 2
     offset = start
 
     while True:
@@ -286,11 +287,11 @@ def upsert_points_throttled(peer_url, collection_name, start=0, end=None):
         upsert_random_points(peer_url, count, collection_name, offset=offset)
         offset += count
 
-        sleep(random.uniform(0.4, 0.6))
+        sleep(random.uniform(0.01, 0.05))
 
 
 def delete_points_throttled(peer_url, collection_name, start=0, end=None):
-    batch_size = 3
+    batch_size = 2
     offset = start
 
     while True:
@@ -306,7 +307,7 @@ def delete_points_throttled(peer_url, collection_name, start=0, end=None):
         assert_http_ok(r)
         offset += count
 
-        sleep(random.uniform(0.4, 0.6))
+        sleep(random.uniform(0.04, 0.06))
 
 
 def check_data_consistency(data):
