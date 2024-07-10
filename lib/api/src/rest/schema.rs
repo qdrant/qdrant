@@ -542,21 +542,11 @@ pub struct Prefetch {
 ///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
 ///   the `max_pos_score`.
 
-fn recommend_strategy_average_vector_example() -> RecommendStrategy {
-    RecommendStrategy::AverageVector
-}
-
-fn recommend_strategy_best_score_example() -> RecommendStrategy {
-    RecommendStrategy::BestScore
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
-    #[schemars(example = "recommend_strategy_average_vector_example")]
     AverageVector,
-    #[schemars(example = "recommend_strategy_best_score_example")]
     BestScore,
 }
 
