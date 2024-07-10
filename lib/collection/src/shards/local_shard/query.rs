@@ -7,6 +7,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use itertools::Itertools;
 use parking_lot::Mutex;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::{thread_rng, Rng as _};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
@@ -285,19 +286,20 @@ impl LocalShard {
             ScoringQuery::Sample(sample) => match sample {
                 Sample::Random => {
                     let mut rng = thread_rng();
-                    let shuffled = sources
+                    let mut chosen = sources
                         .map(Cow::into_owned)
-                        .kmerge_by(|_, _| rng.gen_bool(0.5))
+                        .flatten()
                         .unique_by(|point| point.id)
                         .map(|mut point| {
                             point.score = 0.0;
                             point.order_value = None;
                             point
                         })
-                        .take(limit)
-                        .collect();
+                        .choose_multiple(&mut rng, limit);
 
-                    Ok(shuffled)
+                    chosen.shuffle(&mut rng);
+
+                    Ok(chosen)
                 }
             },
         }
