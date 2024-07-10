@@ -470,8 +470,8 @@ impl CollectionQueryRequest {
         )?;
 
         let mut offset = self.offset;
-        if let Some(Query::Sample(Sample::Random)) = &self.query {
-            // Don't fail if offset is used with random sampling, just ignore it.
+        if matches!(self.query, Some(Query::Sample(Sample::Random))) && self.prefetch.is_empty() {
+            // Shortcut: Ignore offset with random query, since output is not stable.
             offset = 0;
         }
 

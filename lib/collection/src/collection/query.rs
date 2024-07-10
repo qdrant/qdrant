@@ -25,7 +25,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
-    Fusion, Sample, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
+    Fusion, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
 struct IntermediateQueryInfo<'a> {
@@ -160,7 +160,7 @@ impl Collection {
         mut intermediates: Vec<Vec<ScoredPoint>>,
         query: Option<&ScoringQuery>,
         limit: usize,
-        mut offset: usize,
+        offset: usize,
         score_threshold: Option<ScoreType>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let result = match query {
@@ -178,19 +178,6 @@ impl Collection {
                 }
                 fused
             }
-            Some(ScoringQuery::Sample(sample)) => match sample {
-                Sample::Random => {
-                    // Random sampling is non-deterministic, we ignore offset params.
-                    offset = 0;
-
-                    debug_assert_eq!(intermediates.len(), 1);
-                    intermediates.pop().ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Query response was expected to have one list of results.",
-                        )
-                    })?
-                }
-            },
             _ => {
                 // Otherwise, it will be a list with a single list of scored points.
                 debug_assert_eq!(intermediates.len(), 1);
