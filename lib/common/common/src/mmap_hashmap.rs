@@ -272,35 +272,29 @@ impl Key for str {
     }
 }
 
-macro_rules! impl_key {
-    ($t:ty) => {
-        impl Key for $t {
-            fn name() -> [u8; 8] {
-                let name = stringify!($t).as_bytes();
-                let mut result = [0; 8];
-                result[..name.len()].copy_from_slice(name);
-                result
-            }
+impl Key for i64 {
+    fn name() -> [u8; 8] {
+        let name = stringify!(i64).as_bytes();
+        let mut result = [0; 8];
+        result[..name.len()].copy_from_slice(name);
+        result
+    }
 
-            fn write_bytes(&self) -> usize {
-                size_of::<$t>()
-            }
+    fn write_bytes(&self) -> usize {
+        size_of::<i64>()
+    }
 
-            fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-                buf.write_all(AsBytes::as_bytes(self))
-            }
+    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
+        buf.write_all(AsBytes::as_bytes(self))
+    }
 
-            fn matches(&self, buf: &[u8]) -> bool {
-                if buf.len() < self.write_bytes() {
-                    return false;
-                }
-                &buf[..size_of::<$t>()] == AsBytes::as_bytes(self)
-            }
+    fn matches(&self, buf: &[u8]) -> bool {
+        if buf.len() < self.write_bytes() {
+            return false;
         }
-    };
+        &buf[..size_of::<i64>()] == AsBytes::as_bytes(self)
+    }
 }
-
-impl_key!(i64);
 
 /// Returns a reference to a slice of zeroes of length `len`.
 #[inline]
