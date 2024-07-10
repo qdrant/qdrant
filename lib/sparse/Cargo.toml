@@ -17,7 +17,6 @@ common = { path = "../common/common" }
 half = { workspace = true }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
-num-traits = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

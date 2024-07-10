@@ -87,7 +87,6 @@ memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
-fs4 = "0.8.4"
 macro_rules_attribute = "0.2.0"
 generic-tests = { workspace = true }
 nom = "7.1.3"
