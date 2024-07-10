@@ -40,8 +40,15 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 
 pub type PayloadKeyType = JsonPath;
 pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
-/// Sequential number of modification, applied to segment
+
+fn version_example() -> u64 {
+    1
+}
+
+/// Sequential number of modification applied to a segment.
+#[schemars(example = "version_example")]
 pub type SeqNumberType = u64;
+
 /// Type of float point payload
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
