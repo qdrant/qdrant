@@ -303,7 +303,7 @@ fn test_numeric_index(#[case] immutable: bool) {
 
     // if immutable, we have to reload the index
     let index = if immutable {
-        let db_ref = index.get_db_wrapper().get_database().clone();
+        let db_ref = index.get_db_wrapper().get_database();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         new_index
