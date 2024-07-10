@@ -79,7 +79,7 @@ fn test_set_empty_payload() {
 
     let values_count = index.get_values(point_id).unwrap().count();
 
-    assert!(values_count > 0);
+    assert_ne!(values_count, 0);
 
     let payload = serde_json::json!(null);
     index.add_point(point_id, &[&payload]).unwrap();
