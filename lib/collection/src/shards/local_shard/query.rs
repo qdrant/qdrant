@@ -5,10 +5,7 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use itertools::Itertools;
 use parking_lot::Mutex;
-use rand::seq::{IteratorRandom, SliceRandom};
-use rand::{thread_rng, Rng as _};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
@@ -285,21 +282,30 @@ impl LocalShard {
             }
             ScoringQuery::Sample(sample) => match sample {
                 Sample::Random => {
-                    let mut rng = thread_rng();
-                    let mut chosen = sources
-                        .map(Cow::into_owned)
-                        .flatten()
-                        .unique_by(|point| point.id)
-                        .map(|mut point| {
-                            point.score = 0.0;
-                            point.order_value = None;
-                            point
-                        })
-                        .choose_multiple(&mut rng, limit);
+                    // create single scroll request for rescoring query
+                    let filter = filter_with_sources_ids(sources.into_iter());
 
-                    chosen.shuffle(&mut rng);
+                    // Note: score_threshold is not used in this case, as all results will have same score and order_value
+                    let scroll_request = QueryScrollRequestInternal {
+                        limit,
+                        filter: Some(filter),
+                        with_payload,
+                        with_vector,
+                        scroll_order: ScrollOrder::Random,
+                    };
 
-                    Ok(chosen)
+                    self.query_scroll_batch(
+                        Arc::new(vec![scroll_request]),
+                        search_runtime_handle,
+                        timeout,
+                    )
+                    .await?
+                    .pop()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Rescoring with order-by query didn't return expected batch of results",
+                        )
+                    })
                 }
             },
         }
