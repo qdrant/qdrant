@@ -229,6 +229,7 @@ pub(crate) fn get_merge_optimizer(
         },
         Default::default(),
         Default::default(),
+        None,
     )
 }
 
@@ -254,5 +255,6 @@ pub(crate) fn get_indexing_optimizer(
         },
         Default::default(),
         Default::default(),
+        None,
     )
 }

@@ -290,6 +290,9 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
 
 impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
     fn from(value: api::grpc::qdrant::OptimizersConfigDiff) -> Self {
+        let defragmentation_keys =
+            (!value.defragmentation_keys.is_empty()).then_some(value.defragmentation_keys);
+
         Self {
             deleted_threshold: value.deleted_threshold,
             vacuum_min_vector_number: value.vacuum_min_vector_number.map(|v| v as usize),
@@ -299,6 +302,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             flush_interval_sec: value.flush_interval_sec,
             max_optimization_threads: value.max_optimization_threads.map(|v| v as usize),
+            defragmentation_keys,
         }
     }
 }
@@ -423,6 +427,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .optimizer_config
                         .max_optimization_threads
                         .map(|n| n as u64),
+                    defragmentation_keys: config.optimizer_config.defragmentation_keys,
                 }),
                 wal_config: Some(api::grpc::qdrant::WalConfigDiff {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
@@ -481,6 +486,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
                 .map(|n| n as usize),
+            defragmentation_keys: optimizer_config.defragmentation_keys,
         }
     }
 }

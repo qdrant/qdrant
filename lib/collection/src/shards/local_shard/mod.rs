@@ -45,6 +45,7 @@ use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
 };
+use crate::collection_manager::optimizers::segment_optimizer::DefragmentationConfig;
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
@@ -309,6 +310,12 @@ impl LocalShard {
             log::debug!("Deduplicated {} points", res);
         }
 
+        let defragmentation_keys = &collection_config_read.optimizer_config.defragmentation_keys;
+        let defragmentation_config =
+            (!defragmentation_keys.is_empty()).then(|| DefragmentationConfig {
+                keys: defragmentation_keys.clone(),
+            });
+
         clear_temp_segments(shard_path);
         let optimizers = build_optimizers(
             shard_path,
@@ -316,6 +323,7 @@ impl LocalShard {
             &effective_optimizers_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
+            defragmentation_config,
         );
 
         drop(collection_config_read); // release `shared_config` from borrow checker
@@ -499,12 +507,19 @@ impl LocalShard {
         let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
+        let defragmentation_keys = &config.optimizer_config.defragmentation_keys;
+        let defragmentation_config =
+            (!defragmentation_keys.is_empty()).then(|| DefragmentationConfig {
+                keys: defragmentation_keys.clone(),
+            });
+
         let optimizers = build_optimizers(
             shard_path,
             &config.params,
             &effective_optimizers_config,
             &config.hnsw_config,
             &config.quantization_config,
+            defragmentation_config,
         );
 
         drop(config); // release `shared_config` from borrow checker
@@ -697,12 +712,20 @@ impl LocalShard {
         update_handler.stop_flush_worker();
 
         update_handler.wait_workers_stops().await?;
+
+        let defragmentation_keys = &config.optimizer_config.defragmentation_keys;
+        let defragmentation_config =
+            (!defragmentation_keys.is_empty()).then(|| DefragmentationConfig {
+                keys: defragmentation_keys.clone(),
+            });
+
         let new_optimizers = build_optimizers(
             &self.path,
             &config.params,
             &config.optimizer_config,
             &config.hnsw_config,
             &config.quantization_config,
+            defragmentation_config,
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;

@@ -6184,6 +6184,14 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "defragmentation_keys": {
+            "description": "Payload keys to use for defragmentation. The keys configured will be used to sort vectors internally to take advantage from memory/storage locality. The keys are applied in order, where the first key is most important. (For now, only the firts one is applied)\n\nNote: The keys need to be indexed.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -8219,6 +8227,14 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0,
+            "nullable": true
+          },
+          "defragmentation_keys": {
+            "description": "Payload keys to use for defragmentation. The keys configured will be used to sort vectors internally to take advantage from memory/storage locality. The keys are applied in order, where the first key is most important. (For now, only the firts one is applied)\n\nNote: The keys need to be indexed.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
             "nullable": true
           }
         }

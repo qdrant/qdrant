@@ -8,6 +8,7 @@ use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType};
 
+use super::segment_optimizer::DefragmentationConfig;
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -28,6 +29,7 @@ pub struct ConfigMismatchOptimizer {
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    defragmentation_config: Option<DefragmentationConfig>,
 }
 
 impl ConfigMismatchOptimizer {
@@ -38,6 +40,7 @@ impl ConfigMismatchOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        defragmentation_config: Option<DefragmentationConfig>,
     ) -> Self {
         ConfigMismatchOptimizer {
             thresholds_config,
@@ -47,6 +50,7 @@ impl ConfigMismatchOptimizer {
             hnsw_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            defragmentation_config,
         }
     }
 
@@ -252,6 +256,10 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
         &self.telemetry_durations_aggregator
     }
+
+    fn defragmentation_config(&self) -> Option<&DefragmentationConfig> {
+        self.defragmentation_config.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -335,6 +343,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config.clone(),
             Default::default(),
+            None,
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -343,6 +352,7 @@ mod tests {
             collection_params,
             hnsw_config.clone(),
             Default::default(),
+            None,
         );
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
@@ -493,6 +503,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config_collection.clone(),
             Default::default(),
+            None,
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -501,6 +512,7 @@ mod tests {
             collection_params,
             hnsw_config_collection.clone(),
             Default::default(),
+            None,
         );
 
         // Use indexing optimizer to build index for HNSW mismatch test
@@ -660,6 +672,7 @@ mod tests {
             collection_params.clone(),
             Default::default(),
             Some(quantization_config_collection.clone()),
+            None,
         );
         let mut config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -668,6 +681,7 @@ mod tests {
             collection_params,
             Default::default(),
             Some(quantization_config_collection),
+            None,
         );
 
         let permit_cpu_count = num_rayon_threads(0);

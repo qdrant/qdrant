@@ -128,7 +128,7 @@ fn test_building_new_defragmented_segment() {
     let segment1 = Arc::new(RwLock::new(segment1));
     let segment2 = Arc::new(RwLock::new(segment2));
 
-    builder.set_defragment_key(defragment_key.clone());
+    builder.set_defragment_keys(vec![defragment_key.clone()]);
 
     builder
         .update(&[segment1.clone(), segment2.clone()], &stopped)

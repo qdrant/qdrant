@@ -10,6 +10,7 @@ use segment::index::VectorIndex;
 use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 use segment::vector_storage::VectorStorage;
 
+use super::segment_optimizer::DefragmentationConfig;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -34,6 +35,7 @@ pub struct VacuumOptimizer {
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    defragmentation_config: Option<DefragmentationConfig>,
 }
 
 impl VacuumOptimizer {
@@ -47,6 +49,7 @@ impl VacuumOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        defragmentation_config: Option<DefragmentationConfig>,
     ) -> Self {
         VacuumOptimizer {
             deleted_threshold,
@@ -58,6 +61,7 @@ impl VacuumOptimizer {
             hnsw_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            defragmentation_config,
         }
     }
 
@@ -205,6 +209,10 @@ impl SegmentOptimizer for VacuumOptimizer {
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
         &self.telemetry_durations_aggregator
     }
+
+    fn defragmentation_config(&self) -> Option<&DefragmentationConfig> {
+        self.defragmentation_config.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -305,6 +313,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            None,
         );
 
         let suggested_to_optimize =
@@ -447,6 +456,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config.clone(),
             Default::default(),
+            None,
         );
         let vacuum_optimizer = VacuumOptimizer::new(
             0.2,
@@ -456,6 +466,7 @@ mod tests {
             temp_dir.path().to_owned(),
             collection_params,
             hnsw_config,
+            None,
             Default::default(),
         );
 

@@ -45,6 +45,7 @@ fn test_alias_operation() {
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
             max_optimization_threads: Some(2),
+            defragmentation_keys: vec![],
         },
         optimizers_overwrite: None,
         wal: Default::default(),

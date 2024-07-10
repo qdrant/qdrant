@@ -352,6 +352,15 @@ pub struct OptimizersConfigDiff {
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
+    ///
+    /// Payload keys to use for defragmentation. The keys configured will be used
+    /// to sort vectors internally to take advantage from memory/storage locality.
+    /// The keys are applied in order, where the first key is most important.
+    /// (For now, only the firts one is applied)
+    ///
+    /// Note: The keys need to be indexed.
+    #[prost(string, repeated, tag = "9")]
+    pub defragmentation_keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

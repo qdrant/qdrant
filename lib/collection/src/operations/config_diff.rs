@@ -162,6 +162,14 @@ pub struct OptimizersConfigDiff {
     /// If null - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
     pub max_optimization_threads: Option<usize>,
+
+    /// Payload keys to use for defragmentation. The keys configured will be used
+    /// to sort vectors internally to take advantage from memory/storage locality.
+    /// The keys are applied in order, where the first key is most important.
+    /// (For now, only the firts one is applied)
+    ///
+    /// Note: The keys need to be indexed.
+    pub defragmentation_keys: Option<Vec<String>>,
 }
 
 impl std::hash::Hash for OptimizersConfigDiff {
@@ -174,6 +182,7 @@ impl std::hash::Hash for OptimizersConfigDiff {
         self.indexing_threshold.hash(state);
         self.flush_interval_sec.hash(state);
         self.max_optimization_threads.hash(state);
+        self.defragmentation_keys.hash(state);
     }
 }
 
@@ -188,6 +197,7 @@ impl PartialEq for OptimizersConfigDiff {
             && self.indexing_threshold == other.indexing_threshold
             && self.flush_interval_sec == other.flush_interval_sec
             && self.max_optimization_threads == other.max_optimization_threads
+            && self.defragmentation_keys == other.defragmentation_keys
     }
 }
 
@@ -376,6 +386,7 @@ mod tests {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(1),
+            defragmentation_keys: vec![],
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();

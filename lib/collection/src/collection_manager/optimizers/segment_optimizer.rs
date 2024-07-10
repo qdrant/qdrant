@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -39,6 +40,11 @@ pub struct OptimizerThresholds {
     pub indexing_threshold_kb: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct DefragmentationConfig {
+    pub keys: Vec<String>,
+}
+
 /// SegmentOptimizer - trait implementing common functionality of the optimizers
 ///
 /// It provides functions which allow to re-build specified segments into a new, better one.
@@ -68,6 +74,8 @@ pub trait SegmentOptimizer {
 
     /// Get thresholds configuration for the current optimizer
     fn threshold_config(&self) -> &OptimizerThresholds;
+
+    fn defragmentation_config(&self) -> Option<&DefragmentationConfig>;
 
     /// Checks if segment optimization is required
     fn check_condition(
@@ -422,20 +430,32 @@ pub trait SegmentOptimizer {
             })
             .collect();
 
-        // TODO: use a different approach to select the key to use for defragmentation
-        for segment in &segments {
-            let defragment_key = segment
-                .read()
-                .payload_index
-                .borrow()
-                .field_indexes
-                .iter()
-                .next()
-                .map(|(k, _)| k.clone());
+        if let Some(defragmentation_config) = self.defragmentation_config() {
+            segment_builder.set_defragment_keys(
+                defragmentation_config
+                    .keys
+                    .iter()
+                    .filter_map(|i| PayloadKeyType::from_str(i).ok())
+                    .collect(),
+            );
+        } else {
+            // Automatically select the defragmentation key.
+            //
+            // TODO: try to make this more intelligent
+            for segment in &segments {
+                let defragment_key = segment
+                    .read()
+                    .payload_index
+                    .borrow()
+                    .field_indexes
+                    .iter()
+                    .next()
+                    .map(|(k, _)| k.clone());
 
-            if let Some(defragment_key) = defragment_key {
-                segment_builder.set_defragment_key(defragment_key);
-                break;
+                if let Some(defragment_key) = defragment_key {
+                    segment_builder.set_defragment_keys(vec![defragment_key]);
+                    break;
+                }
             }
         }
 

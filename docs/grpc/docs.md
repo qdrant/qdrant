@@ -1043,6 +1043,9 @@ To disable vector indexing, set to `0`.
 Note: 1kB = 1 vector of size 256. |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
 | max_optimization_threads | [uint64](#uint64) | optional | Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled. |
+| defragmentation_keys | [string](#string) | repeated | Payload keys to use for defragmentation. The keys configured will be used to sort vectors internally to take advantage from memory/storage locality. The keys are applied in order, where the first key is most important. (For now, only the firts one is applied)
+
+Note: The keys need to be indexed. |
 
 
 

@@ -77,6 +77,7 @@ fn batch_search_bench(c: &mut Criterion) {
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
             max_optimization_threads: Some(2),
+            defragmentation_keys: vec![],
         },
         wal_config,
         hnsw_config: Default::default(),

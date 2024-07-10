@@ -10,7 +10,9 @@ use validator::Validate;
 use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
 use crate::collection_manager::optimizers::merge_optimizer::MergeOptimizer;
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    DefragmentationConfig, OptimizerThresholds,
+};
 use crate::collection_manager::optimizers::vacuum_optimizer::VacuumOptimizer;
 use crate::config::CollectionParams;
 use crate::update_handler::Optimizer;
@@ -77,6 +79,15 @@ pub struct OptimizersConfig {
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[serde(default)]
     pub max_optimization_threads: Option<usize>,
+
+    /// Payload keys to use for defragmentation. The keys configured will be used
+    /// to sort vectors internally to take advantage from memory/storage locality.
+    /// The keys are applied in order, where the first key is most important.
+    /// (For now, only the firts one is applied)
+    ///
+    /// Note: The keys need to be indexed.
+    #[serde(default)]
+    pub defragmentation_keys: Vec<String>,
 }
 
 impl OptimizersConfig {
@@ -91,6 +102,7 @@ impl OptimizersConfig {
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
             max_optimization_threads: Some(0),
+            defragmentation_keys: vec![],
         }
     }
 
@@ -153,6 +165,7 @@ pub fn build_optimizers(
     optimizers_config: &OptimizersConfig,
     hnsw_config: &HnswConfig,
     quantization_config: &Option<QuantizationConfig>,
+    defragmentation_config: Option<DefragmentationConfig>,
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let num_indexing_threads = num_rayon_threads(hnsw_config.max_indexing_threads);
     let segments_path = shard_path.join(SEGMENTS_PATH);
@@ -168,6 +181,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            defragmentation_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
             optimizers_config.get_number_segments(),
@@ -177,6 +191,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            defragmentation_config.clone(),
         )),
         Arc::new(VacuumOptimizer::new(
             optimizers_config.deleted_threshold,
@@ -187,6 +202,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            defragmentation_config.clone(),
         )),
         Arc::new(ConfigMismatchOptimizer::new(
             threshold_config,
@@ -195,6 +211,7 @@ pub fn build_optimizers(
             collection_params.clone(),
             hnsw_config.clone(),
             quantization_config.clone(),
+            defragmentation_config.clone(),
         )),
     ])
 }

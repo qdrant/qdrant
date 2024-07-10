@@ -266,6 +266,16 @@ message OptimizersConfigDiff {
   If 0 - no optimization threads, optimizations will be disabled.
   */
   optional uint64 max_optimization_threads = 8;
+
+  /*
+  Payload keys to use for defragmentation. The keys configured will be used
+  to sort vectors internally to take advantage from memory/storage locality.
+  The keys are applied in order, where the first key is most important.
+  (For now, only the firts one is applied)
+
+  Note: The keys need to be indexed.
+  */
+  repeated string defragmentation_keys = 9;
 }
 
 message ScalarQuantization {

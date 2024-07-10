@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 
+use super::segment_optimizer::DefragmentationConfig;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -30,6 +31,7 @@ pub struct MergeOptimizer {
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    defragmentation_config: Option<DefragmentationConfig>,
 }
 
 impl MergeOptimizer {
@@ -42,6 +44,7 @@ impl MergeOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        defragmentation_config: Option<DefragmentationConfig>,
     ) -> Self {
         MergeOptimizer {
             default_segments_number,
@@ -52,6 +55,7 @@ impl MergeOptimizer {
             hnsw_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            defragmentation_config,
         }
     }
 }
@@ -145,6 +149,10 @@ impl SegmentOptimizer for MergeOptimizer {
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
         &self.telemetry_durations_aggregator
+    }
+
+    fn defragmentation_config(&self) -> Option<&DefragmentationConfig> {
+        self.defragmentation_config.as_ref()
     }
 }
 

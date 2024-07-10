@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 
+use super::segment_optimizer::DefragmentationConfig;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
 };
@@ -29,9 +30,11 @@ pub struct IndexingOptimizer {
     hnsw_config: HnswConfig,
     quantization_config: Option<QuantizationConfig>,
     telemetry_durations_aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+    defragmentation_config: Option<DefragmentationConfig>,
 }
 
 impl IndexingOptimizer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         default_segments_number: usize,
         thresholds_config: OptimizerThresholds,
@@ -40,6 +43,7 @@ impl IndexingOptimizer {
         collection_params: CollectionParams,
         hnsw_config: HnswConfig,
         quantization_config: Option<QuantizationConfig>,
+        defragmentation_config: Option<DefragmentationConfig>,
     ) -> Self {
         IndexingOptimizer {
             default_segments_number,
@@ -50,6 +54,7 @@ impl IndexingOptimizer {
             hnsw_config,
             quantization_config,
             telemetry_durations_aggregator: OperationDurationsAggregator::new(),
+            defragmentation_config,
         }
     }
 
@@ -275,6 +280,10 @@ impl SegmentOptimizer for IndexingOptimizer {
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
         &self.telemetry_durations_aggregator
     }
+
+    fn defragmentation_config(&self) -> Option<&super::segment_optimizer::DefragmentationConfig> {
+        self.defragmentation_config.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -362,6 +371,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            None,
         );
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
 
@@ -469,6 +479,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            None,
         );
 
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
@@ -762,6 +773,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            None,
         );
 
         let permit_cpu_count = num_rayon_threads(0);
@@ -863,6 +875,7 @@ mod tests {
                 collection_params.clone(),
                 hnsw_config.clone(),
                 Default::default(),
+                None,
             );
             let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
                 thresholds_config,
@@ -871,6 +884,7 @@ mod tests {
                 collection_params.clone(),
                 hnsw_config.clone(),
                 Default::default(),
+                None,
             );
 
             // Index optimizer should not optimize and put storage back in memory, nothing changed
@@ -925,6 +939,7 @@ mod tests {
             collection_params.clone(),
             hnsw_config.clone(),
             Default::default(),
+            None,
         );
         let config_mismatch_optimizer = ConfigMismatchOptimizer::new(
             thresholds_config,
@@ -933,6 +948,7 @@ mod tests {
             collection_params,
             hnsw_config.clone(),
             Default::default(),
+            None,
         );
 
         let permit_cpu_count = num_rayon_threads(0);
