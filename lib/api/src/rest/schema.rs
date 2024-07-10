@@ -796,3 +796,70 @@ pub struct SearchRequestInternal {
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
     pub score_threshold: Option<ScoreType>,
 }
+
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+pub struct QueryBaseGroupRequest {
+    /// Payload field to group by, must be a string or number field.
+    /// If the field contains more than 1 value, all values will be used for grouping.
+    /// One point can be in multiple groups.
+    #[schemars(length(min = 1))]
+    #[validate(custom = "JsonPath::validate_not_empty")]
+    pub group_by: JsonPath,
+
+    /// Maximum amount of points to return per group. Default is 3.
+    #[validate(range(min = 1))]
+    pub group_size: Option<usize>,
+
+    /// Maximum amount of groups to return. Default is 10.
+    #[validate(range(min = 1))]
+    pub limit: Option<usize>,
+
+    /// Look for points in another collection using the group ids
+    pub with_lookup: Option<WithLookupInterface>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct QueryGroupsRequestInternal {
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).
+    #[validate]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Prefetch>")]
+    pub prefetch: Option<Vec<Prefetch>>,
+
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
+    #[validate]
+    pub query: Option<QueryInterface>,
+
+    /// Define which vector name to use for querying. If missing, the default vector is used.
+    pub using: Option<String>,
+
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[validate]
+    pub filter: Option<Filter>,
+
+    /// Search params for when there is no prefetch
+    #[validate]
+    pub params: Option<SearchParams>,
+
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Options for specifying which vectors to include into the response. Default is false.
+    pub with_vector: Option<WithVector>,
+
+    /// Options for specifying which payload to include or not. Default is false.
+    pub with_payload: Option<WithPayloadInterface>,
+
+    #[serde(flatten)]
+    #[validate]
+    pub group_request: QueryBaseGroupRequest,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct QueryGroupsRequest {
+    #[validate]
+    #[serde(flatten)]
+    pub search_group_request: QueryGroupsRequestInternal,
+
+    pub shard_key: Option<ShardKeySelector>,
+}

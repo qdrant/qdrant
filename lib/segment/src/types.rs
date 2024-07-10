@@ -1993,6 +1993,12 @@ impl From<bool> for WithPayloadInterface {
     }
 }
 
+impl Default for WithPayloadInterface {
+    fn default() -> Self {
+        WithPayloadInterface::Bool(false)
+    }
+}
+
 /// Options for specifying which vector to include
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged, rename_all = "snake_case")]

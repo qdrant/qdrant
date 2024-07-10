@@ -79,7 +79,7 @@ where
 
         let core_group_by = self
             .group_by
-            .into_core_group_request(
+            .into_query_group_request(
                 self.collection,
                 self.collection_by_name.clone(),
                 self.read_consistency,

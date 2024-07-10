@@ -32,6 +32,23 @@ struct IntermediateQueryInfo<'a> {
 }
 
 impl Collection {
+    /// query is a special case of query_batch with a single batch
+    pub async fn query(
+        &self,
+        request: ShardQueryRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        if request.limit == 0 {
+            return Ok(vec![]);
+        }
+        let results = self
+            .do_query_batch(vec![(request)], read_consistency, shard_selection, timeout)
+            .await?;
+        Ok(results.into_iter().next().unwrap())
+    }
+
     /// Returns a shape of [shard_id, batch_id, intermediate_response, points]
     async fn batch_query_shards_concurrently(
         &self,

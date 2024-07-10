@@ -93,7 +93,7 @@ def test_query_validation():
     assert response.json()["status"]["error"] == "Bad request: Fusion queries cannot be combined with the 'using' field."
 
 
-def test_search_by_vector():
+def test_query_by_vector():
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -117,7 +117,7 @@ def test_search_by_vector():
     assert search_result == nearest_query_result
 
 
-def test_search_by_id():
+def test_query_by_id():
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -134,7 +134,7 @@ def test_search_by_id():
     assert top["id"] != 2  # id 2 is excluded from the results
 
 
-def test_filtered_search():
+def test_filtered_query():
     filter = {
         "must": [
             {
@@ -921,3 +921,200 @@ def test_sparse_dense_rerank_colbert():
     assert rerank_result[0]["id"] == 5
     assert rerank_result[1]["id"] == 2
     assert rerank_result[2]["id"] == 1
+
+
+def test_nearest_query_group():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [],
+            "limit": 3,
+            "query": [-1.9, 1.1, -1.1, 1.1],
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    groups = response.json()["result"]["groups"]
+    # found 3 groups has requested with `limit`
+    assert len(groups) == 3
+
+    # group 1
+    assert groups[0]["id"] == "Berlin"
+    assert len(groups[0]["hits"]) == 2  # group_size
+    assert groups[0]["hits"][0]["id"] == 1
+    assert groups[0]["hits"][0]["payload"]["city"] == "Berlin"
+    assert groups[0]["hits"][1]["id"] == 3
+    assert groups[0]["hits"][1]["payload"]["city"] == ["Berlin", "Moscow"]
+
+    # group 2
+    assert groups[1]["id"] == "Moscow"
+    assert len(groups[1]["hits"]) == 2  # group_size
+    assert groups[1]["hits"][0]["id"] == 3
+    assert groups[1]["hits"][0]["payload"]["city"] == ["Berlin", "Moscow"]
+    assert groups[1]["hits"][1]["id"] == 4
+    assert groups[1]["hits"][1]["payload"]["city"] == ["London", "Moscow"]
+
+    # group 3
+    assert groups[2]["id"] == "London"
+    assert len(groups[2]["hits"]) == 2  # group_size
+    assert groups[2]["hits"][0]["id"] == 2
+    assert groups[2]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
+    assert groups[2]["hits"][1]["id"] == 4
+    assert groups[2]["hits"][1]["payload"]["city"] == ["London", "Moscow"]
+
+
+@pytest.mark.parametrize("strategy", [
+    "best_score",
+    "average_vector",
+])
+def test_recommend_group(strategy):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4],
+            "negative": [3],
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "strategy": strategy,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+    recommend_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "recommend": {
+                    "positive": [1, 2, 3, 4],
+                    "negative": [3],
+                },
+            },
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "strategy": strategy,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    assert recommend_result == query_result, f"{recommend_result} != {query_result}"
+
+
+@pytest.mark.parametrize("direction", [
+    "asc",
+    "desc",
+])
+def test_order_by_group(direction):
+    # will check equivalence of scroll and query result with order_by group
+    # where query uses a single result per group
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "order_by": {
+                "key": "count",
+                "direction": direction,
+            },
+            "limit": 50,
+        },
+    )
+    assert response.ok, response.text
+    scroll_result = response.json()["result"]["points"]
+
+    # keep only first result per payload value
+    seen_payloads = set()
+    filtered_scroll_result = []
+    for record in scroll_result:
+        if record["payload"]["count"] in seen_payloads:
+            continue
+        else:
+            seen_payloads.add(record["payload"]["count"])
+            filtered_scroll_result.append(record)
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "order_by": {
+                    "key": "count",
+                    "direction": direction,
+                }
+            },
+            "limit": 10,
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "count",
+            "group_size": 1,
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    # flatten group result to match scroll result
+    flatten_query_result = []
+    for group in query_result["groups"]:
+        flatten_query_result.extend(group["hits"])
+
+    for record, scored_point in zip(filtered_scroll_result, flatten_query_result):
+        assert record.get("id") == scored_point.get("id")
+        assert record.get("payload") == scored_point.get("payload")
+
+
+def test_discover_group():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [],
+            "limit": 2,
+            "query": {
+                "discover": {
+                    "target": 5,
+                    "context": [{"positive": 3, "negative": 4}],
+                }
+            },
+            "using": "dense-image",
+            "with_payload": True,
+            "group_by": "city",
+            "group_size": 2,
+        },
+    )
+    assert response.ok, response.text
+
+    groups = response.json()["result"]["groups"]
+    # found 2 groups has requested with `limit`
+    assert len(groups) == 2
+
+    # group 1
+    assert groups[0]["id"] == "Berlin"
+    assert len(groups[0]["hits"]) == 2  # group_size
+    assert groups[0]["hits"][0]["id"] == 1
+    assert groups[0]["hits"][0]["payload"]["city"] == "Berlin"
+    assert groups[0]["hits"][1]["id"] == 2
+    assert groups[0]["hits"][1]["payload"]["city"] == ["Berlin", "London"]
+
+    # group 2
+    assert groups[1]["id"] == "London"
+    assert len(groups[1]["hits"]) == 1
+    assert groups[1]["hits"][0]["id"] == 2
+    assert groups[1]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
