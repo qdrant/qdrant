@@ -2,10 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 
-use api::rest::{
-    BaseGroupRequest, QueryBaseGroupRequest, QueryGroupsRequestInternal,
-    SearchGroupsRequestInternal, SearchRequestInternal,
-};
+use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -28,7 +25,9 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionResult, PointGroup, RecommendGroupsRequestInternal, RecommendRequestInternal,
 };
-use crate::operations::universal_query::collection_query::CollectionQueryRequest;
+use crate::operations::universal_query::collection_query::{
+    CollectionQueryGroupsRequest, CollectionQueryRequest,
+};
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
@@ -249,9 +248,9 @@ impl From<RecommendGroupsRequestInternal> for GroupRequest {
     }
 }
 
-impl From<QueryGroupsRequestInternal> for GroupRequest {
-    fn from(request: QueryGroupsRequestInternal) -> Self {
-        let QueryGroupsRequestInternal {
+impl From<CollectionQueryGroupsRequest> for GroupRequest {
+    fn from(request: CollectionQueryGroupsRequest) -> Self {
+        let CollectionQueryGroupsRequest {
             prefetch,
             query,
             using,
@@ -260,17 +259,14 @@ impl From<QueryGroupsRequestInternal> for GroupRequest {
             score_threshold,
             with_vector,
             with_payload,
-            group_request:
-                QueryBaseGroupRequest {
-                    group_by,
-                    group_size,
-                    limit,
-                    with_lookup: with_lookup_interface,
-                },
+            group_by,
+            group_size,
+            limit,
+            with_lookup: with_lookup_interface,
         } = request;
 
         let collection_query_request = CollectionQueryRequest {
-            prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
+            prefetch: prefetch.into_iter().map(From::from).collect(),
             query: query.map(From::from),
             using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
             filter,

@@ -7,6 +7,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     MultiDenseVectorInternal, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
 };
+use segment::json_path::JsonPath;
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams,
     WithPayloadInterface, WithVector,
@@ -15,6 +16,7 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::common::fetch_vectors::ReferencedVectors;
+use crate::lookup::WithLookup;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
@@ -54,6 +56,23 @@ pub struct CollectionQueryResolveRequest<'a> {
     pub vector_query: &'a VectorQuery<VectorInput>,
     pub lookup_from: Option<LookupLocation>,
     pub using: String,
+}
+
+/// Internal representation of a group query request, used to converge from REST and gRPC.
+#[derive(Debug)]
+pub struct CollectionQueryGroupsRequest {
+    pub prefetch: Vec<CollectionPrefetch>,
+    pub query: Option<Query>,
+    pub using: Option<String>,
+    pub filter: Option<Filter>,
+    pub params: Option<SearchParams>,
+    pub score_threshold: Option<ScoreType>,
+    pub with_vector: Option<WithVector>,
+    pub with_payload: Option<WithPayloadInterface>,
+    pub group_by: JsonPath,
+    pub group_size: Option<usize>,
+    pub limit: Option<usize>,
+    pub with_lookup: Option<WithLookup>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -534,6 +553,37 @@ mod from_rest {
 
     use super::*;
 
+    impl From<rest::QueryGroupsRequestInternal> for CollectionQueryGroupsRequest {
+        fn from(value: rest::QueryGroupsRequestInternal) -> Self {
+            let rest::QueryGroupsRequestInternal {
+                prefetch,
+                query,
+                using,
+                filter,
+                score_threshold,
+                params,
+                with_vector,
+                with_payload,
+                group_request,
+            } = value;
+
+            Self {
+                prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
+                query: query.map(From::from),
+                using,
+                filter,
+                score_threshold,
+                params,
+                with_vector,
+                with_payload,
+                limit: group_request.limit,
+                group_by: group_request.group_by,
+                group_size: group_request.group_size,
+                with_lookup: group_request.with_lookup.map(WithLookup::from),
+            }
+        }
+    }
+
     impl From<rest::QueryRequestInternal> for CollectionQueryRequest {
         fn from(value: rest::QueryRequestInternal) -> Self {
             let rest::QueryRequestInternal {
@@ -697,10 +747,55 @@ mod from_rest {
 }
 
 pub mod from_grpc {
+    use api::grpc::conversions::json_path_from_proto;
     use api::grpc::qdrant::{self as grpc};
     use tonic::Status;
 
     use super::*;
+
+    impl TryFrom<api::grpc::qdrant::QueryPointGroups> for CollectionQueryGroupsRequest {
+        type Error = Status;
+
+        fn try_from(value: api::grpc::qdrant::QueryPointGroups) -> Result<Self, Self::Error> {
+            let grpc::QueryPointGroups {
+                collection_name: _,
+                prefetch,
+                query,
+                using,
+                filter,
+                params,
+                score_threshold,
+                with_payload,
+                with_vectors,
+                limit,
+                group_size,
+                group_by,
+                with_lookup,
+                read_consistency: _,
+                timeout: _,
+                shard_key_selector: _,
+            } = value;
+
+            let request = CollectionQueryGroupsRequest {
+                prefetch: prefetch
+                    .into_iter()
+                    .map(TryFrom::try_from)
+                    .collect::<Result<_, _>>()?,
+                query: query.map(TryFrom::try_from).transpose()?,
+                using,
+                filter: filter.map(TryFrom::try_from).transpose()?,
+                score_threshold,
+                with_vector: with_vectors.map(From::from),
+                with_payload: with_payload.map(TryFrom::try_from).transpose()?,
+                group_by: json_path_from_proto(&group_by)?,
+                group_size: group_size.map(|s| s as usize),
+                limit: limit.map(|l| l as usize),
+                params: params.map(From::from),
+                with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
+            };
+            Ok(request)
+        }
+    }
 
     impl TryFrom<api::grpc::qdrant::QueryPoints> for CollectionQueryRequest {
         type Error = Status;

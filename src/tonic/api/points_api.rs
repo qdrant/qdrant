@@ -6,20 +6,20 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
     DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, GetPoints,
-    GetResponse, PointsOperationResponse, QueryBatchPoints, QueryBatchResponse, QueryPoints,
-    QueryResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse,
-    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints,
-    SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
-    UpsertPoints,
+    GetResponse, PointsOperationResponse, QueryBatchPoints, QueryBatchResponse,
+    QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
+    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, discover, discover_batch, query, query_batch, recommend_groups, search_groups,
-    update_batch, update_vectors,
+    delete_vectors, discover, discover_batch, query, query_batch, query_groups, recommend_groups,
+    search_groups, update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -482,6 +482,20 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout,
+        )
+        .await
+    }
+
+    async fn query_groups(
+        &self,
+        mut request: Request<QueryPointGroups>,
+    ) -> Result<Response<QueryGroupsResponse>, Status> {
+        let access = extract_access(&mut request);
+        query_groups(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
         )
         .await
     }

@@ -4969,6 +4969,59 @@ pub struct QueryBatchPoints {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryPointGroups {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[prost(message, repeated, tag = "2")]
+    pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
+    /// Query to perform. If missing, returns points ordered by their IDs.
+    #[prost(message, optional, tag = "3")]
+    pub query: ::core::option::Option<Query>,
+    /// Define which vector to use for querying. If missing, the default vector is used.
+    #[prost(string, optional, tag = "4")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[prost(message, optional, tag = "5")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Search params for when there is no prefetch.
+    #[prost(message, optional, tag = "6")]
+    pub params: ::core::option::Option<SearchParams>,
+    /// Return points with scores better than this threshold.
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
+    /// Options for specifying which payload to include or not
+    #[prost(message, optional, tag = "8")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying which vectors to include into response
+    #[prost(message, optional, tag = "9")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Max number of points. Default is 3.
+    #[prost(uint64, optional, tag = "10")]
+    pub limit: ::core::option::Option<u64>,
+    /// Maximum amount of points to return per group. Default to 10.
+    #[prost(uint64, optional, tag = "11")]
+    pub group_size: ::core::option::Option<u64>,
+    /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+    #[prost(string, tag = "12")]
+    pub group_by: ::prost::alloc::string::String,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "13")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Options for specifying how to use the group id to lookup points in another collection
+    #[prost(message, optional, tag = "14")]
+    pub with_lookup: ::core::option::Option<WithLookup>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "15")]
+    pub timeout: ::core::option::Option<u64>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "16")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsUpdateOperation {
     #[prost(
         oneof = "points_update_operation::Operation",
@@ -5270,6 +5323,16 @@ pub struct QueryResponse {
 pub struct QueryBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<BatchResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryGroupsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<GroupsResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -6658,6 +6721,32 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "QueryBatch"));
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        pub async fn query_groups(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryGroupsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/QueryGroups",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "QueryGroups"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -6880,6 +6969,15 @@ pub mod points_server {
             request: tonic::Request<super::QueryBatchPoints>,
         ) -> std::result::Result<
             tonic::Response<super::QueryBatchResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+        async fn query_groups(
+            &self,
+            request: tonic::Request<super::QueryPointGroups>,
+        ) -> std::result::Result<
+            tonic::Response<super::QueryGroupsResponse>,
             tonic::Status,
         >;
     }
@@ -8021,6 +8119,50 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = QueryBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/QueryGroups" => {
+                    #[allow(non_camel_case_types)]
+                    struct QueryGroupsSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::QueryPointGroups>
+                    for QueryGroupsSvc<T> {
+                        type Response = super::QueryGroupsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryPointGroups>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::query_groups(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = QueryGroupsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

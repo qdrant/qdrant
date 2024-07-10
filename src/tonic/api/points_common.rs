@@ -9,12 +9,12 @@ use api::grpc::qdrant::{
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
     FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponseInternal,
-    PointsSelector, QueryBatchResponse, QueryPoints, QueryResponse,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
-    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
-    UpsertPoints,
+    PointsSelector, QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints,
+    QueryResponse, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
+    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use api::rest::{OrderByInterface, ShardKeySelector};
 use collection::operations::consistency_params::ReadConsistency;
@@ -31,7 +31,9 @@ use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
     RecommendExample, Record, ScrollRequestInternal,
 };
-use collection::operations::universal_query::collection_query::CollectionQueryRequest;
+use collection::operations::universal_query::collection_query::{
+    CollectionQueryGroupsRequest, CollectionQueryRequest,
+};
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
@@ -51,8 +53,8 @@ use crate::common::points::{
     do_clear_payload, do_core_search_points, do_count_points, do_create_index,
     do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
     do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
-    do_query_batch_points, do_query_points, do_scroll_points, do_search_batch_points,
-    do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
+    do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
+    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
 
 fn extract_points_selector(
@@ -1635,6 +1637,43 @@ pub async fn query_batch(
                 result: points.into_iter().map(|p| p.into()).collect(),
             })
             .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn query_groups(
+    toc: &TableOfContent,
+    query_points: QueryPointGroups,
+    shard_selection: Option<ShardId>,
+    access: Access,
+) -> Result<Response<QueryGroupsResponse>, Status> {
+    let shard_key_selector = query_points.shard_key_selector.clone();
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
+    let read_consistency = query_points
+        .read_consistency
+        .clone()
+        .map(TryFrom::try_from)
+        .transpose()?;
+    let timeout = query_points.timeout.map(Duration::from_secs);
+    let collection_name = query_points.collection_name.clone();
+    let request = CollectionQueryGroupsRequest::try_from(query_points)?;
+    let timing = Instant::now();
+    let groups_result = do_query_point_groups(
+        toc,
+        &collection_name,
+        request,
+        read_consistency,
+        shard_selector,
+        access,
+        timeout,
+    )
+    .await
+    .map_err(error_to_status)?;
+
+    let response = QueryGroupsResponse {
+        result: Some(groups_result.into()),
         time: timing.elapsed().as_secs_f64(),
     };
 
