@@ -1,6 +1,6 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use api::rest::{QueryRequest, QueryRequestBatch, QueryResponse};
+use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use itertools::Itertools;
@@ -11,6 +11,7 @@ use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers;
+use crate::common::points::do_query_point_groups;
 
 #[post("/collections/{name}/points/query")]
 async fn query_points(
@@ -107,7 +108,41 @@ async fn query_points_batch(
     .await
 }
 
+#[post("/collections/{name}/points/query/groups")]
+async fn query_points_groups(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    request: Json<QueryGroupsRequest>,
+    params: Query<ReadParams>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    helpers::time(async move {
+        let QueryGroupsRequest {
+            search_group_request,
+            shard_key,
+        } = request.into_inner();
+
+        let shard_selection = match shard_key {
+            None => ShardSelectorInternal::All,
+            Some(shard_keys) => shard_keys.into(),
+        };
+
+        do_query_point_groups(
+            dispatcher.toc(&access),
+            &collection.name,
+            search_group_request,
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+        )
+        .await
+    })
+    .await
+}
+
 pub fn config_query_api(cfg: &mut web::ServiceConfig) {
     cfg.service(query_points);
     cfg.service(query_points_batch);
+    cfg.service(query_points_groups);
 }
