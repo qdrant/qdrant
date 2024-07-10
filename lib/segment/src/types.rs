@@ -83,11 +83,21 @@ impl From<chrono::DateTime<chrono::Utc>> for DateTimeWrapper {
     }
 }
 
+fn id_num_example() -> u64 {
+    42
+}
+
+fn id_uuid_example() -> String {
+    "550e8400-e29b-41d4-a716-446655440000".to_string()
+}
+
 /// Type, used for specifying point ID in user interface
 #[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema)]
 #[serde(untagged)]
 pub enum ExtendedPointId {
+    #[schemars(example = "id_num_example")]
     NumId(u64),
+    #[schemars(example = "id_uuid_example")]
     Uuid(Uuid),
 }
 
