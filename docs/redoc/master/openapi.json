@@ -6490,12 +6490,14 @@
       "ShardKey": {
         "anyOf": [
           {
-            "type": "string"
+            "type": "string",
+            "example": "region_1"
           },
           {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "example": 12
           }
         ]
       },

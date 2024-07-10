@@ -3467,10 +3467,20 @@ mod tests {
     }
 }
 
+fn shard_key_string_example() -> String {
+    "region_1".to_string()
+}
+
+fn shard_key_number_example() -> u64 {
+    12
+}
+
 #[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
+    #[schemars(example = "shard_key_string_example")]
     Keyword(String),
+    #[schemars(example = "shard_key_number_example")]
     Number(u64),
 }
 
