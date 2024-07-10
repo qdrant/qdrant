@@ -27,12 +27,35 @@ pub enum Vector {
     MultiDense(MultiDenseVector),
 }
 
+fn vector_example() -> DenseVector {
+    vec![ 0.875, 0.140625, 0.8976]
+}
+
+fn multi_dense_vector_example() -> MultiDenseVector {
+    vec![
+        vec![0.875, 0.140625, 0.1102],
+        vec![0.758, 0.28126, 0.96871],
+        vec![0.621, 0.421878, 0.9375]
+    ]
+}
+
+fn named_vector_example() -> HashMap<String, Vector> {
+    let mut map = HashMap::new();
+    map.insert(
+        "image-embeddings".to_string(),
+        Vector::Dense(vec![0.873, 0.140625, 0.8976]),
+    );
+    map
+}
 /// Full vector data per point separator with single and multiple vector modes
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
+    #[schemars(example = "vector_example")]
     Single(DenseVector),
+    #[schemars(example = "multi_dense_vector_example")]
     MultiDense(MultiDenseVector),
+    #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
 }
 
