@@ -8,7 +8,15 @@ paths:
       operationId: root
       tags:
         - service
-      responses: #@ response(reference("VersionInfo"))
+      responses:
+        "200":
+          description: Qdrant server version information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+        "4XX":
+          description: error
 
   /telemetry:
     get:
