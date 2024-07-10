@@ -28,14 +28,14 @@ pub enum Vector {
 }
 
 fn vector_example() -> DenseVector {
-    vec![ 0.875, 0.140625, 0.8976]
+    vec![0.875, 0.140625, 0.8976]
 }
 
 fn multi_dense_vector_example() -> MultiDenseVector {
     vec![
         vec![0.875, 0.140625, 0.1102],
         vec![0.758, 0.28126, 0.96871],
-        vec![0.621, 0.421878, 0.9375]
+        vec![0.621, 0.421878, 0.9375],
     ]
 }
 
