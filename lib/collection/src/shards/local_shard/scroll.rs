@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
-use rand::seq::IteratorRandom;
+use rand::Rng;
 use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -269,15 +269,17 @@ impl LocalShard {
         let all_reads = try_join_all(
             non_appendable
                 .into_iter()
-                .map(read_filtered)
-                .chain(appendable.into_iter().map(read_filtered)),
+                .chain(appendable)
+                .map(read_filtered),
         )
         .await?;
 
+        let mut rng = rand::thread_rng();
         let point_ids = all_reads
             .into_iter()
-            .flatten()
-            .choose_multiple(&mut rand::thread_rng(), limit);
+            .kmerge_by(|_, _| rng.gen_bool(0.5))
+            .take(limit)
+            .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
         let records_map =

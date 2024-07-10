@@ -120,12 +120,8 @@ impl IdTracker for FixtureIdTracker {
         )
     }
 
-    /// Not actually random, but it's enough for tests
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        Box::new(
-            self.iter_ids()
-                .map(|id| (PointIdType::NumId(id as u64), id)),
-        )
+        unimplemented!("Not used for tests yet")
     }
 
     fn total_point_count(&self) -> usize {
