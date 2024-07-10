@@ -815,32 +815,43 @@ impl ShardReplicaSet {
         self.locally_disabled_peers.read().is_disabled(*peer_id)
     }
 
-    fn add_locally_disabled(&self, peer_id: PeerId) {
-        if self
-            .locally_disabled_peers
-            .write()
-            .disable_peer_and_notify_if_elapsed(peer_id)
+    /// Locally disable given peer
+    ///
+    /// Disables the peer and notifies consensus periodically.
+    ///
+    /// Prevents disabling the last peer (according to consensus).
+    fn add_locally_disabled(&self, state: &ReplicaSetState, peer_id: PeerId) {
+        let other_peers = state
+            .active_or_resharding_peers()
+            .filter(|id| id != &peer_id);
+
+        let mut locally_disabled_peers_guard = self.locally_disabled_peers.upgradable_read();
+
+        // Prevent disabling last peer in consensus
         {
-            self.notify_peer_failure(peer_id);
+            if !locally_disabled_peers_guard.is_disabled(peer_id)
+                && locally_disabled_peers_guard.is_all_disabled(other_peers)
+            {
+                log::warn!("Cannot locally disable last active peer {peer_id} for replica");
+                return;
+            }
         }
+
+        locally_disabled_peers_guard.with_upgraded(|locally_disabled_peers| {
+            if locally_disabled_peers.disable_peer_and_notify_if_elapsed(peer_id) {
+                self.notify_peer_failure(peer_id);
+            }
+        });
     }
 
-    // Make sure that locally disabled peers do not contradict the consensus
+    /// Make sure that locally disabled peers do not contradict the consensus
     fn update_locally_disabled(&self, peer_id_to_remove: PeerId) {
-        // Check that we are not trying to disable the last active peer
-        let peers = self.peers();
-
-        // List the peers in active or resharding state
-        // If resharding, there will be only one shard in resharding state and we should not
-        // consider all to be dead
-        // TODO(resharding): accept resharding state as active like below?
-        let active_or_resharding_peers = peers.iter().filter_map(|(&peer_id, &state)| {
-            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(peer_id)
-        });
-
         let mut locally_disabled_peers = self.locally_disabled_peers.write();
 
-        if locally_disabled_peers.is_all_disabled(active_or_resharding_peers) {
+        // Check that we are not trying to disable the last active peer
+        if locally_disabled_peers
+            .is_all_disabled(self.replica_state.read().active_or_resharding_peers())
+        {
             log::warn!("Resolving consensus/local state inconsistency");
             locally_disabled_peers.clear();
         } else {
@@ -926,13 +937,15 @@ impl ReplicaSetState {
         self.peers
             .iter()
             .filter_map(|(peer_id, state)| {
-                if *state == ReplicaState::Active {
-                    Some(*peer_id)
-                } else {
-                    None
-                }
+                matches!(state, ReplicaState::Active).then_some(*peer_id)
             })
             .collect()
+    }
+
+    pub fn active_or_resharding_peers(&self) -> impl Iterator<Item = PeerId> + '_ {
+        self.peers.iter().filter_map(|(peer_id, state)| {
+            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(*peer_id)
+        })
     }
 
     pub fn set_peers(&mut self, peers: HashMap<PeerId, ReplicaState>) {
