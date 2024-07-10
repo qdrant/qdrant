@@ -6505,13 +6505,11 @@
           {
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "example": 42
+            "minimum": 0
           },
           {
             "type": "string",
-            "format": "uuid",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
+            "format": "uuid"
           }
         ]
       },
@@ -6612,11 +6610,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": {
-              "city": "London",
-              "color": "green"
-            }
+            ]
           },
           "vector": {
             "description": "Vector of the point",
@@ -6627,12 +6621,6 @@
               {
                 "nullable": true
               }
-            ],
-            "example": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
             ]
           },
           "shard_key": {
@@ -6644,8 +6632,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": "region_1"
+            ]
           },
           "order_value": {
             "anyOf": [
@@ -6655,8 +6642,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": 1
+            ]
           }
         }
       },
@@ -6851,13 +6837,7 @@
             "items": {
               "type": "number",
               "format": "float"
-            },
-            "example": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
-            ]
+            }
           },
           {
             "$ref": "#/components/schemas/NamedVector"
@@ -6868,6 +6848,7 @@
         ]
       },
       "NamedVector": {
+        "description": "Dense vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -6876,16 +6857,7 @@
         "properties": {
           "name": {
             "description": "Name of vector data",
-            "type": "string",
-            "example": {
-              "name": "image",
-              "vector": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ]
-            }
+            "type": "string"
           },
           "vector": {
             "description": "Vector data",
@@ -6898,6 +6870,7 @@
         }
       },
       "NamedSparseVector": {
+        "description": "Sparse vector data with name",
         "type": "object",
         "required": [
           "name",
@@ -6906,24 +6879,7 @@
         "properties": {
           "name": {
             "description": "Name of vector data",
-            "type": "string",
-            "example": {
-              "name": "keyword",
-              "vector": {
-                "indices": [
-                  0,
-                  1,
-                  6,
-                  9
-                ],
-                "values": [
-                  0.875,
-                  0.140625,
-                  -0.15625,
-                  0.96875
-                ]
-              }
-            }
+            "type": "string"
           },
           "vector": {
             "$ref": "#/components/schemas/SparseVector"
@@ -7567,14 +7523,12 @@
             "description": "Point version",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0,
-            "example": 1
+            "minimum": 0
           },
           "score": {
             "description": "Points vector distance to the query vector",
             "type": "number",
-            "format": "float",
-            "example": 0.75
+            "format": "float"
           },
           "payload": {
             "description": "Payload - values assigned to the point",
@@ -7585,11 +7539,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": {
-              "city": "London",
-              "color": "green"
-            }
+            ]
           },
           "vector": {
             "description": "Vector of the point",
@@ -7600,12 +7550,6 @@
               {
                 "nullable": true
               }
-            ],
-            "example": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
             ]
           },
           "shard_key": {
@@ -7617,8 +7561,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": "region_1"
+            ]
           },
           "order_value": {
             "description": "Order-by value",
@@ -7629,8 +7572,7 @@
               {
                 "nullable": true
               }
-            ],
-            "example": 1
+            ]
           }
         }
       },
@@ -7936,8 +7878,7 @@
           {
             "$ref": "#/components/schemas/OrderBy"
           }
-        ],
-        "example": "timestamp"
+        ]
       },
       "OrderBy": {
         "type": "object",
@@ -7971,11 +7912,6 @@
               }
             ]
           }
-        },
-        "example": {
-          "direction": "desc",
-          "key": "timestamp",
-          "start_from": 123
         }
       },
       "Direction": {
@@ -11214,11 +11150,6 @@
               }
             ]
           }
-        },
-        "example": {
-          "collection": "collection_b",
-          "shard_key": "region_1",
-          "vector": "image_vector"
         }
       },
       "RecommendGroupsRequest": {
@@ -11865,51 +11796,6 @@
               }
             ]
           }
-        },
-        "example": {
-          "filter": {
-            "min_should": null,
-            "must": [
-              {
-                "geo_bounding_box": null,
-                "geo_polygon": null,
-                "geo_radius": null,
-                "key": "city",
-                "match": {
-                  "text": "Berlin"
-                },
-                "range": null,
-                "values_count": null
-              }
-            ],
-            "must_not": null,
-            "should": null
-          },
-          "limit": 10,
-          "lookup_from": {
-            "collection": "collection_b",
-            "shard_key": "region_1",
-            "vector": "image_vector"
-          },
-          "offset": 0,
-          "params": {
-            "exact": false,
-            "hnsw_ef": 100,
-            "indexed_only": false,
-            "quantization": null
-          },
-          "prefetch": null,
-          "query": [
-            0.875,
-            0.140625,
-            -0.15625,
-            0.96875
-          ],
-          "score_threshold": 0.25,
-          "shard_key": "region_1",
-          "using": "image_vector",
-          "with_payload": true,
-          "with_vector": true
         }
       },
       "Prefetch": {
@@ -12015,13 +11901,7 @@
             "items": {
               "type": "number",
               "format": "float"
-            },
-            "example": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
-            ]
+            }
           },
           {
             "$ref": "#/components/schemas/SparseVector"
@@ -12034,24 +11914,7 @@
                 "type": "number",
                 "format": "float"
               }
-            },
-            "example": [
-              [
-                1,
-                2,
-                3
-              ],
-              [
-                4,
-                5,
-                6
-              ],
-              [
-                7,
-                8,
-                9
-              ]
-            ]
+            }
           },
           {
             "$ref": "#/components/schemas/ExtendedPointId"
@@ -12089,14 +11952,6 @@
           "nearest": {
             "$ref": "#/components/schemas/VectorInput"
           }
-        },
-        "example": {
-          "nearest": [
-            0.875,
-            0.140625,
-            -0.15625,
-            0.96875
-          ]
         }
       },
       "RecommendQuery": {
@@ -12107,27 +11962,6 @@
         "properties": {
           "recommend": {
             "$ref": "#/components/schemas/RecommendInput"
-          }
-        },
-        "example": {
-          "recommend": {
-            "negative": [
-              [
-                0.4749999940395355,
-                0.44062501192092896,
-                -0.2562499940395355,
-                0.3687500059604645
-              ]
-            ],
-            "positive": [
-              [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ]
-            ],
-            "strategy": "average_vector"
           }
         }
       },
@@ -12161,25 +11995,6 @@
               }
             ]
           }
-        },
-        "example": {
-          "negative": [
-            [
-              0.4749999940395355,
-              0.44062501192092896,
-              -0.2562499940395355,
-              0.3687500059604645
-            ]
-          ],
-          "positive": [
-            [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
-            ]
-          ],
-          "strategy": "average_vector"
         }
       },
       "DiscoverQuery": {
@@ -12190,32 +12005,6 @@
         "properties": {
           "discover": {
             "$ref": "#/components/schemas/DiscoverInput"
-          }
-        },
-        "example": {
-          "discover": {
-            "context": [
-              {
-                "negative": [
-                  0.4749999940395355,
-                  0.44062501192092896,
-                  -0.2562499940395355,
-                  0.3687500059604645
-                ],
-                "positive": [
-                  0.875,
-                  0.140625,
-                  -0.15625,
-                  0.96875
-                ]
-              }
-            ],
-            "target": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
-            ]
           }
         }
       },
@@ -12246,30 +12035,6 @@
               }
             ]
           }
-        },
-        "example": {
-          "context": [
-            {
-              "negative": [
-                0.4749999940395355,
-                0.44062501192092896,
-                -0.2562499940395355,
-                0.3687500059604645
-              ],
-              "positive": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ]
-            }
-          ],
-          "target": [
-            0.875,
-            0.140625,
-            -0.15625,
-            0.96875
-          ]
         }
       },
       "ContextPair": {
@@ -12285,20 +12050,6 @@
           "negative": {
             "$ref": "#/components/schemas/VectorInput"
           }
-        },
-        "example": {
-          "negative": [
-            0.4749999940395355,
-            0.44062501192092896,
-            -0.2562499940395355,
-            0.3687500059604645
-          ],
-          "positive": [
-            0.875,
-            0.140625,
-            -0.15625,
-            0.96875
-          ]
         }
       },
       "ContextQuery": {
@@ -12310,24 +12061,6 @@
           "context": {
             "$ref": "#/components/schemas/ContextInput"
           }
-        },
-        "example": {
-          "context": [
-            {
-              "negative": [
-                0.4749999940395355,
-                0.44062501192092896,
-                -0.2562499940395355,
-                0.3687500059604645
-              ],
-              "positive": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ]
-            }
-          ]
         }
       },
       "ContextInput": {
@@ -12344,22 +12077,6 @@
           {
             "nullable": true
           }
-        ],
-        "example": [
-          {
-            "negative": [
-              0.4749999940395355,
-              0.44062501192092896,
-              -0.2562499940395355,
-              0.3687500059604645
-            ],
-            "positive": [
-              0.875,
-              0.140625,
-              -0.15625,
-              0.96875
-            ]
-          }
         ]
       },
       "OrderByQuery": {
@@ -12371,9 +12088,6 @@
           "order_by": {
             "$ref": "#/components/schemas/OrderByInterface"
           }
-        },
-        "example": {
-          "order_by": "timestamp"
         }
       },
       "FusionQuery": {
@@ -12385,9 +12099,6 @@
           "fusion": {
             "$ref": "#/components/schemas/Fusion"
           }
-        },
-        "example": {
-          "fusion": "rrf"
         }
       },
       "Fusion": {
@@ -12395,8 +12106,7 @@
         "type": "string",
         "enum": [
           "rrf"
-        ],
-        "example": "rrf"
+        ]
       },
       "QueryRequestBatch": {
         "type": "object",
@@ -12410,100 +12120,6 @@
               "$ref": "#/components/schemas/QueryRequest"
             }
           }
-        },
-        "example": {
-          "searches": [
-            {
-              "filter": {
-                "min_should": null,
-                "must": [
-                  {
-                    "geo_bounding_box": null,
-                    "geo_polygon": null,
-                    "geo_radius": null,
-                    "key": "city",
-                    "match": {
-                      "text": "Berlin"
-                    },
-                    "range": null,
-                    "values_count": null
-                  }
-                ],
-                "must_not": null,
-                "should": null
-              },
-              "limit": 10,
-              "lookup_from": {
-                "collection": "collection_b",
-                "shard_key": "region_1",
-                "vector": "image_vector"
-              },
-              "offset": 0,
-              "params": {
-                "exact": false,
-                "hnsw_ef": 100,
-                "indexed_only": false,
-                "quantization": null
-              },
-              "prefetch": null,
-              "query": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ],
-              "score_threshold": 0.25,
-              "shard_key": "region_1",
-              "using": "image_vector",
-              "with_payload": true,
-              "with_vector": true
-            },
-            {
-              "filter": {
-                "min_should": null,
-                "must": [
-                  {
-                    "geo_bounding_box": null,
-                    "geo_polygon": null,
-                    "geo_radius": null,
-                    "key": "city",
-                    "match": {
-                      "text": "New York"
-                    },
-                    "range": null,
-                    "values_count": null
-                  }
-                ],
-                "must_not": null,
-                "should": null
-              },
-              "limit": 10,
-              "lookup_from": {
-                "collection": "collection_b",
-                "shard_key": "region_1",
-                "vector": "image_vector"
-              },
-              "offset": 0,
-              "params": {
-                "exact": false,
-                "hnsw_ef": 100,
-                "indexed_only": false,
-                "quantization": null
-              },
-              "prefetch": null,
-              "query": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ],
-              "score_threshold": 0.25,
-              "shard_key": "region_1",
-              "using": "code_vector",
-              "with_payload": true,
-              "with_vector": true
-            }
-          ]
         }
       },
       "QueryResponse": {
@@ -12518,44 +12134,6 @@
               "$ref": "#/components/schemas/ScoredPoint"
             }
           }
-        },
-        "example": {
-          "points": [
-            {
-              "id": 1,
-              "order_value": 1,
-              "payload": {
-                "city": "London",
-                "color": "green"
-              },
-              "score": 0.25,
-              "shard_key": "region_1",
-              "vector": [
-                0.875,
-                0.140625,
-                -0.15625,
-                0.96875
-              ],
-              "version": 1
-            },
-            {
-              "id": 2,
-              "order_value": 1,
-              "payload": {
-                "city": "Berlin",
-                "color": "red"
-              },
-              "score": 0.25,
-              "shard_key": "region_1",
-              "vector": [
-                0.4749999940395355,
-                0.44062501192092896,
-                -0.2562499940395355,
-                0.3687500059604645
-              ],
-              "version": 1
-            }
-          ]
         }
       },
       "QueryGroupsRequest": {
