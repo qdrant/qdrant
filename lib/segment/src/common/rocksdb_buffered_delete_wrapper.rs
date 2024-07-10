@@ -58,6 +58,15 @@ impl DatabaseColumnScheduledDeleteWrapper {
         Ok(())
     }
 
+    pub fn is_pending_removal<K>(&self, key: K) -> bool
+    where
+        K: AsRef<[u8]>,
+    {
+        self.deleted_pending_persistence
+            .lock()
+            .contains(key.as_ref())
+    }
+
     pub fn flusher(&self) -> Flusher {
         let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
         let wrapper = self.db.clone();
