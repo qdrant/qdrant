@@ -947,7 +947,15 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
+fn payload_example() -> Option<Payload> {
+    Some(Payload::from(serde_json::json!({
+        "city": "London",
+        "color": "green",
+    })))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[schemars(example = "payload_example")]
 pub struct Payload(pub Map<String, Value>);
 
 impl Payload {

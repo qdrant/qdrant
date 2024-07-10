@@ -6650,7 +6650,11 @@
       },
       "Payload": {
         "type": "object",
-        "additionalProperties": true
+        "additionalProperties": true,
+        "example": {
+          "city": "London",
+          "color": "green"
+        }
       },
       "VectorStruct": {
         "description": "Full vector data per point separator with single and multiple vector modes",
