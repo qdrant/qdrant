@@ -8,6 +8,7 @@ use rocksdb::DB;
 
 use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
 use crate::types::GeoPoint;
@@ -38,12 +39,15 @@ pub struct MutableGeoMapIndex {
     pub points_count: usize,
     pub points_values_count: usize,
     pub max_values_per_point: usize,
-    db_wrapper: DatabaseColumnWrapper,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl MutableGeoMapIndex {
     pub fn new(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
-        let db_wrapper = DatabaseColumnWrapper::new(db, store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            store_cf_name,
+        ));
         Self {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -56,7 +60,7 @@ impl MutableGeoMapIndex {
         }
     }
 
-    pub fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 

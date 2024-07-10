@@ -11,6 +11,7 @@ use rocksdb::DB;
 
 use super::MapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 
 pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
@@ -19,13 +20,16 @@ pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,
-    pub(super) db_wrapper: DatabaseColumnWrapper,
+    pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
-        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
         Self {
             map: Default::default(),
             point_to_values: Vec::new(),
@@ -87,7 +91,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         Ok(())
     }
 
-    pub fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+    pub fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 

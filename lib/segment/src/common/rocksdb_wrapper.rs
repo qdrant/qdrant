@@ -23,8 +23,8 @@ pub const DB_DEFAULT_CF: &str = "default";
 
 #[derive(Clone, Debug)]
 pub struct DatabaseColumnWrapper {
-    pub database: Arc<RwLock<DB>>,
-    pub column_name: String,
+    database: Arc<RwLock<DB>>,
+    column_name: String,
 }
 
 pub struct DatabaseColumnIterator<'a> {
@@ -231,6 +231,14 @@ impl DatabaseColumnWrapper {
                 &self.column_name
             ))
         })
+    }
+
+    pub fn get_database(&self) -> Arc<RwLock<DB>> {
+        self.database.clone()
+    }
+
+    pub fn get_column_name(&self) -> &str {
+        &self.column_name
     }
 }
 

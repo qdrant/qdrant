@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::types::Payload;
 
@@ -14,14 +15,17 @@ use crate::types::Payload;
 #[derive(Debug)]
 pub struct SimplePayloadStorage {
     pub(crate) payload: HashMap<PointOffsetType, Payload>,
-    pub(crate) db_wrapper: DatabaseColumnWrapper,
+    pub(crate) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl SimplePayloadStorage {
     pub fn open(database: Arc<RwLock<DB>>) -> OperationResult<Self> {
         let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
 
-        let db_wrapper = DatabaseColumnWrapper::new(database, DB_PAYLOAD_CF);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            database,
+            DB_PAYLOAD_CF,
+        ));
 
         for (key, val) in db_wrapper.lock_db().iter()? {
             let point_id: PointOffsetType = serde_cbor::from_slice(&key)

@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 use std::mem;
+use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
+use rocksdb::DB;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
@@ -17,6 +19,16 @@ use crate::common::Flusher;
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
     deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
+}
+
+impl Clone for DatabaseColumnScheduledDeleteWrapper {
+    fn clone(&self) -> Self {
+        let deleted_pending_persistence = self.deleted_pending_persistence.lock().clone();
+        Self {
+            db: self.db.clone(),
+            deleted_pending_persistence: Mutex::new(deleted_pending_persistence),
+        }
+    }
 }
 
 impl DatabaseColumnScheduledDeleteWrapper {
@@ -59,5 +71,32 @@ impl DatabaseColumnScheduledDeleteWrapper {
 
     pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
         self.db.lock_db()
+    }
+
+    pub fn get_pinned<T, F>(&self, key: &[u8], f: F) -> OperationResult<Option<T>>
+    where
+        F: FnOnce(&[u8]) -> T,
+    {
+        self.db.get_pinned(key, f)
+    }
+
+    pub fn recreate_column_family(&self) -> OperationResult<()> {
+        self.db.recreate_column_family()
+    }
+
+    pub fn get_database(&self) -> Arc<RwLock<DB>> {
+        self.db.get_database()
+    }
+
+    pub fn get_column_name(&self) -> &str {
+        self.db.get_column_name()
+    }
+
+    pub fn has_column_family(&self) -> OperationResult<bool> {
+        self.db.has_column_family()
+    }
+
+    pub fn remove_column_family(&self) -> OperationResult<()> {
+        self.db.remove_column_family()
     }
 }
