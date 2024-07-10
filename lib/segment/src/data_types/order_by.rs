@@ -140,10 +140,20 @@ impl OrderBy {
     }
 }
 
+fn order_value_int_example() -> IntPayloadType {
+    42
+}
+
+fn order_value_float_example() -> FloatPayloadType {
+    42.5
+}
+
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum OrderValue {
+    #[schemars(example = "order_value_int_example")]
     Int(IntPayloadType),
+    #[schemars(example = "order_value_float_example")]
     Float(FloatPayloadType),
 }
 

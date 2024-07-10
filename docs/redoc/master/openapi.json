@@ -6770,11 +6770,13 @@
         "anyOf": [
           {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "example": 42
           },
           {
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "example": 42.5
           }
         ]
       },
