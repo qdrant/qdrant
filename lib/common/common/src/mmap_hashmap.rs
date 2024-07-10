@@ -16,6 +16,8 @@ use rand::rngs::StdRng;
 use rand::Rng as _;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
+use crate::types::PointOffsetType;
+
 /// On-disk hash map baked by a memory-mapped file.
 ///
 /// The layout of the memory-mapped file is as follows:
@@ -26,15 +28,15 @@ use zerocopy::{AsBytes, FromBytes, FromZeroes};
 ///
 /// ## Entry format for the `str` key
 ///
-/// | key    | `'\0xff'` | padding | values_len | values  |
-/// |--------|-----------|---------|------------|---------|
-/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `u32[]` |
+/// | key    | `'\0xff'` | padding | values_len | values              |
+/// |--------|-----------|---------|------------|---------------------|
+/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `PointOffsetType[]` |
 ///
 /// ## Entry format for the `u32` key
 ///
-/// | key   | values_len | values  |
-/// |-------|------------|---------|
-/// | `u32` | `u32`      | `u32[]` |
+/// | key   | values_len | values              |
+/// |-------|------------|---------------------|
+/// | `u32` | `u32`      | `PointOffsetType[]` |
 pub struct MmapHashMap<K: ?Sized> {
     mmap: Mmap,
     header: Header,
@@ -53,13 +55,12 @@ struct Header {
 const PADDING_SIZE: usize = 4096;
 
 type BucketOffset = u64;
-pub type Value = u32;
 
 impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
     /// Save `map` contents to `path`.
     pub fn create<'a, 'b>(
         path: &'a Path,
-        map: impl Iterator<Item = (&'b K, impl ExactSizeIterator<Item = Value> + 'b)> + Clone,
+        map: impl Iterator<Item = (&'b K, impl ExactSizeIterator<Item = PointOffsetType> + 'b)> + Clone,
     ) -> io::Result<()> {
         let keys_vec = map.clone().map(|(k, _)| k).collect::<Vec<_>>();
         let keys_count = keys_vec.len();
@@ -125,7 +126,7 @@ impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
             pos += entry_size;
             key.write(&mut bufw)?;
             bufw.write_all(zeroes(padding))?;
-            bufw.write_all((values.len() as Value).as_bytes())?;
+            bufw.write_all((values.len() as PointOffsetType).as_bytes())?;
             for i in values {
                 bufw.write_all(AsBytes::as_bytes(&i))?;
             }
@@ -139,9 +140,11 @@ impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
 
     fn entry_bytes(key: &K, values_len: usize) -> (usize, usize) {
         let key_size = key.write_bytes();
-        let padding_bytes = key_size.next_multiple_of(size_of::<Value>()) - key_size;
-        let total_bytes =
-            key_size + padding_bytes + size_of::<Value>() + values_len * size_of::<Value>();
+        let padding_bytes = key_size.next_multiple_of(size_of::<PointOffsetType>()) - key_size;
+        let total_bytes = key_size
+            + padding_bytes
+            + size_of::<PointOffsetType>()
+            + values_len * size_of::<PointOffsetType>();
         (total_bytes, padding_bytes)
     }
 
@@ -182,7 +185,7 @@ impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
 
     /// Get the values associated with the `key`.
     #[inline(never)]
-    pub fn get(&self, key: &K) -> io::Result<Option<&[Value]>> {
+    pub fn get(&self, key: &K) -> io::Result<Option<&[PointOffsetType]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
         };
@@ -219,11 +222,15 @@ impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
         };
         let entry = entry.get(padding..).ok_or(io::ErrorKind::InvalidData)?;
 
-        let values_len = Value::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
+        let values_len =
+            PointOffsetType::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
         let entry = entry
-            .get(size_of::<Value>()..size_of::<Value>() + values_len * size_of::<Value>())
+            .get(
+                size_of::<PointOffsetType>()
+                    ..size_of::<PointOffsetType>() + values_len * size_of::<PointOffsetType>(),
+            )
             .ok_or(io::ErrorKind::InvalidData)?;
-        let result = Value::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
+        let result = PointOffsetType::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
         Ok(Some(result))
     }
 }
