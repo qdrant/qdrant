@@ -20,7 +20,7 @@ pub(super) struct GroupsAggregator {
     full_groups: HashSet<GroupId>,
     group_best_scores: HashMap<GroupId, ScoredPoint>,
     all_ids: HashSet<ExtendedPointId>,
-    order: Order,
+    order: Option<Order>,
 }
 
 impl GroupsAggregator {
@@ -28,7 +28,7 @@ impl GroupsAggregator {
         groups: usize,
         group_size: usize,
         grouped_by: JsonPath,
-        order: Order,
+        order: Option<Order>,
     ) -> Self {
         Self {
             groups: HashMap::with_capacity(groups),
@@ -97,8 +97,9 @@ impl GroupsAggregator {
                 .entry(group_key.clone())
                 .and_modify(|other_score| {
                     let ordering = match self.order {
-                        Order::LargeBetter => point.cmp(other_score),
-                        Order::SmallBetter => (*other_score).cmp(&point),
+                        Some(Order::LargeBetter) => point.cmp(other_score),
+                        Some(Order::SmallBetter) => (*other_score).cmp(&point),
+                        None => Ordering::Equal, // No order can mean random sampling.
                     };
                     if ordering == Ordering::Greater {
                         *other_score = point.clone();
@@ -131,8 +132,9 @@ impl GroupsAggregator {
         let mut pairs: Vec<_> = self.group_best_scores.iter().collect();
 
         pairs.sort_unstable_by(|(_, score1), (_, score2)| match self.order {
-            Order::LargeBetter => score2.cmp(score1),
-            Order::SmallBetter => score1.cmp(score2),
+            Some(Order::LargeBetter) => score2.cmp(score1),
+            Some(Order::SmallBetter) => score1.cmp(score2),
+            None => Ordering::Equal,
         });
 
         pairs
@@ -177,12 +179,13 @@ impl GroupsAggregator {
             let mut group = self.groups.remove(&group_key).unwrap();
             let scored_points_iter = group.drain().map(|(_, hit)| hit);
             let hits = match self.order {
-                Order::LargeBetter => {
+                Some(Order::LargeBetter) => {
                     peek_top_largest_iterable(scored_points_iter, self.max_group_size)
                 }
-                Order::SmallBetter => {
+                Some(Order::SmallBetter) => {
                     peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
                 }
+                None => scored_points_iter.take(self.max_group_size).collect(),
             };
             groups.push(Group {
                 hits,
@@ -236,7 +239,7 @@ mod unit_tests {
         ];
 
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Order::LargeBetter);
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
         for point in scored_points {
             aggregator.add_point(point).unwrap();
         }
@@ -283,7 +286,7 @@ mod unit_tests {
     #[test]
     fn it_adds_single_points() {
         let mut aggregator =
-            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Order::LargeBetter);
+            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Some(Order::LargeBetter));
 
         // cases
         #[rustfmt::skip]
@@ -387,7 +390,7 @@ mod unit_tests {
     #[test]
     fn test_aggregate_less_groups() {
         let mut aggregator =
-            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Order::LargeBetter);
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
 
         // cases
         [

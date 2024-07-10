@@ -3,7 +3,7 @@
 use common::types::ScoreType;
 use segment::types::{Filter, WithPayloadInterface, WithVector};
 
-use super::shard_query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use super::shard_query::{Sample, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };
@@ -181,6 +181,21 @@ impl PlannedQuery {
 
                     vec![Source::ScrollsIdx(idx)]
                 }
+                Some(ScoringQuery::Sample(Sample::Random)) => {
+                    // Everything should come from 1 scroll
+                    let scroll = QueryScrollRequestInternal {
+                        scroll_order: ScrollOrder::Random,
+                        limit,
+                        filter,
+                        with_vector,
+                        with_payload,
+                    };
+
+                    let idx = self.scrolls.len();
+                    self.scrolls.push(scroll);
+
+                    vec![Source::ScrollsIdx(idx)]
+                }
                 None => {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
@@ -298,6 +313,20 @@ fn recurse_prefetches(
                 Some(ScoringQuery::OrderBy(order_by)) => {
                     let scroll = QueryScrollRequestInternal {
                         scroll_order: ScrollOrder::ByField(order_by),
+                        filter,
+                        with_vector: with_vector.clone(),
+                        with_payload: with_payload.clone(),
+                        limit,
+                    };
+
+                    let idx = scrolls.len();
+                    scrolls.push(scroll);
+
+                    Source::ScrollsIdx(idx)
+                }
+                Some(ScoringQuery::Sample(Sample::Random)) => {
+                    let scroll = QueryScrollRequestInternal {
+                        scroll_order: ScrollOrder::Random,
                         filter,
                         with_vector: with_vector.clone(),
                         with_payload: with_payload.clone(),

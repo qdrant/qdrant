@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use itertools::Itertools;
 use parking_lot::Mutex;
+use rand::{thread_rng, Rng as _};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
@@ -20,7 +22,9 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, Source,
 };
-use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
+use crate::operations::universal_query::shard_query::{
+    Fusion, Sample, ScoringQuery, ShardQueryResponse,
+};
 
 pub enum FetchedSource {
     Search(usize),
@@ -278,6 +282,24 @@ impl LocalShard {
                     )
                 })
             }
+            ScoringQuery::Sample(sample) => match sample {
+                Sample::Random => {
+                    let mut rng = thread_rng();
+                    let shuffled = sources
+                        .map(Cow::into_owned)
+                        .kmerge_by(|_, _| rng.gen_bool(0.5))
+                        .unique_by(|point| point.id)
+                        .map(|mut point| {
+                            point.score = 0.0;
+                            point.order_value = None;
+                            point
+                        })
+                        .take(limit)
+                        .collect();
+
+                    Ok(shuffled)
+                }
+            },
         }
     }
 

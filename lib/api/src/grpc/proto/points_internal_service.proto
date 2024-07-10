@@ -242,6 +242,7 @@ message QueryShardPoints {
       RawQuery vector = 1; // (re)score against a vector query
       Fusion fusion = 2; // One of the fusion methods
       OrderBy order_by = 3; // Order by a field
+      Sample sample = 4; // Sample points
     }
   }
 

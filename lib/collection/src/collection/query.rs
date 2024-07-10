@@ -2,8 +2,10 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::types::ScoreType;
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
+use rand::Rng;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, Order, ScoredPoint};
@@ -23,7 +25,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
-    Fusion, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
+    Fusion, Sample, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
 struct IntermediateQueryInfo<'a> {
@@ -132,38 +134,17 @@ impl Collection {
             .zip(requests_batch.iter())
             .map(|(shards_results, request)| async {
                 // shards_results shape: [num_shards, num_intermediate_results, num_points]
-                let mut merged_intermediates = self
+                let merged_intermediates = self
                     .merge_intermediate_results_from_shards(request, shards_results)
                     .await?;
 
-                let result = if let Some(ScoringQuery::Fusion(fusion)) = &request.query {
-                    // If the root query is a Fusion, the returned results correspond to each the prefetches.
-                    let mut fused = match fusion {
-                        Fusion::Rrf => rrf_scoring(merged_intermediates),
-                        Fusion::Dbsf => score_fusion(merged_intermediates, ScoreFusion::dbsf()),
-                    };
-                    if let Some(score_threshold) = request.score_threshold {
-                        fused = fused
-                            .into_iter()
-                            .take_while(|point| point.score >= score_threshold)
-                            .collect();
-                    }
-                    fused
-                } else {
-                    // Otherwise, it will be a list with a single list of scored points.
-                    debug_assert_eq!(merged_intermediates.len(), 1);
-                    merged_intermediates.pop().ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Query response was expected to have one list of results.",
-                        )
-                    })?
-                };
-
-                let result: Vec<ScoredPoint> = result
-                    .into_iter()
-                    .skip(request.offset)
-                    .take(request.limit)
-                    .collect();
+                let result = Self::intermediates_to_final_list(
+                    merged_intermediates,
+                    request.query.as_ref(),
+                    request.limit,
+                    request.offset,
+                    request.score_threshold,
+                )?;
 
                 let filter_refs = request.filter_refs();
                 self.post_process_if_slow_request(instant.elapsed(), filter_refs);
@@ -173,6 +154,57 @@ impl Collection {
         let results = future::try_join_all(results_f).await?;
 
         Ok(results)
+    }
+
+    fn intermediates_to_final_list(
+        mut intermediates: Vec<Vec<ScoredPoint>>,
+        query: Option<&ScoringQuery>,
+        limit: usize,
+        mut offset: usize,
+        score_threshold: Option<ScoreType>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let result = match query {
+            Some(ScoringQuery::Fusion(fusion)) => {
+                // If the root query is a Fusion, the returned results correspond to each the prefetches.
+                let mut fused = match fusion {
+                    Fusion::Rrf => rrf_scoring(intermediates),
+                    Fusion::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
+                };
+                if let Some(score_threshold) = score_threshold {
+                    fused = fused
+                        .into_iter()
+                        .take_while(|point| point.score >= score_threshold)
+                        .collect();
+                }
+                fused
+            }
+            Some(ScoringQuery::Sample(sample)) => match sample {
+                Sample::Random => {
+                    // Random sampling is non-deterministic, we ignore offset params.
+                    offset = 0;
+
+                    debug_assert_eq!(intermediates.len(), 1);
+                    intermediates.pop().ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Query response was expected to have one list of results.",
+                        )
+                    })?
+                }
+            },
+            _ => {
+                // Otherwise, it will be a list with a single list of scored points.
+                debug_assert_eq!(intermediates.len(), 1);
+                intermediates.pop().ok_or_else(|| {
+                    CollectionError::service_error(
+                        "Query response was expected to have one list of results.",
+                    )
+                })?
+            }
+        };
+
+        let result: Vec<ScoredPoint> = result.into_iter().skip(offset).take(limit).collect();
+
+        Ok(result)
     }
 
     /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
@@ -329,21 +361,32 @@ impl Collection {
             // if the `kmerge_by` function were able to work with reference predicates.
             // Either::Left and Either::Right are used to allow type inference to work.
             //
-            let intermediate_result = match order {
-                Order::LargeBetter => Either::Left(
-                    shards_results
-                        .into_iter()
-                        .kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
-                ),
-                Order::SmallBetter => Either::Right(
-                    shards_results
-                        .into_iter()
-                        .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
-                ),
-            }
-            .dedup()
-            .take(query_info.take)
-            .collect();
+            let intermediate_result = if let Some(order) = order {
+                match order {
+                    Order::LargeBetter => Either::Left(
+                        shards_results
+                            .into_iter()
+                            .kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
+                    ),
+                    Order::SmallBetter => Either::Right(
+                        shards_results
+                            .into_iter()
+                            .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
+                    ),
+                }
+                .dedup()
+                .take(query_info.take)
+                .collect()
+            } else {
+                // If the order is not defined, it is a random query. Take from all shards randomly.
+                let mut rng = rand::thread_rng();
+                shards_results
+                    .into_iter()
+                    .kmerge_by(|_, _| rng.gen_bool(0.5))
+                    .unique_by(|point| point.id)
+                    .take(query_info.take)
+                    .collect()
+            };
 
             results.push(intermediate_result);
         }
