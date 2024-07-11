@@ -186,6 +186,8 @@
     - [Query](#qdrant-Query)
     - [QueryBatchPoints](#qdrant-QueryBatchPoints)
     - [QueryBatchResponse](#qdrant-QueryBatchResponse)
+    - [QueryGroupsResponse](#qdrant-QueryGroupsResponse)
+    - [QueryPointGroups](#qdrant-QueryPointGroups)
     - [QueryPoints](#qdrant-QueryPoints)
     - [QueryResponse](#qdrant-QueryResponse)
     - [Range](#qdrant-Range)
@@ -3195,6 +3197,52 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-QueryGroupsResponse"></a>
+
+### QueryGroupsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [GroupsResult](#qdrant-GroupsResult) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-QueryPointGroups"></a>
+
+### QueryPointGroups
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| prefetch | [PrefetchQuery](#qdrant-PrefetchQuery) | repeated | Sub-requests to perform first. If present, the query will be performed on the results of the prefetches. |
+| query | [Query](#qdrant-Query) | optional | Query to perform. If missing, returns points ordered by their IDs. |
+| using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is used. |
+| filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
+| params | [SearchParams](#qdrant-SearchParams) | optional | Search params for when there is no prefetch. |
+| score_threshold | [float](#float) | optional | Return points with scores better than this threshold. |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| limit | [uint64](#uint64) | optional | Max number of points. Default is 3. |
+| group_size | [uint64](#uint64) | optional | Maximum amount of points to return per group. Default to 10. |
+| group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| with_lookup | [WithLookup](#qdrant-WithLookup) | optional | Options for specifying how to use the group id to lookup points in another collection |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
+
+
+
+
+
+
 <a name="qdrant-QueryPoints"></a>
 
 ### QueryPoints
@@ -4227,6 +4275,7 @@ When using target (with or without context), the score behaves a little differen
 | UpdateBatch | [UpdateBatchPoints](#qdrant-UpdateBatchPoints) | [UpdateBatchResponse](#qdrant-UpdateBatchResponse) | Perform multiple update operations in one request |
 | Query | [QueryPoints](#qdrant-QueryPoints) | [QueryResponse](#qdrant-QueryResponse) | Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | QueryBatch | [QueryBatchPoints](#qdrant-QueryBatchPoints) | [QueryBatchResponse](#qdrant-QueryBatchResponse) | Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
+| QueryGroups | [QueryPointGroups](#qdrant-QueryPointGroups) | [QueryGroupsResponse](#qdrant-QueryGroupsResponse) | Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 
  
 
