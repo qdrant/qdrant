@@ -5,7 +5,7 @@ use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
-use segment::json_path::{JsonPath, JsonPathInterface, JsonPathV2};
+use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, Match, Payload, SearchParams, ShardKey,
     WithPayloadInterface, WithVector,
@@ -176,7 +176,7 @@ pub enum NamedVectorStruct {
 }
 
 fn order_by_interface_example() -> OrderByInterface {
-    OrderByInterface::Key(JsonPathV2::from_str("timestamp").unwrap())
+    OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap())
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -705,7 +705,6 @@ pub struct BaseGroupRequest {
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
     #[schemars(length(min = 1))]
-    #[validate(custom = "JsonPath::validate_not_empty")]
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group
@@ -793,7 +792,6 @@ pub struct QueryBaseGroupRequest {
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
     #[schemars(length(min = 1))]
-    #[validate(custom = "JsonPath::validate_not_empty")]
     pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group. Default is 3.

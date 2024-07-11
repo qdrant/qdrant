@@ -15,7 +15,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -154,11 +154,11 @@ fn _test_filterable_hnsw(
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
-        .payload_blocks(&path(int_key), indexing_threshold)
+        .payload_blocks(&JsonPath::new(int_key), indexing_threshold)
         .collect_vec();
     for block in blocks.iter() {
         assert!(
@@ -215,7 +215,7 @@ fn _test_filterable_hnsw(
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            path(int_key),
+            JsonPath::new(int_key),
             Range {
                 lt: None,
                 gt: None,

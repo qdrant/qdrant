@@ -6,7 +6,7 @@ use collection::operations::types::ScrollRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::data_types::vectors::BatchVectorStructInternal;
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
 use tempfile::Builder;
@@ -122,7 +122,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value(&path("k"))
+        .get_value(&JsonPath::new("k"))
         .into_iter()
         .next()
         .expect("has value")
@@ -137,7 +137,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .payload
             .as_ref()
             .unwrap()
-            .get_value(&path("k"))
+            .get_value(&JsonPath::new("k"))
     );
 }
 
@@ -186,7 +186,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 offset: None,
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(WithPayloadInterface::Fields(vec![path("k2")])),
+                with_payload: Some(WithPayloadInterface::Fields(vec![JsonPath::new("k2")])),
                 with_vector: true.into(),
                 order_by: None,
             },
@@ -205,7 +205,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value(&path("k2"))
+        .get_value(&JsonPath::new("k2"))
         .into_iter()
         .next()
         .expect("has value")
@@ -221,7 +221,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 offset: None,
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(PayloadSelectorExclude::new(vec![path("k1")]).into()),
+                with_payload: Some(PayloadSelectorExclude::new(vec![JsonPath::new("k1")]).into()),
                 with_vector: false.into(),
                 order_by: None,
             },
@@ -249,7 +249,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value(&path("k3"))
+        .get_value(&JsonPath::new("k3"))
         .into_iter()
         .next()
         .expect("has value")

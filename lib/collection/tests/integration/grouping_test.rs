@@ -8,7 +8,7 @@ use rand::distributions::Uniform;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::vectors::DenseVector;
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
 use serde_json::json;
 
@@ -44,7 +44,7 @@ mod group_by {
             score_threshold: None,
         });
 
-        let request = GroupRequest::with_limit_from_request(source, path("docId"), 3);
+        let request = GroupRequest::with_limit_from_request(source, JsonPath::new("docId"), 3);
 
         let collection_dir = tempfile::Builder::new()
             .prefix("collection")
@@ -143,7 +143,7 @@ mod group_by {
                 using: None,
                 lookup_from: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             2,
         );
 
@@ -203,7 +203,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             3,
         );
 
@@ -235,7 +235,7 @@ mod group_by {
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             3,
         );
 
@@ -273,7 +273,7 @@ mod group_by {
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
             }),
-            path("other_stuff"),
+            JsonPath::new("other_stuff"),
             3,
         );
 
@@ -309,7 +309,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             0,
         );
 
@@ -341,7 +341,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             3,
         );
 
@@ -373,7 +373,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             3,
         );
 
@@ -409,7 +409,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            path("docId"),
+            JsonPath::new("docId"),
             400,
         );
 
@@ -439,6 +439,7 @@ mod group_by_builder {
     use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;
     use segment::data_types::vectors::BatchVectorStructInternal;
+    use segment::json_path::JsonPath;
     use tokio::sync::RwLock;
 
     use super::*;
@@ -466,7 +467,8 @@ mod group_by_builder {
             score_threshold: None,
         });
 
-        let request = GroupRequest::with_limit_from_request(source_request, path("docId"), 3);
+        let request =
+            GroupRequest::with_limit_from_request(source_request, JsonPath::new("docId"), 3);
 
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;

@@ -14,7 +14,6 @@ use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_p
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{PayloadIndex, VectorIndex};
-use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, Range, SearchParams,
@@ -98,6 +97,7 @@ fn test_byte_storage_hnsw(
     #[case] max_failures: usize, // out of 100
 ) {
     use segment::index::hnsw_index::num_rayon_threads;
+    use segment::json_path::JsonPath;
     use segment::types::PayloadSchemaType;
 
     let stopped = AtomicBool::new(false);
@@ -192,12 +192,12 @@ fn test_byte_storage_hnsw(
     segment_float
         .payload_index
         .borrow_mut()
-        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let hnsw_config = HnswConfig {
@@ -238,7 +238,7 @@ fn test_byte_storage_hnsw(
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            path(int_key),
+            JsonPath::new(int_key),
             Range {
                 lt: None,
                 gt: None,

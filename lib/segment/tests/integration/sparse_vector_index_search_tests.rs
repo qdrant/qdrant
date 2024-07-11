@@ -20,7 +20,7 @@ use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
@@ -78,7 +78,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
 
     // filter matches everything
     let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
-        path(STR_KEY),
+        JsonPath::new(STR_KEY),
         STR_KEY.to_owned().into(),
     )));
 
@@ -365,7 +365,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let field_name = "field";
     let field_value = "important value";
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        path(field_name),
+        JsonPath::new(field_name),
         field_value.to_owned().into(),
     )));
 
@@ -386,7 +386,7 @@ fn sparse_vector_index_ram_filtered_search() {
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     payload_index
-        .set_indexed(&path(field_name), Keyword.into())
+        .set_indexed(&JsonPath::new(field_name), Keyword)
         .unwrap();
     drop(payload_index);
 
@@ -394,12 +394,12 @@ fn sparse_vector_index_ram_filtered_search() {
     let payload_index = sparse_vector_index.payload_index().borrow();
     let indexed_fields = payload_index.indexed_fields();
     assert_eq!(
-        *indexed_fields.get(&path(field_name)).unwrap(),
+        *indexed_fields.get(&JsonPath::new(field_name)).unwrap(),
         FieldType(Keyword)
     );
 
     let field_indexes = &payload_index.field_indexes;
-    let field_index = field_indexes.get(&path(field_name)).unwrap();
+    let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), 0);
     drop(payload_index);
 
@@ -420,7 +420,7 @@ fn sparse_vector_index_ram_filtered_search() {
     // assert payload index updated
     let payload_index = sparse_vector_index.payload_index().borrow();
     let field_indexes = &payload_index.field_indexes;
-    let field_index = field_indexes.get(&path(field_name)).unwrap();
+    let field_index = field_indexes.get(&JsonPath::new(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
     drop(payload_index);
 
@@ -456,7 +456,7 @@ fn sparse_vector_index_plain_search() {
     let field_name = "field";
     let field_value = "important value";
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        path(field_name),
+        JsonPath::new(field_name),
         field_value.to_owned().into(),
     )));
 

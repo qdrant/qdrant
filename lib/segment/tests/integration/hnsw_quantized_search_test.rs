@@ -15,7 +15,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
-use segment::json_path::path;
+use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -90,7 +90,7 @@ fn hnsw_quantized_search_test(
     }
 
     segment
-        .create_field_index(op_num, &path(STR_KEY), Some(&Keyword.into()))
+        .create_field_index(op_num, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
         .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
@@ -149,7 +149,7 @@ fn hnsw_quantized_search_test(
         .map(|_| random_vector(&mut rnd, dim).into())
         .collect::<Vec<_>>();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        path(STR_KEY),
+        JsonPath::new(STR_KEY),
         STR_KEY.to_owned().into(),
     )));
 

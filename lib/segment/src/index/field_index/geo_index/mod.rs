@@ -466,7 +466,7 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::fixtures::payload_fixtures::random_geo_payload;
-    use crate::json_path::path;
+    use crate::json_path::JsonPath;
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius};
 
@@ -498,15 +498,15 @@ mod tests {
     const FIELD_NAME: &str = "test";
 
     fn condition_for_geo_radius(key: &str, geo_radius: GeoRadius) -> FieldCondition {
-        FieldCondition::new_geo_radius(path(key), geo_radius)
+        FieldCondition::new_geo_radius(JsonPath::new(key), geo_radius)
     }
 
     fn condition_for_geo_polygon(key: &str, geo_polygon: GeoPolygon) -> FieldCondition {
-        FieldCondition::new_geo_polygon(path(key), geo_polygon)
+        FieldCondition::new_geo_polygon(JsonPath::new(key), geo_polygon)
     }
 
     fn condition_for_geo_box(key: &str, geo_bounding_box: GeoBoundingBox) -> FieldCondition {
-        FieldCondition::new_geo_bounding_box(path(key), geo_bounding_box)
+        FieldCondition::new_geo_bounding_box(JsonPath::new(key), geo_bounding_box)
     }
 
     fn build_random_index(
@@ -846,7 +846,9 @@ mod tests {
             assert!(size < 1000);
         }
 
-        let blocks = field_index.payload_blocks(100, path("test")).collect_vec();
+        let blocks = field_index
+            .payload_blocks(100, JsonPath::new("test"))
+            .collect_vec();
         blocks.iter().for_each(|block| {
             let block_points = field_index.filter(&block.condition).unwrap().collect_vec();
             assert_eq!(block_points.len(), block.cardinality);

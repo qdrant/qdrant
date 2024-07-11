@@ -9,7 +9,7 @@ use api::rest::{
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::json_path::{JsonPath, JsonPathInterface as _};
+use segment::json_path::JsonPath;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
     WithVector,
