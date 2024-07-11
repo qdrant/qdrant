@@ -20,7 +20,7 @@ use serde_json::Value;
 use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -152,7 +152,7 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
             NumericIndex::Mutable(index) => index.get_db_wrapper(),
             NumericIndex::Immutable(index) => index.get_db_wrapper(),

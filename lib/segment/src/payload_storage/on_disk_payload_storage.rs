@@ -6,6 +6,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::common::Flusher;
 use crate::json_path::JsonPath;
@@ -16,12 +17,15 @@ use crate::types::Payload;
 /// Persists all changes to disk using `store`, does not keep payload in memory
 #[derive(Debug)]
 pub struct OnDiskPayloadStorage {
-    db_wrapper: DatabaseColumnWrapper,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl OnDiskPayloadStorage {
     pub fn open(database: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        let db_wrapper = DatabaseColumnWrapper::new(database, DB_PAYLOAD_CF);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            database,
+            DB_PAYLOAD_CF,
+        ));
         Ok(OnDiskPayloadStorage { db_wrapper })
     }
 
@@ -53,10 +57,13 @@ impl OnDiskPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.db_wrapper.lock_db().iter()? {
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
-                &serde_cbor::from_slice(&val)?,
+                &serde_cbor::from_slice(&value)?,
             )?;
             if !do_continue {
                 return Ok(());

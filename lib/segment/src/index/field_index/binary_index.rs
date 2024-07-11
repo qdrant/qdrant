@@ -7,6 +7,7 @@ use rocksdb::DB;
 use self::memory::{BinaryItem, BinaryMemory};
 use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
@@ -161,13 +162,16 @@ mod memory {
 
 pub struct BinaryIndex {
     memory: BinaryMemory,
-    db_wrapper: DatabaseColumnWrapper,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl BinaryIndex {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> BinaryIndex {
         let store_cf_name = Self::storage_cf_name(field_name);
-        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
         Self {
             memory: BinaryMemory::new(),
             db_wrapper,
@@ -217,7 +221,10 @@ impl PayloadFieldIndex for BinaryIndex {
             return Ok(false);
         }
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
             let idx = PointOffsetType::from_be_bytes(key.as_ref().try_into().unwrap());
 
             debug_assert_eq!(value.len(), 1);
@@ -442,7 +449,7 @@ mod tests {
             });
 
         index.flusher()().unwrap();
-        let db = index.db_wrapper.database;
+        let db = index.db_wrapper.get_database();
 
         let mut new_index = BinaryIndex::new(db, FIELD_NAME);
         assert!(new_index.load().unwrap());
