@@ -299,13 +299,13 @@ mod test {
         }
 
         match id_tracker.make_immutable(path).unwrap() {
-            IdTrackerEnum::MutableIdTracker(_) => {
-                unreachable!()
-            }
             IdTrackerEnum::ImmutableIdTracker(m) => {
                 m.mapping_flusher()().unwrap();
                 m.versions_flusher()().unwrap();
                 m
+            }
+            _ => {
+                unreachable!()
             }
         }
     }
