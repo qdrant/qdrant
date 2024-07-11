@@ -221,7 +221,10 @@ impl PayloadFieldIndex for BinaryIndex {
             return Ok(false);
         }
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
             let idx = PointOffsetType::from_be_bytes(key.as_ref().try_into().unwrap());
 
             debug_assert_eq!(value.len(), 1);

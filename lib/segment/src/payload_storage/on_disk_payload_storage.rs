@@ -57,10 +57,13 @@ impl OnDiskPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in self.db_wrapper.lock_db().iter()? {
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
-                &serde_cbor::from_slice(&val)?,
+                &serde_cbor::from_slice(&value)?,
             )?;
             if !do_continue {
                 return Ok(());

@@ -100,7 +100,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
             return Ok(false);
         }
         self.indexed_points = 0;
-        for (record, _) in self.db_wrapper.lock_db().iter()? {
+
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (record, _) in db_lock.iter_pending_deletes(pending_deletes)? {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
