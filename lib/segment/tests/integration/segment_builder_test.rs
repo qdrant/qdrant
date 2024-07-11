@@ -12,7 +12,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, VectorRef, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::json_path::JsonPathV2;
+use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
@@ -94,7 +94,7 @@ fn test_building_new_segment() {
 
     // Test that our defragmentation algorithm and test works properly by checking for an error against
     // a non defragmented segment.
-    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
+    let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
     assert!(check_points_defragmented(&merged_segment, &defragment_key).is_err());
 }
 
@@ -105,7 +105,7 @@ fn test_building_new_defragmented_segment() {
 
     let stopped = AtomicBool::new(false);
 
-    let defragment_key = JsonPathV2::from_str(PAYLOAD_KEY).unwrap();
+    let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
 
     let mut segment1 = build_segment_1(dir.path());
     segment1
