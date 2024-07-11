@@ -32,16 +32,16 @@ pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 pub struct ImmutableIdTracker {
     path: PathBuf,
 
-    deleted: BitVec,
+    pub(crate) deleted: BitVec,
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
-    internal_to_version: Vec<SeqNumberType>,
+    pub(crate) internal_to_version: Vec<SeqNumberType>,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
-    mappings: PointMappings,
+    pub(crate) mappings: PointMappings,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Default, Debug)]
 pub struct PointMappings {
     pub(crate) internal_to_external: Vec<PointIdType>,
 
@@ -256,6 +256,7 @@ impl ImmutableIdTracker {
             unsafe { MmapSlice::try_from(open_write_mmap(&version_filepath)?)? };
         internal_to_version_wrapper.copy_from_slice(internal_to_version);
         let internal_to_version = internal_to_version_wrapper.to_vec();
+
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
@@ -530,7 +531,7 @@ impl IdTracker for ImmutableIdTracker {
 }
 
 #[cfg(test)]
-mod test {
+pub(super) mod test {
     use std::collections::{HashMap, HashSet};
 
     use itertools::Itertools;
@@ -574,7 +575,7 @@ mod test {
         assert_eq!(last.len(), 7);
     }
 
-    const TEST_POINTS: &[PointIdType] = &[
+    pub const TEST_POINTS: &[PointIdType] = &[
         PointIdType::NumId(100),
         PointIdType::Uuid(Uuid::from_u128(123_u128)),
         PointIdType::Uuid(Uuid::from_u128(156_u128)),

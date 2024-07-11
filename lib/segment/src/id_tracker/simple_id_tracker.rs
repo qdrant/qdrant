@@ -242,12 +242,12 @@ impl SimpleIdTracker {
         let mappings = PointMappings {
             external_to_internal_num,
             external_to_internal_uuid,
-            internal_to_external: self.internal_to_external.iter().map(Into::into).collect(),
+            internal_to_external: self.internal_to_external.clone(),
         };
 
         let mut internal_to_version = self.internal_to_version.clone();
-        if internal_to_version.len() < self.internal_to_external.len() {
-            internal_to_version.resize(self.internal_to_external.len(), 0);
+        if internal_to_version.len() < mappings.internal_to_external.len() {
+            internal_to_version.resize(mappings.internal_to_external.len(), 0);
         }
 
         let immutable_tracker =
