@@ -32,11 +32,11 @@ use crate::types::PointOffsetType;
 /// |--------|-----------|---------|------------|---------------------|
 /// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `PointOffsetType[]` |
 ///
-/// ## Entry format for the `u32` key
+/// ## Entry format for the `i64` key
 ///
 /// | key   | values_len | values              |
 /// |-------|------------|---------------------|
-/// | `u32` | `u32`      | `PointOffsetType[]` |
+/// | `i64` | `u32`      | `PointOffsetType[]` |
 pub struct MmapHashMap<K: ?Sized> {
     mmap: Mmap,
     header: Header,
@@ -260,7 +260,7 @@ impl Key for str {
 
     fn write(&self, buf: &mut impl Write) -> io::Result<()> {
         buf.write_all(self.as_bytes())?;
-        buf.write_all(&[0xff])?; // Not a valid UTF-8 byte
+        buf.write_all(&[0xFF])?; // 0xFF is not a valid leading byte of a UTF-8 sequence.
         Ok(())
     }
 
@@ -268,7 +268,32 @@ impl Key for str {
         if buf.len() < self.write_bytes() {
             return false;
         }
-        &buf[..self.len()] == self.as_bytes() && buf[self.len()] == 0xff
+        // The sentinel value 0xFF is used to ensure that `self` has the same length as the string
+        // in the entry buffer.
+        //
+        // Suppose `self` is a prefix of the string in the entry buffer. (it's not very likely since
+        // it would require a PHF collision, but it is still possible).
+        // We'd like this method to return `false` in this case. So we need not just check that the
+        // first `self.len()` bytes of `buf` are equal to `self`, but also that they have the same
+        // length. To achieve that, we compare `self + [0xFF]` with `buf + [0xFF]`.
+        //
+        // ┌───self────┐       ┌───self────┐                 ┌─────self─────┐
+        //  'f' 'o' 'o' FF      'f' 'o' 'o' FF                'f' 'o' 'o' FF
+        //  'f' 'o' 'o' FF      'f' 'o' 'o' 'b' 'a' 'r' FF    'f' 'o' 'o' FF 'b' 'a' 'r' FF
+        // └───entry───┘       └─────────entry─────────┘     └───────────entry──────────┘
+        //    Case 1                    Case 2                          Case 3
+        //    (happy)                 (collision)                   (never happens)
+        //
+        // 1. The case 1 is the happy path. This function returns `true`.
+        // 2. In the case 2, `self` is a prefix of `entry`, but since we are also checking the
+        //    sentinel, this function returns `false`. (0xFF != 'b')
+        // 3. Hypothetical case 3 might never happen unless the index data is corrupted. This is
+        //    because it assumes that `entry` is a concatenation of three parts: a valid UTF-8
+        //    string ('foo'), a byte 0xFF, and the rest ('bar'). Concatenating a valid UTF-8 string
+        //    with 0xFF will always result in an invalid UTF-8 string. Such string could not be
+        //    added to the index since we are adding only valid UTF-8 strings as Rust enforces the
+        //    validity of `str`/`String` types.
+        &buf[..self.len()] == self.as_bytes() && buf[self.len()] == 0xFF
     }
 }
 
