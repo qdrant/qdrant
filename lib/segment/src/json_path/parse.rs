@@ -8,9 +8,9 @@ use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
 
-use super::v2::{JsonPathItem, JsonPathV2};
+use super::{JsonPath, JsonPathItem};
 
-impl FromStr for JsonPathV2 {
+impl FromStr for JsonPath {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -26,7 +26,7 @@ pub fn key_needs_quoting(s: &str) -> bool {
     parser(s).is_err()
 }
 
-fn json_path(input: &str) -> IResult<&str, JsonPathV2> {
+fn json_path(input: &str) -> IResult<&str, JsonPath> {
     let (input, first_key) = alt((raw_str.map(str::to_string), quoted_str)).parse(input)?;
 
     let (input, rest) = many0(alt((
@@ -36,7 +36,7 @@ fn json_path(input: &str) -> IResult<&str, JsonPathV2> {
         (tag("[]").map(|_| JsonPathItem::WildcardIndex)),
     )))(input)?;
 
-    Ok((input, JsonPathV2 { first_key, rest }))
+    Ok((input, JsonPath { first_key, rest }))
 }
 
 fn raw_str(input: &str) -> IResult<&str, &str> {
@@ -63,11 +63,11 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        assert!("".parse::<JsonPathV2>().is_err());
+        assert!("".parse::<JsonPath>().is_err());
 
         assert_eq!(
             "foo".parse(),
-            Ok(JsonPathV2 {
+            Ok(JsonPath {
                 first_key: "foo".to_string(),
                 rest: vec![],
             })
@@ -75,7 +75,7 @@ mod tests {
 
         assert_eq!(
             "foo[1][50].bar-baz[].\"qux[.]quux\"".parse(),
-            Ok(JsonPathV2 {
+            Ok(JsonPath {
                 first_key: "foo".to_string(),
                 rest: vec![
                     JsonPathItem::Index(1),

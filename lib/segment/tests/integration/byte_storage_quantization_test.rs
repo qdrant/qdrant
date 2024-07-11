@@ -18,7 +18,6 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
-use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
@@ -228,6 +227,8 @@ fn test_byte_storage_binary_quantization_hnsw(
     #[case] ef: usize,
     #[case] min_acc: f64, // out of 100
 ) {
+    use segment::json_path::JsonPath;
+
     let stopped = AtomicBool::new(false);
 
     let m = 8;
@@ -292,7 +293,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let quantization_config = match quantization_variant {
@@ -364,7 +365,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            path(int_key),
+            JsonPath::new(int_key),
             Range {
                 lt: None,
                 gt: None,

@@ -283,14 +283,14 @@ mod tests {
     use std::iter::FromIterator;
 
     use super::*;
-    use crate::json_path::path;
+    use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, HasIdCondition};
 
     const TOTAL: usize = 1000;
 
     fn test_condition(key: &str) -> Condition {
         Condition::Field(FieldCondition {
-            key: path(key),
+            key: JsonPath::new(key),
             r#match: None,
             range: None,
             geo_bounding_box: None,

@@ -11,14 +11,14 @@ use strum::IntoEnumIterator as _;
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::json_path::{JsonPathInterface, JsonPathV2};
+use crate::json_path::JsonPath;
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface,
 };
 #[derive(Debug)]
 pub struct UnindexedField {
-    field_name: JsonPathV2,
+    field_name: JsonPath,
     field_schemas: HashSet<PayloadFieldSchema>,
     collection_name: String,
     endpoint: Uri,
@@ -35,7 +35,7 @@ impl UnindexedField {
         *SLOW_QUERY_THRESHOLD.get_or_init(|| Duration::from_secs_f32(Self::DEFAULT_SLOW_QUERY_SECS))
     }
 
-    pub fn get_instance_id(collection_name: &str, field_name: &JsonPathV2) -> String {
+    pub fn get_instance_id(collection_name: &str, field_name: &JsonPath) -> String {
         format!("{collection_name}/{field_name}")
     }
 
@@ -51,7 +51,7 @@ impl UnindexedField {
     /// Will fail if the field condition cannot be used for inferring an appropriate schema.
     /// For example, when there is no index that can be built to improve performance.
     pub fn try_new(
-        field_name: JsonPathV2,
+        field_name: JsonPath,
         field_schemas: HashSet<PayloadFieldSchema>,
         collection_name: String,
     ) -> Result<Self, OperationError> {
@@ -270,7 +270,7 @@ impl<'a> Extractor<'a> {
             .collect()
     }
 
-    fn update_from_filter(&mut self, nested_prefix: Option<&JsonPathV2>, filter: &Filter) {
+    fn update_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
         let Filter {
             must,
             should,
@@ -292,7 +292,7 @@ impl<'a> Extractor<'a> {
         .for_each(|condition| self.update_from_condition(nested_prefix, condition));
     }
 
-    fn update_from_condition(&mut self, nested_prefix: Option<&JsonPathV2>, condition: &Condition) {
+    fn update_from_condition(&mut self, nested_prefix: Option<&JsonPath>, condition: &Condition) {
         let key;
         let inferred;
 
@@ -307,7 +307,7 @@ impl<'a> Extractor<'a> {
             }
             Condition::Nested(nested) => {
                 self.update_from_filter(
-                    Some(&JsonPathV2::extend_or_new(nested_prefix, nested.raw_key())),
+                    Some(&JsonPath::extend_or_new(nested_prefix, nested.raw_key())),
                     nested.filter(),
                 );
                 return;
@@ -326,7 +326,7 @@ impl<'a> Extractor<'a> {
             Condition::Resharding(_) => return,
         };
 
-        let full_key = JsonPathV2::extend_or_new(nested_prefix, key);
+        let full_key = JsonPath::extend_or_new(nested_prefix, key);
 
         let needs_index = match self.payload_schema.get(&full_key) {
             Some(index_info) => {
