@@ -78,45 +78,52 @@ impl SimpleIdTracker {
         let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
             DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
         );
-        for (key, val) in mapping_db_wrapper.lock_db().iter()? {
-            let external_id = Self::restore_key(&key);
-            let internal_id: PointOffsetType =
-                bincode::deserialize::<PointOffsetType>(&val).unwrap();
-            if internal_id as usize >= internal_to_external.len() {
-                internal_to_external.resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
-            }
-            if internal_id as usize >= deleted.len() {
-                deleted.resize(internal_id as usize + 1, true);
-            }
 
-            let replaced_id = internal_to_external[internal_id as usize];
-            internal_to_external[internal_id as usize] = external_id;
-            if !deleted[internal_id as usize] {
-                // Fixing corrupted mapping - this id should be recovered from WAL
-                // This should not happen in normal operation, but it can happen if
-                // the database is corrupted.
-                log::warn!(
-                    "removing duplicated external id {} in internal id {}",
-                    external_id,
-                    replaced_id
-                );
-                match replaced_id {
+        {
+            let db_lock = mapping_db_wrapper.lock_db();
+            let pending_deletes = mapping_db_wrapper.pending_deletes();
+
+            for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
+                let external_id = Self::restore_key(&key);
+                let internal_id: PointOffsetType =
+                    bincode::deserialize::<PointOffsetType>(&value).unwrap();
+                if internal_id as usize >= internal_to_external.len() {
+                    internal_to_external
+                        .resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
+                }
+                if internal_id as usize >= deleted.len() {
+                    deleted.resize(internal_id as usize + 1, true);
+                }
+
+                let replaced_id = internal_to_external[internal_id as usize];
+                internal_to_external[internal_id as usize] = external_id;
+                if !deleted[internal_id as usize] {
+                    // Fixing corrupted mapping - this id should be recovered from WAL
+                    // This should not happen in normal operation, but it can happen if
+                    // the database is corrupted.
+                    log::warn!(
+                        "removing duplicated external id {} in internal id {}",
+                        external_id,
+                        replaced_id
+                    );
+                    match replaced_id {
+                        PointIdType::NumId(idx) => {
+                            external_to_internal_num.remove(&idx);
+                        }
+                        PointIdType::Uuid(uuid) => {
+                            external_to_internal_uuid.remove(&uuid);
+                        }
+                    }
+                }
+                deleted.set(internal_id as usize, false);
+
+                match external_id {
                     PointIdType::NumId(idx) => {
-                        external_to_internal_num.remove(&idx);
+                        external_to_internal_num.insert(idx, internal_id);
                     }
                     PointIdType::Uuid(uuid) => {
-                        external_to_internal_uuid.remove(&uuid);
+                        external_to_internal_uuid.insert(uuid, internal_id);
                     }
-                }
-            }
-            deleted.set(internal_id as usize, false);
-
-            match external_id {
-                PointIdType::NumId(idx) => {
-                    external_to_internal_num.insert(idx, internal_id);
-                }
-                PointIdType::Uuid(uuid) => {
-                    external_to_internal_uuid.insert(uuid, internal_id);
                 }
             }
         }

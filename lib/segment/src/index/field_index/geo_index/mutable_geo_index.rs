@@ -8,6 +8,7 @@ use rocksdb::DB;
 
 use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
 use crate::types::GeoPoint;
@@ -38,12 +39,15 @@ pub struct MutableGeoMapIndex {
     pub points_count: usize,
     pub points_values_count: usize,
     pub max_values_per_point: usize,
-    db_wrapper: DatabaseColumnWrapper,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl MutableGeoMapIndex {
     pub fn new(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
-        let db_wrapper = DatabaseColumnWrapper::new(db, store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            store_cf_name,
+        ));
         Self {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
@@ -56,7 +60,7 @@ impl MutableGeoMapIndex {
         }
     }
 
-    pub fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 
@@ -85,34 +89,39 @@ impl MutableGeoMapIndex {
 
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
+        {
+            let db_lock = self.db_wrapper.lock_db();
+            let pending_deletes = self.db_wrapper.pending_deletes();
 
-            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
-            let geo_point = GeoMapIndex::decode_db_value(value)?;
+            for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
+                let key_str = std::str::from_utf8(&key).map_err(|_| {
+                    OperationError::service_error("Index load error: UTF8 error while DB parsing")
+                })?;
 
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
+                let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
+                let geo_point = GeoMapIndex::decode_db_value(value)?;
+
+                if self.point_to_values.len() <= idx as usize {
+                    self.point_to_values.resize_with(idx as usize + 1, Vec::new);
+                }
+
+                if self.point_to_values[idx as usize].is_empty() {
+                    self.points_count += 1;
+                }
+
+                points_to_hashes
+                    .entry(idx)
+                    .or_default()
+                    .push(geo_hash.clone());
+
+                self.point_to_values[idx as usize].push(geo_point);
+                self.points_map
+                    .entry(geo_hash.clone())
+                    .or_default()
+                    .insert(idx);
+
+                self.points_values_count += 1;
             }
-
-            if self.point_to_values[idx as usize].is_empty() {
-                self.points_count += 1;
-            }
-
-            points_to_hashes
-                .entry(idx)
-                .or_default()
-                .push(geo_hash.clone());
-
-            self.point_to_values[idx as usize].push(geo_point);
-            self.points_map
-                .entry(geo_hash.clone())
-                .or_default()
-                .insert(idx);
-
-            self.points_values_count += 1;
         }
 
         for (_idx, geo_hashes) in points_to_hashes.into_iter() {

@@ -8,6 +8,7 @@ use rocksdb::DB;
 use super::mutable_geo_index::MutableGeoMapIndex;
 use super::GeoMapIndex;
 use crate::common::operation_error::OperationResult;
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
@@ -27,12 +28,15 @@ pub struct ImmutableGeoMapIndex {
     pub points_count: usize,
     pub points_values_count: usize,
     pub max_values_per_point: usize,
-    db_wrapper: DatabaseColumnWrapper,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl ImmutableGeoMapIndex {
     pub fn new(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
-        let db_wrapper = DatabaseColumnWrapper::new(db, store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            store_cf_name,
+        ));
         Self {
             counts_per_hash: Default::default(),
             points_map: Default::default(),
@@ -44,7 +48,7 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    pub fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 
@@ -76,8 +80,8 @@ impl ImmutableGeoMapIndex {
 
     pub fn load(&mut self) -> OperationResult<bool> {
         let mut mutable_geo_index = MutableGeoMapIndex::new(
-            self.db_wrapper.database.clone(),
-            &self.db_wrapper.column_name,
+            self.db_wrapper.get_database(),
+            self.db_wrapper.get_column_name(),
         );
         let result = mutable_geo_index.load()?;
 

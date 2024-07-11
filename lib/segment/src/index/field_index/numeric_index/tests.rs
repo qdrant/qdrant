@@ -43,7 +43,7 @@ fn random_index(
 
     // if immutable, we have to reload the index
     if immutable {
-        let db_ref = index.get_db_wrapper().database.clone();
+        let db_ref = index.get_db_wrapper().get_database();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         (temp_dir, new_index)
@@ -221,7 +221,7 @@ fn test_payload_blocks_small(#[case] immutable: bool) {
 
     // if immutable, we have to reload the index
     let index = if immutable {
-        let db_ref = index.get_db_wrapper().database.clone();
+        let db_ref = index.get_db_wrapper().get_database();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         new_index
@@ -265,7 +265,7 @@ fn test_numeric_index_load_from_disk(#[case] immutable: bool) {
 
     index.flusher()().unwrap();
 
-    let db_ref = index.get_db_wrapper().database.clone();
+    let db_ref = index.get_db_wrapper().get_database();
     let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, !immutable);
     new_index.load().unwrap();
 
@@ -313,7 +313,7 @@ fn test_numeric_index(#[case] immutable: bool) {
 
     // if immutable, we have to reload the index
     let index = if immutable {
-        let db_ref = index.get_db_wrapper().database.clone();
+        let db_ref = index.get_db_wrapper().get_database();
         let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         new_index

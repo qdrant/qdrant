@@ -1,6 +1,3 @@
-pub mod immutable_map_index;
-pub mod mutable_map_index;
-
 use std::fmt::Display;
 use std::hash::{BuildHasher, Hash};
 use std::str::FromStr;
@@ -17,7 +14,7 @@ use serde_json::Value;
 use smol_str::SmolStr;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
@@ -29,6 +26,9 @@ use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
     PayloadKeyType, ValueVariants,
 };
+
+pub mod immutable_map_index;
+pub mod mutable_map_index;
 
 pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     Mutable(MutableMapIndex<N>),
@@ -44,7 +44,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
             MapIndex::Mutable(index) => index.get_db_wrapper(),
             MapIndex::Immutable(index) => index.get_db_wrapper(),

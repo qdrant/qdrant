@@ -1,10 +1,12 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 
+use super::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapperIterator;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
@@ -23,8 +25,8 @@ pub const DB_DEFAULT_CF: &str = "default";
 
 #[derive(Clone, Debug)]
 pub struct DatabaseColumnWrapper {
-    pub database: Arc<RwLock<DB>>,
-    pub column_name: String,
+    database: Arc<RwLock<DB>>,
+    column_name: String,
 }
 
 pub struct DatabaseColumnIterator<'a> {
@@ -232,11 +234,30 @@ impl DatabaseColumnWrapper {
             ))
         })
     }
+
+    pub fn get_database(&self) -> Arc<RwLock<DB>> {
+        self.database.clone()
+    }
+
+    pub fn get_column_name(&self) -> &str {
+        &self.column_name
+    }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
-    pub fn iter(&self) -> OperationResult<DatabaseColumnIterator> {
+    pub fn iter(&'a self) -> OperationResult<DatabaseColumnIterator> {
         DatabaseColumnIterator::new(&self.guard, self.column_name)
+    }
+
+    pub fn iter_pending_deletes(
+        &'a self,
+        pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
+    ) -> OperationResult<DatabaseColumnScheduledDeleteWrapperIterator> {
+        DatabaseColumnScheduledDeleteWrapperIterator::new(
+            &self.guard,
+            self.column_name,
+            pending_deletes,
+        )
     }
 }
 

@@ -9,12 +9,13 @@ use rocksdb::DB;
 
 use super::{Encodable, NumericIndex, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
     pub(super) map: BTreeMap<Vec<u8>, PointOffsetType>,
-    pub(super) db_wrapper: DatabaseColumnWrapper,
+    pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
     pub(super) max_values_per_point: usize,
@@ -24,7 +25,10 @@ pub struct MutableNumericIndex<T: Encodable + Numericable> {
 impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
         Self {
             map: BTreeMap::new(),
             db_wrapper,
@@ -35,7 +39,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         }
     }
 
-    pub fn get_db_wrapper(&self) -> &DatabaseColumnWrapper {
+    pub fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 
@@ -100,7 +104,10 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             return Ok(false);
         };
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
+        let db_lock = self.db_wrapper.lock_db();
+        let pending_deletes = self.db_wrapper.pending_deletes();
+
+        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
             let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
             let (idx, value) = T::decode_key(&key);
 

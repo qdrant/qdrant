@@ -1,6 +1,3 @@
-pub mod immutable_geo_index;
-pub mod mutable_geo_index;
-
 use std::cmp::{max, min};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -14,7 +11,7 @@ use serde_json::Value;
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::geo_hash::{
     circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes, polygon_hashes_estimation,
@@ -26,6 +23,9 @@ use crate::index::field_index::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, GeoPoint, PayloadKeyType};
+
+pub mod immutable_geo_index;
+pub mod mutable_geo_index;
 
 /// Max number of sub-regions computed for an input geo query
 // TODO discuss value, should it be dynamically computed?
@@ -46,7 +46,7 @@ impl GeoMapIndex {
         }
     }
 
-    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
+    fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper(),
             GeoMapIndex::Immutable(index) => index.db_wrapper(),
