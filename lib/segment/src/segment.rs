@@ -14,7 +14,7 @@ use io::storage_version::{StorageVersion, VERSION_FILE};
 use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::thread_rng;
 use rocksdb::DB;
 use tar::Builder;
@@ -824,6 +824,26 @@ impl Segment {
         Ok(page)
     }
 
+    fn filtered_read_by_index_shuffled(
+        &self,
+        limit: usize,
+        condition: &Filter,
+    ) -> Vec<PointIdType> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let ids_iterator = payload_index
+            .query_points(condition)
+            .into_iter()
+            .filter_map(|internal_id| id_tracker.external_id(internal_id));
+
+        let mut rng = rand::thread_rng();
+        let mut shuffled = ids_iterator.choose_multiple(&mut rng, limit);
+        shuffled.shuffle(&mut rng);
+
+        shuffled
+    }
+
     pub fn filtered_read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
@@ -1424,10 +1444,7 @@ impl SegmentEntry for Segment {
             None => self.read_by_random_id(limit),
             Some(condition) => {
                 if self.should_pre_filter(condition, Some(limit)) {
-                    let mut points = self.filtered_read_by_index(None, Some(limit), condition);
-                    let mut rng = thread_rng();
-                    points.shuffle(&mut rng);
-                    points
+                    self.filtered_read_by_index_shuffled(limit, condition)
                 } else {
                     self.filtered_read_by_random_stream(limit, condition)
                 }
