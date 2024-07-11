@@ -15,7 +15,6 @@ use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
-use rand::thread_rng;
 use rocksdb::DB;
 use tar::Builder;
 use uuid::Uuid;
