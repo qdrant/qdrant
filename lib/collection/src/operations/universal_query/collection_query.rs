@@ -63,15 +63,15 @@ pub struct CollectionQueryResolveRequest<'a> {
 pub struct CollectionQueryGroupsRequest {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
-    pub using: Option<String>,
+    pub using: String,
     pub filter: Option<Filter>,
     pub params: Option<SearchParams>,
     pub score_threshold: Option<ScoreType>,
-    pub with_vector: Option<WithVector>,
-    pub with_payload: Option<WithPayloadInterface>,
+    pub with_vector: WithVector,
+    pub with_payload: WithPayloadInterface,
     pub group_by: JsonPath,
-    pub group_size: Option<usize>,
-    pub limit: Option<usize>,
+    pub group_size: usize,
+    pub limit: usize,
     pub with_lookup: Option<WithLookup>,
 }
 
@@ -570,15 +570,19 @@ mod from_rest {
             Self {
                 prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
                 query: query.map(From::from),
-                using,
+                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter,
                 score_threshold,
                 params,
-                with_vector,
-                with_payload,
-                limit: group_request.limit,
+                with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+                with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+                limit: group_request
+                    .limit
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 group_by: group_request.group_by,
-                group_size: group_request.group_size,
+                group_size: group_request
+                    .group_size
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
                 with_lookup: group_request.with_lookup.map(WithLookup::from),
             }
         }
@@ -782,14 +786,23 @@ pub mod from_grpc {
                     .map(TryFrom::try_from)
                     .collect::<Result<_, _>>()?,
                 query: query.map(TryFrom::try_from).transpose()?,
-                using,
+                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter: filter.map(TryFrom::try_from).transpose()?,
                 score_threshold,
-                with_vector: with_vectors.map(From::from),
-                with_payload: with_payload.map(TryFrom::try_from).transpose()?,
+                with_vector: with_vectors
+                    .map(From::from)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+                with_payload: with_payload
+                    .map(TryFrom::try_from)
+                    .transpose()?
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
                 group_by: json_path_from_proto(&group_by)?,
-                group_size: group_size.map(|s| s as usize),
-                limit: limit.map(|l| l as usize),
+                group_size: group_size
+                    .map(|s| s as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
+                limit: limit
+                    .map(|l| l as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 params: params.map(From::from),
                 with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
             };

@@ -5,7 +5,6 @@ use std::time::Duration;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::json_path::JsonPath;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
@@ -268,22 +267,22 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
         let collection_query_request = CollectionQueryRequest {
             prefetch: prefetch.into_iter().map(From::from).collect(),
             query: query.map(From::from),
-            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+            using,
             filter,
             score_threshold,
-            limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+            limit,
             offset: 0,
             params,
-            with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
-            with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+            with_vector,
+            with_payload,
             lookup_from: None,
         };
 
         GroupRequest {
             source: SourceRequest::Query(collection_query_request),
             group_by,
-            group_size: group_size.unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
-            limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+            group_size,
+            limit,
             with_lookup: with_lookup_interface.map(Into::into),
         }
     }
