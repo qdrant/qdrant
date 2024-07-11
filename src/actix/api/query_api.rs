@@ -2,7 +2,9 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::universal_query::collection_query::CollectionQueryRequest;
+use collection::operations::universal_query::collection_query::{
+    CollectionQueryGroupsRequest, CollectionQueryRequest,
+};
 use itertools::Itertools;
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
@@ -127,10 +129,12 @@ async fn query_points_groups(
             Some(shard_keys) => shard_keys.into(),
         };
 
+        let query_group_request = CollectionQueryGroupsRequest::from(search_group_request);
+
         do_query_point_groups(
             dispatcher.toc(&access),
             &collection.name,
-            search_group_request,
+            query_group_request,
             params.consistency,
             shard_selection,
             access,

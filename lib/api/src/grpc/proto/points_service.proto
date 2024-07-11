@@ -117,4 +117,8 @@ service Points {
   Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
   */
   rpc QueryBatch (QueryBatchPoints) returns (QueryBatchResponse) {}
+  /*
+  Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
+  */
+  rpc QueryGroups (QueryPointGroups) returns (QueryGroupsResponse) {}
 }
