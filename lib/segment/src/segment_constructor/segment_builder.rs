@@ -252,15 +252,15 @@ impl SegmentBuilder {
 
             let internal_range = vector_storage.update_from(&mut iter, stopped)?;
 
-            match new_internal_range.clone() {
+            match &new_internal_range {
                 Some(new_internal_range) => {
-                    if new_internal_range != internal_range {
+                    if new_internal_range != &internal_range {
                         return Err(OperationError::service_error(
                             "Internal ids range mismatch between self segment vectors and other segment vectors",
                         ));
                     }
                 }
-                None => new_internal_range = Some(internal_range.clone()),
+                None => new_internal_range = Some(internal_range),
             }
         }
 
