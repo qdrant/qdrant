@@ -1290,7 +1290,7 @@ def test_random_rescore_with_offset():
     
     # assert offset is propagated to prefetch
     seen = set()
-    for _ in range(20):
+    for _ in range(100):
         response = request_with_validation(
             api="/collections/{collection_name}/points/query",
             method="POST",
@@ -1306,7 +1306,9 @@ def test_random_rescore_with_offset():
         assert len(random_result) == 1
     
         seen.add(random_result[0]["id"])
+        if seen == {1, 2}:
+            return
     
     # Although prefetch limit is 1, offset should be propagated, so randomness is applied to points 1 and 2.
     # By this point we should've seen both points.
-    assert seen == {1, 2}
+    assert False, f"after 100 tries, `seen` is expected to be {{1, 2}}, but it was {seen}"

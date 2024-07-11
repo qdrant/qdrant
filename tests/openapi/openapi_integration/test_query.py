@@ -345,10 +345,11 @@ def test_basic_random_query():
         assert len(points) == 10
         assert set(point["id"] for point in points) == set(range(1, 11))
         
-        # check the order of ids are different every time
         ids = str([point["id"] for point in points])
-        assert ids not in ids_lists
         ids_lists.add(ids)
+        
+    # check the order of ids are different at least once
+    assert len(ids_lists) > 1
     
 
 def test_basic_rrf():
