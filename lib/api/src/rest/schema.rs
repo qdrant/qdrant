@@ -87,14 +87,24 @@ pub enum ShardKeySelector {
     // ToDo: select by pattern
 }
 
+fn version_example() -> segment::types::SeqNumberType {
+    3
+}
+
+fn score_example() -> common::types::ScoreType {
+    0.75
+}
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
     pub id: segment::types::PointIdType,
     /// Point version
+    #[schemars(example = "version_example")]
     pub version: segment::types::SeqNumberType,
     /// Points vector distance to the query vector
+    #[schemars(example = "score_example")]
     pub score: common::types::ScoreType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]

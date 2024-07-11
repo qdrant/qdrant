@@ -7562,12 +7562,14 @@
             "description": "Point version",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "example": 3
           },
           "score": {
             "description": "Points vector distance to the query vector",
             "type": "number",
-            "format": "float"
+            "format": "float",
+            "example": 0.75
           },
           "payload": {
             "description": "Payload - values assigned to the point",
