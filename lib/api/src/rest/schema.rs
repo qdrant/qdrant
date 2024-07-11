@@ -5,10 +5,7 @@ use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
-use segment::types::{
-    Condition, FieldCondition, Filter, Match, Payload, SearchParams, ShardKey,
-    WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
@@ -155,10 +152,6 @@ pub enum NamedVectorStruct {
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
     // No support for multi-dense vectors in search
-}
-
-fn order_by_interface_example() -> OrderByInterface {
-    OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap())
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
