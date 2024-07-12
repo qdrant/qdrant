@@ -141,7 +141,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
             }
             self.values_count = self
                 .values_count
-                .checked_div(removed_values_count)
+                .checked_sub(removed_values_count)
                 .unwrap_or_default();
         }
         self.point_to_values.remove_point(idx);
