@@ -12143,10 +12143,11 @@
         }
       },
       "Fusion": {
-        "description": "Fusion algorithm allows to combine results of multiple prefetches. Available fusion algorithms: * `rrf` - Rank Reciprocal Fusion",
+        "description": "Fusion algorithm allows to combine results of multiple prefetches.\n\nAvailable fusion algorithms:\n\n* `rrf` - Reciprocal Rank Fusion * `dbsf` - Distribution-Based Score Fusion",
         "type": "string",
         "enum": [
-          "rrf"
+          "rrf",
+          "dbsf"
         ]
       },
       "QueryRequestBatch": {

@@ -18,6 +18,18 @@ pub struct ScoreFusion {
     pub order: Order,
 }
 
+impl ScoreFusion {
+    /// Params for the distribution-based score fusion
+    pub fn dbsf() -> Self {
+        Self {
+            method: Aggregation::Sum,
+            norm: Normalization::Distr,
+            weights: vec![],
+            order: Order::LargeBetter,
+        }
+    }
+}
+
 /// Defines how to combine the scores of the same point in different lists
 pub enum Aggregation {
     /// Sums the scores

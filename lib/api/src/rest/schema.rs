@@ -172,12 +172,16 @@ pub enum OrderByInterface {
 }
 
 /// Fusion algorithm allows to combine results of multiple prefetches.
+///
 /// Available fusion algorithms:
-/// * `rrf` - Rank Reciprocal Fusion
+///
+/// * `rrf` - Reciprocal Rank Fusion
+/// * `dbsf` - Distribution-Based Score Fusion
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
+    Dbsf,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

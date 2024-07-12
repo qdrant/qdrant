@@ -4,7 +4,7 @@ import requests
 import os
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
+from .helpers.helpers import distribution_based_score_fusion, reciprocal_rank_fusion, request_with_validation
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 collection_name = "test_query"
@@ -380,6 +380,54 @@ def test_basic_rrf():
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
         
 
+def test_basic_dbsf():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.1, 0.2, 0.3, 0.4],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_1 = response.json()["result"]
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.5, 0.6, 0.7, 0.8],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_2 = response.json()["result"]
+    
+    dbsf_expected = distribution_based_score_fusion([search_result_1, search_result_2], limit=10)
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                { "query": [0.1, 0.2, 0.3, 0.4] },
+                { "query": [0.5, 0.6, 0.7, 0.8] },
+            ],
+            "query": {"fusion": "dbsf"},
+        },
+    )
+    assert response.ok, response.json()
+    dbsf_result = response.json()["result"]["points"]
+    
+    for point, expected in zip(dbsf_result, dbsf_expected):
+        assert point["id"] == expected["id"]
+        assert point.get("payload") == expected.get("payload")
+        assert isclose(point["score"], expected["score"], rel_tol=1e-5)
+
+    
 @pytest.mark.parametrize("body", [
     {
         "prefetch": [

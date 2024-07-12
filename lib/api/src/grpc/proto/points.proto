@@ -505,6 +505,7 @@ message ContextInput {
 
 enum Fusion {
     RRF = 0; // Reciprocal Rank Fusion
+    DBSF = 1; // Distribution-Based Score Fusion
 }
 
 message Query {

@@ -745,6 +745,7 @@ mod from_rest {
         fn from(value: rest::Fusion) -> Self {
             match value {
                 rest::Fusion::Rrf => Fusion::Rrf,
+                rest::Fusion::Dbsf => Fusion::Dbsf,
             }
         }
     }
