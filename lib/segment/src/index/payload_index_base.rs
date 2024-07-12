@@ -58,11 +58,7 @@ pub trait PayloadIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 
     /// Assign same payload to each given point
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.drop(point_id)?;
-        self.assign(point_id, payload, &None)?;
-        Ok(())
-    }
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
     fn assign(
