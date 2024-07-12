@@ -366,12 +366,10 @@ mod tests {
             .unwrap();
         MmapPointToValues::from_iter(
             dir.path(),
-            values.iter().enumerate().map(|(id, values)| {
-                (
-                    id as PointOffsetType,
-                    values.iter().cloned().collect_vec(),
-                )
-            }),
+            values
+                .iter()
+                .enumerate()
+                .map(|(id, values)| (id as PointOffsetType, values.iter().cloned().collect_vec())),
         )
         .unwrap();
         let point_to_values = MmapPointToValues::open(dir.path()).unwrap();
