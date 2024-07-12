@@ -220,7 +220,7 @@ impl LocalShard {
         match rescore {
             ScoringQuery::Fusion(fusion) => {
                 self.fusion_rescore(
-                    sources,
+                    sources.into_iter(),
                     fusion,
                     score_threshold,
                     limit,
@@ -295,15 +295,13 @@ impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     async fn fusion_rescore<'a>(
         &self,
-        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        sources: impl Iterator<Item = Vec<ScoredPoint>>,
         fusion: Fusion,
         score_threshold: Option<f32>,
         limit: usize,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
     ) -> Result<Vec<ScoredPoint>, CollectionError> {
-        let sources: Vec<_> = sources.map(Cow::into_owned).collect();
-
         let fused = match fusion {
             Fusion::Rrf => rrf_scoring(sources),
             Fusion::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
