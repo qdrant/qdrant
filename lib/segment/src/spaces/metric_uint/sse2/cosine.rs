@@ -106,7 +106,7 @@ mod tests {
     use crate::spaces::metric_uint::simple_cosine::cosine_similarity_bytes;
 
     #[test]
-    fn test_spaces_avx() {
+    fn test_spaces_sse2() {
         if is_x86_feature_detected!("sse2") && is_x86_feature_detected!("sse") {
             let v1: Vec<u8> = vec![
                 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255,
