@@ -6,7 +6,9 @@ use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct,
 };
 use collection::operations::types::CoreSearchRequestBatch;
-use collection::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
+use collection::operations::universal_query::shard_query::{
+    Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
@@ -22,7 +24,7 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, Payload, Range, WithPayloadInterface, WithVector,
 };
 use serde_json::Map;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
@@ -51,12 +53,10 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
     ))
 }
 
-fn batch_query_bench(c: &mut Criterion) {
+fn setup() -> (TempDir, LocalShard) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let runtime = Runtime::new().unwrap();
-    let search_runtime = Runtime::new().unwrap();
-    let search_runtime_handle = search_runtime.handle();
     let handle = runtime.handle().clone();
 
     let wal_config = WalConfig {
@@ -115,6 +115,15 @@ fn batch_query_bench(c: &mut Criterion) {
         .block_on(shard.update(rnd_batch.into(), true))
         .unwrap();
 
+    (storage_dir, shard)
+}
+
+fn batch_search_bench(c: &mut Criterion) {
+    let (_tempdir, shard) = setup();
+
+    let search_runtime = Runtime::new().unwrap();
+    let search_runtime_handle = search_runtime.handle();
+
     let mut group = c.benchmark_group("batch-search-bench");
 
     let filters = vec![
@@ -140,7 +149,7 @@ fn batch_query_bench(c: &mut Criterion) {
     for (fid, filter) in filters.into_iter().enumerate() {
         group.bench_function(format!("query-batch-{fid}"), |b| {
             b.iter(|| {
-                runtime.block_on(async {
+                search_runtime.block_on(async {
                     let mut rng = thread_rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
@@ -158,7 +167,7 @@ fn batch_query_bench(c: &mut Criterion) {
                         };
                         searches.push(search_query);
                     }
-                    
+
                     let result = shard
                         .query_batch(Arc::new(searches), search_runtime_handle, None)
                         .await
@@ -170,7 +179,7 @@ fn batch_query_bench(c: &mut Criterion) {
 
         group.bench_function(format!("search-batch-{fid}"), |b| {
             b.iter(|| {
-                runtime.block_on(async {
+                search_runtime.block_on(async {
                     let mut rng = thread_rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
@@ -202,10 +211,91 @@ fn batch_query_bench(c: &mut Criterion) {
     group.finish();
 }
 
+fn batch_rrf_query_bench(c: &mut Criterion) {
+    let (_tempdir, shard) = setup();
+
+    let search_runtime = Runtime::new().unwrap();
+    let search_runtime_handle = search_runtime.handle();
+
+    let mut group = c.benchmark_group("batch-search-bench");
+
+    let filters = vec![
+        None,
+        Some(Filter::new_must(Condition::Field(
+            FieldCondition::new_match("a".parse().unwrap(), 3.into()),
+        ))),
+        Some(Filter::new_must(Condition::Field(
+            FieldCondition::new_range(
+                "a".parse().unwrap(),
+                Range {
+                    lt: None,
+                    gt: Some(-1.),
+                    gte: None,
+                    lte: Some(100.0),
+                },
+            ),
+        ))),
+    ];
+
+    let batch_size = 100;
+
+    for (fid, filter) in filters.into_iter().enumerate() {
+        group.bench_function(format!("hybrid-query-batch-{fid}"), |b| {
+            b.iter(|| {
+                search_runtime.block_on(async {
+                    let mut rng = thread_rng();
+                    let mut searches = Vec::with_capacity(batch_size);
+                    for _i in 0..batch_size {
+                        let query1 = random_vector(&mut rng, 100);
+                        let query2 = random_vector(&mut rng, 100);
+                        let search_query = ShardQueryRequest {
+                            prefetches: vec![
+                                ShardPrefetch {
+                                    prefetches: vec![],
+                                    query: Some(ScoringQuery::Vector(query1.into())),
+                                    limit: 100,
+                                    params: None,
+                                    filter: None,
+                                    score_threshold: None,
+                                },
+                                ShardPrefetch {
+                                    prefetches: vec![],
+                                    query: Some(ScoringQuery::Vector(query2.into())),
+                                    limit: 100,
+                                    params: None,
+                                    filter: None,
+                                    score_threshold: None,
+                                }
+                            ],
+                            query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+                            filter: filter.clone(),
+                            params: None,
+                            limit: 100,
+                            offset: 0,
+                            with_payload: WithPayloadInterface::Bool(true),
+                            with_vector: WithVector::Bool(false),
+                            score_threshold: None,
+                        };
+                        searches.push(search_query);
+                    }
+
+                    let result = shard
+                        .query_batch(Arc::new(searches), search_runtime_handle, None)
+                        .await
+                        .unwrap();
+                    assert!(!result.is_empty());
+                });
+            })
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().significance_level(0.01).sample_size(500);
-    targets = batch_query_bench,
+    targets = batch_search_bench, batch_rrf_query_bench,
 }
 
 criterion_main!(benches);
