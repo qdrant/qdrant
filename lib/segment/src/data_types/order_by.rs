@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -59,17 +57,8 @@ pub enum StartFrom {
     Datetime(DateTimePayloadType),
 }
 
-fn order_by_example() -> OrderBy {
-    OrderBy {
-        key: JsonPath::from_str("timestamp").unwrap(),
-        direction: Some(Direction::Desc),
-        start_from: Some(StartFrom::Integer(123)),
-    }
-}
-
 #[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "order_by_example")]
 pub struct OrderBy {
     /// Payload key to order by
     pub key: JsonPath,
@@ -151,10 +140,20 @@ impl OrderBy {
     }
 }
 
+fn order_value_int_example() -> IntPayloadType {
+    42
+}
+
+fn order_value_float_example() -> FloatPayloadType {
+    42.5
+}
+
 #[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum OrderValue {
+    #[schemars(example = "order_value_int_example")]
     Int(IntPayloadType),
+    #[schemars(example = "order_value_float_example")]
     Float(FloatPayloadType),
 }
 

@@ -947,7 +947,15 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
+fn payload_example() -> Option<Payload> {
+    Some(Payload::from(serde_json::json!({
+        "city": "London",
+        "color": "green",
+    })))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[schemars(example = "payload_example")]
 pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
@@ -3459,10 +3467,20 @@ mod tests {
     }
 }
 
+fn shard_key_string_example() -> String {
+    "region_1".to_string()
+}
+
+fn shard_key_number_example() -> u64 {
+    12
+}
+
 #[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
+    #[schemars(example = "shard_key_string_example")]
     Keyword(String),
+    #[schemars(example = "shard_key_number_example")]
     Number(u64),
 }
 
