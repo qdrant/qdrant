@@ -3,9 +3,9 @@ use std::mem;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use rocksdb::{ColumnFamily, DB};
+use rocksdb::DB;
 
-use super::operation_error::OperationError;
+use super::rocksdb_wrapper::DatabaseColumnIterator;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
 use crate::common::Flusher;
@@ -26,7 +26,7 @@ impl Clone for DatabaseColumnScheduledDeleteWrapper {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
-            deleted_pending_persistence: self.pending_deletes(),
+            deleted_pending_persistence: self.deleted_pending_persistence.clone(),
         }
     }
 }
@@ -78,12 +78,11 @@ impl DatabaseColumnScheduledDeleteWrapper {
         })
     }
 
-    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
-        self.db.lock_db()
-    }
-
-    pub fn pending_deletes(&self) -> Arc<Mutex<HashSet<Vec<u8>>>> {
-        self.deleted_pending_persistence.clone()
+    pub fn lock_db(&self) -> LockedDatabaseColumnSheduledDeleteWrapper<'_> {
+        LockedDatabaseColumnSheduledDeleteWrapper {
+            base: self.db.lock_db(),
+            deleted_pending_persistence: &self.deleted_pending_persistence,
+        }
     }
 
     pub fn get_pinned<T, F>(&self, key: &[u8], f: F) -> OperationResult<Option<T>>
@@ -117,60 +116,38 @@ impl DatabaseColumnScheduledDeleteWrapper {
     }
 }
 
-/// RocksDB column iterator like `DatabaseColumnIterator`, but excluding pending deletes
-pub struct DatabaseColumnScheduledDeleteWrapperIterator<'a> {
-    pub handle: &'a ColumnFamily,
-    pub iter: rocksdb::DBRawIterator<'a>,
-    pub pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
+pub struct LockedDatabaseColumnSheduledDeleteWrapper<'a> {
+    base: LockedDatabaseColumnWrapper<'a>,
+    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
 }
 
-impl<'a> DatabaseColumnScheduledDeleteWrapperIterator<'a> {
-    pub fn new(
-        db: &'a DB,
-        column_name: &str,
-        pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
-    ) -> OperationResult<Self> {
-        let handle = db.cf_handle(column_name).ok_or_else(|| {
-            OperationError::service_error(format!(
-                "RocksDB cf_handle error: Cannot find column family {column_name}"
-            ))
-        })?;
-        let mut iter = db.raw_iterator_cf(&handle);
-        iter.seek_to_first();
-        Ok(Self {
-            handle,
-            iter,
-            pending_deletes,
+impl LockedDatabaseColumnSheduledDeleteWrapper<'_> {
+    pub fn iter(&self) -> OperationResult<DatabaseColumnSheduledDeleteIterator<'_>> {
+        Ok(DatabaseColumnSheduledDeleteIterator {
+            base: self.base.iter()?,
+            deleted_pending_persistence: self.deleted_pending_persistence,
         })
     }
 }
 
-impl<'a> Iterator for DatabaseColumnScheduledDeleteWrapperIterator<'a> {
+pub struct DatabaseColumnSheduledDeleteIterator<'a> {
+    base: DatabaseColumnIterator<'a>,
+    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
+}
+
+impl<'a> Iterator for DatabaseColumnSheduledDeleteIterator<'a> {
     type Item = (Box<[u8]>, Box<[u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut key;
-
-        // Loop until we find a key that is not deleted
         loop {
-            // Stop if iterator has ended or errored
-            if !self.iter.valid() {
-                return None;
+            let (key, value) = self.base.next()?;
+            if !self
+                .deleted_pending_persistence
+                .lock()
+                .contains(key.as_ref())
+            {
+                return Some((key, value));
             }
-
-            key = self.iter.key().unwrap();
-            if !self.pending_deletes.lock().contains(key) {
-                break;
-            }
-
-            self.iter.next();
         }
-
-        let item = (Box::from(key), Box::from(self.iter.value().unwrap()));
-
-        // Search to next item for next iteration
-        self.iter.next();
-
-        Some(item)
     }
 }
