@@ -5,6 +5,7 @@ use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
+use super::rocksdb_wrapper::DatabaseColumnIterator;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
 use crate::common::Flusher;
@@ -77,8 +78,11 @@ impl DatabaseColumnScheduledDeleteWrapper {
         })
     }
 
-    pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
-        self.db.lock_db()
+    pub fn lock_db(&self) -> LockedDatabaseColumnSheduledDeleteWrapper<'_> {
+        LockedDatabaseColumnSheduledDeleteWrapper {
+            base: self.db.lock_db(),
+            deleted_pending_persistence: &self.deleted_pending_persistence,
+        }
     }
 
     pub fn get_pinned<T, F>(&self, key: &[u8], f: F) -> OperationResult<Option<T>>
@@ -109,5 +113,41 @@ impl DatabaseColumnScheduledDeleteWrapper {
 
     pub fn remove_column_family(&self) -> OperationResult<()> {
         self.db.remove_column_family()
+    }
+}
+
+pub struct LockedDatabaseColumnSheduledDeleteWrapper<'a> {
+    base: LockedDatabaseColumnWrapper<'a>,
+    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
+}
+
+impl LockedDatabaseColumnSheduledDeleteWrapper<'_> {
+    pub fn iter(&self) -> OperationResult<DatabaseColumnSheduledDeleteIterator<'_>> {
+        Ok(DatabaseColumnSheduledDeleteIterator {
+            base: self.base.iter()?,
+            deleted_pending_persistence: self.deleted_pending_persistence,
+        })
+    }
+}
+
+pub struct DatabaseColumnSheduledDeleteIterator<'a> {
+    base: DatabaseColumnIterator<'a>,
+    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
+}
+
+impl<'a> Iterator for DatabaseColumnSheduledDeleteIterator<'a> {
+    type Item = (Box<[u8]>, Box<[u8]>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let (key, value) = self.base.next()?;
+            if !self
+                .deleted_pending_persistence
+                .lock()
+                .contains(key.as_ref())
+            {
+                return Some((key, value));
+            }
+        }
     }
 }
