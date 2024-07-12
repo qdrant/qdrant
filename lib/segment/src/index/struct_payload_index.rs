@@ -334,10 +334,7 @@ impl StructPayloadIndex {
         crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
 
-    fn clear_index_for_point(
-        &mut self,
-        point_id: PointOffsetType,
-    ) -> OperationResult<()> {
+    fn clear_index_for_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
         for (_, field_indexes) in self.field_indexes.iter_mut() {
             for index in field_indexes {
                 index.remove_point(point_id)?;
