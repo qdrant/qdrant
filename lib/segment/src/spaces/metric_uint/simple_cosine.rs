@@ -73,7 +73,7 @@ pub fn cosine_similarity_bytes(
         return 0.0;
     }
 
-    dot_product as ScoreType / ((norm1 as ScoreType * norm2 as ScoreType).sqrt())
+    dot_product as ScoreType / (norm1 as ScoreType * norm2 as ScoreType).sqrt()
 }
 
 #[test]
