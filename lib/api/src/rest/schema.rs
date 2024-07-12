@@ -1,15 +1,11 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
-use segment::types::{
-    Condition, FieldCondition, Filter, Match, Payload, SearchParams, ShardKey,
-    WithPayloadInterface, WithVector,
-};
+use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
@@ -28,12 +24,35 @@ pub enum Vector {
     MultiDense(MultiDenseVector),
 }
 
+fn vector_example() -> DenseVector {
+    vec![0.875, 0.140625, 0.8976]
+}
+
+fn multi_dense_vector_example() -> MultiDenseVector {
+    vec![
+        vec![0.875, 0.140625, 0.1102],
+        vec![0.758, 0.28126, 0.96871],
+        vec![0.621, 0.421878, 0.9375],
+    ]
+}
+
+fn named_vector_example() -> HashMap<String, Vector> {
+    let mut map = HashMap::new();
+    map.insert(
+        "image-embeddings".to_string(),
+        Vector::Dense(vec![0.873, 0.140625, 0.8976]),
+    );
+    map
+}
 /// Full vector data per point separator with single and multiple vector modes
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
+    #[schemars(example = "vector_example")]
     Single(DenseVector),
+    #[schemars(example = "multi_dense_vector_example")]
     MultiDense(MultiDenseVector),
+    #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
 }
 
@@ -69,39 +88,18 @@ pub enum ShardKeySelector {
 }
 
 fn version_example() -> segment::types::SeqNumberType {
-    1
+    3
 }
 
 fn score_example() -> common::types::ScoreType {
     0.75
 }
 
-fn payload_example() -> Option<segment::types::Payload> {
-    Some(Payload::from(serde_json::json!({
-        "city": "London",
-        "color": "green",
-    })))
-}
-
-fn vector_example() -> Option<VectorStruct> {
-    Some(VectorStruct::Single(vec![
-        0.875, 0.140625, -0.15625, 0.96875,
-    ]))
-}
-
-fn shard_key_example() -> Option<segment::types::ShardKey> {
-    Some(ShardKey::from("region_1"))
-}
-
-fn order_value_example() -> Option<segment::data_types::order_by::OrderValue> {
-    Some(segment::data_types::order_by::OrderValue::from(1))
-}
-
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
-    pub id: segment::types::ExtendedPointId,
+    pub id: segment::types::PointIdType,
     /// Point version
     #[schemars(example = "version_example")]
     pub version: segment::types::SeqNumberType,
@@ -110,19 +108,15 @@ pub struct ScoredPoint {
     pub score: common::types::ScoreType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "payload_example")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "vector_example")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "shard_key_example")]
     pub shard_key: Option<segment::types::ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "order_value_example")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
@@ -134,18 +128,14 @@ pub struct Record {
     pub id: segment::types::PointIdType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "payload_example")]
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "vector_example")]
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "shard_key_example")]
     pub shard_key: Option<segment::types::ShardKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(example = "order_value_example")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
@@ -168,27 +158,17 @@ pub struct Record {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
-    #[schemars(example = "vector_example")]
     Default(segment::data_types::vectors::DenseVector),
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
     // No support for multi-dense vectors in search
 }
 
-fn order_by_interface_example() -> OrderByInterface {
-    OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap())
-}
-
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(untagged)]
-#[schemars(example = "order_by_interface_example")]
 pub enum OrderByInterface {
     Key(JsonPath),
     Struct(OrderBy),
-}
-
-fn fusion_example() -> Fusion {
-    Fusion::Rrf
 }
 
 /// Fusion algorithm allows to combine results of multiple prefetches.
@@ -196,26 +176,15 @@ fn fusion_example() -> Fusion {
 /// * `rrf` - Rank Reciprocal Fusion
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "fusion_example")]
 pub enum Fusion {
     Rrf,
-}
-
-fn multi_dense_vector_example() -> MultiDenseVector {
-    vec![
-        vec![1.0, 2.0, 3.0],
-        vec![4.0, 5.0, 6.0],
-        vec![7.0, 8.0, 9.0],
-    ]
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum VectorInput {
-    #[schemars(example = "vector_example")]
     DenseVector(DenseVector),
     SparseVector(SparseVector),
-    #[schemars(example = "multi_dense_vector_example")]
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
 }
@@ -265,39 +234,7 @@ pub struct QueryRequestInternal {
     pub lookup_from: Option<LookupLocation>,
 }
 
-fn query_request_example() -> QueryRequest {
-    QueryRequest {
-        internal: QueryRequestInternal {
-            prefetch: None,
-            query: Some(QueryInterface::Nearest(VectorInput::DenseVector(vec![
-                0.875, 0.140625, -0.15625, 0.96875,
-            ]))),
-            using: Some("image_vector".to_string()),
-            filter: Some(Filter::new_must(Condition::Field(
-                FieldCondition::new_match(
-                    JsonPath::from_str("city").unwrap(),
-                    Match::new_text("Berlin"),
-                ),
-            ))),
-            params: Some(SearchParams {
-                hnsw_ef: Some(100),
-                exact: false,
-                quantization: None,
-                indexed_only: false,
-            }),
-            score_threshold: Some(0.25),
-            limit: Some(10),
-            offset: Some(0),
-            with_vector: Some(WithVector::Bool(true)),
-            with_payload: Some(WithPayloadInterface::Bool(true)),
-            lookup_from: Some(lookup_location_example()),
-        },
-        shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[schemars(example = "query_request_example")]
 pub struct QueryRequest {
     #[validate]
     #[serde(flatten)]
@@ -305,86 +242,13 @@ pub struct QueryRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-fn query_request_batch_example() -> QueryRequestBatch {
-    QueryRequestBatch {
-        searches: vec![
-            query_request_example(),
-            QueryRequest {
-                internal: QueryRequestInternal {
-                    prefetch: None,
-                    query: Some(QueryInterface::Nearest(VectorInput::DenseVector(vec![
-                        0.875, 0.140625, -0.15625, 0.96875,
-                    ]))),
-                    using: Some("code_vector".to_string()),
-                    filter: Some(Filter::new_must(Condition::Field(
-                        FieldCondition::new_match(
-                            JsonPath::from_str("city").unwrap(),
-                            Match::new_text("New York"),
-                        ),
-                    ))),
-                    params: Some(SearchParams {
-                        hnsw_ef: Some(100),
-                        exact: false,
-                        quantization: None,
-                        indexed_only: false,
-                    }),
-                    score_threshold: Some(0.25),
-                    limit: Some(10),
-                    offset: Some(0),
-                    with_vector: Some(WithVector::Bool(true)),
-                    with_payload: Some(WithPayloadInterface::Bool(true)),
-                    lookup_from: Some(lookup_location_example()),
-                },
-                shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
-            },
-        ],
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[schemars(example = "query_request_batch_example")]
 pub struct QueryRequestBatch {
     #[validate]
     pub searches: Vec<QueryRequest>,
 }
 
-fn query_response_example() -> QueryResponse {
-    QueryResponse {
-        points: vec![
-            ScoredPoint {
-                id: segment::types::ExtendedPointId::from(1),
-                version: 1,
-                score: 0.25,
-                payload: Some(Payload::from(serde_json::json!({
-                    "city": "London",
-                    "color": "green",
-                }))),
-                vector: Some(VectorStruct::Single(vec![
-                    0.875, 0.140625, -0.15625, 0.96875,
-                ])),
-                shard_key: Some(ShardKey::from("region_1")),
-                order_value: Some(segment::data_types::order_by::OrderValue::from(1)),
-            },
-            ScoredPoint {
-                id: segment::types::ExtendedPointId::from(2),
-                version: 1,
-                score: 0.25,
-                payload: Some(Payload::from(serde_json::json!({
-                    "city": "Berlin",
-                    "color": "red",
-                }))),
-                vector: Some(VectorStruct::Single(vec![
-                    0.475, 0.440625, -0.25625, 0.36875,
-                ])),
-                shard_key: Some(ShardKey::from("region_1")),
-                order_value: Some(segment::data_types::order_by::OrderValue::from(1)),
-            },
-        ],
-    }
-}
-
 #[derive(Debug, Serialize, JsonSchema)]
-#[schemars(example = "query_response_example")]
 pub struct QueryResponse {
     pub points: Vec<ScoredPoint>,
 }
@@ -418,80 +282,38 @@ pub enum Query {
     Fusion(FusionQuery),
 }
 
-fn nearest_query_example() -> NearestQuery {
-    NearestQuery {
-        nearest: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "nearest_query_example")]
 pub struct NearestQuery {
     pub nearest: VectorInput,
 }
 
-fn recommend_query_example() -> RecommendQuery {
-    RecommendQuery {
-        recommend: recommend_input_example(),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "recommend_query_example")]
 pub struct RecommendQuery {
     pub recommend: RecommendInput,
 }
 
-fn discover_query_example() -> DiscoverQuery {
-    DiscoverQuery {
-        discover: discover_input_example(),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "discover_query_example")]
 pub struct DiscoverQuery {
     pub discover: DiscoverInput,
 }
 
-fn context_query_example() -> ContextQuery {
-    ContextQuery {
-        context: context_input_example(),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "context_query_example")]
 pub struct ContextQuery {
     pub context: ContextInput,
 }
 
-fn order_by_query_example() -> OrderByQuery {
-    OrderByQuery {
-        order_by: OrderByInterface::Key(JsonPath::from_str("timestamp").unwrap()),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "order_by_query_example")]
 pub struct OrderByQuery {
     pub order_by: OrderByInterface,
 }
 
-fn fusion_query_example() -> FusionQuery {
-    FusionQuery {
-        fusion: Fusion::Rrf,
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "fusion_query_example")]
 pub struct FusionQuery {
     pub fusion: Fusion,
 }
@@ -541,7 +363,6 @@ pub struct Prefetch {
 ///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
 ///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
 ///   the `max_pos_score`.
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
@@ -550,20 +371,7 @@ pub enum RecommendStrategy {
     BestScore,
 }
 
-fn recommend_input_example() -> RecommendInput {
-    RecommendInput {
-        positive: Some(vec![VectorInput::DenseVector(vec![
-            0.875, 0.140625, -0.15625, 0.96875,
-        ])]),
-        negative: Some(vec![VectorInput::DenseVector(vec![
-            0.475, 0.440625, -0.25625, 0.36875,
-        ])]),
-        strategy: Some(RecommendStrategy::AverageVector),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[schemars(example = "recommend_input_example")]
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
     pub positive: Option<Vec<VectorInput>>,
@@ -584,18 +392,7 @@ impl RecommendInput {
     }
 }
 
-fn discover_input_example() -> DiscoverInput {
-    DiscoverInput {
-        target: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-        context: Some(vec![ContextPair {
-            positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-            negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
-        }]),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[schemars(example = "discover_input_example")]
 pub struct DiscoverInput {
     /// Use this as the primary search objective
     #[validate]
@@ -608,12 +405,7 @@ pub struct DiscoverInput {
     pub context: Option<Vec<ContextPair>>,
 }
 
-fn context_input_example() -> ContextInput {
-    ContextInput(Some(vec![context_pair_example()]))
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[schemars(example = "context_input_example")]
 pub struct ContextInput(
     /// Search space will be constrained by these pairs of vectors
     #[serde(with = "MaybeOneOrMany")]
@@ -621,15 +413,7 @@ pub struct ContextInput(
     pub Option<Vec<ContextPair>>,
 );
 
-fn context_pair_example() -> ContextPair {
-    ContextPair {
-        positive: VectorInput::DenseVector(vec![0.875, 0.140625, -0.15625, 0.96875]),
-        negative: VectorInput::DenseVector(vec![0.475, 0.440625, -0.25625, 0.36875]),
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-#[schemars(example = "context_pair_example")]
 pub struct ContextPair {
     /// A positive vector
     #[validate]
@@ -646,16 +430,7 @@ impl ContextPair {
     }
 }
 
-fn lookup_location_example() -> LookupLocation {
-    LookupLocation {
-        collection: "collection_b".to_string(),
-        vector: Some("image_vector".to_string()),
-        shard_key: Some(ShardKeySelector::ShardKey(ShardKey::from("region_1"))),
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(example = "lookup_location_example")]
 pub struct WithLookup {
     /// Name of the collection to use for points lookup
     #[serde(rename = "collection")]
