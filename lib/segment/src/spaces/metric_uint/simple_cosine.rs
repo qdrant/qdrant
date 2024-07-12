@@ -73,5 +73,15 @@ pub fn cosine_similarity_bytes(
         return 0.0;
     }
 
-    dot_product as ScoreType / ((norm1 as ScoreType * norm2 as ScoreType).sqrt())
+    dot_product as ScoreType / (norm1 as ScoreType * norm2 as ScoreType).sqrt()
+}
+
+#[test]
+fn test_zero() {
+    let v1: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
+    let v2: Vec<u8> = vec![255, 255, 0, 254, 253, 252, 251, 250];
+
+    assert_eq!(cosine_similarity_bytes(&v1, &v2), 0.0);
+    assert_eq!(cosine_similarity_bytes(&v2, &v1), 0.0);
+    assert_eq!(cosine_similarity_bytes(&v1, &v1), 0.0);
 }

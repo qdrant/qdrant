@@ -95,7 +95,12 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         norm2 += remainder_norm2 as f32;
     }
 
-    dot_product / ((norm1 * norm2).sqrt())
+    let denominator = norm1 * norm2;
+    if denominator == 0.0 {
+        return 0.0;
+    }
+
+    dot_product / denominator.sqrt()
 }
 
 #[cfg(test)]
@@ -129,6 +134,28 @@ mod tests {
             let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v2) };
             let dot = cosine_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
+        } else {
+            println!("avx2 test skipped");
+        }
+    }
+
+    #[test]
+    fn test_zero_avx() {
+        if is_x86_feature_detected!("avx")
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+        {
+            let v1: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
+            let v2: Vec<u8> = vec![255, 255, 0, 254, 253, 252, 251, 250];
+
+            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v2) };
+            assert_eq!(dot_simd, 0.0);
+
+            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v2, &v1) };
+            assert_eq!(dot_simd, 0.0);
+
+            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v1) };
+            assert_eq!(dot_simd, 0.0);
         } else {
             println!("avx2 test skipped");
         }
