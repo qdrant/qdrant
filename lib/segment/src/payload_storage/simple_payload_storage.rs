@@ -27,17 +27,12 @@ impl SimplePayloadStorage {
             DB_PAYLOAD_CF,
         ));
 
-        {
-            let db_lock = db_wrapper.lock_db();
-            let pending_deletes = db_wrapper.pending_deletes();
-
-            for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
-                let point_id: PointOffsetType = serde_cbor::from_slice(&key)
-                    .map_err(|_| OperationError::service_error("cannot deserialize point id"))?;
-                let payload: Payload = serde_cbor::from_slice(&value)
-                    .map_err(|_| OperationError::service_error("cannot deserialize payload"))?;
-                payload_map.insert(point_id, payload);
-            }
+        for (key, val) in db_wrapper.lock_db().iter()? {
+            let point_id: PointOffsetType = serde_cbor::from_slice(&key)
+                .map_err(|_| OperationError::service_error("cannot deserialize point id"))?;
+            let payload: Payload = serde_cbor::from_slice(&val)
+                .map_err(|_| OperationError::service_error("cannot deserialize payload"))?;
+            payload_map.insert(point_id, payload);
         }
 
         Ok(SimplePayloadStorage {

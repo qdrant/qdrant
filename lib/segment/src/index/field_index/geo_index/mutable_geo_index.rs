@@ -103,39 +103,34 @@ impl MutableGeoMapIndex {
 
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
-        {
-            let db_lock = self.db_wrapper.lock_db();
-            let pending_deletes = self.db_wrapper.pending_deletes();
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
+            let key_str = std::str::from_utf8(&key).map_err(|_| {
+                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+            })?;
 
-            for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
-                let key_str = std::str::from_utf8(&key).map_err(|_| {
-                    OperationError::service_error("Index load error: UTF8 error while DB parsing")
-                })?;
+            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
+            let geo_point = GeoMapIndex::decode_db_value(value)?;
 
-                let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
-                let geo_point = GeoMapIndex::decode_db_value(value)?;
-
-                if self.point_to_values.len() <= idx as usize {
-                    self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-                }
-
-                if self.point_to_values[idx as usize].is_empty() {
-                    self.points_count += 1;
-                }
-
-                points_to_hashes
-                    .entry(idx)
-                    .or_default()
-                    .push(geo_hash.clone());
-
-                self.point_to_values[idx as usize].push(geo_point);
-                self.points_map
-                    .entry(geo_hash.clone())
-                    .or_default()
-                    .insert(idx);
-
-                self.points_values_count += 1;
+            if self.point_to_values.len() <= idx as usize {
+                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
             }
+
+            if self.point_to_values[idx as usize].is_empty() {
+                self.points_count += 1;
+            }
+
+            points_to_hashes
+                .entry(idx)
+                .or_default()
+                .push(geo_hash.clone());
+
+            self.point_to_values[idx as usize].push(geo_point);
+            self.points_map
+                .entry(geo_hash.clone())
+                .or_default()
+                .insert(idx);
+
+            self.points_values_count += 1;
         }
 
         for (_idx, geo_hashes) in points_to_hashes.into_iter() {
