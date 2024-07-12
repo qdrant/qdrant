@@ -141,6 +141,12 @@ mod tests {
 
             let dot_simd = unsafe { sse_cosine_similarity_bytes(&v1, &v2) };
             assert_eq!(dot_simd, 0.0);
+
+            let dot_simd = unsafe { sse_cosine_similarity_bytes(&v2, &v1) };
+            assert_eq!(dot_simd, 0.0);
+
+            let dot_simd = unsafe { sse_cosine_similarity_bytes(&v1, &v1) };
+            assert_eq!(dot_simd, 0.0);
         } else {
             println!("sse2 test skipped");
         }
