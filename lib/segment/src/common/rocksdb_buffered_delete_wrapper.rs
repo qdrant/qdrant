@@ -18,15 +18,14 @@ use crate::common::Flusher;
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
-    deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
+    deleted_pending_persistence: Arc<Mutex<HashSet<Vec<u8>>>>,
 }
 
 impl Clone for DatabaseColumnScheduledDeleteWrapper {
     fn clone(&self) -> Self {
-        let deleted_pending_persistence = self.deleted_pending_persistence.lock().clone();
         Self {
             db: self.db.clone(),
-            deleted_pending_persistence: Mutex::new(deleted_pending_persistence),
+            deleted_pending_persistence: self.deleted_pending_persistence.clone(),
         }
     }
 }
@@ -35,7 +34,7 @@ impl DatabaseColumnScheduledDeleteWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            deleted_pending_persistence: Mutex::new(HashSet::new()),
+            deleted_pending_persistence: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
