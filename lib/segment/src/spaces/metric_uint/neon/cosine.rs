@@ -104,4 +104,20 @@ mod tests {
             println!("neon test skipped");
         }
     }
+
+    #[test]
+    fn test_zero_neon() {
+        if is_x86_feature_detected!("avx")
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+        {
+            let v1: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
+            let v2: Vec<u8> = vec![255, 255, 0, 254, 253, 252, 251, 250];
+
+            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v2) };
+            assert_eq!(dot_simd, 0.0);
+        } else {
+            println!("avx2 test skipped");
+        }
+    }
 }
