@@ -1,12 +1,10 @@
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 
-use super::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapperIterator;
 //use crate::common::arc_rwlock_iterator::ArcRwLockIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
@@ -245,19 +243,8 @@ impl DatabaseColumnWrapper {
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
-    pub fn iter(&'a self) -> OperationResult<DatabaseColumnIterator> {
+    pub fn iter(&self) -> OperationResult<DatabaseColumnIterator> {
         DatabaseColumnIterator::new(&self.guard, self.column_name)
-    }
-
-    pub fn iter_pending_deletes(
-        &'a self,
-        pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
-    ) -> OperationResult<DatabaseColumnScheduledDeleteWrapperIterator> {
-        DatabaseColumnScheduledDeleteWrapperIterator::new(
-            &self.guard,
-            self.column_name,
-            pending_deletes,
-        )
     }
 }
 

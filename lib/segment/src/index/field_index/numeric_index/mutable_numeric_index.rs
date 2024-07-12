@@ -112,10 +112,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             return Ok(false);
         };
 
-        let db_lock = self.db_wrapper.lock_db();
-        let pending_deletes = self.db_wrapper.pending_deletes();
-
-        for (key, value) in db_lock.iter_pending_deletes(pending_deletes)? {
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
             let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
             let (idx, value) = T::decode_key(&key);
 
