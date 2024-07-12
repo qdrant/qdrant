@@ -114,13 +114,13 @@ mod tests {
             let v1: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0];
             let v2: Vec<u8> = vec![255, 255, 0, 254, 253, 252, 251, 250];
 
-            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v2) };
+            let dot_simd = unsafe { neon_cosine_similarity_bytes(&v1, &v2) };
             assert_eq!(dot_simd, 0.0);
 
-            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v2, &v1) };
+            let dot_simd = unsafe { neon_cosine_similarity_bytes(&v2, &v1) };
             assert_eq!(dot_simd, 0.0);
 
-            let dot_simd = unsafe { avx_cosine_similarity_bytes(&v1, &v1) };
+            let dot_simd = unsafe { neon_cosine_similarity_bytes(&v1, &v1) };
             assert_eq!(dot_simd, 0.0);
         } else {
             println!("avx2 test skipped");
