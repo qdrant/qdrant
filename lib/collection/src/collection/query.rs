@@ -5,6 +5,7 @@ use std::time::Duration;
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
+use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Order, ScoredPoint};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
@@ -118,6 +119,7 @@ impl Collection {
                     // If the root query is a Fusion, the returned results correspond to each the prefetches.
                     let mut fused = match fusion {
                         Fusion::Rrf => rrf_scoring(merged_intermediates),
+                        Fusion::Dbsf => score_fusion(merged_intermediates, ScoreFusion::dbsf()),
                     };
                     if let Some(score_threshold) = request.score_threshold {
                         fused = fused

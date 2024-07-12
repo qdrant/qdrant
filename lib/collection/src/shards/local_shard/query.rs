@@ -7,6 +7,7 @@ use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
+use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
 
@@ -213,26 +214,16 @@ impl LocalShard {
         } = rescore_params;
 
         match rescore {
-            ScoringQuery::Fusion(Fusion::Rrf) => {
-                let sources: Vec<_> = sources.map(Cow::into_owned).collect();
-
-                let top_rrf = rrf_scoring(sources);
-
-                let top_rrf: Vec<_> = if let Some(score_threshold) = score_threshold {
-                    top_rrf
-                        .into_iter()
-                        .take_while(|point| point.score >= score_threshold)
-                        .take(limit)
-                        .collect()
-                } else {
-                    top_rrf.into_iter().take(limit).collect()
-                };
-
-                let filled_top_rrf = self
-                    .fill_with_payload_or_vectors(top_rrf, with_payload, with_vector)
-                    .await?;
-
-                Ok(filled_top_rrf)
+            ScoringQuery::Fusion(fusion) => {
+                self.fusion_rescore(
+                    sources,
+                    fusion,
+                    score_threshold,
+                    limit,
+                    with_payload,
+                    with_vector,
+                )
+                .await
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
@@ -295,6 +286,40 @@ impl LocalShard {
                 })
             }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn fusion_rescore<'a>(
+        &self,
+        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        fusion: Fusion,
+        score_threshold: Option<f32>,
+        limit: usize,
+        with_payload: WithPayloadInterface,
+        with_vector: WithVector,
+    ) -> Result<Vec<ScoredPoint>, CollectionError> {
+        let sources: Vec<_> = sources.map(Cow::into_owned).collect();
+
+        let fused = match fusion {
+            Fusion::Rrf => rrf_scoring(sources),
+            Fusion::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
+        };
+
+        let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {
+            fused
+                .into_iter()
+                .take_while(|point| point.score >= score_threshold)
+                .take(limit)
+                .collect()
+        } else {
+            fused.into_iter().take(limit).collect()
+        };
+
+        let filled_top_fused = self
+            .fill_with_payload_or_vectors(top_fused, with_payload, with_vector)
+            .await?;
+
+        Ok(filled_top_fused)
     }
 }
 
