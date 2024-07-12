@@ -77,16 +77,16 @@ fn test_set_empty_payload() {
 
     let point_id = 42;
 
-    let value = index.get_values(point_id).unwrap();
+    let values_count = index.get_values(point_id).unwrap().count();
 
-    assert!(!value.is_empty());
+    assert_ne!(values_count, 0);
 
     let payload = serde_json::json!(null);
     index.add_point(point_id, &[&payload]).unwrap();
 
-    let value = index.get_values(point_id).unwrap();
+    let values_count = index.get_values(point_id).unwrap().count();
 
-    assert!(value.is_empty());
+    assert_eq!(values_count, 0);
 }
 
 #[rstest]

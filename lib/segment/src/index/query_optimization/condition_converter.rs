@@ -182,10 +182,8 @@ pub fn get_geo_polygon_checkers(
     let polygon_wrapper = geo_polygon.convert();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.get_values(point_id).map_or(false, |values| {
-                values
-                    .iter()
-                    .any(|geo_point| polygon_wrapper.check_point(geo_point))
+            geo_index.get_values(point_id).map_or(false, |mut values| {
+                values.any(|geo_point| polygon_wrapper.check_point(&geo_point))
             })
         })),
         _ => None,
@@ -198,10 +196,8 @@ pub fn get_geo_radius_checkers(
 ) -> Option<ConditionCheckerFn> {
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.get_values(point_id).map_or(false, |values| {
-                values
-                    .iter()
-                    .any(|geo_point| geo_radius.check_point(geo_point))
+            geo_index.get_values(point_id).map_or(false, |mut values| {
+                values.any(|geo_point| geo_radius.check_point(&geo_point))
             })
         })),
         _ => None,
@@ -216,9 +212,9 @@ pub fn get_geo_bounding_box_checkers(
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             match geo_index.get_values(point_id) {
                 None => false,
-                Some(values) => values
-                    .iter()
-                    .any(|geo_point| geo_bounding_box.check_point(geo_point)),
+                Some(mut values) => {
+                    values.any(|geo_point| geo_bounding_box.check_point(&geo_point))
+                }
             }
         })),
         _ => None,
@@ -242,13 +238,13 @@ pub fn get_float_range_checkers(
             Some(Box::new(move |point_id: PointOffsetType| {
                 num_index
                     .get_values(point_id)
-                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
+                    .is_some_and(|mut values| values.any(|i| range.check_range(i)))
             }))
         }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index
                 .get_values(point_id)
-                .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
+                .is_some_and(|mut values| values.any(|f| range.check_range(f)))
         })),
         _ => None,
     }
@@ -264,7 +260,7 @@ pub fn get_datetime_range_checkers(
             Some(Box::new(move |point_id: PointOffsetType| {
                 num_index
                     .get_values(point_id)
-                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
+                    .is_some_and(|mut values| values.any(|i| range.check_range(i)))
             }))
         }
         _ => None,
@@ -279,15 +275,15 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|k| k == &keyword))
+                        .get_values::<str>(point_id)
+                        .map_or(false, |mut values| values.any(|k| k == keyword))
                 }))
             }
             (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index
                         .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|i| i == &value))
+                        .map_or(false, |mut values| values.any(|i| i == &value))
                 }))
             }
             (ValueVariants::Bool(is_true), FieldIndex::BinaryIndex(index)) => {
@@ -313,26 +309,28 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Any(MatchAny { any }) => match (any, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index.get_values(point_id).map_or(false, |values| {
-                        if list.len() < INDEXSET_ITER_THRESHOLD {
-                            values
-                                .iter()
-                                .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
-                        } else {
-                            values.iter().any(|k| list.contains(k.as_str()))
-                        }
-                    })
+                    index
+                        .get_values::<str>(point_id)
+                        .map_or(false, |mut values| {
+                            if list.len() < INDEXSET_ITER_THRESHOLD {
+                                values.any(|k| list.iter().any(|s| s.as_str() == k))
+                            } else {
+                                values.any(|k| list.contains(k))
+                            }
+                        })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index.get_values(point_id).map_or(false, |values| {
-                        if list.len() < INDEXSET_ITER_THRESHOLD {
-                            values.iter().any(|i| list.iter().any(|k| k == i))
-                        } else {
-                            values.iter().any(|i| list.contains(i))
-                        }
-                    })
+                    index
+                        .get_values::<IntPayloadType>(point_id)
+                        .map_or(false, |mut values| {
+                            if list.len() < INDEXSET_ITER_THRESHOLD {
+                                values.any(|i| list.iter().any(|k| k == i))
+                            } else {
+                                values.any(|i| list.contains(i))
+                            }
+                        })
                 }))
             }
             _ => None,
@@ -340,26 +338,28 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Except(MatchExcept { except }) => match (except, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index.get_values(point_id).map_or(false, |values| {
-                        if list.len() < INDEXSET_ITER_THRESHOLD {
-                            values
-                                .iter()
-                                .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
-                        } else {
-                            values.iter().any(|k| !list.contains(k.as_str()))
-                        }
-                    })
+                    index
+                        .get_values::<str>(point_id)
+                        .map_or(false, |mut values| {
+                            if list.len() < INDEXSET_ITER_THRESHOLD {
+                                values.any(|k| !list.iter().any(|s| s.as_str() == k))
+                            } else {
+                                values.any(|k| !list.contains(k))
+                            }
+                        })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index.get_values(point_id).map_or(false, |values| {
-                        if list.len() < INDEXSET_ITER_THRESHOLD {
-                            values.iter().any(|i| !list.iter().any(|k| k == i))
-                        } else {
-                            values.iter().any(|i| !list.contains(i))
-                        }
-                    })
+                    index
+                        .get_values::<IntPayloadType>(point_id)
+                        .map_or(false, |mut values| {
+                            if list.len() < INDEXSET_ITER_THRESHOLD {
+                                values.any(|i| !list.iter().any(|k| k == i))
+                            } else {
+                                values.any(|i| !list.contains(i))
+                            }
+                        })
                 }))
             }
             (_, index) => Some(Box::new(|point_id: PointOffsetType| {

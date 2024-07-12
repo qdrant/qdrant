@@ -43,11 +43,19 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         &self.db_wrapper
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
-        self.point_to_values.get(idx as usize).map(|v| v.as_slice())
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        Some(Box::new(
+            self.point_to_values
+                .get(idx as usize)
+                .map(|v| v.iter().cloned())?,
+        ))
     }
 
-    pub fn get_values_count(&self) -> usize {
+    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        self.point_to_values.get(idx as usize).map(Vec::len)
+    }
+
+    pub fn total_unique_values_count(&self) -> usize {
         self.map.len()
     }
 

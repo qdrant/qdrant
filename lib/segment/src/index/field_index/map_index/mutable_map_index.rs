@@ -124,8 +124,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         Ok(true)
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
-        self.point_to_values.get(idx as usize).map(|v| v.as_slice())
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
+        Some(self.point_to_values.get(idx as usize)?.iter())
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        self.point_to_values.get(idx as usize).map(Vec::len)
     }
 
     pub fn get_indexed_points(&self) -> usize {

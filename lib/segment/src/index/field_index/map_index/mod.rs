@@ -58,10 +58,28 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
+    pub fn get_values<NRef>(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = &NRef> + '_>>
+    where
+        N: std::borrow::Borrow<NRef>,
+        NRef: ?Sized,
+    {
         match self {
-            MapIndex::Mutable(index) => index.get_values(idx),
-            MapIndex::Immutable(index) => index.get_values(idx),
+            MapIndex::Mutable(index) => Some(Box::new(
+                index.get_values(idx)?.map(std::borrow::Borrow::borrow),
+            )),
+            MapIndex::Immutable(index) => Some(Box::new(
+                index.get_values(idx)?.map(std::borrow::Borrow::borrow),
+            )),
+        }
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        match self {
+            MapIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
+            MapIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -170,14 +188,8 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         Ok((value, idx))
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.get_values(point_id).map(|x| x.len()).unwrap_or(0)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_values(point_id)
-            .map(|x| x.is_empty())
-            .unwrap_or(true)
+    pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
+        self.values_count(idx) == 0
     }
 
     /// Estimates cardinality for `except` clause
@@ -638,9 +650,8 @@ mod tests {
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N> = HashSet::from_iter(
                 index
-                    .get_values(idx as PointOffsetType)
+                    .get_values::<N>(idx as PointOffsetType)
                     .unwrap()
-                    .iter()
                     .cloned(),
             );
             let check_values: HashSet<N> = HashSet::from_iter(values.iter().cloned());
