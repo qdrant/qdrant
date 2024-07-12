@@ -369,7 +369,7 @@ mod tests {
             values.iter().enumerate().map(|(id, values)| {
                 (
                     id as PointOffsetType,
-                    values.iter().map(|s| s.clone()).collect_vec(),
+                    values.iter().cloned().collect_vec(),
                 )
             }),
         )
