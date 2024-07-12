@@ -126,11 +126,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
-            if !removed_values.is_empty() {
-                self.indexed_points -= 1;
-            }
-            self.values_count -= removed_values.len();
-
+            let mut removed_values_count = 0;
             for value in removed_values {
                 Self::remove_idx_from_value_list(
                     &mut self.value_to_points,
@@ -141,7 +137,16 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
                 // update db
                 let key = MapIndex::encode_db_record(value, idx);
                 self.db_wrapper.remove(key)?;
+                removed_values_count += 1;
             }
+
+            if removed_values_count > 0 {
+                self.indexed_points -= 1;
+            }
+            self.values_count = self
+                .values_count
+                .checked_sub(removed_values_count)
+                .unwrap_or_default();
         }
         self.point_to_values.remove_point(idx);
         Ok(())
@@ -190,8 +195,12 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         Ok(result)
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[N]> {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         self.point_to_values.get_values(idx)
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        self.point_to_values.get_values_count(idx)
     }
 
     pub fn get_indexed_points(&self) -> usize {

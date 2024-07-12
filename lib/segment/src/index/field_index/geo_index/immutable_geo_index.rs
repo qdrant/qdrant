@@ -52,8 +52,21 @@ impl ImmutableGeoMapIndex {
         &self.db_wrapper
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[GeoPoint]> {
-        self.point_to_values.get_values(idx)
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        Some(Box::new(
+            self.point_to_values
+                .get_values(idx)
+                .map(|iter| iter.cloned())?,
+        ))
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.point_to_values
+            .get_values_count(idx)
+            .unwrap_or_default()
     }
 
     pub fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {

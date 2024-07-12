@@ -224,11 +224,19 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         &self.db_wrapper
     }
 
-    pub(super) fn get_values(&self, idx: PointOffsetType) -> Option<&[T]> {
-        self.point_to_values.get_values(idx)
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        Some(Box::new(
+            self.point_to_values
+                .get_values(idx)
+                .map(|iter| iter.copied())?,
+        ))
     }
 
-    pub(super) fn get_values_count(&self) -> usize {
+    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        self.point_to_values.get_values_count(idx)
+    }
+
+    pub(super) fn total_unique_values_count(&self) -> usize {
         self.map.len()
     }
 
@@ -283,10 +291,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
     pub(super) fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if let Some(removed_values) = self.point_to_values.get_values(idx) {
-            if !removed_values.is_empty() {
-                self.points_count -= 1;
-            }
-
+            let mut removed_count = 0;
             for value in removed_values {
                 let key = NumericIndexKey::new(*value, idx);
                 Self::remove_from_map(&mut self.map, &mut self.histogram, key);
@@ -294,6 +299,11 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
                 // update db
                 let encoded = value.encode_key(idx);
                 self.db_wrapper.remove(encoded)?;
+
+                removed_count += 1;
+            }
+            if removed_count > 0 {
+                self.points_count -= 1;
             }
         }
         self.point_to_values.remove_point(idx);

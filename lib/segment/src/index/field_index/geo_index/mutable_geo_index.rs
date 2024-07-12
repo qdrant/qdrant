@@ -64,8 +64,22 @@ impl MutableGeoMapIndex {
         &self.db_wrapper
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<&[GeoPoint]> {
-        self.point_to_values.get(idx as usize).map(Vec::as_slice)
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        Some(Box::new(
+            self.point_to_values
+                .get(idx as usize)
+                .map(|v| v.iter().cloned())?,
+        ))
+    }
+
+    pub fn values_count(&self, idx: PointOffsetType) -> usize {
+        self.point_to_values
+            .get(idx as usize)
+            .map(Vec::len)
+            .unwrap_or_default()
     }
 
     pub fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
