@@ -53,6 +53,15 @@ impl PayloadStorageEnum {
 }
 
 impl PayloadStorage for PayloadStorageEnum {
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.assign_all(point_id, payload),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.assign_all(point_id, payload),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.assign_all(point_id, payload),
+        }
+    }
+
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]

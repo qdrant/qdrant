@@ -9,11 +9,7 @@ use crate::types::{Filter, Payload};
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
     /// Assign same payload to each given point
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.drop(point_id)?;
-        self.assign(point_id, payload)?;
-        Ok(())
-    }
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
