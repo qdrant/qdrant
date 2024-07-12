@@ -32,13 +32,13 @@ pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 pub struct ImmutableIdTracker {
     path: PathBuf,
 
-    pub(crate) deleted: BitVec,
+    deleted: BitVec,
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
-    pub(crate) internal_to_version: Vec<SeqNumberType>,
+    internal_to_version: Vec<SeqNumberType>,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
-    pub(crate) mappings: PointMappings,
+    mappings: PointMappings,
 }
 
 #[derive(Clone, PartialEq, Default, Debug)]
