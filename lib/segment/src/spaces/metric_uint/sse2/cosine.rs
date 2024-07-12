@@ -93,6 +93,10 @@ pub unsafe fn sse_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         norm2 += remainder_norm2 as f32;
     }
 
+    if norm1 == 0.0 || norm2 == 0.0 {
+        return 0.0;
+    }
+
     dot_product / ((norm1 * norm2).sqrt())
 }
 
