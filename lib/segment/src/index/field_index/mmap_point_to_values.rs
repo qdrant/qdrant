@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
+use memmap2::Mmap;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::Flusher;
 use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
@@ -18,9 +17,9 @@ const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
 pub trait MmapValue<'a>: Clone + Default + 'a {
     fn mmaped_size(&self) -> usize;
 
-    fn read_from_mmap(bytes: &'a [u8], offset: usize) -> OperationResult<Self>;
+    fn read_from_mmap(bytes: &'a [u8]) -> Option<Self>;
 
-    fn write_to_mmap(&self, bytes: &mut [u8], offset: usize) -> OperationResult<()>;
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()>;
 }
 
 impl<'a> MmapValue<'a> for IntPayloadType {
@@ -28,13 +27,12 @@ impl<'a> MmapValue<'a> for IntPayloadType {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8], offset: usize) -> OperationResult<Self> {
-        Self::read_from_prefix(&bytes[offset..])
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
+        Self::read_from_prefix(bytes)
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8], offset: usize) -> OperationResult<()> {
-        self.write_to_prefix(&mut bytes[offset..])
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
+        self.write_to_prefix(bytes)
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
@@ -44,13 +42,12 @@ impl<'a> MmapValue<'a> for FloatPayloadType {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8], offset: usize) -> OperationResult<Self> {
-        Self::read_from_prefix(&bytes[offset..])
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
+        Self::read_from_prefix(bytes)
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8], offset: usize) -> OperationResult<()> {
-        self.write_to_prefix(&mut bytes[offset..])
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
+        self.write_to_prefix(bytes)
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
@@ -60,21 +57,22 @@ impl<'a> MmapValue<'a> for GeoPoint {
         2 * std::mem::size_of::<f64>()
     }
 
-    fn read_from_mmap(bytes: &[u8], offset: usize) -> OperationResult<Self> {
-        Ok(Self {
-            lon: f64::read_from_prefix(&bytes[offset..])
-                .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?,
-            lat: f64::read_from_prefix(&bytes[offset + std::mem::size_of::<f64>()..])
-                .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?,
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
+        Some(Self {
+            lon: f64::read_from_prefix(bytes)?,
+            lat: bytes
+                .get(std::mem::size_of::<f64>()..)
+                .and_then(f64::read_from_prefix)?,
         })
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8], offset: usize) -> OperationResult<()> {
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
         self.lon
-            .write_to_prefix(&mut bytes[offset..])
+            .write_to_prefix(bytes)
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
-        self.lat
-            .write_to_prefix(&mut bytes[offset + std::mem::size_of::<f64>()..])
+        bytes
+            .get_mut(std::mem::size_of::<f64>()..)
+            .and_then(|bytes| self.lat.write_to_prefix(bytes))
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
@@ -84,37 +82,21 @@ impl<'a> MmapValue<'a> for &'a str {
         self.as_bytes().len() + std::mem::size_of::<u32>()
     }
 
-    fn read_from_mmap(bytes: &'a [u8], offset: usize) -> OperationResult<&'a str> {
-        let bytes = &bytes[offset..];
-        let size = u32::read_from_prefix(bytes)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?
-            as usize;
+    fn read_from_mmap(bytes: &'a [u8]) -> Option<&'a str> {
+        let size = u32::read_from_prefix(bytes)? as usize;
 
-        let bytes = &bytes[std::mem::size_of::<u32>()..];
-        if bytes.len() < size {
-            return Err(OperationError::service_error(
-                NOT_ENOUGHT_BYTES_ERROR_MESSAGE,
-            ));
-        }
-
-        let bytes = &bytes[..size];
-
-        let string = std::str::from_utf8(bytes).map_err(|_| OperationError::service_error(format!("UTF8 conversion error while reading {POINT_TO_VALUES_PATH}. Is the storage corrupted?")))?;
-        Ok(string)
+        let bytes = bytes.get(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + size)?;
+        std::str::from_utf8(bytes).ok()
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8], offset: usize) -> OperationResult<()> {
-        let bytes = &mut bytes[offset..];
-        if bytes.len() < self.mmaped_size() {
-            return Err(OperationError::service_error(
-                NOT_ENOUGHT_BYTES_ERROR_MESSAGE,
-            ));
-        }
-
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
         u32::write_to_prefix(&(self.len() as u32), bytes)
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
 
-        let bytes = &mut bytes[std::mem::size_of::<u32>()..];
+        let bytes = bytes
+            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())
+            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+
         self.as_bytes()
             .iter()
             .enumerate()
@@ -130,7 +112,7 @@ impl<'a> MmapValue<'a> for &'a str {
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct MmapPointToValues {
     file_name: PathBuf,
-    mmap: MmapSlice<u8>,
+    mmap: Mmap,
     header: Header,
 }
 
@@ -168,7 +150,7 @@ impl MmapPointToValues {
             .sum::<usize>();
         let file_size = header_size + ranges_size + values_size;
 
-        // create new file amd mmap
+        // create new file and mmap
         let file_name = path.join(POINT_TO_VALUES_PATH);
         create_and_ensure_length(&file_name, file_size)?;
         let mut mmap = open_write_mmap(&file_name)?;
@@ -189,24 +171,23 @@ impl MmapPointToValues {
                 start: point_values_offset as u64,
                 count: values.len() as u64,
             };
-            range
-                .write_to_prefix(
-                    &mut mmap[header_size + point_id as usize * std::mem::size_of::<MmapRange>()..],
-                )
+            mmap.get_mut(header_size + point_id as usize * std::mem::size_of::<MmapRange>()..)
+                .and_then(|bytes| range.write_to_prefix(bytes))
                 .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
 
             for value in values {
-                value.write_to_mmap(mmap.as_mut(), point_values_offset)?;
+                let bytes = mmap.get_mut(point_values_offset..).ok_or_else(|| {
+                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
+                })?;
+                value.write_to_mmap(bytes)?;
                 point_values_offset += value.mmaped_size();
             }
         }
 
-        let mmap = unsafe { MmapSlice::try_from(mmap)? };
-        mmap.flusher()()?;
-
+        mmap.flush()?;
         Ok(Self {
             file_name,
-            mmap,
+            mmap: mmap.make_read_only()?,
             header,
         })
     }
@@ -218,17 +199,12 @@ impl MmapPointToValues {
             Header::read_from_prefix(mmap.as_ref()).ok_or(OperationError::InconsistentStorage {
                 description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
             })?;
-        let mmap = unsafe { MmapSlice::try_from(mmap)? };
 
         Ok(Self {
             file_name,
-            mmap,
+            mmap: mmap.make_read_only()?,
             header,
         })
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.mmap.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -238,7 +214,7 @@ impl MmapPointToValues {
     pub fn get_values<'a, T: MmapValue<'a>>(
         &'a self,
         point_id: PointOffsetType,
-    ) -> OperationResult<Box<dyn Iterator<Item = OperationResult<T>> + 'a>> {
+    ) -> Box<dyn Iterator<Item = OperationResult<T>> + 'a> {
         // first, get range of values for point
         let range = if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)
@@ -248,54 +224,32 @@ impl MmapPointToValues {
                 .and_then(MmapRange::read_from)
                 .unwrap_or_default()
         } else {
-            MmapRange { start: 0, count: 0 }
+            return Box::new(std::iter::empty());
         };
 
         // second, define iteration step for values
-        // iteration step gets remainder range from memmaped file and returns next range with left range
+        // iteration step gets remainder range from memmaped file and returns left range
         let bytes: &[u8] = self.mmap.as_ref();
         let read_value = move |range: MmapRange| -> Option<(OperationResult<T>, MmapRange)> {
             if range.count > 0 {
-                let value = T::read_from_mmap(bytes, range.start as usize);
-                match value {
-                    Ok(value) => {
-                        let range = MmapRange {
-                            start: range.start + value.mmaped_size() as u64,
-                            count: range.count - 1,
-                        };
-                        Some((Ok(value), range))
-                    }
-                    // if error occurs, return error and empty range to stop iteration
-                    Err(err) => Some((Err(err), MmapRange::default())),
-                }
+                let bytes = bytes.get(range.start as usize..)?;
+                T::read_from_mmap(bytes).map(|value| {
+                    let range = MmapRange {
+                        start: range.start + value.mmaped_size() as u64,
+                        count: range.count - 1,
+                    };
+                    (Ok(value), range)
+                })
             } else {
                 None
             }
         };
 
         // finally, return iterator
-        Ok(Box::new(
+        Box::new(
             std::iter::successors(read_value(range), move |range| read_value(range.1))
                 .map(|(value, _)| value),
-        ))
-    }
-
-    pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
-        // change points values range to empty
-        let range_offset = (self.header.ranges_start as usize)
-            + (point_id as usize) * std::mem::size_of::<MmapRange>();
-        if let Some(range) = self
-            .mmap
-            .get_mut(range_offset..range_offset + std::mem::size_of::<MmapRange>())
-            .and_then(MmapRange::mut_from)
-        {
-            *range = Default::default();
-            Ok(())
-        } else {
-            Err(OperationError::InconsistentStorage {
-                description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
-            })
-        }
+        )
     }
 }
 
@@ -307,8 +261,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mmap_point_to_values_remove() {
-        let mut values: Vec<Vec<String>> = vec![
+    fn test_mmap_point_to_values_string() {
+        let values: Vec<Vec<String>> = vec![
             vec![
                 "fox".to_owned(),
                 "driver".to_owned(),
@@ -361,29 +315,73 @@ mod tests {
             }),
         )
         .unwrap();
-        let mut point_to_values = MmapPointToValues::open(dir.path()).unwrap();
+        let point_to_values = MmapPointToValues::open(dir.path()).unwrap();
 
-        let check = |point_to_values: &MmapPointToValues, values: &[Vec<_>]| {
-            for (idx, values) in values.iter().enumerate() {
-                let v: Vec<String> = point_to_values
-                    .get_values(idx as PointOffsetType)
-                    .unwrap()
-                    .map(|s: OperationResult<&str>| s.unwrap().to_owned())
-                    .collect_vec();
-                assert_eq!(&v, values);
-            }
-        };
+        for (idx, values) in values.iter().enumerate() {
+            let v: Vec<String> = point_to_values
+                .get_values(idx as PointOffsetType)
+                .map(|s: OperationResult<&str>| s.unwrap().to_owned())
+                .collect_vec();
+            assert_eq!(&v, values);
+        }
+    }
 
-        check(&point_to_values, &values);
+    #[test]
+    fn test_mmap_point_to_values_geo() {
+        let values: Vec<Vec<GeoPoint>> = vec![
+            vec![
+                GeoPoint { lon: 6.0, lat: 2.0 },
+                GeoPoint { lon: 4.0, lat: 3.0 },
+                GeoPoint { lon: 2.0, lat: 5.0 },
+                GeoPoint { lon: 8.0, lat: 7.0 },
+                GeoPoint { lon: 1.0, lat: 9.0 },
+            ],
+            vec![
+                GeoPoint { lon: 8.0, lat: 1.0 },
+                GeoPoint { lon: 3.0, lat: 3.0 },
+                GeoPoint { lon: 5.0, lat: 9.0 },
+                GeoPoint { lon: 1.0, lat: 8.0 },
+                GeoPoint { lon: 7.0, lat: 2.0 },
+            ],
+            vec![
+                GeoPoint { lon: 6.0, lat: 3.0 },
+                GeoPoint { lon: 4.0, lat: 4.0 },
+                GeoPoint { lon: 3.0, lat: 7.0 },
+                GeoPoint { lon: 1.0, lat: 2.0 },
+                GeoPoint { lon: 4.0, lat: 8.0 },
+            ],
+            vec![
+                GeoPoint { lon: 1.0, lat: 3.0 },
+                GeoPoint { lon: 3.0, lat: 9.0 },
+                GeoPoint { lon: 7.0, lat: 0.0 },
+            ],
+            vec![],
+            vec![GeoPoint { lon: 8.0, lat: 5.0 }],
+            vec![GeoPoint { lon: 9.0, lat: 4.0 }],
+        ];
 
-        point_to_values.remove_point(0).unwrap();
-        values[0].clear();
+        let dir = Builder::new()
+            .prefix("mmap_point_to_values")
+            .tempdir()
+            .unwrap();
+        MmapPointToValues::from_iter(
+            dir.path(),
+            values.iter().enumerate().map(|(id, values)| {
+                (
+                    id as PointOffsetType,
+                    values.iter().map(|s| s.clone()).collect_vec(),
+                )
+            }),
+        )
+        .unwrap();
+        let point_to_values = MmapPointToValues::open(dir.path()).unwrap();
 
-        check(&point_to_values, &values);
-
-        point_to_values.remove_point(3).unwrap();
-        values[3].clear();
-
-        check(&point_to_values, &values);
+        for (idx, values) in values.iter().enumerate() {
+            let v: Vec<GeoPoint> = point_to_values
+                .get_values(idx as PointOffsetType)
+                .map(|s: OperationResult<GeoPoint>| s.unwrap().clone())
+                .collect_vec();
+            assert_eq!(&v, values);
+        }
     }
 }
