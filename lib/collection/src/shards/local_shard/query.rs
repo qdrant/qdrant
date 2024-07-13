@@ -6,11 +6,11 @@ use std::time::Duration;
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -29,30 +29,28 @@ pub enum FetchedSource {
 }
 
 struct PrefetchResults {
-    search_results: RwLock<Vec<Vec<ScoredPoint>>>,
-    scroll_results: RwLock<Vec<Vec<ScoredPoint>>>,
+    search_results: Mutex<Vec<Vec<ScoredPoint>>>,
+    scroll_results: Mutex<Vec<Vec<ScoredPoint>>>,
 }
 
 impl PrefetchResults {
     fn new(search_results: Vec<Vec<ScoredPoint>>, scroll_results: Vec<Vec<ScoredPoint>>) -> Self {
         Self {
-            scroll_results: RwLock::new(scroll_results),
-            search_results: RwLock::new(search_results),
+            scroll_results: Mutex::new(scroll_results),
+            search_results: Mutex::new(search_results),
         }
     }
 
-    async fn get(&self, element: FetchedSource) -> CollectionResult<Vec<ScoredPoint>> {
+    fn get(&self, element: FetchedSource) -> CollectionResult<Vec<ScoredPoint>> {
         match element {
             FetchedSource::Search(idx) => self
                 .search_results
-                .write()
-                .await
+                .lock()
                 .get_mut(idx)
                 .map(mem::take),
             FetchedSource::Scroll(idx) => self
                 .scroll_results
-                .write()
-                .await
+                .lock()
                 .get_mut(idx)
                 .map(mem::take),
         }
@@ -163,10 +161,10 @@ impl LocalShard {
             for source in merge_plan.sources.into_iter() {
                 match source {
                     Source::SearchesIdx(idx) => {
-                        sources.push(prefetch_holder.get(FetchedSource::Search(idx)).await?)
+                        sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)
                     }
                     Source::ScrollsIdx(idx) => {
-                        sources.push(prefetch_holder.get(FetchedSource::Scroll(idx)).await?)
+                        sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
                     }
                     Source::Prefetch(prefetch) => {
                         let merged = self
