@@ -43,16 +43,8 @@ impl PrefetchResults {
 
     fn get(&self, element: FetchedSource) -> CollectionResult<Vec<ScoredPoint>> {
         match element {
-            FetchedSource::Search(idx) => self
-                .search_results
-                .lock()
-                .get_mut(idx)
-                .map(mem::take),
-            FetchedSource::Scroll(idx) => self
-                .scroll_results
-                .lock()
-                .get_mut(idx)
-                .map(mem::take),
+            FetchedSource::Search(idx) => self.search_results.lock().get_mut(idx).map(mem::take),
+            FetchedSource::Scroll(idx) => self.scroll_results.lock().get_mut(idx).map(mem::take),
         }
         .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
     }
