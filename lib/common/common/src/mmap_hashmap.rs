@@ -184,7 +184,6 @@ impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
     }
 
     /// Get the values associated with the `key`.
-    #[inline(never)]
     pub fn get(&self, key: &K) -> io::Result<Option<&[PointOffsetType]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
@@ -265,9 +264,6 @@ impl Key for str {
     }
 
     fn matches(&self, buf: &[u8]) -> bool {
-        if buf.len() < self.write_bytes() {
-            return false;
-        }
         // The sentinel value 0xFF is used to ensure that `self` has the same length as the string
         // in the entry buffer.
         //
@@ -293,7 +289,7 @@ impl Key for str {
         //    with 0xFF will always result in an invalid UTF-8 string. Such string could not be
         //    added to the index since we are adding only valid UTF-8 strings as Rust enforces the
         //    validity of `str`/`String` types.
-        &buf[..self.len()] == self.as_bytes() && buf[self.len()] == 0xFF
+        buf.get(..self.len()) == Some(AsBytes::as_bytes(self)) && buf.get(self.len()) == Some(&0xFF)
     }
 }
 
@@ -314,10 +310,7 @@ impl Key for i64 {
     }
 
     fn matches(&self, buf: &[u8]) -> bool {
-        if buf.len() < self.write_bytes() {
-            return false;
-        }
-        &buf[..size_of::<i64>()] == AsBytes::as_bytes(self)
+        buf.get(..size_of::<i64>()) == Some(AsBytes::as_bytes(self))
     }
 }
 
