@@ -1,11 +1,12 @@
-use std::borrow::Cow;
 use std::collections::HashSet;
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
+use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
@@ -28,22 +29,22 @@ pub enum FetchedSource {
 }
 
 struct PrefetchResults {
-    search_results: Vec<Vec<ScoredPoint>>,
-    scroll_results: Vec<Vec<ScoredPoint>>,
+    search_results: Mutex<Vec<Vec<ScoredPoint>>>,
+    scroll_results: Mutex<Vec<Vec<ScoredPoint>>>,
 }
 
 impl PrefetchResults {
     fn new(search_results: Vec<Vec<ScoredPoint>>, scroll_results: Vec<Vec<ScoredPoint>>) -> Self {
         Self {
-            search_results,
-            scroll_results,
+            scroll_results: Mutex::new(scroll_results),
+            search_results: Mutex::new(search_results),
         }
     }
 
-    fn get(&self, element: FetchedSource) -> CollectionResult<Cow<'_, Vec<ScoredPoint>>> {
+    fn get(&self, element: FetchedSource) -> CollectionResult<Vec<ScoredPoint>> {
         match element {
-            FetchedSource::Search(idx) => self.search_results.get(idx).map(Cow::Borrowed),
-            FetchedSource::Scroll(idx) => self.scroll_results.get(idx).map(Cow::Borrowed),
+            FetchedSource::Search(idx) => self.search_results.lock().get_mut(idx).map(mem::take),
+            FetchedSource::Scroll(idx) => self.scroll_results.lock().get_mut(idx).map(mem::take),
         }
         .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
     }
@@ -146,16 +147,16 @@ impl LocalShard {
     {
         async move {
             let max_len = merge_plan.sources.len();
-            let mut cow_sources = Vec::with_capacity(max_len);
+            let mut sources = Vec::with_capacity(max_len);
 
             // We need to preserve the order of the sources for some fusion strategies
             for source in merge_plan.sources.into_iter() {
                 match source {
                     Source::SearchesIdx(idx) => {
-                        cow_sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)
+                        sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)
                     }
                     Source::ScrollsIdx(idx) => {
-                        cow_sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
+                        sources.push(prefetch_holder.get(FetchedSource::Scroll(idx))?)
                     }
                     Source::Prefetch(prefetch) => {
                         let merged = self
@@ -167,9 +168,8 @@ impl LocalShard {
                                 depth + 1,
                             )
                             .await?
-                            .into_iter()
-                            .map(Cow::Owned);
-                        cow_sources.extend(merged);
+                            .into_iter();
+                        sources.extend(merged);
                     }
                 }
             }
@@ -177,12 +177,7 @@ impl LocalShard {
             // Rescore or return plain sources
             if let Some(rescore_params) = merge_plan.rescore_params {
                 let rescored = self
-                    .rescore(
-                        cow_sources.into_iter(),
-                        rescore_params,
-                        search_runtime_handle,
-                        timeout,
-                    )
+                    .rescore(sources, rescore_params, search_runtime_handle, timeout)
                     .await?;
 
                 Ok(vec![rescored])
@@ -190,8 +185,7 @@ impl LocalShard {
                 // The sources here are passed to the next layer without any extra processing.
                 // It is either a query without prefetches, or a fusion request and the intermediate results are passed to the next layer.
                 debug_assert_eq!(depth, 0);
-                // TODO(universal-query): maybe there's a way to pass ownership of the prefetch_holder to avoid cloning with Cow::into_owned here
-                Ok(cow_sources.into_iter().map(Cow::into_owned).collect())
+                Ok(sources)
             }
         }
         .boxed()
@@ -200,7 +194,7 @@ impl LocalShard {
     /// Rescore list of scored points
     async fn rescore<'a>(
         &self,
-        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
         search_runtime_handle: &Handle,
         timeout: Duration,
@@ -216,7 +210,7 @@ impl LocalShard {
         match rescore {
             ScoringQuery::Fusion(fusion) => {
                 self.fusion_rescore(
-                    sources,
+                    sources.into_iter(),
                     fusion,
                     score_threshold,
                     limit,
@@ -227,7 +221,7 @@ impl LocalShard {
             }
             ScoringQuery::OrderBy(order_by) => {
                 // create single scroll request for rescoring query
-                let filter = filter_with_sources_ids(sources);
+                let filter = filter_with_sources_ids(sources.into_iter());
 
                 // Note: score_threshold is not used in this case, as all results will have same score,
                 // but different order_value
@@ -254,7 +248,7 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let filter = filter_with_sources_ids(sources);
+                let filter = filter_with_sources_ids(sources.into_iter());
 
                 let search_request = CoreSearchRequest {
                     query: query_enum,
@@ -291,15 +285,13 @@ impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     async fn fusion_rescore<'a>(
         &self,
-        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        sources: impl Iterator<Item = Vec<ScoredPoint>>,
         fusion: Fusion,
         score_threshold: Option<f32>,
         limit: usize,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
     ) -> Result<Vec<ScoredPoint>, CollectionError> {
-        let sources: Vec<_> = sources.map(Cow::into_owned).collect();
-
         let fused = match fusion {
             Fusion::Rrf => rrf_scoring(sources),
             Fusion::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
@@ -324,7 +316,7 @@ impl LocalShard {
 }
 
 /// Extracts point ids from sources, and creates a filter to only include those ids.
-fn filter_with_sources_ids<'a>(sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>) -> Filter {
+fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
     let mut point_ids = HashSet::new();
 
     for source in sources {
