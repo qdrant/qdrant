@@ -1165,6 +1165,8 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "common",
+ "criterion",
  "lazy_static",
  "memmap2 0.9.4",
  "num_cpus",
