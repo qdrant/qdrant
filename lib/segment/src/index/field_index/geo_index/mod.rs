@@ -146,13 +146,14 @@ impl GeoMapIndex {
         self.db_wrapper().flusher()
     }
 
-    pub fn get_values(
+    pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        check_fn: impl Fn(&GeoPoint) -> bool,
+    ) -> bool {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_values(idx),
-            GeoMapIndex::Immutable(index) => index.get_values(idx),
+            GeoMapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            GeoMapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
         }
     }
 
@@ -348,9 +349,9 @@ impl PayloadFieldIndex for GeoMapIndex {
             let geo_condition_copy = geo_bounding_box.clone();
             return Ok(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    self.get_values(*point)
-                        .unwrap()
-                        .any(|point| geo_condition_copy.check_point(&point))
+                    self.check_values_any(*point, |geo_point| {
+                        geo_condition_copy.check_point(geo_point)
+                    })
                 },
             )));
         }
@@ -360,9 +361,9 @@ impl PayloadFieldIndex for GeoMapIndex {
             let geo_condition_copy = geo_radius.clone();
             return Ok(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    self.get_values(*point)
-                        .unwrap()
-                        .any(|point| geo_condition_copy.check_point(&point))
+                    self.check_values_any(*point, |geo_point| {
+                        geo_condition_copy.check_point(geo_point)
+                    })
                 },
             )));
         }
@@ -372,9 +373,9 @@ impl PayloadFieldIndex for GeoMapIndex {
             let geo_condition_copy = geo_polygon.convert();
             return Ok(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
-                    self.get_values(*point)
-                        .unwrap()
-                        .any(|point| geo_condition_copy.check_point(&point))
+                    self.check_values_any(*point, |geo_point| {
+                        geo_condition_copy.check_point(geo_point)
+                    })
                 },
             )));
         }
@@ -786,14 +787,13 @@ mod tests {
             check_fn: F,
             is_appendable: bool,
         ) where
-            F: Fn(GeoPoint) -> bool,
+            F: Fn(&GeoPoint) -> bool + Clone,
         {
             let field_index = build_random_index(1000, 5, is_appendable);
 
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
                 .filter_map(|idx| {
-                    let mut geo_points_iter = field_index.get_values(idx).unwrap();
-                    if geo_points_iter.any(&check_fn) {
+                    if field_index.check_values_any(idx, check_fn.clone()) {
                         Some(idx as PointOffsetType)
                     } else {
                         None
@@ -819,7 +819,7 @@ mod tests {
         };
         check_geo_indexed_filtering(
             condition_for_geo_radius("test", geo_radius.clone()),
-            |geo_point| geo_radius.check_point(&geo_point),
+            |geo_point| geo_radius.check_point(geo_point),
             is_appendable,
         );
 
@@ -832,7 +832,7 @@ mod tests {
         ]);
         check_geo_indexed_filtering(
             condition_for_geo_polygon("test", geo_polygon.clone()),
-            |geo_point| geo_polygon.convert().check_point(&geo_point),
+            |geo_point| geo_polygon.convert().check_point(geo_point),
             is_appendable,
         );
     }

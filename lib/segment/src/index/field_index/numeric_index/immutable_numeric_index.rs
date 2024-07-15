@@ -224,6 +224,14 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         &self.db_wrapper
     }
 
+    pub(super) fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+    ) -> bool {
+        self.point_to_values.check_values_any(idx, check_fn)
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         Some(Box::new(
             self.point_to_values

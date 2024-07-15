@@ -206,6 +206,13 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+        match self {
+            NumericIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndex::Immutable(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
             NumericIndex::Mutable(index) => index.get_values(idx),
