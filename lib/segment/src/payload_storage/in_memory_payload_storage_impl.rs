@@ -11,6 +11,11 @@ use crate::payload_storage::PayloadStorage;
 use crate::types::Payload;
 
 impl PayloadStorage for InMemoryPayloadStorage {
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        self.payload.insert(point_id, payload.to_owned());
+        Ok(())
+    }
+
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),

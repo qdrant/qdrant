@@ -333,6 +333,15 @@ impl StructPayloadIndex {
     ) -> OperationResult<()> {
         crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
+
+    fn clear_index_for_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
+        for (_, field_indexes) in self.field_indexes.iter_mut() {
+            for index in field_indexes {
+                index.remove_point(point_id)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
@@ -475,6 +484,24 @@ impl PayloadIndex for StructPayloadIndex {
         }
     }
 
+    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        self.payload.borrow_mut().assign_all(point_id, payload)?;
+
+        for (field, field_index) in &mut self.field_indexes {
+            let field_value = payload.get_value(field);
+            if !field_value.is_empty() {
+                for index in field_index {
+                    index.add_point(point_id, &field_value)?;
+                }
+            } else {
+                for index in field_index {
+                    index.remove_point(point_id)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn assign(
         &mut self,
         point_id: PointOffsetType,
@@ -526,11 +553,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        for (_, field_indexes) in self.field_indexes.iter_mut() {
-            for index in field_indexes {
-                index.remove_point(point_id)?;
-            }
-        }
+        self.clear_index_for_point(point_id)?;
         self.payload.borrow_mut().drop(point_id)
     }
 
