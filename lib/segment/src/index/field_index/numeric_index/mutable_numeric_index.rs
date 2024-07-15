@@ -43,6 +43,13 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         &self.db_wrapper
     }
 
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|values| values.iter().any(check_fn))
+            .unwrap_or(false)
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         Some(Box::new(
             self.point_to_values

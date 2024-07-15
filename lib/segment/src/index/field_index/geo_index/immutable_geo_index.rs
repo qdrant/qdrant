@@ -52,15 +52,12 @@ impl ImmutableGeoMapIndex {
         &self.db_wrapper
     }
 
-    pub fn get_values(
+    pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        Some(Box::new(
-            self.point_to_values
-                .get_values(idx)
-                .map(|iter| iter.cloned())?,
-        ))
+        check_fn: impl Fn(&GeoPoint) -> bool,
+    ) -> bool {
+        self.point_to_values.check_values_any(idx, check_fn)
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
