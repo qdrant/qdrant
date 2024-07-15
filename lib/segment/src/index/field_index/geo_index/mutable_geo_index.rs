@@ -64,15 +64,15 @@ impl MutableGeoMapIndex {
         &self.db_wrapper
     }
 
-    pub fn get_values(
+    pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
-        Some(Box::new(
-            self.point_to_values
-                .get(idx as usize)
-                .map(|v| v.iter().cloned())?,
-        ))
+        check_fn: impl Fn(&GeoPoint) -> bool,
+    ) -> bool {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|values| values.iter().any(check_fn))
+            .unwrap_or(false)
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {

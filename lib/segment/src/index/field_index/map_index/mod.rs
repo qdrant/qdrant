@@ -58,6 +58,26 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
+    pub fn check_values_any<NRef>(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&NRef) -> bool,
+    ) -> bool
+    where
+        N: std::borrow::Borrow<NRef>,
+        NRef: ?Sized,
+    {
+        match self {
+            MapIndex::Mutable(index) => {
+                index.check_values_any(idx, |value| check_fn(value.borrow()))
+            }
+            MapIndex::Immutable(index) => {
+                index.check_values_any(idx, |value| check_fn(value.borrow()))
+            }
+        }
+    }
+
+    #[cfg(test)]
     pub fn get_values<NRef>(
         &self,
         idx: PointOffsetType,

@@ -195,6 +195,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> ImmutableMapIndex<N> {
         Ok(result)
     }
 
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        self.point_to_values.check_values_any(idx, check_fn)
+    }
+
+    #[cfg(test)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         self.point_to_values.get_values(idx)
     }

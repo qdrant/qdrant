@@ -120,6 +120,14 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         Ok(true)
     }
 
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|values| values.iter().any(check_fn))
+            .unwrap_or(false)
+    }
+
+    #[cfg(test)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         Some(self.point_to_values.get(idx as usize)?.iter())
     }

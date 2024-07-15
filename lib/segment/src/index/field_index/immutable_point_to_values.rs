@@ -33,6 +33,21 @@ impl<N: Default> ImmutablePointToValues<N> {
         }
     }
 
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        let range = if let Some(range) = self.point_to_values.get(idx as usize).cloned() {
+            range
+        } else {
+            return false;
+        };
+
+        let range = range.start as usize..range.end as usize;
+        if let Some(values) = self.point_to_values_container.get(range) {
+            values.iter().any(check_fn)
+        } else {
+            false
+        }
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         let range = self.point_to_values.get(idx as usize)?.clone();
         let range = range.start as usize..range.end as usize;
