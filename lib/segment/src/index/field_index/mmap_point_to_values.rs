@@ -11,6 +11,7 @@ use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType};
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
     "Not enough bytes to operate with memmaped file `point_to_values.bin`. Is the storage corrupted?";
+const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmaped file. It's used in `MmapPointToValues` to store values.
 /// Lifetime `'a` is used to define lifetime for `&'a str` case
@@ -137,7 +138,6 @@ impl MmapPointToValues {
         iter: impl Iterator<Item = (PointOffsetType, Vec<T>)> + Clone,
     ) -> OperationResult<Self> {
         // calculate file size
-        let header_size = std::mem::size_of::<Header>();
         let points_count = iter
             .clone()
             .map(|(point_id, _)| (point_id + 1) as usize)
@@ -148,7 +148,7 @@ impl MmapPointToValues {
             .clone()
             .map(|v| v.1.iter().map(|v| v.mmaped_size()).sum::<usize>())
             .sum::<usize>();
-        let file_size = header_size + ranges_size + values_size;
+        let file_size = PADDING_SIZE + ranges_size + values_size;
 
         // create new file and mmap
         let file_name = path.join(POINT_TO_VALUES_PATH);
@@ -157,7 +157,7 @@ impl MmapPointToValues {
 
         // fill mmap file data
         let header = Header {
-            ranges_start: header_size as u64,
+            ranges_start: PADDING_SIZE as u64,
             points_count: points_count as u64,
         };
         header
@@ -165,15 +165,18 @@ impl MmapPointToValues {
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
 
         // counter for values offset
-        let mut point_values_offset = header_size + ranges_size;
+        let mut point_values_offset = header.ranges_start as usize + ranges_size;
         for (point_id, values) in iter {
             let range = MmapRange {
                 start: point_values_offset as u64,
                 count: values.len() as u64,
             };
-            mmap.get_mut(header_size + point_id as usize * std::mem::size_of::<MmapRange>()..)
-                .and_then(|bytes| range.write_to_prefix(bytes))
-                .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            mmap.get_mut(
+                header.ranges_start as usize
+                    + point_id as usize * std::mem::size_of::<MmapRange>()..,
+            )
+            .and_then(|bytes| range.write_to_prefix(bytes))
+            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
 
             for value in values {
                 let bytes = mmap.get_mut(point_values_offset..).ok_or_else(|| {
