@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -259,10 +260,13 @@ impl LocalShard {
             let filter = filter.cloned();
 
             search_runtime_handle.spawn_blocking(move || {
-                segment
-                    .get()
-                    .read()
-                    .read_random_filtered(limit, filter.as_ref())
+                let get_segment = segment.get();
+                let read_segment = get_segment.read();
+
+                (
+                    read_segment.available_point_count(),
+                    read_segment.read_random_filtered(limit, filter.as_ref()),
+                )
             })
         };
 
@@ -274,16 +278,53 @@ impl LocalShard {
         )
         .await?;
 
-        let mut rng = rand::thread_rng();
-        let point_ids = all_reads
+        let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
+
+        let total_available: usize = availability.iter().sum();
+        let segment_weights = availability
             .into_iter()
-            .kmerge_by(|_, _| rng.gen_bool(0.5))
-            .take(limit)
+            .map(|available| available as f64 / total_available as f64)
             .collect_vec();
+
+        // Get `limit` points in a weighted fashion from each segment, depending on how many points each segment has.
+        let mut rng = rand::thread_rng();
+        let mut random_points = Vec::with_capacity(limit);
+        let mut exhausted_reads = HashSet::new();
+        for segment_id in (0..segments_reads.len()).cycle() {
+            if exhausted_reads.contains(&segment_id) {
+                continue;
+            }
+
+            // Determine weight for this segment
+            let weight = segment_weights.get(segment_id).unwrap_or(&0.5);
+
+            if !rng.gen_bool(*weight) {
+                continue;
+            }
+
+            let Some(point) = segments_reads
+                .get_mut(segment_id)
+                .and_then(|points| points.pop())
+            else {
+                // reads have been exhausted, don't use this segment anymore
+                exhausted_reads.insert(segment_id);
+                if exhausted_reads.len() == segments_reads.len() {
+                    // no points left in any read
+                    break;
+                }
+                continue;
+            };
+
+            // Add point to result
+            random_points.push(point);
+            if random_points.len() == limit {
+                break;
+            }
+        }
 
         let with_payload = WithPayload::from(with_payload_interface);
         let records_map =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+            SegmentsSearcher::retrieve(segments, &random_points, &with_payload, with_vector)?;
 
         Ok(records_map.into_values().collect())
     }
