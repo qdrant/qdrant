@@ -626,6 +626,86 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
             assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
 
 
+# Test resharding resumption of migrating points.
+#
+# On a static collection, this performs resharding. Once migrating points start,
+# the driving peer is killed and restarted. On restart, it should finish
+# resharding as if nothing happened.
+def test_resharding_resume_migration(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    num_points = 10000
+
+    # Prevent optimizers messing with point counts
+    env={
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
+    }
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
+    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
+
+    # Create collection, insert points
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+    upsert_random_points(peer_api_uris[0], num_points)
+
+    sleep(1)
+
+    # Assert node shard and point sum count
+    for uri in peer_api_uris:
+        assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
+        assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
+
+    # Start resharding
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "start_resharding": {
+                "peer_id": first_peer_id,
+                "shard_key": None,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for resharding operation to start and migrate points
+    wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+    wait_for_collection_resharding_operation_state(peer_api_uris[0], COLLECTION_NAME, "migrate points")
+
+    # Kill and restart first peer
+    processes.pop(0).kill()
+    sleep(1)
+    peer_api_uris[0] = start_peer(peer_dirs[0], "peer_0_restarted.log", bootstrap_uri, extra_env=env)
+    wait_for_peer_online(peer_api_uris[0], "/")
+
+    # Wait for resharding operation to start and stop
+    wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+    for uri in peer_api_uris:
+        wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
+
+    # Assert node shard and point sum count
+    for uri in peer_api_uris:
+        assert check_collection_local_shards_count(uri, COLLECTION_NAME, 2)
+        assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
+
+    sleep(1)
+
+    # Match all points on all nodes exactly
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)
+
+
 def run_in_background(run, *args, **kwargs):
     p = multiprocessing.Process(target=run, args=args, kwargs=kwargs)
     p.start()

@@ -401,6 +401,14 @@ def check_collection_resharding_operations_count(peer_api_uri: str, collection_n
     return local_resharding_count == expected_resharding_operations_count
 
 
+def check_collection_resharding_operation_state(peer_api_uri: str, collection_name: str, expected_state: str, headers={}) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
+    for resharding in collection_cluster_info["resharding_operations"] or []:
+        if "comment" in resharding and resharding["comment"].startswith(expected_state):
+            return True
+    return False
+
+
 def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
                                            expected_method: str) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
@@ -558,6 +566,14 @@ def wait_for_collection_resharding_operations_count(peer_api_uri: str, collectio
                                               expected_resharding_operations_count: int, headers={}):
     try:
         wait_for(check_collection_resharding_operations_count, peer_api_uri, collection_name, expected_resharding_operations_count, headers=headers)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
+        raise e
+
+
+def wait_for_collection_resharding_operation_state(peer_api_uri: str, collection_name: str, expected_state: str, headers={}):
+    try:
+        wait_for(check_collection_resharding_operation_state, peer_api_uri, collection_name, expected_state, headers=headers)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
