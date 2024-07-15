@@ -819,7 +819,7 @@ mod tests {
         };
         check_geo_indexed_filtering(
             condition_for_geo_radius("test", geo_radius.clone()),
-            |geo_point| geo_radius.check_point(&geo_point),
+            |geo_point| geo_radius.check_point(geo_point),
             is_appendable,
         );
 
@@ -832,7 +832,7 @@ mod tests {
         ]);
         check_geo_indexed_filtering(
             condition_for_geo_polygon("test", geo_polygon.clone()),
-            |geo_point| geo_polygon.convert().check_point(&geo_point),
+            |geo_point| geo_polygon.convert().check_point(geo_point),
             is_appendable,
         );
     }
