@@ -214,10 +214,39 @@ impl MmapPointToValues {
         vec![self.file_name.clone()]
     }
 
+    pub fn check_values_any<'a, T: MmapValue<'a>>(
+        &'a self,
+        point_id: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+    ) -> bool {
+        if point_id < self.header.points_count as PointOffsetType {
+            let range_offset = (self.header.ranges_start as usize)
+                + (point_id as usize) * std::mem::size_of::<MmapRange>();
+            self.mmap
+                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
+                .and_then(MmapRange::read_from)
+                .map(|range| {
+                    let mut value_offset = range.start as usize;
+                    for _ in 0..range.count {
+                        let bytes = self.mmap.get(value_offset..).unwrap();
+                        let value = T::read_from_mmap(bytes).unwrap();
+                        if check_fn(&value) {
+                            return true;
+                        }
+                        value_offset += value.mmaped_size();
+                    }
+                    false
+                })
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
     pub fn get_values<'a, T: MmapValue<'a>>(
         &'a self,
         point_id: PointOffsetType,
-    ) -> Box<dyn Iterator<Item = OperationResult<T>> + 'a> {
+    ) -> Option<impl Iterator<Item = T> + 'a> {
         // first, get range of values for point
         let range = if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)
@@ -227,13 +256,13 @@ impl MmapPointToValues {
                 .and_then(MmapRange::read_from)
                 .unwrap_or_default()
         } else {
-            return Box::new(std::iter::empty());
+            return None;
         };
 
         // second, define iteration step for values
         // iteration step gets remainder range from memmaped file and returns left range
         let bytes: &[u8] = self.mmap.as_ref();
-        let read_value = move |range: MmapRange| -> Option<(OperationResult<T>, MmapRange)> {
+        let read_value = move |range: MmapRange| -> Option<(T, MmapRange)> {
             if range.count > 0 {
                 let bytes = bytes.get(range.start as usize..)?;
                 T::read_from_mmap(bytes).map(|value| {
@@ -241,7 +270,7 @@ impl MmapPointToValues {
                         start: range.start + value.mmaped_size() as u64,
                         count: range.count - 1,
                     };
-                    (Ok(value), range)
+                    (value, range)
                 })
             } else {
                 None
@@ -249,10 +278,23 @@ impl MmapPointToValues {
         };
 
         // finally, return iterator
-        Box::new(
+        Some(
             std::iter::successors(read_value(range), move |range| read_value(range.1))
                 .map(|(value, _)| value),
         )
+    }
+
+    pub fn get_values_count(&self, point_id: PointOffsetType) -> Option<usize> {
+        if point_id < self.header.points_count as PointOffsetType {
+            let range_offset = (self.header.ranges_start as usize)
+                + (point_id as usize) * std::mem::size_of::<MmapRange>();
+            self.mmap
+                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
+                .and_then(MmapRange::read_from)
+                .map(|range| range.count as usize)
+        } else {
+            None
+        }
     }
 }
 
@@ -321,10 +363,10 @@ mod tests {
         let point_to_values = MmapPointToValues::open(dir.path()).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
-            let v: Vec<String> = point_to_values
-                .get_values(idx as PointOffsetType)
-                .map(|s: OperationResult<&str>| s.unwrap().to_owned())
-                .collect_vec();
+            let iter = point_to_values.get_values::<&str>(idx as PointOffsetType);
+            let v: Vec<String> = iter
+                .map(|iter| iter.map(|s: &str| s.to_owned()).collect_vec())
+                .unwrap_or_default();
             assert_eq!(&v, values);
         }
     }
@@ -378,10 +420,10 @@ mod tests {
         let point_to_values = MmapPointToValues::open(dir.path()).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
-            let v: Vec<GeoPoint> = point_to_values
-                .get_values(idx as PointOffsetType)
-                .map(|s: OperationResult<GeoPoint>| s.unwrap().clone())
-                .collect_vec();
+            let iter = point_to_values.get_values(idx as PointOffsetType);
+            let v: Vec<GeoPoint> = iter
+                .map(|iter| iter.map(|s: GeoPoint| s.clone()).collect_vec())
+                .unwrap_or_default();
             assert_eq!(&v, values);
         }
     }
