@@ -425,7 +425,7 @@ impl Collection {
             let target_shards = shard_holder.select_shards(shard_selection)?;
 
             // Resharding filter to apply when resharding is active
-            let resharding_filter = Arc::new(shard_holder.resharding_filter_impl());
+            let resharding_filter = shard_holder.resharding_filter_impl();
             let reshard_shard_id = shard_holder
                 .resharding_state
                 .read()
@@ -433,37 +433,42 @@ impl Collection {
                 .map(|state| state.shard_id);
 
             let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                // Whether to apply the resharding filter on this shard
-                let do_filter =
-                    reshard_shard_id.map_or(false, |shard_id| shard.shard_id != shard_id);
-                let resharding_filter = Arc::clone(&resharding_filter);
+                // Explicitly borrow `request` and `with_payload`, so we can use them in `async move`
+                // block below without unnecessarily cloning anything
+                let request = &request;
+                let with_payload = &with_payload;
 
-                let shard_key = shard_key.cloned();
-                shard
-                    .retrieve(
-                        request.clone(),
-                        &with_payload,
-                        &request.with_vector,
-                        read_consistency,
-                        shard_selection.is_shard_id(),
-                    )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
-                        }
+                // If resharding, prepare filter to exclude migrated points from *old* shards
+                let resharding_filter = resharding_filter
+                    .as_ref()
+                    .filter(|_| Some(shard.shard_id) != reshard_shard_id);
 
-                        // If resharding, exclude migrated points from old shards
-                        if let Some(filter) = resharding_filter.as_ref() {
-                            if do_filter {
-                                records.retain(|record| !filter.check(record.id));
-                            }
-                        }
+                async move {
+                    let mut records = shard
+                        .retrieve(
+                            request.clone(),
+                            with_payload,
+                            &request.with_vector,
+                            read_consistency,
+                            shard_selection.is_shard_id(),
+                        )
+                        .await?;
 
-                        for point in &mut records {
-                            point.shard_key.clone_from(&shard_key);
-                        }
-                        Ok(records)
-                    })
+                    // If resharding, exclude migrated points from *old* shards
+                    if let Some(filter) = resharding_filter {
+                        records.retain(|record| !filter.check(record.id));
+                    }
+
+                    if shard_key.is_none() {
+                        return Ok(records);
+                    }
+
+                    for point in &mut records {
+                        point.shard_key.clone_from(&shard_key.cloned());
+                    }
+
+                    CollectionResult::Ok(records)
+                }
             });
 
             future::try_join_all(retrieve_futures).await?
