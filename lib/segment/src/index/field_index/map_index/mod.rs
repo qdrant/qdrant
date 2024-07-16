@@ -84,12 +84,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
         match self {
-            MapIndex::Mutable(index) => {
-                index.check_values_any(idx, |value| check_fn(value.borrow()))
-            }
-            MapIndex::Immutable(index) => {
-                index.check_values_any(idx, |value| check_fn(value.borrow()))
-            }
+            MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
         }
     }
 
