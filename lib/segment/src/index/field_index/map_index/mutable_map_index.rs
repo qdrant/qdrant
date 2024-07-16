@@ -1,29 +1,27 @@
+use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
-use std::fmt::Display;
-use std::hash::Hash;
 use std::iter;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::MapIndex;
+use super::{MapIndex, MapIndexKey};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 
-pub struct MutableMapIndex<N: Hash + Eq + Clone + Display + FromStr> {
-    pub(super) map: HashMap<N, BTreeSet<PointOffsetType>>,
-    pub(super) point_to_values: Vec<Vec<N>>,
+pub struct MutableMapIndex<N: MapIndexKey + ?Sized> {
+    pub(super) map: HashMap<N::Owned, BTreeSet<PointOffsetType>>,
+    pub(super) point_to_values: Vec<Vec<N::Owned>>,
     /// Amount of point which have at least one indexed payload value
     pub(super) indexed_points: usize,
     pub(super) values_count: usize,
     pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
+impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> Self {
         let store_cf_name = MapIndex::<N>::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
@@ -45,7 +43,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         values: Vec<Q>,
     ) -> OperationResult<()>
     where
-        Q: Into<N>,
+        Q: Into<N::Owned>,
     {
         if values.is_empty() {
             return Ok(());
@@ -60,7 +58,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         for value in values {
             let entry = self.map.entry(value.into());
             self.point_to_values[idx as usize].push(entry.key().clone());
-            let db_record = MapIndex::encode_db_record(entry.key(), idx);
+            let db_record = MapIndex::encode_db_record(entry.key().borrow(), idx);
             entry.or_default().insert(idx);
             self.db_wrapper.put(db_record, [])?;
         }
@@ -81,10 +79,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         self.values_count -= removed_values.len();
 
         for value in &removed_values {
-            if let Some(vals) = self.map.get_mut(value) {
+            if let Some(vals) = self.map.get_mut(value.borrow()) {
                 vals.remove(&idx);
             }
-            let key = MapIndex::encode_db_record(value, idx);
+            let key = MapIndex::encode_db_record(value.borrow(), idx);
             self.db_wrapper.remove(key)?;
         }
 
@@ -104,7 +102,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
             let record = std::str::from_utf8(&record).map_err(|_| {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
-            let (value, idx) = MapIndex::decode_db_record(record)?;
+            let (value, idx) = MapIndex::<N>::decode_db_record(record)?;
             if self.point_to_values.len() <= idx as usize {
                 self.point_to_values.resize_with(idx as usize + 1, Vec::new)
             }
@@ -123,13 +121,18 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
         self.point_to_values
             .get(idx as usize)
-            .map(|values| values.iter().any(check_fn))
+            .map(|values| values.iter().any(|v| check_fn(v.borrow())))
             .unwrap_or(false)
     }
 
     #[cfg(test)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
-        Some(self.point_to_values.get(idx as usize)?.iter())
+        Some(
+            self.point_to_values
+                .get(idx as usize)?
+                .iter()
+                .map(|v| v.borrow()),
+        )
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
@@ -148,21 +151,11 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
         self.map.len()
     }
 
-    pub fn get_points_with_value_count<Q>(&self, value: &Q) -> Option<usize>
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    pub fn get_points_with_value_count(&self, value: &N) -> Option<usize> {
         self.map.get(value).map(|p| p.len())
     }
 
-    pub fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.map
             .get(value)
             .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
@@ -170,6 +163,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MutableMapIndex<N> {
     }
 
     pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
-        Box::new(self.map.keys())
+        Box::new(self.map.keys().map(|v| v.borrow()))
     }
 }

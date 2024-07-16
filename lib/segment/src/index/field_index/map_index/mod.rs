@@ -1,18 +1,20 @@
-use std::fmt::Display;
+use std::borrow::Borrow;
+use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
-use immutable_map_index::ImmutableMapIndex;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use mutable_map_index::MutableMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 use smol_str::SmolStr;
 
+use self::immutable_map_index::ImmutableMapIndex;
+use self::mutable_map_index::MutableMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
@@ -30,12 +32,34 @@ use crate::types::{
 pub mod immutable_map_index;
 pub mod mutable_map_index;
 
-pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
+pub trait MapIndexKey: Key + Eq + Display + Debug {
+    type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
+
+    fn to_owned(&self) -> Self::Owned;
+}
+
+impl MapIndexKey for str {
+    type Owned = SmolStr;
+
+    fn to_owned(&self) -> Self::Owned {
+        SmolStr::from(self)
+    }
+}
+
+impl MapIndexKey for IntPayloadType {
+    type Owned = IntPayloadType;
+
+    fn to_owned(&self) -> Self::Owned {
+        *self
+    }
+}
+
+pub enum MapIndex<N: MapIndexKey + ?Sized> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
 }
 
-impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
+impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
@@ -58,41 +82,18 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    pub fn check_values_any<NRef>(
-        &self,
-        idx: PointOffsetType,
-        check_fn: impl Fn(&NRef) -> bool,
-    ) -> bool
-    where
-        N: std::borrow::Borrow<NRef>,
-        NRef: ?Sized,
-    {
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
         match self {
-            MapIndex::Mutable(index) => {
-                index.check_values_any(idx, |value| check_fn(value.borrow()))
-            }
-            MapIndex::Immutable(index) => {
-                index.check_values_any(idx, |value| check_fn(value.borrow()))
-            }
+            MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
         }
     }
 
     #[cfg(test)]
-    pub fn get_values<NRef>(
-        &self,
-        idx: PointOffsetType,
-    ) -> Option<Box<dyn Iterator<Item = &NRef> + '_>>
-    where
-        N: std::borrow::Borrow<NRef>,
-        NRef: ?Sized,
-    {
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = &N> + '_>> {
         match self {
-            MapIndex::Mutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(std::borrow::Borrow::borrow),
-            )),
-            MapIndex::Immutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(std::borrow::Borrow::borrow),
-            )),
+            MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
         }
     }
 
@@ -124,24 +125,14 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn get_points_with_value_count<Q>(&self, value: &Q) -> Option<usize>
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    fn get_points_with_value_count(&self, value: &N) -> Option<usize> {
         match self {
             MapIndex::Mutable(index) => index.get_points_with_value_count(value),
             MapIndex::Immutable(index) => index.get_points_with_value_count(value),
         }
     }
 
-    fn get_iterator<Q>(&self, value: &Q) -> Box<dyn Iterator<Item = PointOffsetType> + '_>
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value),
             MapIndex::Immutable(index) => index.get_iterator(value),
@@ -167,12 +158,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         self.get_db_wrapper().flusher()
     }
 
-    fn match_cardinality<Q>(&self, value: &Q) -> CardinalityEstimation
-    where
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
         let values_count = self.get_points_with_value_count(value).unwrap_or(0);
 
         CardinalityEstimation::exact(values_count)
@@ -191,7 +177,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         format!("{value}/{idx}")
     }
 
-    pub fn decode_db_record(s: &str) -> OperationResult<(N, PointOffsetType)> {
+    pub fn decode_db_record(s: &str) -> OperationResult<(N::Owned, PointOffsetType)> {
         const DECODE_ERR: &str = "Index db parsing error: wrong data format";
         let separator_pos = s
             .rfind('/')
@@ -201,7 +187,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
         let value_str = &s[..separator_pos];
         let value =
-            N::from_str(value_str).map_err(|_| OperationError::service_error(DECODE_ERR))?;
+            N::Owned::from_str(value_str).map_err(|_| OperationError::service_error(DECODE_ERR))?;
         let idx_str = &s[separator_pos + 1..];
         let idx = PointOffsetType::from_str(idx_str)
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
@@ -221,13 +207,10 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality<Q, I>(&self, excluded: impl Iterator<Item = I>) -> CardinalityEstimation
-    where
-        I: std::borrow::Borrow<Q>,
-        Q: ?Sized,
-        N: std::borrow::Borrow<Q>,
-        Q: Hash + Eq,
-    {
+    fn except_cardinality<'a>(
+        &'a self,
+        excluded: impl Iterator<Item = &'a N>,
+    ) -> CardinalityEstimation {
         // Minimal case: we exclude as many points as possible.
         // In this case, excluded points do not have any other values except excluded ones.
         // So the first step - we estimate how many other points is needed to fit unused values.
@@ -324,15 +307,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_set<'a, A, K, S>(
+    fn except_set<'a, K, A>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
         A: BuildHasher,
-        K: std::borrow::Borrow<S> + Hash + Eq,
-        N: std::borrow::Borrow<S>,
-        S: ?Sized + Hash + Eq,
+        K: Borrow<N> + Hash + Eq,
     {
         Box::new(
             self.get_values_iterator()
@@ -343,7 +324,7 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
     }
 }
 
-impl PayloadFieldIndex for MapIndex<SmolStr> {
+impl PayloadFieldIndex for MapIndex<str> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
     }
@@ -387,7 +368,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_set::<_, _, str>(keywords)),
+            })) => Ok(self.except_set(keywords)),
             _ => Err(OperationError::service_error("failed to filter")),
         }
     }
@@ -433,7 +414,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_cardinality::<str, &str>(keywords.iter().map(|k| k.as_str()))),
+            })) => Ok(self.except_cardinality(keywords.iter().map(|k| k.as_str()))),
             _ => Err(OperationError::service_error(
                 "failed to estimate cardinality",
             )),
@@ -450,7 +431,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
                 .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
                 .filter(move |(_value, count)| *count > threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
+                    condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
                 }),
         )
@@ -547,10 +528,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => {
-                Ok(self
-                    .except_cardinality::<IntPayloadType, IntPayloadType>(integers.iter().cloned()))
-            }
+            })) => Ok(self.except_cardinality(integers.iter())),
             _ => Err(OperationError::service_error(
                 "failed to estimate cardinality",
             )),
@@ -567,14 +545,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
                 .filter(move |(_value, count)| *count >= threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
+                    condition: FieldCondition::new_match(key.clone(), (*value).into()),
                     cardinality: count,
                 }),
         )
     }
 }
 
-impl ValueIndexer<String> for MapIndex<SmolStr> {
+impl ValueIndexer<String> for MapIndex<str> {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
@@ -631,7 +609,6 @@ impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::fmt::Debug;
     use std::iter::FromIterator;
     use std::path::Path;
 
@@ -642,10 +619,7 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
-        data: &[Vec<N>],
-        path: &Path,
-    ) {
+    fn save_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path) {
         let mut index =
             MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.recreate().unwrap();
@@ -660,21 +634,14 @@ mod tests {
         index.flusher()().unwrap();
     }
 
-    fn load_map_index<N: Hash + Eq + Clone + Display + FromStr + Debug + Default>(
-        data: &[Vec<N>],
-        path: &Path,
-    ) -> MapIndex<N> {
+    fn load_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path) -> MapIndex<N> {
         let mut index =
             MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
-            let index_values: HashSet<N> = HashSet::from_iter(
-                index
-                    .get_values::<N>(idx as PointOffsetType)
-                    .unwrap()
-                    .cloned(),
-            );
-            let check_values: HashSet<N> = HashSet::from_iter(values.iter().cloned());
+            let index_values: HashSet<&N> =
+                HashSet::from_iter(index.get_values(idx as PointOffsetType).unwrap());
+            let check_values: HashSet<&N> = HashSet::from_iter(values.iter().map(|v| v.borrow()));
             assert_eq!(index_values, check_values);
         }
 
@@ -692,12 +659,12 @@ mod tests {
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, temp_dir.path());
-        let index = load_map_index(&data, temp_dir.path());
+        save_map_index::<IntPayloadType>(&data, temp_dir.path());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path());
 
         // Ensure cardinality is non zero
         assert!(!index
-            .except_cardinality::<_, &_>(vec![].into_iter())
+            .except_cardinality(vec![].into_iter())
             .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 
@@ -705,49 +672,49 @@ mod tests {
     fn test_string_disk_map_index() {
         let data = vec![
             vec![
-                String::from("AABB"),
-                String::from("UUFF"),
-                String::from("IIBB"),
+                SmolStr::from("AABB"),
+                SmolStr::from("UUFF"),
+                SmolStr::from("IIBB"),
             ],
             vec![
-                String::from("PPMM"),
-                String::from("QQXX"),
-                String::from("YYBB"),
+                SmolStr::from("PPMM"),
+                SmolStr::from("QQXX"),
+                SmolStr::from("YYBB"),
             ],
             vec![
-                String::from("FFMM"),
-                String::from("IICC"),
-                String::from("IIBB"),
+                SmolStr::from("FFMM"),
+                SmolStr::from("IICC"),
+                SmolStr::from("IIBB"),
             ],
             vec![
-                String::from("AABB"),
-                String::from("UUFF"),
-                String::from("IIBB"),
+                SmolStr::from("AABB"),
+                SmolStr::from("UUFF"),
+                SmolStr::from("IIBB"),
             ],
-            vec![String::from("PPGG")],
+            vec![SmolStr::from("PPGG")],
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, temp_dir.path());
-        let index = load_map_index(&data, temp_dir.path());
+        save_map_index::<str>(&data, temp_dir.path());
+        let index = load_map_index::<str>(&data, temp_dir.path());
 
         // Ensure cardinality is non zero
         assert!(!index
-            .except_cardinality::<str, &str>(vec![].into_iter())
+            .except_cardinality(vec![].into_iter())
             .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 
     #[test]
     fn test_empty_index() {
-        let data: Vec<Vec<String>> = vec![];
+        let data: Vec<Vec<SmolStr>> = vec![];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index(&data, temp_dir.path());
-        let index = load_map_index(&data, temp_dir.path());
+        save_map_index::<str>(&data, temp_dir.path());
+        let index = load_map_index::<str>(&data, temp_dir.path());
 
         // Ensure cardinality is zero
         assert!(index
-            .except_cardinality::<str, &str>(vec![].into_iter())
+            .except_cardinality(vec![].into_iter())
             .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 }

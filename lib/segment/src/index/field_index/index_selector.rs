@@ -4,9 +4,9 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::binary_index::BinaryIndex;
+use super::map_index::MapIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::json_path::JsonPath;
