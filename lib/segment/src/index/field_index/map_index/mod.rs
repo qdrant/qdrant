@@ -143,7 +143,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N::Owned> + '_> {
+    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         match self {
             MapIndex::Mutable(index) => index.get_values_iterator(),
             MapIndex::Immutable(index) => index.get_values_iterator(),
@@ -211,10 +211,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     /// # Returns
     ///
     /// * `CardinalityEstimation` - estimation of cardinality
-    fn except_cardinality<'a>(&self, excluded: impl Iterator<Item = &'a N>) -> CardinalityEstimation
-    where
-        N: 'a,
-    {
+    fn except_cardinality<'a>(
+        &'a self,
+        excluded: impl Iterator<Item = &'a N>,
+    ) -> CardinalityEstimation {
         // Minimal case: we exclude as many points as possible.
         // In this case, excluded points do not have any other values except excluded ones.
         // So the first step - we estimate how many other points is needed to fit unused values.
@@ -435,7 +435,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
                 .filter(move |(_value, count)| *count > threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), value.to_owned().into()),
+                    condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
                     cardinality: count,
                 }),
         )

@@ -232,7 +232,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         }
     }
 
-    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N::Owned> + '_> {
-        Box::new(self.value_to_points.keys())
+    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+        Box::new(self.value_to_points.keys().map(|v| v.borrow()))
     }
 }

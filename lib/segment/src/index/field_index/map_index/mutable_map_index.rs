@@ -162,7 +162,7 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
     }
 
-    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N::Owned> + '_> {
-        Box::new(self.map.keys())
+    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+        Box::new(self.map.keys().map(|v| v.borrow()))
     }
 }
