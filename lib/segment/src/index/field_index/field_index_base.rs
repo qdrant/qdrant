@@ -2,7 +2,6 @@ use std::fmt::Formatter;
 
 use common::types::PointOffsetType;
 use serde_json::Value;
-use smol_str::SmolStr;
 
 use super::map_index::MapIndex;
 use super::numeric_index::StreamRange;
@@ -100,7 +99,7 @@ pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
     DatetimeIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),
-    KeywordIndex(MapIndex<SmolStr>),
+    KeywordIndex(MapIndex<str>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
