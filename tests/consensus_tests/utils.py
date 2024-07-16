@@ -401,10 +401,12 @@ def check_collection_resharding_operations_count(peer_api_uri: str, collection_n
     return local_resharding_count == expected_resharding_operations_count
 
 
-def check_collection_resharding_operation_state(peer_api_uri: str, collection_name: str, expected_state: str, headers={}) -> bool:
+def check_collection_resharding_operation_stage(peer_api_uri: str, collection_name: str, expected_stage: str, headers={}) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-    for resharding in collection_cluster_info["resharding_operations"] or []:
-        if "comment" in resharding and resharding["comment"].startswith(expected_state):
+    if "resharding_operations" not in collection_cluster_info:
+        return False
+    for resharding in collection_cluster_info["resharding_operations"]:
+        if "comment" in resharding and resharding["comment"].startswith(expected_stage):
             return True
     return False
 
@@ -571,9 +573,9 @@ def wait_for_collection_resharding_operations_count(peer_api_uri: str, collectio
         raise e
 
 
-def wait_for_collection_resharding_operation_state(peer_api_uri: str, collection_name: str, expected_state: str, headers={}):
+def wait_for_collection_resharding_operation_stage(peer_api_uri: str, collection_name: str, expected_stage: str, headers={}):
     try:
-        wait_for(check_collection_resharding_operation_state, peer_api_uri, collection_name, expected_state, headers=headers)
+        wait_for(check_collection_resharding_operation_stage, peer_api_uri, collection_name, expected_stage, headers=headers)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e

@@ -626,15 +626,19 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
             assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
 
 
-# Test resharding resumption of migrating points.
+# Test resharding resumption on restart at various stages.
 #
-# On a static collection, this performs resharding. Once migrating points start,
-# the driving peer is killed and restarted. On restart, it should finish
-# resharding as if nothing happened.
-def test_resharding_resume_migration(tmp_path: pathlib.Path):
+# On a static collection, this performs resharding. It kills and restarts the
+# driving peer at various stages. On restart, it should finish resharding as if
+# nothing happened.
+def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
     assert_project_root()
 
-    num_points = 10000
+    num_points = 2500
+
+    # Stages at which we interrupt and restart resharding
+    # We'd like to interrupt at other stages too, but they are too quick for this test to catch them
+    interrupt_stages = ["migrate points", "replicate"]
 
     # Prevent optimizers messing with point counts
     env={
@@ -642,6 +646,7 @@ def test_resharding_resume_migration(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
+    first_peer_process = processes.pop(0)
     first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
@@ -669,15 +674,18 @@ def test_resharding_resume_migration(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for resharding operation to start and migrate points
-    wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
-    wait_for_collection_resharding_operation_state(peer_api_uris[0], COLLECTION_NAME, "migrate points")
+    # Interrupt the resharding node once at each stage
+    for stage in interrupt_stages:
+        # Wait for resharding operation to start and migrate points
+        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+        wait_for_collection_resharding_operation_stage(peer_api_uris[0], COLLECTION_NAME, stage)
 
-    # Kill and restart first peer
-    processes.pop(0).kill()
-    sleep(1)
-    peer_api_uris[0] = start_peer(peer_dirs[0], "peer_0_restarted.log", bootstrap_uri, extra_env=env)
-    wait_for_peer_online(peer_api_uris[0], "/")
+        # Kill and restart first peer
+        first_peer_process.kill()
+        sleep(1)
+        peer_api_uris[0] = start_peer(peer_dirs[0], "peer_0_restarted.log", bootstrap_uri, extra_env=env)
+        first_peer_process = processes.pop()
+        wait_for_peer_online(peer_api_uris[0], "/")
 
     # Wait for resharding operation to start and stop
     wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
@@ -687,7 +695,7 @@ def test_resharding_resume_migration(tmp_path: pathlib.Path):
     # Assert node shard and point sum count
     for uri in peer_api_uris:
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 2)
-        assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
+        assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
     sleep(1)
 
