@@ -389,9 +389,10 @@ impl Collection {
             .map(|(shard, _shard_key)| {
                 // Take resharding request if available on existing shards, otherwise take normal request
                 let request = reshard_request
-                    .clone()
+                    .as_ref()
                     .filter(|_| Some(shard.shard_id) != reshard_shard_id)
-                    .unwrap_or_else(|| normal_request.clone());
+                    .unwrap_or(&normal_request)
+                    .clone();
 
                 shard.count(request, read_consistency, shard_selection.is_shard_id())
             })
