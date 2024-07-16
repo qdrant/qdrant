@@ -21,4 +21,4 @@ jobs:
       - name: Codespell
         uses: codespell-project/actions-codespell@v2
         with:
-          exclude_file: CODE_OF_CONDUCT.md
+          exclude_file: docs/CODE_OF_CONDUCT.md
