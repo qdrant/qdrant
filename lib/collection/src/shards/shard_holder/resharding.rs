@@ -279,7 +279,7 @@ impl ShardHolder {
     }
 
     #[inline]
-    fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
+    pub fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {

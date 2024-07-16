@@ -423,7 +423,21 @@ impl Collection {
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
+
+            // Resharding filter to apply when resharding is active
+            let resharding_filter = Arc::new(shard_holder.resharding_filter_impl());
+            let reshard_shard_id = shard_holder
+                .resharding_state
+                .read()
+                .as_ref()
+                .map(|state| state.shard_id);
+
             let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+                // Whether to apply the resharding filter on this shard
+                let do_filter =
+                    reshard_shard_id.map_or(false, |shard_id| shard.shard_id != shard_id);
+                let resharding_filter = Arc::clone(&resharding_filter);
+
                 let shard_key = shard_key.cloned();
                 shard
                     .retrieve(
@@ -437,6 +451,14 @@ impl Collection {
                         if shard_key.is_none() {
                             return Ok(records);
                         }
+
+                        // If resharding, exclude migrated points from old shards
+                        if let Some(filter) = resharding_filter.as_ref() {
+                            if do_filter {
+                                records.retain(|record| !filter.check(record.id));
+                            }
+                        }
+
                         for point in &mut records {
                             point.shard_key.clone_from(&shard_key);
                         }
