@@ -62,6 +62,11 @@ impl ReshardState {
     }
 }
 
+/// Reshard stages
+///
+/// # Warning
+///
+/// This enum is ordered!
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReshardStage {

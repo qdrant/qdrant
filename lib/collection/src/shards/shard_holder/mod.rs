@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, RwLock};
 
 use super::replica_set::AbortShardTransfer;
 use super::resharding::tasks_pool::ReshardTasksPool;
-use super::resharding::ReshardState;
+use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
@@ -452,15 +452,14 @@ impl ShardHolder {
             }
             ShardSelectorInternal::All => {
                 for (&shard_id, shard) in self.shards.iter() {
-                    // TODO(resharding): Handle resharded shard!?
-
-                    let is_resharding = self
-                        .resharding_state
-                        .read()
-                        .clone()
-                        .map_or(false, |state| state.shard_id == shard_id);
-
-                    if is_resharding {
+                    // Ignore a new resharding shard until it completed point migration
+                    // The shard will be marked as active at the end of the migration stage
+                    let resharding_migrating =
+                        self.resharding_state.read().clone().map_or(false, |state| {
+                            state.shard_id == shard_id
+                                && state.stage < ReshardStage::ReadHashRingCommitted
+                        });
+                    if resharding_migrating {
                         continue;
                     }
 

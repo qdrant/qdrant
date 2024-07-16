@@ -469,6 +469,14 @@ def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> st
     return get_leader(peer_api_uri, headers=headers)
 
 
+def wait_collection_green(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_collection_green, peer_api_uri, collection_name)
+    except Exception as e:
+        print_clusters_info([peer_api_uri])
+        raise e
+
+
 def wait_for_some_replicas_not_active(peer_api_uri: str, collection_name: str):
     try:
         wait_for(check_some_replicas_not_active, peer_api_uri, collection_name)
@@ -588,6 +596,11 @@ def wait_for_peer_online(peer_api_uri: str, path="/readyz"):
     except Exception as e:
         print_clusters_info([peer_api_uri])
         raise e
+
+
+def check_collection_green(peer_api_uri: str, collection_name: str, expected_status: str = "green") -> bool:
+    collection_cluster_info = get_collection_info(peer_api_uri, collection_name)
+    return collection_cluster_info['status'] == expected_status
 
 
 def check_collection_points_count(peer_api_uri: str, collection_name: str, expected_size: int) -> bool:
