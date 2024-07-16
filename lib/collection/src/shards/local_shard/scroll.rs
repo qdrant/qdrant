@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
+use rand::distributions::WeightedIndex;
 use rand::Rng;
 use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
 use segment::types::{
@@ -280,51 +281,57 @@ impl LocalShard {
 
         let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
 
-        let total_available: usize = availability.iter().sum();
-        let segment_weights = availability
-            .into_iter()
-            .map(|available| available as f64 / total_available as f64)
-            .collect_vec();
+        if availability.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let distribution = WeightedIndex::new(availability).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to create weighted index for random scroll: {:?}",
+                err
+            ))
+        })?;
 
         // Get `limit` points in a weighted fashion from each segment, depending on how many points each segment has.
         let mut rng = rand::thread_rng();
-        let mut random_points = Vec::with_capacity(limit);
-        let mut exhausted_reads = HashSet::new();
-        for segment_id in (0..segments_reads.len()).cycle() {
-            if exhausted_reads.contains(&segment_id) {
-                continue;
-            }
+        let mut random_points = HashSet::with_capacity(limit);
 
-            // Determine weight for this segment
-            let weight = segment_weights.get(segment_id).unwrap_or(&0.5);
-
-            if !rng.gen_bool(*weight) {
-                continue;
-            }
-
-            let Some(point) = segments_reads
-                .get_mut(segment_id)
-                .and_then(|points| points.pop())
-            else {
-                // reads have been exhausted, don't use this segment anymore
-                exhausted_reads.insert(segment_id);
-                if exhausted_reads.len() == segments_reads.len() {
-                    // no points left in any read
-                    break;
-                }
-                continue;
-            };
-
-            // Add point to result
-            random_points.push(point);
-            if random_points.len() == limit {
+        // This loop iterates <= LIMIT times, and either quits if we have enough points,
+        // or if some of the segments are exhausted.
+        //
+        // If the segments are exhausted, we will fill up the rest of the points from other segments.
+        // In total, the complexity is guaranteed to be O(limit).
+        while random_points.len() < limit {
+            let segment_offset = rng.sample(&distribution);
+            let points = segments_reads.get_mut(segment_offset).unwrap();
+            if let Some(point) = points.pop() {
+                random_points.insert(point);
+            } else {
+                // It seems that some segments are empty early,
+                // so distribution does not make sense anymore.
+                // This is only possible if segments size < limit.
                 break;
             }
         }
 
+        // If we still need more points, we will get them from the rest of the segments.
+        // This is a rare case, as it seems we don't have enough points in individual segments.
+        // Therefore, we can ignore "proper" distribution, as it won't be accurate anyway.
+        if random_points.len() < limit {
+            let rest_points = segments_reads.into_iter().flatten();
+            for point in rest_points {
+                random_points.insert(point);
+                if random_points.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        let selected_points: Vec<_> = random_points.into_iter().collect();
+
         let with_payload = WithPayload::from(with_payload_interface);
         let records_map =
-            SegmentsSearcher::retrieve(segments, &random_points, &with_payload, with_vector)?;
+            SegmentsSearcher::retrieve(segments, &selected_points, &with_payload, with_vector)?;
 
         Ok(records_map.into_values().collect())
     }
