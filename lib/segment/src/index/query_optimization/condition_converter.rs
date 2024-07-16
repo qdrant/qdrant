@@ -259,7 +259,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         }) => match (value_variant, index) {
             (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index.check_values_any::<str>(point_id, |k| k == keyword)
+                    index.check_values_any(point_id, |k| k == keyword)
                 }))
             }
             (ValueVariants::Integer(value), FieldIndex::IntMapIndex(index)) => {
@@ -291,13 +291,13 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
-                        index.check_values_any::<str>(point_id, |value| {
+                        index.check_values_any(point_id, |value| {
                             list.iter().any(|s| s.as_str() == value)
                         })
                     }))
                 } else {
                     Some(Box::new(move |point_id: PointOffsetType| {
-                        index.check_values_any::<str>(point_id, |value| list.contains(value))
+                        index.check_values_any(point_id, |value| list.contains(value))
                     }))
                 }
             }
@@ -318,13 +318,13 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
-                        index.check_values_any::<str>(point_id, |value| {
+                        index.check_values_any(point_id, |value| {
                             !list.iter().any(|s| s.as_str() == value)
                         })
                     }))
                 } else {
                     Some(Box::new(move |point_id: PointOffsetType| {
-                        index.check_values_any::<str>(point_id, |value| !list.contains(value))
+                        index.check_values_any(point_id, |value| !list.contains(value))
                     }))
                 }
             }
