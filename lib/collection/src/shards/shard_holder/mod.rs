@@ -457,7 +457,7 @@ impl ShardHolder {
                     let resharding_migrating =
                         self.resharding_state.read().clone().map_or(false, |state| {
                             state.shard_id == shard_id
-                                && state.stage <= ReshardStage::MigratingPoints
+                                && state.stage < ReshardStage::ReadHashRingCommitted
                         });
                     if resharding_migrating {
                         continue;
