@@ -270,12 +270,15 @@ impl ShardHolder {
     }
 
     /// A filter that excludes points migrated to a different shard, as part of resharding.
+    ///
+    /// `None` if resharding is not active or if the read hash ring is not committed yet.
     pub fn resharding_filter(&self) -> Option<Filter> {
         let filter = self.resharding_filter_impl()?;
         let filter = Filter::new_must_not(Condition::Resharding(Arc::new(filter)));
         Some(filter)
     }
 
+    #[inline]
     pub fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
         let state = self.resharding_state.read();
 
