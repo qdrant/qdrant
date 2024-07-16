@@ -422,7 +422,7 @@ mod tests {
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values.get_values(idx as PointOffsetType);
             let v: Vec<GeoPoint> = iter
-                .map(|iter| iter.map(|s: GeoPoint| s.clone()).collect_vec())
+                .map(|iter| iter.collect_vec())
                 .unwrap_or_default();
             assert_eq!(&v, values);
         }
