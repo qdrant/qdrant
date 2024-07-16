@@ -123,6 +123,7 @@ tikv-jemallocator = "0.6"
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
+data-encoding = { version = "2.6.0" }
 fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"

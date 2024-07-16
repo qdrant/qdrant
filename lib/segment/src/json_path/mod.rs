@@ -1,10 +1,13 @@
 use std::fmt::{Display, Formatter};
 
+use data_encoding::BASE32_DNSSEC;
+use itertools::Itertools as _;
 use schemars::gen::SchemaGenerator;
 use schemars::schema::Schema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 
 use crate::common::anonymize::Anonymize;
 use crate::common::utils::{merge_map, MultiValue};
@@ -274,6 +277,36 @@ impl JsonPath {
                 }
             }
         }
+    }
+
+    /// Convert the path into a string suitable for use as a filename by adhering to the following
+    /// restrictions: max length, limited character set, but still being unique.
+    pub fn filename(&self) -> String {
+        const MAX_LENGTH: usize = 64;
+        const HASH_LENGTH: usize = 32; // In base32 characters, i.e. 5 bits per character.
+
+        let text = self.to_string();
+        let mut result = String::with_capacity(MAX_LENGTH);
+
+        BASE32_DNSSEC.encode_append(
+            &Sha256::digest(text.as_bytes()).as_slice()[0..(HASH_LENGTH * 5).div_ceil(8)],
+            &mut result,
+        );
+        debug_assert_eq!(result.len(), HASH_LENGTH);
+
+        result.push('-');
+
+        text.chars()
+            .map(|c| match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c.to_ascii_lowercase(),
+                _ => '_',
+            })
+            .dedup_by(|&a, &b| a == '_' && b == '_')
+            .take(MAX_LENGTH - result.len())
+            .for_each(|c| result.push(c));
+
+        debug_assert!(result.len() <= MAX_LENGTH);
+        result
     }
 }
 
@@ -1309,5 +1342,25 @@ mod tests {
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]
         ); // empty object left
         assert_eq!(payload, Default::default());
+    }
+
+    #[test]
+    fn test_filename() {
+        assert_eq!(
+            JsonPath::new("foo").filename(),
+            "5gjb8qr8vv38vucr8ku1qc216g9k4bbg-foo",
+        );
+        assert_eq!(
+            JsonPath::new("foo.\"bar baz\".qoox[0][]").filename(),
+            "jkdf7941qdcjau3f7mgqrb4ka2pua7p0-foo_bar_baz_qoox_0_",
+        );
+        assert_eq!(
+            JsonPath::new("really.loooooooooooooooooooooooooooooooooooooooooooong.path").filename(),
+            "sh47i3hjfgn44gch5jvm3bumltqfc531-really_looooooooooooooooooooooo",
+        );
+        assert_eq!(
+            JsonPath::new("Müesli").filename(),
+            "4huj4rn1fflrtriqo0tieqhhu6hp5lci-m_esli",
+        );
     }
 }
