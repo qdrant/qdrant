@@ -422,21 +422,22 @@ pub trait SegmentOptimizer {
             })
             .collect();
 
-        // TODO: use a different approach to select the key to use for defragmentation
+        let mut defragmentation_keys = HashSet::new();
         for segment in &segments {
-            let defragment_key = segment
-                .read()
-                .payload_index
-                .borrow()
-                .field_indexes
-                .iter()
-                .next()
-                .map(|(k, _)| k.clone());
+            let payload_index = &segment.read().payload_index;
+            let payload_index = payload_index.borrow();
 
-            if let Some(defragment_key) = defragment_key {
-                segment_builder.set_defragment_key(defragment_key);
-                break;
-            }
+            let keys = payload_index
+                .config()
+                .indexed_fields
+                .iter()
+                .filter_map(|(key, schema)| schema.is_primary().then_some(key))
+                .cloned();
+            defragmentation_keys.extend(keys);
+        }
+
+        if !defragmentation_keys.is_empty() {
+            segment_builder.set_defragment_keys(defragmentation_keys.into_iter().collect());
         }
 
         segment_builder.update(&segments, stopped)?;

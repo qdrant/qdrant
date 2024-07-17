@@ -1175,6 +1175,14 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Datetime(_) => PayloadSchemaType::Datetime,
         }
     }
+
+    pub fn is_primary(&self) -> bool {
+        match self {
+            PayloadSchemaParams::Keyword(keyword) => keyword.is_primary.unwrap_or_default(),
+            PayloadSchemaParams::Integer(integer) => integer.is_primary.unwrap_or_default(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
@@ -1197,6 +1205,13 @@ impl PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(field_type) => field_type.name(),
             PayloadFieldSchema::FieldParams(field_params) => field_params.name(),
+        }
+    }
+
+    pub fn is_primary(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(_) => false,
+            PayloadFieldSchema::FieldParams(params) => params.is_primary(),
         }
     }
 }

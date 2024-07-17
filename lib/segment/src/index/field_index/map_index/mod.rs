@@ -89,7 +89,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    #[cfg(test)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = &N> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),

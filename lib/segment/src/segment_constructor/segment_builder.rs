@@ -51,7 +51,7 @@ pub struct SegmentBuilder {
     indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 
     // Payload key to deframent data to
-    defragment_key: Option<PayloadKeyType>,
+    defragment_keys: Vec<PayloadKeyType>,
 }
 
 impl SegmentBuilder {
@@ -110,12 +110,12 @@ impl SegmentBuilder {
             destination_path,
             temp_path,
             indexed_fields: Default::default(),
-            defragment_key: None,
+            defragment_keys: vec![],
         })
     }
 
-    pub fn set_defragment_key(&mut self, key: PayloadKeyType) {
-        self.defragment_key = Some(key);
+    pub fn set_defragment_keys(&mut self, keys: Vec<PayloadKeyType>) {
+        self.defragment_keys = keys;
     }
 
     pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
@@ -138,16 +138,16 @@ impl SegmentBuilder {
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.iter().next() {
+                    if let Some(mut numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.next() {
                             return *number as u64;
                         }
                     }
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(keywords) = index.get_values(internal_id) {
-                        if let Some(keyword) = keywords.iter().next() {
+                    if let Some(mut keywords) = index.get_values(internal_id) {
+                        if let Some(keyword) = keywords.next() {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
                             return hasher.finish();
@@ -156,16 +156,16 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::IntIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.iter().next() {
-                            return *number as u64;
+                    if let Some(mut numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.next() {
+                            return number as u64;
                         }
                     }
                     break;
                 }
                 FieldIndex::FloatIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.iter().next() {
+                    if let Some(mut numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.next() {
                             // Bit-level conversion of f64 to u64 preserves ordering
                             // (for positive numbers)
                             //
@@ -182,9 +182,9 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::DatetimeIndex(index) => {
-                    if let Some(dates) = index.get_values(internal_id) {
-                        if let Some(date) = dates.iter().next() {
-                            return *date as u64;
+                    if let Some(mut dates) = index.get_values(internal_id) {
+                        if let Some(date) = dates.next() {
+                            return date as u64;
                         }
                     }
                     break;
@@ -250,7 +250,7 @@ impl SegmentBuilder {
 
         let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
 
-        if let Some(defragment_key) = &self.defragment_key {
+        if let Some(defragment_key) = self.defragment_keys.first() {
             for point_data in &mut points_to_insert {
                 let Some(payload_indices) = payloads[point_data.segment_index]
                     .field_indexes
@@ -389,7 +389,7 @@ impl SegmentBuilder {
                 destination_path,
                 temp_path,
                 indexed_fields,
-                defragment_key: _,
+                defragment_keys: _,
             } = self;
 
             let appendable_flag = segment_config.is_appendable();
