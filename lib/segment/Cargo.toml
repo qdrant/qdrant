@@ -33,6 +33,7 @@ pprof = { workspace = true }
 
 [dependencies]
 bitpacking = "0.9.2"
+data-encoding = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = "1.10.0"
@@ -73,6 +74,7 @@ fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { version = "0.8.11", features = ["serde"] }
 http = "1.0.0"
+sha2 = { workspace = true }
 smallvec = "1.13.2"
 is_sorted = "0.1.1"
 strum = { workspace = true }
