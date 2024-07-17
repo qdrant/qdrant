@@ -154,11 +154,9 @@ where
                         .map(move |(index, item)| (row, index, item))
                 })
                 .filter_map(|(row, index, item)| {
-                    if let Some(precedence) = resolved_items.get(&(row, index)) {
-                        Some((item, precedence))
-                    } else {
-                        None
-                    }
+                    resolved_items
+                        .get(&(row, index))
+                        .map(|precedence| (item, precedence))
                 })
                 .sorted_unstable_by_key(|(_, precedence)| *precedence)
                 .map(|(item, _)| item)
