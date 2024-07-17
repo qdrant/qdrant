@@ -57,6 +57,25 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         })
     }
 
+    /// Initialize data with `init`, even if data already exists.
+    pub fn init(path: impl Into<PathBuf>, init: impl FnOnce() -> T) -> Result<Self, Error> {
+        let path: PathBuf = path.into();
+        let exists = path.exists();
+        let data = Self {
+            change_notification: Condvar::new(),
+            notification_lock: Default::default(),
+            data: RwLock::new(init()),
+            path,
+        };
+
+        // Overwrite existing data if it exists
+        if exists {
+            data.save()?;
+        }
+
+        Ok(data)
+    }
+
     /// Wait for a condition on data to be true.
     ///
     /// Returns `true` if condition is true, `false` if timed out.
