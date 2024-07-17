@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash;
 
+use itertools::Itertools;
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
@@ -45,9 +46,7 @@ impl Resolve for CountResult {
 
 impl Resolve for Vec<Record> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
-        let mut resolved = Resolver::resolve(records, |record| record.id, record_eq, condition);
-        resolved.sort_unstable_by_key(|record| record.id);
-        resolved
+        Resolver::resolve(records, |record| record.id, record_eq, condition)
     }
 }
 
@@ -59,13 +58,7 @@ impl Resolve for Vec<Vec<ScoredPoint>> {
         let batches = transposed_iter(batches);
 
         batches
-            .map(|points| {
-                let mut resolved =
-                    Resolver::resolve(points, |point| point.id, scored_point_eq, condition);
-
-                resolved.sort_unstable();
-                resolved
-            })
+            .map(|points| Resolver::resolve(points, |point| point.id, scored_point_eq, condition))
             .collect()
     }
 }
@@ -133,20 +126,20 @@ where
         resolver.add_all(&items);
 
         // Select coordinates of accepted items, avoiding copying
-        let resolved_items: HashSet<_> = resolver
+        let resolved_items: HashMap<_, _> = resolver
             .items
             .into_iter()
             .filter_map(|(_, points)| {
                 points
                     .into_iter()
                     .find(|point| point.count >= resolution_count)
-                    .map(|point| (point.row, point.index))
+                    .map(|point| ((point.row, point.index), point.precedence))
             })
             .collect();
 
         // Shortcut if everything is consistent: return first items, avoiding filtering
         let is_consistent = resolved_items.len() == items.first().map_or(0, Vec::len)
-            && resolved_items.iter().all(|&(row, _)| row == 0);
+            && resolved_items.keys().all(|&(row, _)| row == 0);
 
         if is_consistent {
             items.into_iter().next().unwrap_or_default()
@@ -161,12 +154,14 @@ where
                         .map(move |(index, item)| (row, index, item))
                 })
                 .filter_map(|(row, index, item)| {
-                    if resolved_items.contains(&(row, index)) {
-                        Some(item)
+                    if let Some(precedence) = resolved_items.get(&(row, index)) {
+                        Some((item, precedence))
                     } else {
                         None
                     }
                 })
+                .sorted_unstable_by_key(|(_, precedence)| *precedence)
+                .map(|(item, _)| item)
                 .collect()
         }
     }
@@ -197,6 +192,7 @@ where
         for point in points.iter_mut() {
             if (self.compare)(item, point.item.unwrap()) {
                 point.count += 1;
+                point.precedence += index;
                 return;
             }
         }
@@ -208,9 +204,14 @@ where
 #[derive(Debug)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
+    /// Offset within all results
     row: usize,
+    /// Offset within a set of results
     index: usize,
+    /// Keeps track of the amount of times we see this same item
     count: usize,
+    /// Keeps track of the index of the same item in different results. The lower, the earlier.
+    precedence: usize,
 }
 
 impl<'a, T> Copy for ResolverRecord<'a, T> {}
@@ -228,6 +229,7 @@ impl<'a, T> Default for ResolverRecord<'a, T> {
             row: 0,
             index: 0,
             count: 0,
+            precedence: 0,
         }
     }
 }
@@ -239,6 +241,7 @@ impl<'a, T> ResolverRecord<'a, T> {
             row,
             index,
             count: 1,
+            precedence: index,
         }
     }
 }
