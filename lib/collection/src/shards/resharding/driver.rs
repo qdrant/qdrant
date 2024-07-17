@@ -207,7 +207,6 @@ pub async fn drive_resharding(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
     channel_service: ChannelService,
-    _temp_dir: &Path,
     can_resume: bool,
 ) -> CollectionResult<bool> {
     let to_shard_id = reshard_key.shard_id;
