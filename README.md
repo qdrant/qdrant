@@ -26,7 +26,7 @@ With Qdrant, embeddings or neural network encoders can be turned into full-fledg
 Qdrant is also available as a fully managed **[Qdrant Cloud](https://cloud.qdrant.io/)** ⛅ including a **free tier**.
 
 <p align="center">
-<strong><a href="./QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
+<strong><a href="docs/QUICK_START.md">Quick Start</a> • <a href="#clients">Client Libraries</a> • <a href="#demo-projects">Demo Projects</a> • <a href="#integrations">Integrations</a> • <a href="#contacts">Contact</a>
 
 </strong>
 </p>
@@ -83,7 +83,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 
 ### Where do I go from here?
 
-- [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
+- [Quick Start Guide](docs/QUICK_START.md)
 - End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
 - Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
 - [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
