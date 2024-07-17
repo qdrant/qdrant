@@ -77,14 +77,7 @@ impl ShardHolder {
             }
         }
 
-        let mut rings = HashMap::from([(None, HashRing::single())]);
-
-        if let Some(shard_id) = resharding_state.read().clone().map(|state| state.shard_id) {
-            rings.insert(
-                shard_id_to_key_mapping.get(&shard_id).cloned(),
-                HashRing::resharding(shard_id),
-            );
-        }
+        let rings = HashMap::from([(None, HashRing::single())]);
 
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
@@ -651,6 +644,13 @@ impl ShardHolder {
                 let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
                 self.add_shard(shard_id, replica_set, shard_key).unwrap();
             }
+        }
+
+        // After loading shards, recover the resharding hash ring state
+        if let Some(state) = self.resharding_state.read().clone() {
+            self.rings
+                .entry(state.shard_key)
+                .and_modify(|ring| ring.add_resharding(state.shard_id));
         }
     }
 

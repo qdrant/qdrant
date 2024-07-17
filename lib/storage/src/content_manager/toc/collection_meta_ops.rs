@@ -348,6 +348,90 @@ impl TableOfContent {
         Ok(())
     }
 
+    /// Resume all resharding tasks
+    ///
+    /// Starts driving all registered resharding tasks to continue the resharding process.
+    pub async fn resume_resharding_tasks(&self) {
+        let collections = self
+            .collections
+            .read()
+            .await
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for collection_id in collections {
+            if let Err(err) = self.resume_resharding_task(collection_id.clone()).await {
+                log::error!("Failed to resume resharding task for collection {collection_id}, ignoring: {err}");
+            }
+        }
+    }
+
+    /// Resume resharding task for a collection
+    ///
+    /// Starts driving the registered resharding task on the given collection. Returns early
+    /// without error if no resharding task is registered.
+    async fn resume_resharding_task(
+        &self,
+        collection_id: CollectionId,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection_unchecked(&collection_id).await?;
+        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
+        {
+            proposal_sender
+        } else {
+            return Err(StorageError::service_error(
+                "Can't handle resharding, this is a single node deployment",
+            ));
+        };
+
+        // Get current resharding state and key, or return early if there is none
+        let Some(resharding_state) = collection.resharding_state().await else {
+            return Ok(());
+        };
+        let key = resharding_state.key();
+
+        let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+            Some(consensus) => Box::new(consensus.clone()),
+            None => {
+                return Err(StorageError::service_error(
+                    "Can't handle transfer, this is a single node deployment",
+                ))
+            }
+        };
+
+        let on_finish = {
+            let collection_id = collection_id.clone();
+            let key = key.clone();
+            let proposal_sender = proposal_sender.clone();
+            async move {
+                let operation = ConsensusOperations::finish_resharding(collection_id, key);
+                if let Err(error) = proposal_sender.send(operation) {
+                    log::error!("Can't report resharding progress to consensus: {error}");
+                };
+            }
+        };
+
+        let on_failure = {
+            let collection_id = collection_id.clone();
+            let key = key.clone();
+            async move {
+                if let Err(error) =
+                    proposal_sender.send(ConsensusOperations::abort_resharding(collection_id, key))
+                {
+                    log::error!("Can't report resharding progress to consensus: {error}");
+                };
+            }
+        };
+
+        let temp_dir = self.optional_temp_or_storage_temp_path()?;
+        collection
+            .resume_resharding_unchecked(consensus, temp_dir, on_finish, on_failure)
+            .await?;
+
+        Ok(())
+    }
+
     async fn handle_transfer(
         &self,
         collection_id: CollectionId,
