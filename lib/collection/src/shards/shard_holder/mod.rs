@@ -526,16 +526,6 @@ impl ShardHolder {
             .unwrap_or_default()
         {
             ShardingMethod::Auto => {
-                let mut shard_number = shard_number;
-
-                // If resharding is active, we should load an extra shard
-                // TODO(resharding): prevent error if extra shard cannot be loaded?
-                // TODO(resharding): may be needed if resharding starts and crashes before migrate
-                let is_resharding = self.resharding_state.read().is_some();
-                if is_resharding {
-                    shard_number += 1;
-                }
-
                 let ids_list = (0..shard_number).collect::<Vec<_>>();
                 let shard_id_to_key_mapping = HashMap::new();
                 (ids_list, shard_id_to_key_mapping)

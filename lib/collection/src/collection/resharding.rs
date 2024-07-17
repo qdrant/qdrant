@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -49,6 +50,24 @@ impl Collection {
                 .await?;
 
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
+
+            // Increase the persisted shard count, loads new shard on restart
+            {
+                let mut config = self.collection_config.write().await;
+
+                #[cfg(debug_assertions)]
+                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
+                    assert_eq!(config.params.shard_number.get(), resharding_key.shard_id,);
+                }
+
+                config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() + 1)
+                    .expect("cannot have more than u32::MAX shards after resharding");
+                if let Err(err) = config.save(&self.path) {
+                    log::error!(
+                        "Failed to update and save collection config during resharding: {err}",
+                    );
+                }
+            }
         }
 
         // Drive resharding
@@ -162,29 +181,30 @@ impl Collection {
         let _ = self.stop_resharding_task(&resharding_key).await;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
-        // Update the stored shard count, ensures we load the new shard on restart
-        {
-            let mut config = self.collection_config.write().await;
-            config.params.shard_number = config.params.shard_number.saturating_add(1);
-
-            // If using automatic sharding, the reshard key shard ID must correspond with number
-            if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                debug_assert_eq!(
-                    config.params.shard_number.get() - 1,
-                    resharding_key.shard_id,
-                );
-            }
-
-            if let Err(err) = config.save(&self.path) {
-                log::error!("Failed to update and save collection config during resharding: {err}");
-            }
-        }
-
         Ok(())
     }
 
     pub async fn abort_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let _ = self.stop_resharding_task(&resharding_key).await;
+
+        // Decrease the persisted shard count, ensures we don't load dropped shard on restart
+        {
+            let mut config = self.collection_config.write().await;
+
+            #[cfg(debug_assertions)]
+            if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
+                assert_eq!(
+                    config.params.shard_number.get() - 1,
+                    resharding_key.shard_id
+                );
+            }
+
+            config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
+                .expect("cannot have zero shards after aborting resharding");
+            if let Err(err) = config.save(&self.path) {
+                log::error!("Failed to update and save collection config during resharding: {err}");
+            }
+        }
 
         self.shards_holder
             .write()
