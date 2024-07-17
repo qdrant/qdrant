@@ -486,24 +486,14 @@ impl Collection {
     }
 }
 
-#[inline]
-fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>) {
-    if let Some(resharding_filter) = resharding_filter {
-        *filter = Some(match filter.take() {
-            Some(filter) => filter.merge_owned(resharding_filter),
-            None => resharding_filter,
-        });
-    }
-}
-
 /// Merge a regular and resharding filter
 ///
-/// The first element is always the given `filter`.
+/// The first element is always the given `request`.
 ///
-/// The second element is the `filter` with `resharding_filter` merged into it. It's None if no
+/// The second element is the `request` with `resharding_filter` merged into it. It's None if no
 /// resharding filter was given.
 ///
-/// This function minimizes cloning of the filter to when it's strictly necessary.
+/// This function minimizes cloning of the request to when it's strictly necessary.
 #[inline]
 fn normal_and_resharding_count_request(
     mut request: CountRequestInternal,
@@ -512,7 +502,7 @@ fn normal_and_resharding_count_request(
     match resharding_filter {
         None => (Arc::new(request), None),
         Some(resharding_filter) => (Arc::new(request.clone()), {
-            merge_filters(&mut request.filter, Some(resharding_filter));
+            super::resharding::merge_filters(&mut request.filter, Some(resharding_filter));
             Some(Arc::new(request))
         }),
     }
