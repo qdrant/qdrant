@@ -1579,6 +1579,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "data-encoding"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
+
+[[package]]
 name = "dataset"
 version = "0.0.0"
 dependencies = [
@@ -5410,6 +5416,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "data-encoding",
  "dataset",
  "fnv",
  "fs_extra",
@@ -5455,6 +5462,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "serde_variant",
+ "sha2",
  "smallvec",
  "smol_str",
  "sparse",
