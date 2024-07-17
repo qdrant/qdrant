@@ -27,7 +27,9 @@ use crate::operations::types::{
 use crate::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
+use crate::operations::universal_query::shard_query::{
+    ScoringQuery, ShardPrefetch, ShardQueryRequest,
+};
 use crate::recommendations::recommend_into_core_search;
 
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
@@ -147,7 +149,7 @@ impl QueryGroupRequest {
         // Adjust limit to fetch enough points to fill groups
         request.limit = self.groups * self.group_size;
         request.prefetches.iter_mut().for_each(|prefetch| {
-            prefetch.limit *= self.groups;
+            increase_limit_for_group(prefetch, self.groups);
         });
 
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
@@ -513,6 +515,13 @@ fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
     }
 
     any_variants
+}
+
+fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, groups: usize) {
+    shard_prefetch.limit *= groups;
+    shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
+        increase_limit_for_group(prefetch, groups);
+    });
 }
 
 #[cfg(test)]
