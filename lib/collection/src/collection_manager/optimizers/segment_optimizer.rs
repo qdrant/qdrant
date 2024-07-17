@@ -422,7 +422,7 @@ pub trait SegmentOptimizer {
             })
             .collect();
 
-        let mut defragmentation_keys = vec![];
+        let mut defragmentation_keys = HashSet::new();
         for segment in &segments {
             let payload_index = &segment.read().payload_index;
             let payload_index = payload_index.borrow();
@@ -437,7 +437,7 @@ pub trait SegmentOptimizer {
         }
 
         if !defragmentation_keys.is_empty() {
-            segment_builder.set_defragment_keys(defragmentation_keys);
+            segment_builder.set_defragment_keys(defragmentation_keys.into_iter().collect());
         }
 
         segment_builder.update(&segments, stopped)?;
