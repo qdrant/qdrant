@@ -281,6 +281,7 @@ impl JsonPath {
 
     /// Convert the path into a string suitable for use as a filename by adhering to the following
     /// restrictions: max length, limited character set, but still being unique.
+    // TODO(1.11): Avoid creating long paths, see https://github.com/qdrant/qdrant/pull/4677.
     pub fn filename(&self) -> String {
         const MAX_LENGTH: usize = 64;
         const HASH_LENGTH: usize = 32; // In base32 characters, i.e. 5 bits per character.
