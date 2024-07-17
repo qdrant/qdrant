@@ -225,7 +225,7 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
     fn from(params: segment::data_types::index::KeywordIndexParams) -> Self {
         PayloadIndexParams {
             index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {
-                is_tenant: params.is_tenant,
+                is_primary: params.is_primary,
             })),
         }
     }
@@ -237,7 +237,7 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
             index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
                 lookup: params.lookup,
                 range: params.range,
-                is_tenant: params.is_tenant,
+                is_primary: params.is_primary,
             })),
         }
     }
@@ -361,7 +361,7 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
     fn try_from(params: KeywordIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
-            is_tenant: params.is_tenant,
+            is_primary: params.is_primary,
         })
     }
 }
@@ -373,7 +373,7 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             r#type: IntegerIndexType::Integer,
             lookup: params.lookup,
             range: params.range,
-            is_tenant: params.is_tenant,
+            is_primary: params.is_primary,
         })
     }
 }

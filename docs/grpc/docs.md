@@ -858,7 +858,7 @@
 | ----- | ---- | ----- | ----------- |
 | lookup | [bool](#bool) |  | If true - support direct lookups. |
 | range | [bool](#bool) |  | If true - support ranges filters. |
-| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. Currently only compatible with lookup. |
+| is_primary | [bool](#bool) | optional | If true - used for tenant optimization. Currently only compatible with lookup. |
 
 
 
@@ -873,7 +873,7 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| is_primary | [bool](#bool) | optional | If true - used for tenant optimization. |
 
 
 

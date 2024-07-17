@@ -431,7 +431,7 @@ pub trait SegmentOptimizer {
                 .config()
                 .indexed_fields
                 .iter()
-                .filter_map(|(key, schema)| schema.is_tenant().then_some(key))
+                .filter_map(|(key, schema)| schema.is_primary().then_some(key))
                 .cloned();
             defragmentation_keys.extend(keys);
         }

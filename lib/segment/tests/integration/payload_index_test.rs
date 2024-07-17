@@ -110,7 +110,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
                     r#type: IntegerIndexType::Integer,
                     lookup: true,
                     range: false,
-                    is_tenant: None,
+                    is_primary: None,
                 },
             ))),
         )
@@ -124,7 +124,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
                     r#type: IntegerIndexType::Integer,
                     lookup: false,
                     range: true,
-                    is_tenant: None,
+                    is_primary: None,
                 },
             ))),
         )
