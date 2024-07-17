@@ -58,6 +58,8 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     }
 
     /// Initialize data with `init`, even if data already exists.
+    ///
+    /// Will immediately save the new `init` state on disk, only if the file already exists.
     pub fn init(path: impl Into<PathBuf>, init: impl FnOnce() -> T) -> Result<Self, Error> {
         let path: PathBuf = path.into();
         let exists = path.exists();
