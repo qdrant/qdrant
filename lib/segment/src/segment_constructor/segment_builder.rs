@@ -51,7 +51,7 @@ pub struct SegmentBuilder {
     indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 
     // Payload key to deframent data to
-    defragment_key: Option<PayloadKeyType>,
+    defragment_keys: Vec<PayloadKeyType>,
 }
 
 impl SegmentBuilder {
@@ -109,12 +109,12 @@ impl SegmentBuilder {
             destination_path,
             temp_path,
             indexed_fields: Default::default(),
-            defragment_key: None,
+            defragment_keys: vec![],
         })
     }
 
-    pub fn set_defragment_key(&mut self, key: PayloadKeyType) {
-        self.defragment_key = Some(key);
+    pub fn set_defragment_keys(&mut self, keys: Vec<PayloadKeyType>) {
+        self.defragment_keys = keys;
     }
 
     pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
@@ -249,7 +249,7 @@ impl SegmentBuilder {
 
         let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
 
-        if let Some(defragment_key) = &self.defragment_key {
+        if let Some(defragment_key) = self.defragment_keys.first() {
             for point_data in &mut points_to_insert {
                 let Some(payload_indices) = payloads[point_data.segment_index]
                     .field_indexes
@@ -388,7 +388,7 @@ impl SegmentBuilder {
                 destination_path,
                 temp_path,
                 indexed_fields,
-                defragment_key: _,
+                defragment_keys: _,
             } = self;
 
             let appendable_flag = segment_config.is_appendable();

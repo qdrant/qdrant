@@ -858,6 +858,7 @@
 | ----- | ---- | ----- | ----------- |
 | lookup | [bool](#bool) |  | If true - support direct lookups. |
 | range | [bool](#bool) |  | If true - support ranges filters. |
+| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. Currently only compatible with lookup. |
 
 
 
@@ -868,6 +869,11 @@
 
 ### KeywordIndexParams
 
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
 
 
 

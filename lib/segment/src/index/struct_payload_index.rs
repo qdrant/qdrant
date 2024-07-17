@@ -333,6 +333,10 @@ impl StructPayloadIndex {
     ) -> OperationResult<()> {
         crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
+
+    pub fn config(&self) -> &PayloadConfig {
+        &self.config
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
