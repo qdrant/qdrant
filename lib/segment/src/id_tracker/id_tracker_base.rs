@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
@@ -7,6 +8,7 @@ use rand::{Rng, SeedableRng};
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -114,6 +116,8 @@ pub trait IdTracker: fmt::Debug {
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
 
+    fn name(&self) -> &'static str;
+
     /// Iterator over `n` random IDs which are not deleted
     ///
     /// A [`BitSlice`] of deleted vectors may optionally be given to also consider deleted named
@@ -144,6 +148,8 @@ pub trait IdTracker: fmt::Debug {
     /// It might happen that point doesn't have version due to un-flushed WAL.
     /// This method makes those points usable again.
     fn cleanup_versions(&mut self) -> OperationResult<()>;
+
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
@@ -151,7 +157,7 @@ pub type IdTrackerSS = dyn IdTracker + Sync + Send;
 #[derive(Debug)]
 pub enum IdTrackerEnum {
     MutableIdTracker(SimpleIdTracker),
-    ImmutableIdTracker(SimpleIdTracker),
+    ImmutableIdTracker(ImmutableIdTracker),
 }
 
 impl IdTracker for IdTrackerEnum {
@@ -290,10 +296,24 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
+    fn name(&self) -> &'static str {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.name(),
+        }
+    }
+
     fn cleanup_versions(&mut self) -> OperationResult<()> {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.files(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.files(),
         }
     }
 }

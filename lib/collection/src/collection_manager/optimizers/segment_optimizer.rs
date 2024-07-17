@@ -676,6 +676,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
+
         timer.set_success(true);
         Ok(true)
     }
