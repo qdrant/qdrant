@@ -57,10 +57,13 @@ impl Collection {
 
                 #[cfg(debug_assertions)]
                 if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                    assert_eq!(config.params.shard_number.get(), resharding_key.shard_id,);
+                    assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
                 }
 
-                config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() + 1)
+                config.params.shard_number = config
+                    .params
+                    .shard_number
+                    .checked_add(1)
                     .expect("cannot have more than u32::MAX shards after resharding");
                 if let Err(err) = config.save(&self.path) {
                     log::error!(
