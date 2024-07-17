@@ -123,7 +123,7 @@ impl GroupRequest {
             source: query_search,
             group_by: self.group_by,
             group_size: self.group_size,
-            limit: self.limit,
+            groups: self.limit,
             with_lookup: self.with_lookup,
         })
     }
@@ -144,7 +144,11 @@ impl QueryGroupRequest {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
-        request.limit = self.limit * self.group_size;
+        // Adjust limit to fetch enough points to fill groups
+        request.limit = self.groups * self.group_size;
+        request.prefetches.iter_mut().for_each(|prefetch| {
+            prefetch.limit = prefetch.limit * self.groups;
+        });
 
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
         request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
@@ -300,7 +304,7 @@ pub async fn group_by(
     let score_ordering = ScoringQuery::order(request.source.query.as_ref(), &collection_params)?;
 
     let mut aggregator = GroupsAggregator::new(
-        request.limit,
+        request.groups,
         request.group_size,
         request.group_by.clone(),
         score_ordering,
@@ -362,7 +366,7 @@ pub async fn group_by(
         aggregator.add_points(&points);
 
         // TODO: should we break early if we have some amount of "enough" groups?
-        if aggregator.len_of_filled_best_groups() >= request.limit {
+        if aggregator.len_of_filled_best_groups() >= request.groups {
             needs_filling = false;
             break;
         }
@@ -421,7 +425,7 @@ pub async fn group_by(
 
             aggregator.add_points(&points);
 
-            if aggregator.len_of_filled_best_groups() >= request.limit {
+            if aggregator.len_of_filled_best_groups() >= request.groups {
                 break;
             }
         }
