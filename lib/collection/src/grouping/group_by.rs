@@ -147,7 +147,7 @@ impl QueryGroupRequest {
         // Adjust limit to fetch enough points to fill groups
         request.limit = self.groups * self.group_size;
         request.prefetches.iter_mut().for_each(|prefetch| {
-            prefetch.limit = prefetch.limit * self.groups;
+            prefetch.limit *= self.groups;
         });
 
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
