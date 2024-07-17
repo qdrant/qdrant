@@ -30,7 +30,7 @@ use crate::operations::universal_query::collection_query::{
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::recommendations::recommend_into_core_search;
 
-const MAX_GET_GROUPS_REQUESTS: usize = 5;
+const MAX_GET_GROUPS_REQUESTS: usize = 7;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -306,8 +306,7 @@ pub async fn group_by(
         score_ordering,
     );
 
-    // Try to complete amount of groups
-    let mut needs_filling = true;
+    // Always run `MAX_GET_GROUPS_REQUESTS` requests to explore possible groups
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
         let mut request = request.clone();
 
@@ -360,71 +359,62 @@ pub async fn group_by(
         }
 
         aggregator.add_points(&points);
-
-        // TODO: should we break early if we have some amount of "enough" groups?
-        if aggregator.len_of_filled_best_groups() >= request.limit {
-            needs_filling = false;
-            break;
-        }
     }
 
     // Try to fill up groups
-    if needs_filling {
-        for _ in 0..MAX_GROUP_FILLING_REQUESTS {
-            let mut request = request.clone();
-
-            let source = &mut request.source;
-
-            // Construct filter to only include unsatisfied groups
-            let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
-            let match_any = match_on(&request.group_by, unsatisfied_groups);
-            if !match_any.is_empty() {
-                let include_groups = Filter {
-                    must: Some(match_any),
-                    ..Default::default()
-                };
-                source.filter = Some(
-                    source
-                        .filter
-                        .as_ref()
-                        .map(|filter| filter.merge(&include_groups))
-                        .unwrap_or(include_groups),
-                );
-            }
-
-            // Exclude already aggregated points
-            let ids = aggregator.ids().clone();
-            if !ids.is_empty() {
-                let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
-                source.filter = Some(
-                    source
-                        .filter
-                        .as_ref()
-                        .map(|filter| filter.merge(&exclude_ids))
-                        .unwrap_or(exclude_ids),
-                );
-            }
-
-            // Make request
-            let points = request
-                .r#do(
-                    collection,
-                    read_consistency,
-                    shard_selection.clone(),
-                    timeout,
-                )
-                .await?;
-
-            if points.is_empty() {
-                break;
-            }
-
-            aggregator.add_points(&points);
-
-            if aggregator.len_of_filled_best_groups() >= request.limit {
-                break;
-            }
+    for _ in 0..MAX_GROUP_FILLING_REQUESTS {
+        if aggregator.len_of_filled_best_groups() >= request.limit {
+            break;
         }
+        let mut request = request.clone();
+
+        let source = &mut request.source;
+
+        // Construct filter to only include unsatisfied groups
+        let unsatisfied_groups = aggregator.keys_of_unfilled_best_groups();
+        let match_any = match_on(&request.group_by, unsatisfied_groups);
+        if !match_any.is_empty() {
+            let include_groups = Filter {
+                must: Some(match_any),
+                ..Default::default()
+            };
+            source.filter = Some(
+                source
+                    .filter
+                    .as_ref()
+                    .map(|filter| filter.merge(&include_groups))
+                    .unwrap_or(include_groups),
+            );
+        }
+
+        // Exclude already aggregated points
+        let ids = aggregator.ids().clone();
+        if !ids.is_empty() {
+            let exclude_ids = Filter::new_must_not(Condition::HasId(ids.into()));
+            source.filter = Some(
+                source
+                    .filter
+                    .as_ref()
+                    .map(|filter| filter.merge(&exclude_ids))
+                    .unwrap_or(exclude_ids),
+            );
+        }
+
+        // Make request
+        let points = request
+            .r#do(
+                collection,
+                read_consistency,
+                shard_selection.clone(),
+                timeout,
+            )
+            .await?;
+
+        if points.is_empty() {
+            break;
+        }
+
+        aggregator.add_points(&points);
     }
 
     // extract best results

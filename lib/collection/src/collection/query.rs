@@ -45,7 +45,7 @@ impl Collection {
             return Ok(vec![]);
         }
         let results = self
-            .do_query_batch(vec![(request)], read_consistency, shard_selection, timeout)
+            .do_query_batch(vec![request], read_consistency, shard_selection, timeout)
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
