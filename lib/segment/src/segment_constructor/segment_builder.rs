@@ -125,6 +125,77 @@ impl SegmentBuilder {
         self.indexed_fields.insert(field, schema);
     }
 
+    /// Get ordering value from the payload index
+    ///
+    /// Ordering value is used to sort points to keep points with the same payload together
+    /// Under the assumption that points are queried together, this will reduce the number of
+    /// random disk reads.
+    ///
+    /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
+    ///       It should only be used in optimization purposes, not for correctness.
+    fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
+        for payload_index in indices {
+            match payload_index {
+                FieldIndex::IntMapIndex(index) => {
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.iter().next() {
+                            return *number as u64;
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::KeywordIndex(index) => {
+                    if let Some(keywords) = index.get_values(internal_id) {
+                        if let Some(keyword) = keywords.iter().next() {
+                            let mut hasher = AHasher::default();
+                            keyword.hash(&mut hasher);
+                            return hasher.finish();
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::IntIndex(index) => {
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.iter().next() {
+                            return *number as u64;
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::FloatIndex(index) => {
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        if let Some(number) = numbers.iter().next() {
+                            // Bit-level conversion of f64 to u64 preserves ordering
+                            // (for positive numbers)
+                            //
+                            // 0.001 -> 4562254508917369340
+                            // 0.01  -> 4576918229304087675
+                            // 0.05  -> 4587366580439587226
+                            // 0.1   -> 4591870180066957722
+                            // 1     -> 4607182418800017408
+                            // 2     -> 4611686018427387904
+                            // 10    -> 4621819117588971520
+                            return number.to_bits();
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::DatetimeIndex(index) => {
+                    if let Some(dates) = index.get_values(internal_id) {
+                        if let Some(date) = dates.iter().next() {
+                            return *date as u64;
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::GeoIndex(_) => {}
+                FieldIndex::FullTextIndex(_) => {}
+                FieldIndex::BinaryIndex(_) => {}
+            }
+        }
+        0
+    }
+
     /// Update current segment builder with all (not deleted) vectors and payload from `segments`.
     /// Also defragments if the `defragment_key` is set.
     /// However only points in the same call get defragmented and grouped together.
@@ -163,7 +234,9 @@ impl SegmentBuilder {
                         PositionedPointMetadata {
                             segment_index,
                             internal_id,
+                            external_id,
                             version,
+                            ordering: 0,
                         }
                     });
             }
@@ -174,52 +247,23 @@ impl SegmentBuilder {
             .map(|i| i.payload_index.borrow())
             .collect();
 
-        let mut points_to_insert: Vec<_> = merged_points
-            .into_iter()
-            .map(|(external_id, pd)| {
-                let mut hasher = AHasher::default();
+        let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
 
-                // If payload key is set, sort the points to add. For this we fetch the payload and
-                // hash it.
-                let payload_index = self.defragment_key.as_ref().and_then(|defragment_key| {
-                    payloads[pd.segment_index].field_indexes.get(defragment_key)
-                });
-                if let Some(payload_indexes) = payload_index {
-                    // Try to find an index we can use for hashing.
-                    for payload_index in payload_indexes {
-                        match payload_index {
-                            FieldIndex::IntMapIndex(index) => {
-                                if let Some(numbers) = index.get_values(pd.internal_id) {
-                                    for number in numbers {
-                                        number.hash(&mut hasher);
-                                    }
-                                }
-                                break;
-                            }
-                            FieldIndex::KeywordIndex(index) => {
-                                if let Some(keywords) = index.get_values(pd.internal_id) {
-                                    for keyword in keywords {
-                                        keyword.hash(&mut hasher);
-                                    }
-                                }
-                                break;
-                            }
-                            _ => (),
-                        }
-                    }
-                }
+        if let Some(defragment_key) = &self.defragment_key {
+            for point_data in &mut points_to_insert {
+                let Some(payload_indices) = payloads[point_data.segment_index]
+                    .field_indexes
+                    .get(defragment_key)
+                else {
+                    continue;
+                };
 
-                PositionedPointMetadataOrderable {
-                    segment_index: pd.segment_index,
-                    internal_id: pd.internal_id,
-                    external_id,
-                    version: pd.version,
-                    hash: hasher.finish(),
-                }
-            })
-            .collect();
+                point_data.ordering =
+                    Self::_get_ordering_value(point_data.internal_id, payload_indices);
+            }
 
-        points_to_insert.sort_unstable_by_key(|i| i.hash);
+            points_to_insert.sort_unstable_by_key(|i| i.ordering);
+        }
 
         let src_segment_max_version = segment_guards.iter().map(|i| i.version()).max().unwrap();
         self.version = cmp::max(self.version, src_segment_max_version);
@@ -276,6 +320,11 @@ impl SegmentBuilder {
 
                 match self.id_tracker.internal_id(point_data.external_id) {
                     Some(existing_internal_id) => {
+                        debug_assert!(
+                            false,
+                            "This code should not be reachable, cause points were resolved with `merged_points`"
+                        );
+
                         let existing_external_version = self
                             .id_tracker
                             .internal_version(existing_internal_id)
@@ -518,14 +567,7 @@ impl SegmentBuilder {
 struct PositionedPointMetadata {
     segment_index: usize,
     internal_id: PointOffsetType,
-    version: SeqNumberType,
-}
-
-/// All Point ids and metadata of a point including external id and a hash to sort it.
-struct PositionedPointMetadataOrderable {
-    segment_index: usize,
-    internal_id: PointOffsetType,
     external_id: ExtendedPointId,
     version: SeqNumberType,
-    hash: u64,
+    ordering: u64,
 }
