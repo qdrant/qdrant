@@ -56,7 +56,7 @@ impl Collection {
                 let mut config = self.collection_config.write().await;
 
                 if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                    debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id,);
+                    debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
                 }
 
                 config.params.shard_number = config
