@@ -49,9 +49,9 @@ where
 {
     pub fn flusher(&self) -> Flusher {
         let pending_updates = mem::take(&mut *self.pending_updates.lock());
-        let bitslice = self.mmap_slice.clone();
+        let slice = self.mmap_slice.clone();
         Box::new(move || {
-            let mut mmap_slice_write = bitslice.write();
+            let mut mmap_slice_write = slice.write();
             for (index, value) in pending_updates {
                 mmap_slice_write[index] = value;
             }
