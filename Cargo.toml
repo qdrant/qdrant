@@ -161,6 +161,7 @@ validator = { version = "0.16.1", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
 zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
+byteorder = "1.5.0"
 
 [[bin]]
 name = "schema_generator"

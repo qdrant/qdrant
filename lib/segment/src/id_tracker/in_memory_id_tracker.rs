@@ -11,6 +11,7 @@ use crate::common::Flusher;
 use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
+/// A non persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
 #[derive(Debug, Default)]
 pub struct InMemoryIdTracker {
     deleted: BitVec,
@@ -23,6 +24,7 @@ impl InMemoryIdTracker {
         Self::default()
     }
 
+    /// Converts the in memory idtracker to an immutable one, stored into `segment_path`.
     pub fn make_immutable(mut self, segment_path: &Path) -> OperationResult<ImmutableIdTracker> {
         let internal_to_external_len = self.mappings.internal_to_external.len();
         if self.internal_to_version.len() < internal_to_external_len {
@@ -110,8 +112,6 @@ impl IdTracker for InMemoryIdTracker {
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         let internal_id = match external_id {
-            // We "temporarily" remove existing points from the BTreeMaps without writing them to disk
-            // because we remove deleted points of a previous load directly when loading.
             PointIdType::NumId(num) => self.mappings.external_to_internal_num.remove(&num),
             PointIdType::Uuid(uuid) => self.mappings.external_to_internal_uuid.remove(&uuid),
         };
@@ -279,17 +279,14 @@ mod test {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTrackerEnum;
 
-    fn make_in_memory_tracker(path: &Path) -> ImmutableIdTracker {
+    fn make_in_memory_tracker_from_memory(path: &Path) -> ImmutableIdTracker {
         let mut id_tracker = InMemoryIdTracker::new();
 
         for (id, value) in TEST_POINTS.iter().enumerate() {
             id_tracker.set_link(*value, id as PointOffsetType).unwrap();
         }
 
-        match id_tracker.make_immutable(path).unwrap() {
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker,
-            _ => unreachable!(),
-        }
+        id_tracker.make_immutable(path).unwrap()
     }
 
     fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker {
@@ -319,7 +316,7 @@ mod test {
             .prefix("storage_dir_memory")
             .tempdir()
             .unwrap();
-        let in_memory_idtracker = make_in_memory_tracker(in_memory_dir.path());
+        let in_memory_idtracker = make_in_memory_tracker_from_memory(in_memory_dir.path());
 
         let immutable_id_tracker_dir = Builder::new()
             .prefix("storage_dir_immutable")

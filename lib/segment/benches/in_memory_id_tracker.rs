@@ -20,7 +20,7 @@ fn benchmark(c: &mut Criterion) {
             for external in 0..i {
                 id_tracker
                     .set_link(
-                        ExtendedPointId::NumId(external as u64),
+                        ExtendedPointId::NumId(external),
                         ids[external as usize] as PointOffsetType,
                     )
                     .unwrap();
