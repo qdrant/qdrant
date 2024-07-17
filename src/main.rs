@@ -348,6 +348,10 @@ fn main() -> anyhow::Result<()> {
             }
         });
 
+        runtime_handle.block_on(async {
+            toc_arc.resume_resharding_tasks().await;
+        });
+
         let collections_to_recover_in_consensus = if is_new_deployment {
             let existing_collections =
                 runtime_handle.block_on(toc_arc.all_collections(&FULL_ACCESS));

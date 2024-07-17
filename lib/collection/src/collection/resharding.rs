@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use parking_lot::Mutex;
 use segment::types::Filter;
 
 use super::Collection;
+use crate::config::ShardingMethod;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::tasks_pool::{ReshardTaskItem, ReshardTaskProgress};
@@ -22,6 +24,7 @@ impl Collection {
             .clone()
     }
 
+    /// Start a new resharding operation
     pub async fn start_resharding<T, F>(
         &self,
         resharding_key: ReshardKey,
@@ -34,56 +37,128 @@ impl Collection {
         T: Future<Output = ()> + Send + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        let mut shard_holder = self.shards_holder.write().await;
+        {
+            let mut shard_holder = self.shards_holder.write().await;
 
-        shard_holder.check_start_resharding(&resharding_key)?;
+            shard_holder.check_start_resharding(&resharding_key)?;
 
-        let replica_set = self
-            .create_replica_set(
-                resharding_key.shard_id,
-                &[resharding_key.peer_id],
-                Some(ReplicaState::Resharding),
-            )
+            let replica_set = self
+                .create_replica_set(
+                    resharding_key.shard_id,
+                    &[resharding_key.peer_id],
+                    Some(ReplicaState::Resharding),
+                )
+                .await?;
+
+            shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
+
+            // Increase the persisted shard count, loads new shard on restart
+            {
+                let mut config = self.collection_config.write().await;
+
+                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
+                    debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
+                }
+
+                config.params.shard_number = config
+                    .params
+                    .shard_number
+                    .checked_add(1)
+                    .expect("cannot have more than u32::MAX shards after resharding");
+                if let Err(err) = config.save(&self.path) {
+                    log::error!(
+                        "Failed to update and save collection config during resharding: {err}",
+                    );
+                }
+            }
+        }
+
+        // Drive resharding
+        self.drive_resharding(resharding_key, consensus, temp_dir, on_finish, on_error)
             .await?;
 
-        shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
+        Ok(())
+    }
 
-        // If this peer is responsible for driving the resharding, start the task for it
-        if resharding_key.peer_id == self.this_peer_id {
-            // Stop any already active resharding task to allow starting a new one
-            let mut active_reshard_tasks = self.reshard_tasks.lock().await;
-            let task_result = active_reshard_tasks.stop_task(&resharding_key).await;
-            debug_assert!(task_result.is_none(), "Reshard task already exists");
+    /// Resume an existing resharding operation
+    ///
+    /// This method will check if a resharding operation is in progress according to our state, and
+    /// it will start and resume the driving task accordingly.
+    ///
+    /// This does not check whether the task is already active.
+    ///
+    /// If no resharding is active, this returns early without error.
+    pub async fn resume_resharding_unchecked<T, F>(
+        &self,
+        consensus: Box<dyn ShardTransferConsensus>,
+        temp_dir: PathBuf,
+        on_finish: T,
+        on_error: F,
+    ) -> CollectionResult<()>
+    where
+        T: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let Some(state) = self.resharding_state().await else {
+            return Ok(());
+        };
 
-            let shard_holder = self.shards_holder.clone();
-            let collection_id = self.id.clone();
-            let collection_config = Arc::clone(&self.collection_config);
-            let channel_service = self.channel_service.clone();
-            let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
-            let spawned_task = resharding::spawn_resharding_task(
-                shard_holder,
-                progress.clone(),
-                resharding_key.clone(),
-                consensus,
-                collection_id,
-                self.path.clone(),
-                collection_config,
-                self.shared_storage_config.clone(),
-                channel_service,
-                temp_dir,
-                on_finish,
-                on_error,
-            );
+        self.drive_resharding(state.key(), consensus, temp_dir, on_finish, on_error)
+            .await?;
 
-            active_reshard_tasks.add_task(
-                resharding_key,
-                ReshardTaskItem {
-                    task: spawned_task,
-                    started_at: chrono::Utc::now(),
-                    progress,
-                },
-            );
+        Ok(())
+    }
+
+    async fn drive_resharding<T, F>(
+        &self,
+        resharding_key: ReshardKey,
+        consensus: Box<dyn ShardTransferConsensus>,
+        temp_dir: PathBuf,
+        on_finish: T,
+        on_error: F,
+    ) -> CollectionResult<()>
+    where
+        T: Future<Output = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
+    {
+        // Skip if this peer is not responsible for driving the resharding
+        if resharding_key.peer_id != self.this_peer_id {
+            return Ok(());
         }
+
+        // Stop any already active resharding task to allow starting a new one
+        let mut active_reshard_tasks = self.reshard_tasks.lock().await;
+        let task_result = active_reshard_tasks.stop_task(&resharding_key).await;
+        debug_assert!(task_result.is_none(), "Reshard task already exists");
+
+        let shard_holder = self.shards_holder.clone();
+        let collection_id = self.id.clone();
+        let collection_config = Arc::clone(&self.collection_config);
+        let channel_service = self.channel_service.clone();
+        let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
+        let spawned_task = resharding::spawn_resharding_task(
+            shard_holder,
+            progress.clone(),
+            resharding_key.clone(),
+            consensus,
+            collection_id,
+            self.path.clone(),
+            collection_config,
+            self.shared_storage_config.clone(),
+            channel_service,
+            temp_dir,
+            on_finish,
+            on_error,
+        );
+
+        active_reshard_tasks.add_task(
+            resharding_key,
+            ReshardTaskItem {
+                task: spawned_task,
+                started_at: chrono::Utc::now(),
+                progress,
+            },
+        );
 
         Ok(())
     }
@@ -107,13 +182,31 @@ impl Collection {
 
         shard_holder.check_finish_resharding(&resharding_key)?;
         let _ = self.stop_resharding_task(&resharding_key).await;
-        shard_holder.finish_resharding_unchecked(resharding_key)?;
+        shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
         Ok(())
     }
 
     pub async fn abort_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
         let _ = self.stop_resharding_task(&resharding_key).await;
+
+        // Decrease the persisted shard count, ensures we don't load dropped shard on restart
+        {
+            let mut config = self.collection_config.write().await;
+
+            if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
+                debug_assert_eq!(
+                    config.params.shard_number.get() - 1,
+                    resharding_key.shard_id,
+                );
+            }
+
+            config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
+                .expect("cannot have zero shards after aborting resharding");
+            if let Err(err) = config.save(&self.path) {
+                log::error!("Failed to update and save collection config during resharding: {err}");
+            }
+        }
 
         self.shards_holder
             .write()

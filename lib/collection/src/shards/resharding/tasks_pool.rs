@@ -65,7 +65,7 @@ impl ReshardTasksPool {
             parts.push(description.clone());
         }
         parts.push(format!(
-            "started {}s ago",
+            "since {}s ago",
             chrono::Utc::now()
                 .signed_duration_since(task.started_at)
                 .num_seconds(),
