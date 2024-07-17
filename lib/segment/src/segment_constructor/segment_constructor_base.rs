@@ -284,11 +284,17 @@ pub(crate) fn create_payload_storage(
     Ok(payload_storage)
 }
 
-pub(crate) fn create_id_tracker(database: Arc<RwLock<DB>>) -> OperationResult<IdTrackerEnum> {
-    Ok(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
-        database,
-    )?))
+pub(crate) fn create_mutable_id_tracker(
+    database: Arc<RwLock<DB>>,
+) -> OperationResult<SimpleIdTracker> {
+    SimpleIdTracker::open(database)
 }
+
+/*pub(crate) fn create_immutable_id_tracker(
+    segment_path: &Path,
+) -> OperationResult<ImmutableIdTracker> {
+    ImmutableIdTracker::open(segment_path)
+}*/
 
 pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
@@ -410,7 +416,25 @@ fn create_segment(
 
     let appendable_flag = config.is_appendable();
 
-    let id_tracker = sp(create_id_tracker(database.clone())?);
+    // TODO: uncomment when releasing the next version! Also in segment_builder.rs:353
+    /*
+    let mutable_id_tracker =
+        appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
+
+    let id_tracker = if mutable_id_tracker {
+        sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+            database.clone(),
+        )?))
+    } else {
+        sp(IdTrackerEnum::ImmutableIdTracker(
+            create_immutable_id_tracker(segment_path)?,
+        ))
+    };
+     */
+
+    let id_tracker = sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+        database.clone(),
+    )?));
 
     let payload_index_path = get_payload_index_path(segment_path);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(

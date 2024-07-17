@@ -9,7 +9,7 @@ use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 
 use super::{
-    create_id_tracker, create_payload_storage, create_sparse_vector_index,
+    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, create_vector_index, get_payload_index_path,
     get_vector_index_path, get_vector_storage_path, new_segment_path, open_segment_db,
     open_vector_storage,
@@ -60,7 +60,8 @@ impl SegmentBuilder {
 
         let database = open_segment_db(&temp_path, segment_config)?;
 
-        let id_tracker = create_id_tracker(database.clone())?;
+        let id_tracker =
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?);
 
         let payload_storage = create_payload_storage(database.clone(), segment_config)?;
 
@@ -348,6 +349,16 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
             }
+
+            // TODO: uncomment when releasing the next version! Also in segment_constructor_base.rs:403
+            // Make the IdTracker immutable if segment is not appendable.
+            /*
+            if !appendable_flag {
+                if let IdTrackerEnum::MutableIdTracker(mutable) = &*id_tracker_arc.borrow() {
+                    mutable.make_immutable(&temp_path)?;
+                }
+            }
+             */
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(

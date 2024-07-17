@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -159,6 +159,14 @@ impl IdTracker for FixtureIdTracker {
 
     fn cleanup_versions(&mut self) -> OperationResult<()> {
         Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "fixture id tracker"
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }
 
