@@ -68,7 +68,6 @@ impl Collection {
     /// If no resharding is active, this returns early without error.
     pub async fn resume_resharding_unchecked<T, F>(
         &self,
-        // resharding_key: ReshardKey,
         consensus: Box<dyn ShardTransferConsensus>,
         temp_dir: PathBuf,
         on_finish: T,
