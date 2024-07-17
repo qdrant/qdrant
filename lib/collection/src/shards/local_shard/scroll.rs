@@ -285,6 +285,7 @@ impl LocalShard {
             return Ok(Vec::new());
         }
 
+        // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to create weighted index for random scroll: {:?}",
@@ -292,15 +293,17 @@ impl LocalShard {
             ))
         })?;
 
-        // Get `limit` points in a weighted fashion from each segment, depending on how many points each segment has.
         let mut rng = rand::thread_rng();
         let mut random_points = HashSet::with_capacity(limit);
 
-        // This loop iterates <= LIMIT times, and either quits if we have enough points,
-        // or if some of the segments are exhausted.
+        // Randomly sample points in two stages
         //
-        // If the segments are exhausted, we will fill up the rest of the points from other segments.
-        // In total, the complexity is guaranteed to be O(limit).
+        // 1. This loop iterates <= LIMIT times, and either breaks early if we
+        // have enough points, or if some of the segments are exhausted.
+        //
+        // 2. If the segments are exhausted, we will fill up the rest of the
+        // points from other segments. In total, the complexity is guaranteed to
+        // be O(limit).
         while random_points.len() < limit {
             let segment_offset = rng.sample(&distribution);
             let points = segments_reads.get_mut(segment_offset).unwrap();
