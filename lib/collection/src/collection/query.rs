@@ -6,7 +6,7 @@ use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
-use segment::types::{Order, ScoredPoint};
+use segment::types::{Filter, Order, ScoredPoint};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
@@ -61,11 +61,32 @@ impl Collection {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
+
+        // Resharding filter to apply when resharding is active
+        let resharding_filter = shard_holder.resharding_filter();
+        let reshard_shard_id = shard_holder
+            .resharding_state
+            .read()
+            .as_ref()
+            .map(|state| state.shard_id);
+
+        // Create a batch with resharding filtering a normal and resharding filter
+        // Should be used on all shards, except the new resharding shard
+        let (normal_batch, reshard_batch) =
+            normal_and_resharding_query_batch(batch_request, resharding_filter);
+
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
+            // Take resharding request if available on existing shards, otherwise take normal request
+            let batch = reshard_batch
+                .as_ref()
+                .filter(|_| Some(shard.shard_id) != reshard_shard_id)
+                .unwrap_or(&normal_batch)
+                .clone();
+
             let shard_key = shard_key.cloned();
             shard
                 .query_batch(
-                    Arc::clone(&batch_request),
+                    batch,
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
@@ -357,5 +378,36 @@ fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQuer
             scoring_query: request.query.as_ref(),
             take: request.offset + request.limit,
         }]
+    }
+}
+
+/// Merge a regular and resharding query batch
+///
+/// The first element is always the given `batch`.
+///
+/// The second element is the `batch` with `resharding_filter` merged into it. It's None if no
+/// resharding filter was given.
+///
+/// This function minimizes cloning of the batch to when it's strictly necessary.
+#[inline]
+fn normal_and_resharding_query_batch(
+    batch: Arc<Vec<ShardQueryRequest>>,
+    resharding_filter: Option<Filter>,
+) -> (
+    Arc<Vec<ShardQueryRequest>>,
+    Option<Arc<Vec<ShardQueryRequest>>>,
+) {
+    match resharding_filter {
+        None => (batch, None),
+        Some(resharding_filter) => {
+            let mut requests = batch.as_ref().clone();
+            requests.iter_mut().for_each(|request| {
+                super::resharding::merge_filters(
+                    &mut request.filter,
+                    Some(resharding_filter.clone()),
+                );
+            });
+            (batch, Some(Arc::new(requests)))
+        }
     }
 }

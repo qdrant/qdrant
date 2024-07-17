@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use futures::Future;
 use parking_lot::Mutex;
+use segment::types::Filter;
 
 use super::Collection;
 use crate::operations::types::CollectionResult;
@@ -132,5 +133,15 @@ impl Collection {
             .await
             .stop_task(resharding_key)
             .await
+    }
+}
+
+#[inline]
+pub(super) fn merge_filters(filter: &mut Option<Filter>, resharding_filter: Option<Filter>) {
+    if let Some(resharding_filter) = resharding_filter {
+        *filter = Some(match filter.take() {
+            Some(filter) => filter.merge_owned(resharding_filter),
+            None => resharding_filter,
+        });
     }
 }
