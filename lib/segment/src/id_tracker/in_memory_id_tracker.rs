@@ -28,12 +28,7 @@ impl InMemoryIdTracker {
     }
 
     /// Converts the in memory idtracker to an immutable one, stored into `segment_path`.
-    pub fn make_immutable(mut self, segment_path: &Path) -> OperationResult<ImmutableIdTracker> {
-        let internal_to_external_len = self.mappings.internal_to_external.len();
-        if self.internal_to_version.len() < internal_to_external_len {
-            self.internal_to_version.resize(internal_to_external_len, 0);
-        }
-
+    pub fn make_immutable(self, segment_path: &Path) -> OperationResult<ImmutableIdTracker> {
         ImmutableIdTracker::new(
             segment_path,
             &self.deleted,
