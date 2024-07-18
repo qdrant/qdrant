@@ -120,6 +120,10 @@ impl IdTracker for FixtureIdTracker {
         )
     }
 
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        unimplemented!("Not used for tests yet")
+    }
+
     fn total_point_count(&self) -> usize {
         self.ids.len()
     }

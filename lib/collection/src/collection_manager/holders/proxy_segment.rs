@@ -663,6 +663,34 @@ impl SegmentEntry for ProxySegment {
         Ok(read_points)
     }
 
+    fn read_random_filtered<'a>(
+        &'a self,
+        limit: usize,
+        filter: Option<&'a Filter>,
+    ) -> Vec<PointIdType> {
+        let deleted_points = self.deleted_points.read();
+        let mut read_points = if deleted_points.is_empty() {
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_random_filtered(limit, filter)
+        } else {
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_random_filtered(limit, Some(&wrapped_filter))
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_random_filtered(limit, filter);
+        read_points.append(&mut write_segment_points);
+        read_points
+    }
+
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();

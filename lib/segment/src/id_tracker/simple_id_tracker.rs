@@ -5,7 +5,9 @@ use std::sync::Arc;
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use parking_lot::RwLock;
+use rand::distributions::Distribution;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -403,6 +405,28 @@ impl IdTracker for SimpleIdTracker {
                 }
             },
         }
+    }
+
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        let rng = rand::thread_rng();
+        let available = self.internal_to_external.len();
+        let uniform = rand::distributions::Uniform::new(0, available);
+        let iter = Distribution::sample_iter(uniform, rng)
+            // TODO: this is not efficient if `available` is large and we iterate over most of them,
+            // but it's good enough for low limits.
+            //
+            // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
+            .unique()
+            .take(available)
+            .filter_map(move |i| {
+                if self.deleted[i] {
+                    None
+                } else {
+                    Some((self.internal_to_external[i], i as PointOffsetType))
+                }
+            });
+
+        Box::new(iter)
     }
 
     fn total_point_count(&self) -> usize {

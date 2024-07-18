@@ -1,12 +1,11 @@
 //! Types used within `LocalShard` to represent a planned `ShardQueryRequest`
 
-use api::rest::OrderByInterface;
 use common::types::ScoreType;
 use segment::types::{Filter, WithPayloadInterface, WithVector};
 
 use super::shard_query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal,
+    CollectionError, CollectionResult, CoreSearchRequest, QueryScrollRequestInternal, ScrollOrder,
 };
 
 const MAX_PREFETCH_DEPTH: usize = 64;
@@ -171,7 +170,7 @@ impl PlannedQuery {
                 Some(ScoringQuery::OrderBy(order_by)) => {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
-                        order_by: Some(OrderByInterface::Struct(order_by)),
+                        scroll_order: ScrollOrder::ByField(order_by),
                         limit,
                         filter,
                         with_vector,
@@ -186,7 +185,7 @@ impl PlannedQuery {
                 None => {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
-                        order_by: None,
+                        scroll_order: ScrollOrder::ById,
                         limit,
                         filter,
                         with_vector,
@@ -299,7 +298,7 @@ fn recurse_prefetches(
                 }
                 Some(ScoringQuery::OrderBy(order_by)) => {
                     let scroll = QueryScrollRequestInternal {
-                        order_by: Some(OrderByInterface::Struct(order_by)),
+                        scroll_order: ScrollOrder::ByField(order_by),
                         filter,
                         with_vector: with_vector.clone(),
                         with_payload: with_payload.clone(),
@@ -313,7 +312,7 @@ fn recurse_prefetches(
                 }
                 None => {
                     let scroll = QueryScrollRequestInternal {
-                        order_by: None,
+                        scroll_order: Default::default(),
                         filter,
                         with_vector: with_vector.clone(),
                         with_payload: with_payload.clone(),
