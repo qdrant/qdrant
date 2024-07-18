@@ -650,7 +650,7 @@ impl ShardHolder {
         if let Some(state) = self.resharding_state.read().clone() {
             self.rings
                 .entry(state.shard_key)
-                .and_modify(|ring| ring.add_resharding(state.shard_id));
+                .and_modify(|ring| ring.start_resharding(state.shard_id, state.direction));
         }
     }
 

@@ -7,6 +7,7 @@ use segment::index::field_index::CardinalityEstimation;
 use segment::types::{PointIdType, ReshardingCondition};
 use smallvec::SmallVec;
 
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::shards::shard::ShardId;
 
 const HASH_RING_SHARD_SCALE: u32 = 100;
@@ -32,13 +33,13 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
-    pub fn resharding(shard: T) -> Self {
+    pub fn resharding(shard: T, direction: ReshardingDirection) -> Self {
         let mut ring = Self::Resharding {
             old: Inner::fair(HASH_RING_SHARD_SCALE),
             new: Inner::fair(HASH_RING_SHARD_SCALE),
         };
 
-        ring.add_resharding(shard);
+        ring.start_resharding(shard, direction);
 
         ring
     }
@@ -66,7 +67,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         }
     }
 
-    pub fn add_resharding(&mut self, shard: T) {
+    pub fn start_resharding(&mut self, shard: T, direction: ReshardingDirection) {
         if let Self::Single(ring) = self {
             let (old, new) = (ring.clone(), ring.clone());
             *self = Self::Resharding { old, new };
@@ -76,7 +77,15 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
             unreachable!();
         };
 
-        new.add(shard);
+        match direction {
+            ReshardingDirection::Up => {
+                new.add(shard);
+            }
+            ReshardingDirection::Down => {
+                assert!(new.len() > 1, "cannot remove last shard from hash ring");
+                new.remove(&shard);
+            }
+        }
     }
 
     pub fn commit_resharding(&mut self) -> bool {
@@ -89,27 +98,33 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         true
     }
 
-    pub fn remove_resharding(&mut self, shard: T) -> bool
+    pub fn end_resharding(&mut self, shard: T, direction: ReshardingDirection) -> bool
     where
         T: fmt::Display,
     {
         let Self::Resharding { old, new } = self else {
-            log::warn!("removing resharding shard, but hashring is not in resharding mode");
+            log::warn!("ending resharding hashring, but it is not in resharding mode");
             return false;
         };
 
         let mut old = old.clone();
         let mut new = new.clone();
 
-        let removed_from_old = old.remove(&shard);
-        let removed_from_new = new.remove(&shard);
+        let (updated_old, updated_new) = match direction {
+            ReshardingDirection::Up => (old.remove(&shard), new.remove(&shard)),
+            ReshardingDirection::Down => {
+                old.add(shard);
+                new.add(shard);
+                (true, true)
+            }
+        };
 
-        let removed_resharding = match (removed_from_old, removed_from_new) {
+        let updated = match (updated_old, updated_new) {
             (false, true) => true,
 
             (true, true) => {
                 log::error!(
-                    "removing resharding shard, \
+                    "ending resharding shard, \
                      but {shard} is not resharding shard"
                 );
 
@@ -118,7 +133,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
 
             (true, false) => {
                 log::error!(
-                    "removing resharding shard, \
+                    "ending resharding shard, \
                      but shard {shard} only exists in the old hashring"
                 );
 
@@ -127,7 +142,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
 
             (false, false) => {
                 log::warn!(
-                    "removing resharding shard, \
+                    "ending resharding shard, \
                      but shard {shard} does not exist in the hashring"
                 );
 
@@ -138,13 +153,13 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         if old == new {
             log::debug!(
                 "switching hashring into single mode, \
-                 because all resharding shards were removed",
+                 because the rerouting for resharding is done",
             );
 
             *self = Self::Single(old);
         }
 
-        removed_resharding
+        updated
     }
 
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T>

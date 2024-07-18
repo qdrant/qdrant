@@ -549,13 +549,17 @@ pub async fn do_update_collection_cluster(
 
             let collection_state = collection.state().await;
 
-            // TODO(resharding): Select `shard_id` for resharding in a more reasonable way?..
-            let shard_id = collection_state
+            // TODO(resharding): select highest in current shard key
+            let max_shard_id = collection_state
                 .shards
                 .keys()
                 .copied()
                 .max()
-                .map_or(0, |id| id + 1);
+                .expect("no shards in collection");
+            let shard_id = match direction {
+                ReshardingDirection::Up => max_shard_id + 1,
+                ReshardingDirection::Down => max_shard_id,
+            };
 
             if let Some(shard_key) = &shard_key {
                 if !collection_state.shards_key_mapping.contains_key(shard_key) {

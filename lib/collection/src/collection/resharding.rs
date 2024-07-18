@@ -7,6 +7,7 @@ use segment::types::Filter;
 
 use super::Collection;
 use crate::config::ShardingMethod;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::tasks_pool::{ReshardTaskItem, ReshardTaskProgress};
@@ -40,13 +41,18 @@ impl Collection {
 
             shard_holder.check_start_resharding(&resharding_key)?;
 
-            let replica_set = self
-                .create_replica_set(
-                    resharding_key.shard_id,
-                    &[resharding_key.peer_id],
-                    Some(ReplicaState::Resharding),
-                )
-                .await?;
+            // If scaling up, create a new replica set
+            let replica_set = match resharding_key.direction {
+                ReshardingDirection::Up => Some(
+                    self.create_replica_set(
+                        resharding_key.shard_id,
+                        &[resharding_key.peer_id],
+                        Some(ReplicaState::Resharding),
+                    )
+                    .await?,
+                ),
+                ReshardingDirection::Down => None,
+            };
 
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
 
