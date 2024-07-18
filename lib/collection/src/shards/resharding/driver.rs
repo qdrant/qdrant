@@ -207,7 +207,7 @@ pub async fn drive_resharding(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: &SharedStorageConfig,
     channel_service: ChannelService,
-    _temp_dir: &Path,
+    can_resume: bool,
 ) -> CollectionResult<bool> {
     let to_shard_id = reshard_key.shard_id;
     let hash_ring = shard_holder
@@ -218,12 +218,20 @@ pub async fn drive_resharding(
         .cloned()
         .unwrap();
     let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
-    let state: PersistedState = SaveOnDisk::load_or_init(&resharding_state_path, || {
+
+    // Load or initialize resharding state
+    let init_state = || {
         let mut shard_ids = hash_ring.unique_nodes();
         shard_ids.remove(&reshard_key.shard_id);
 
         DriverState::new(reshard_key.clone(), shard_ids, &consensus.peers())
-    })?;
+    };
+    let state: PersistedState = if can_resume {
+        SaveOnDisk::load_or_init(&resharding_state_path, init_state)?
+    } else {
+        SaveOnDisk::new(&resharding_state_path, init_state())?
+    };
+
     progress.lock().description.replace(state.read().describe());
 
     log::debug!(

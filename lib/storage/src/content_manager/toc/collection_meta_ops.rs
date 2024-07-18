@@ -322,9 +322,8 @@ impl TableOfContent {
                     }
                 };
 
-                let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
-                    .start_resharding(key, consensus, temp_dir, on_finish, on_failure)
+                    .start_resharding(key, consensus, on_finish, on_failure)
                     .await?;
             }
 
@@ -424,9 +423,8 @@ impl TableOfContent {
             }
         };
 
-        let temp_dir = self.optional_temp_or_storage_temp_path()?;
         collection
-            .resume_resharding_unchecked(consensus, temp_dir, on_finish, on_failure)
+            .resume_resharding_unchecked(consensus, on_finish, on_failure)
             .await?;
 
         Ok(())
