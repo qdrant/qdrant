@@ -262,7 +262,12 @@ fn test_save_load_histogram() {
     let num_samples = 100_000;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let points = (0..num_samples).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    let points = (0..num_samples)
+        .map(|i| Point {
+            val: rnd.gen_range(-10.0..10.0),
+            idx: i,
+        })
+        .collect_vec();
     let (histogram, _) = build_histogram(max_bucket_size, precision, points);
 
     let dir = tempfile::Builder::new()
