@@ -20,7 +20,7 @@ pub trait MmapValue<'a>: Clone + Default + 'a {
 
     fn read_from_mmap(bytes: &'a [u8]) -> Option<Self>;
 
-    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()>;
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> Option<()>;
 }
 
 impl<'a> MmapValue<'a> for IntPayloadType {
@@ -32,9 +32,8 @@ impl<'a> MmapValue<'a> for IntPayloadType {
         Self::read_from_prefix(bytes)
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> Option<()> {
         self.write_to_prefix(bytes)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
 
@@ -47,9 +46,8 @@ impl<'a> MmapValue<'a> for FloatPayloadType {
         Self::read_from_prefix(bytes)
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> Option<()> {
         self.write_to_prefix(bytes)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
 
@@ -67,14 +65,11 @@ impl<'a> MmapValue<'a> for GeoPoint {
         })
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
-        self.lon
-            .write_to_prefix(bytes)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> Option<()> {
+        self.lon.write_to_prefix(bytes)?;
         bytes
             .get_mut(std::mem::size_of::<f64>()..)
             .and_then(|bytes| self.lat.write_to_prefix(bytes))
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))
     }
 }
 
@@ -90,19 +85,16 @@ impl<'a> MmapValue<'a> for &'a str {
         std::str::from_utf8(bytes).ok()
     }
 
-    fn write_to_mmap(&self, bytes: &mut [u8]) -> OperationResult<()> {
-        u32::write_to_prefix(&(self.len() as u32), bytes)
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
-
-        let bytes = bytes
-            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+    fn write_to_mmap(&self, bytes: &mut [u8]) -> Option<()> {
+        u32::write_to_prefix(&(self.len() as u32), bytes)?;
+        let bytes =
+            bytes.get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + self.len())?;
 
         self.as_bytes()
             .iter()
             .enumerate()
             .for_each(|(i, &b)| bytes[i] = b);
-        Ok(())
+        Some(())
     }
 }
 
@@ -182,7 +174,9 @@ impl MmapPointToValues {
                 let bytes = mmap.get_mut(point_values_offset..).ok_or_else(|| {
                     OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
                 })?;
-                value.write_to_mmap(bytes)?;
+                value.write_to_mmap(bytes).ok_or_else(|| {
+                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
+                })?;
                 point_values_offset += value.mmaped_size();
             }
         }
@@ -421,9 +415,7 @@ mod tests {
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values.get_values(idx as PointOffsetType);
-            let v: Vec<GeoPoint> = iter
-                .map(|iter| iter.collect_vec())
-                .unwrap_or_default();
+            let v: Vec<GeoPoint> = iter.map(|iter| iter.collect_vec()).unwrap_or_default();
             assert_eq!(&v, values);
         }
     }
