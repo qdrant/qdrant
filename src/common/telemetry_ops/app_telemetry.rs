@@ -91,6 +91,9 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         if std::arch::is_x86_feature_detected!("sse") {
             cpu_flags.push("sse");
         }
+        if std::arch::is_x86_feature_detected!("sse2") {
+            cpu_flags.push("sse2");
+        }
         if std::arch::is_x86_feature_detected!("avx") {
             cpu_flags.push("avx");
         }
@@ -100,6 +103,9 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         if std::arch::is_x86_feature_detected!("fma") {
             cpu_flags.push("fma");
         }
+        if std::arch::is_x86_feature_detected!("f16c") {
+            cpu_flags.push("f16c");
+        }
         if std::arch::is_x86_feature_detected!("avx512f") {
             cpu_flags.push("avx512f");
         }
@@ -108,6 +114,9 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
             cpu_flags.push("neon");
+        }
+        if std::arch::is_aarch64_feature_detected!("fp16") {
+            cpu_flags.push("fp16");
         }
     }
     RunningEnvironmentTelemetry {
