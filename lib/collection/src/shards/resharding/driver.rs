@@ -229,7 +229,7 @@ pub async fn drive_resharding(
     let state: PersistedState = if can_resume {
         SaveOnDisk::load_or_init(&resharding_state_path, init_state)?
     } else {
-        SaveOnDisk::init(&resharding_state_path, init_state)?
+        SaveOnDisk::new(&resharding_state_path, init_state())?
     };
 
     progress.lock().description.replace(state.read().describe());

@@ -57,21 +57,18 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
         })
     }
 
-    /// Initialize data with `init`, even if data already exists.
+    /// Initialize new data, even if it already exists on disk at the given path.
     ///
-    /// Will immediately save the new `init` state on disk, only if the file already exists.
-    pub fn init(path: impl Into<PathBuf>, init: impl FnOnce() -> T) -> Result<Self, Error> {
-        let path: PathBuf = path.into();
-        let exists = path.exists();
+    /// If data already exists on disk, it will be immediately overwritten.
+    pub fn new(path: impl Into<PathBuf>, data: T) -> Result<Self, Error> {
         let data = Self {
             change_notification: Condvar::new(),
             notification_lock: Default::default(),
-            data: RwLock::new(init()),
-            path,
+            data: RwLock::new(data),
+            path: path.into(),
         };
 
-        // Overwrite existing data if it exists
-        if exists {
+        if data.path.exists() {
             data.save()?;
         }
 
