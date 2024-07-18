@@ -340,7 +340,7 @@ impl TableOfContent {
             }
 
             ReshardingOperation::Abort(key) => {
-                collection.abort_resharding(key).await?;
+                collection.abort_resharding(key, false).await?;
             }
         }
 
