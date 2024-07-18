@@ -45,6 +45,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use super::config_diff::{self};
 use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
@@ -241,6 +242,8 @@ pub struct ReshardingInfo {
     pub shard_id: ShardId,
 
     pub peer_id: PeerId,
+
+    pub direction: ReshardingDirection,
 
     pub shard_key: Option<ShardKey>,
 

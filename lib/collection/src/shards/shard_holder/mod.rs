@@ -405,6 +405,7 @@ impl ShardHolder {
             resharding_operations.push(ReshardingInfo {
                 shard_id: resharding_state.shard_id,
                 peer_id: resharding_state.peer_id,
+                direction: resharding_state.direction,
                 shard_key: resharding_state.shard_key.clone(),
                 comment: status.map(|p| p.comment),
             });
