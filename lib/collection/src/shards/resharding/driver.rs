@@ -26,24 +26,24 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 use crate::shards::CollectionId;
 
 /// Interval for the sanity check while awaiting shard transfers.
-pub(super) const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 /// If the shard transfer IO limit is reached, retry with this interval.
-pub(super) const SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+pub const SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(super) type PersistedState = SaveOnDisk<DriverState>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct DriverState {
-    pub(super) key: ReshardKey,
+    key: ReshardKey,
     /// Stage each peer is currently in
-    pub(super) peers: HashMap<PeerId, Stage>,
+    peers: HashMap<PeerId, Stage>,
     /// List of shard IDs that must be migrated into the new shard
-    pub(super) source_shard_ids: HashSet<ShardId>,
+    source_shard_ids: HashSet<ShardId>,
     /// List of shard IDs successfully migrated to the new shard
-    pub(super) migrated_shards: Vec<ShardId>,
+    pub migrated_shards: Vec<ShardId>,
     /// List of shard IDs in which we successfully deleted migrated points
-    pub(super) deleted_shards: Vec<ShardId>,
+    pub deleted_shards: Vec<ShardId>,
 }
 
 impl DriverState {
