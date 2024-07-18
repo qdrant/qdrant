@@ -232,7 +232,7 @@ pub async fn drive_resharding(
         stage_init::drive(&state, &progress, consensus)?;
     }
 
-    // Stage 2: init
+    // Stage 2: migrate points
     if !stage_migrate_points::is_completed(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: migrate points");
         stage_migrate_points::drive(
