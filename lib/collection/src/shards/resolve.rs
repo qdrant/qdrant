@@ -78,12 +78,16 @@ impl Resolve for Vec<ShardQueryResponse> {
 }
 
 fn record_eq(this: &Record, other: &Record) -> bool {
-    this.id == other.id && this.vector == other.vector && payload_eq(&this.payload, &other.payload)
+    this.id == other.id
+        && this.order_value == other.order_value
+        && this.vector == other.vector
+        && payload_eq(&this.payload, &other.payload)
 }
 
 fn scored_point_eq(this: &ScoredPoint, other: &ScoredPoint) -> bool {
     this.id == other.id
         && this.score == other.score
+        && this.order_value == other.order_value
         && this.vector == other.vector
         && payload_eq(&this.payload, &other.payload)
 }
