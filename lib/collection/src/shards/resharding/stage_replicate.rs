@@ -26,7 +26,7 @@ const REPLICATE_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 
 /// Stage 3: replicate to match replication factor
 ///
 /// Check whether we need to replicate to match replication factor.
-pub(super) async fn completed_replicate(
+pub(super) async fn is_completed(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     shard_holder: &Arc<LockedShardHolder>,
@@ -40,7 +40,7 @@ pub(super) async fn completed_replicate(
 ///
 /// Do replicate replicate to match replication factor.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn stage_replicate(
+pub(super) async fn drive(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,

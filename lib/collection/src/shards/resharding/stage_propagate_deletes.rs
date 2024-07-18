@@ -18,7 +18,7 @@ const DELETE_BATCH_SIZE: usize = 500;
 /// Stage 5: propagate deletes
 ///
 /// Check whether migrated points still need to be deleted in their old shards.
-pub(super) fn completed_propagate_deletes(state: &PersistedState) -> bool {
+pub(super) fn is_completed(state: &PersistedState) -> bool {
     let state_read = state.read();
     state_read.all_peers_completed(Stage::S5_PropagateDeletes)
         && state_read.shards_to_delete().next().is_none()
@@ -28,7 +28,7 @@ pub(super) fn completed_propagate_deletes(state: &PersistedState) -> bool {
 ///
 /// Do delete migrated points from their old shards.
 // TODO(resharding): this is a naive implementation, delete by hashring filter directly!
-pub(super) async fn stage_propagate_deletes(
+pub(super) async fn drive(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,

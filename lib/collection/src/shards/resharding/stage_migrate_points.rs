@@ -30,7 +30,7 @@ const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 6
 /// Stage 2: migrate points
 ///
 /// Check whether we need to migrate points into the new shard.
-pub(super) fn completed_migrate_points(state: &PersistedState) -> bool {
+pub(super) fn is_completed(state: &PersistedState) -> bool {
     let state_read = state.read();
     state_read.all_peers_completed(Stage::S2_MigratePoints)
         && state_read.shards_to_migrate().next().is_none()
@@ -42,7 +42,7 @@ pub(super) fn completed_migrate_points(state: &PersistedState) -> bool {
 /// shard transfer if needed, waiting for them to finish. Once this returns, all points are
 /// migrated to the target shard.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn stage_migrate_points(
+pub(super) async fn drive(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,

@@ -11,14 +11,14 @@ use crate::shards::{await_consensus_sync, CollectionId};
 /// Stage 4: commit new hashring
 ///
 /// Check whether the new hashring still needs to be committed.
-pub(super) fn completed_commit_hashring(state: &PersistedState) -> bool {
+pub(super) fn is_completed(state: &PersistedState) -> bool {
     state.read().all_peers_completed(Stage::S4_CommitHashring)
 }
 
 /// Stage 4: commit new hashring
 ///
 /// Do commit the new hashring.
-pub(super) async fn stage_commit_hashring(
+pub(super) async fn drive(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,

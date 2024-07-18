@@ -8,7 +8,7 @@ use crate::shards::transfer::ShardTransferConsensus;
 /// Stage 6: finalize
 ///
 /// Finalize the resharding operation.
-pub(super) fn stage_finalize(
+pub(super) fn drive(
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
     consensus: &dyn ShardTransferConsensus,

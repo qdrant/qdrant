@@ -8,14 +8,14 @@ use crate::shards::transfer::ShardTransferConsensus;
 /// Stage 1: init
 ///
 /// Check whether we need to initialize the resharding process.
-pub(super) fn completed_init(state: &PersistedState) -> bool {
+pub(super) fn is_completed(state: &PersistedState) -> bool {
     state.read().all_peers_completed(Stage::S1_Init)
 }
 
 /// Stage 1: init
 ///
 /// Do initialize the resharding process.
-pub(super) fn stage_init(
+pub(super) fn drive(
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
     consensus: &dyn ShardTransferConsensus,
