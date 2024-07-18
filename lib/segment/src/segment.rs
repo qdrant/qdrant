@@ -40,7 +40,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, VectorName, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -81,7 +81,7 @@ pub struct Segment {
     pub current_path: PathBuf,
     /// Component for mapping external ids to internal and also keeping track of point versions
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    pub vector_data: HashMap<String, VectorData>,
+    pub vector_data: HashMap<VectorName, VectorData>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     /// Shows if it is possible to insert more points into this segment
     pub appendable_flag: bool,

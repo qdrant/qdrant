@@ -6284,6 +6284,11 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/KeywordIndexType"
+          },
+          "is_tenant": {
+            "description": "If true - used for tenant optimization. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -6311,6 +6316,11 @@
           "range": {
             "description": "If true - support ranges filters.",
             "type": "boolean"
+          },
+          "is_tenant": {
+            "description": "If true - used for tenant optimization.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
