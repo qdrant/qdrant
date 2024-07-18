@@ -54,7 +54,7 @@ impl ShardHolder {
     pub fn start_resharding_unchecked(
         &mut self,
         resharding_key: ReshardKey,
-        shard: ShardReplicaSet,
+        new_shard: Option<ShardReplicaSet>,
     ) -> CollectionResult<()> {
         let ReshardKey {
             peer_id,
@@ -66,14 +66,18 @@ impl ShardHolder {
         // TODO(resharding): Delete shard on error!?
 
         let ring = get_ring(&mut self.rings, &shard_key)?;
-        ring.add_resharding(shard_id);
+        ring.start_resharding(shard_id, direction);
 
-        self.add_shard(shard_id, shard, shard_key.clone())?;
+        // Add new shard if resharding up
+        if let Some(new_shard) = new_shard {
+            debug_assert_eq!(direction, ReshardingDirection::Up);
+            self.add_shard(shard_id, new_shard, shard_key.clone())?;
+        }
 
         self.resharding_state.write(|state| {
             debug_assert!(
                 state.is_none(),
-                "resharding is already in progress:\n{state:#?}"
+                "resharding is already in progress:\n{state:#?}",
             );
 
             *state = Some(ReshardState::new(peer_id, shard_id, shard_key, direction));
@@ -210,8 +214,8 @@ impl ShardHolder {
         };
 
         if let Some(ring) = self.rings.get_mut(shard_key) {
-            log::debug!("removing peer {peer_id} from {shard_key:?} hashring");
-            ring.remove_resharding(shard_id);
+            log::debug!("ending resharding hash ring for shard {shard_id}");
+            ring.end_resharding(shard_id, direction);
         } else {
             log::warn!(
                 "aborting resharding {resharding_key}, \
@@ -219,41 +223,44 @@ impl ShardHolder {
             );
         }
 
-        if let Some(shard) = self.get_shard(&shard_id) {
-            match shard.peer_state(&peer_id) {
-                Some(ReplicaState::Resharding) => {
-                    log::debug!("removing peer {peer_id} from {shard_id} replica set");
-                    shard.remove_peer(peer_id).await?;
-                }
+        // Remove new shard if resharding up
+        if direction == ReshardingDirection::Up {
+            if let Some(shard) = self.get_shard(&shard_id) {
+                match shard.peer_state(&peer_id) {
+                    Some(ReplicaState::Resharding) => {
+                        log::debug!("removing peer {peer_id} from {shard_id} replica set");
+                        shard.remove_peer(peer_id).await?;
+                    }
 
-                Some(ReplicaState::Dead) if is_in_progress => {
-                    log::debug!("removing dead peer {peer_id} from {shard_id} replica set");
-                    shard.remove_peer(peer_id).await?;
-                }
+                    Some(ReplicaState::Dead) if is_in_progress => {
+                        log::debug!("removing dead peer {peer_id} from {shard_id} replica set");
+                        shard.remove_peer(peer_id).await?;
+                    }
 
-                Some(state) => {
-                    return Err(CollectionError::bad_request(format!(
-                        "peer {peer_id} is in {state:?} state"
-                    )));
-                }
+                    Some(state) => {
+                        return Err(CollectionError::bad_request(format!(
+                            "peer {peer_id} is in {state:?} state"
+                        )));
+                    }
 
-                None => {
-                    log::warn!(
-                        "aborting resharding {resharding_key}, \
+                    None => {
+                        log::warn!(
+                            "aborting resharding {resharding_key}, \
                          but peer {peer_id} does not exist in {shard_id} replica set"
-                    );
+                        );
+                    }
                 }
-            }
 
-            if shard.peers().is_empty() {
-                log::debug!("removing {shard_id} replica set, because replica set is empty");
-                self.drop_and_remove_shard(shard_id).await?;
-            }
-        } else {
-            log::warn!(
-                "aborting resharding {resharding_key}, \
+                if shard.peers().is_empty() {
+                    log::debug!("removing {shard_id} replica set, because replica set is empty");
+                    self.drop_and_remove_shard(shard_id).await?;
+                }
+            } else {
+                log::warn!(
+                    "aborting resharding {resharding_key}, \
                  but shard holder does not contain {shard_id} replica set",
-            );
+                );
+            }
         }
 
         if is_in_progress {
