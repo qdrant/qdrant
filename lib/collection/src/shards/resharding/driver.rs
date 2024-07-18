@@ -125,22 +125,27 @@ impl DriverState {
             return "unknown: no known peers".into();
         };
 
-        match lowest_stage {
-            Stage::S1_Init => "initialize".into(),
-            Stage::S2_MigratePoints => format!(
+        match (lowest_stage, self.key.direction) {
+            (Stage::S1_Init, _) => "initialize".into(),
+            (Stage::S2_MigratePoints, ReshardingDirection::Up) => format!(
                 "migrate points: migrating points from shards {:?} to {}",
                 self.shards_to_migrate().collect::<Vec<_>>(),
                 self.key.shard_id,
             ),
-            Stage::S3_Replicate => "replicate: replicate new shard to other peers".into(),
-            Stage::S4_CommitReadHashring => "commit read hash ring: switching reads".into(),
-            Stage::S5_CommitWriteHashring => "commit write hash ring: switching writes".into(),
-            Stage::S6_PropagateDeletes => format!(
+            (Stage::S2_MigratePoints, ReshardingDirection::Down) => format!(
+                "migrate points: migrating points from shards {:?} to {}",
+                self.shards_to_migrate().collect::<Vec<_>>(),
+                self.key.shard_id,
+            ),
+            (Stage::S3_Replicate, _) => "replicate: replicate new shard to other peers".into(),
+            (Stage::S4_CommitReadHashring, _) => "commit read hash ring: switching reads".into(),
+            (Stage::S5_CommitWriteHashring, _) => "commit write hash ring: switching writes".into(),
+            (Stage::S6_PropagateDeletes, _) => format!(
                 "propagate deletes: deleting migrated points from shards {:?}",
                 self.shards_to_delete().collect::<Vec<_>>(),
             ),
-            Stage::S7_Finalize => "finalize".into(),
-            Stage::Finished => "finished".into(),
+            (Stage::S7_Finalize, _) => "finalize".into(),
+            (Stage::Finished, _) => "finished".into(),
         }
     }
 }
@@ -236,7 +241,11 @@ pub async fn drive_resharding(
 
     log::debug!(
         "Resharding {collection_id}:{shard_id} with shards {:?}",
-        state.read().shards().filter(|id| shard_id != *id).collect::<Vec<_>>(),
+        state
+            .read()
+            .shards()
+            .filter(|id| shard_id != *id)
+            .collect::<Vec<_>>(),
     );
 
     // Stage 1: init
