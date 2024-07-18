@@ -207,7 +207,7 @@ pub async fn drive_resharding(
     channel_service: ChannelService,
     can_resume: bool,
 ) -> CollectionResult<bool> {
-    let to_shard_id = reshard_key.shard_id;
+    let shard_id = reshard_key.shard_id;
     let hash_ring = shard_holder
         .read()
         .await
@@ -231,19 +231,19 @@ pub async fn drive_resharding(
     progress.lock().description.replace(state.read().describe());
 
     log::debug!(
-        "Resharding {collection_id}:{to_shard_id} from shards {:?}",
-        state.read().shards().collect::<Vec<_>>(),
+        "Resharding {collection_id}:{shard_id} with shards {:?}",
+        state.read().shards().filter(|id| shard_id != *id).collect::<Vec<_>>(),
     );
 
     // Stage 1: init
     if !stage_init::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: init");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: init");
         stage_init::drive(&state, &progress, consensus)?;
     }
 
     // Stage 2: migrate points
     if !stage_migrate_points::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: migrate points");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: migrate points");
         stage_migrate_points::drive(
             &reshard_key,
             &state,
@@ -261,7 +261,7 @@ pub async fn drive_resharding(
     if !stage_replicate::is_completed(&reshard_key, &state, &shard_holder, &collection_config)
         .await?
     {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: replicate");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: replicate");
         stage_replicate::drive(
             &reshard_key,
             &state,
@@ -277,7 +277,7 @@ pub async fn drive_resharding(
 
     // Stage 4: commit new hashring
     if !stage_commit_hashring::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit hashring");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: commit hashring");
         stage_commit_hashring::drive(
             &reshard_key,
             &state,
@@ -291,7 +291,7 @@ pub async fn drive_resharding(
 
     // Stage 5: propagate deletes
     if !stage_propagate_deletes::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: propagate deletes");
         stage_propagate_deletes::drive(
             &reshard_key,
             &state,
@@ -303,7 +303,7 @@ pub async fn drive_resharding(
     }
 
     // Stage 6: finalize
-    log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
+    log::debug!("Resharding {collection_id}:{shard_id} stage: finalize");
     stage_finalize::drive(&state, &progress, consensus)?;
 
     // Delete the state file after successful resharding
