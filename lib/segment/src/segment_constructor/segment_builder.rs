@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
+use bitvec::macros::internal::funty::Integral;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -135,37 +136,38 @@ impl SegmentBuilder {
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
     fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
+        let mut ordering = 0;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(mut numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.next() {
-                            return *number as u64;
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        for number in numbers {
+                            ordering = ordering.wrapping_add(*number as u64);
                         }
                     }
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(mut keywords) = index.get_values(internal_id) {
-                        if let Some(keyword) = keywords.next() {
+                    if let Some(keywords) = index.get_values(internal_id) {
+                        for keyword in keywords {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
-                            return hasher.finish();
+                            ordering = ordering.wrapping_add(hasher.finish());
                         }
                     }
                     break;
                 }
                 FieldIndex::IntIndex(index) => {
-                    if let Some(mut numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.next() {
-                            return number as u64;
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        for number in numbers {
+                            ordering = ordering.wrapping_add(number as u64);
                         }
                     }
                     break;
                 }
                 FieldIndex::FloatIndex(index) => {
-                    if let Some(mut numbers) = index.get_values(internal_id) {
-                        if let Some(number) = numbers.next() {
+                    if let Some(numbers) = index.get_values(internal_id) {
+                        for number in numbers {
                             // Bit-level conversion of f64 to u64 preserves ordering
                             // (for positive numbers)
                             //
@@ -176,15 +178,15 @@ impl SegmentBuilder {
                             // 1     -> 4607182418800017408
                             // 2     -> 4611686018427387904
                             // 10    -> 4621819117588971520
-                            return number.to_bits();
+                            ordering = ordering.wrapping_add(number.to_bits());
                         }
                     }
                     break;
                 }
                 FieldIndex::DatetimeIndex(index) => {
-                    if let Some(mut dates) = index.get_values(internal_id) {
-                        if let Some(date) = dates.next() {
-                            return date as u64;
+                    if let Some(dates) = index.get_values(internal_id) {
+                        for date in dates {
+                            ordering = ordering.wrapping_add(date as u64);
                         }
                     }
                     break;
@@ -194,7 +196,7 @@ impl SegmentBuilder {
                 FieldIndex::BinaryIndex(_) => {}
             }
         }
-        0
+        ordering
     }
 
     /// Update current segment builder with all (not deleted) vectors and payload from `segments`.
@@ -250,7 +252,7 @@ impl SegmentBuilder {
 
         let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
 
-        if let Some(defragment_key) = self.defragment_keys.first() {
+        for defragment_key in &self.defragment_keys {
             for point_data in &mut points_to_insert {
                 let Some(payload_indices) = payloads[point_data.segment_index]
                     .field_indexes
@@ -259,10 +261,14 @@ impl SegmentBuilder {
                     continue;
                 };
 
-                point_data.ordering =
-                    Self::_get_ordering_value(point_data.internal_id, payload_indices);
+                point_data.ordering = point_data.ordering.wrapping_add(Self::_get_ordering_value(
+                    point_data.internal_id,
+                    payload_indices,
+                ));
             }
+        }
 
+        if !self.defragment_keys.is_empty() {
             points_to_insert.sort_unstable_by_key(|i| i.ordering);
         }
 
