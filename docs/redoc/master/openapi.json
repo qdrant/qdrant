@@ -6285,7 +6285,7 @@
           "type": {
             "$ref": "#/components/schemas/KeywordIndexType"
           },
-          "is_primary": {
+          "is_tenant": {
             "description": "If true - used for tenant optimization. Default: false.",
             "type": "boolean",
             "nullable": true
@@ -6317,8 +6317,8 @@
             "description": "If true - support ranges filters.",
             "type": "boolean"
           },
-          "is_primary": {
-            "description": "If true - used for tenant optimization. Currently only compatible with lookup.",
+          "is_tenant": {
+            "description": "If true - used for tenant optimization.",
             "type": "boolean",
             "nullable": true
           }
