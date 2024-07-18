@@ -16,8 +16,7 @@ use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
-    DEFAULT_STOPPED,
+    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, DEFAULT_STOPPED,
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -85,10 +84,9 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         Ok(())
     }
 
-    fn update_from(
+    fn update_from<'a>(
         &mut self,
-        _other: &VectorStorageEnum,
-        _other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        _other_ids: &'a mut impl Iterator<Item = (PointOffsetType, CowVector<'a>, bool)>,
         _stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         todo!()

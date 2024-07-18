@@ -125,7 +125,6 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             .unwrap_or(false)
     }
 
-    #[cfg(test)]
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         Some(
             self.point_to_values

@@ -386,11 +386,13 @@ enum TokenizerType {
 }
 
 message KeywordIndexParams {
+    optional bool is_tenant = 3; // If true - used for tenant optimization.
 }
 
 message IntegerIndexParams {
   bool lookup = 1; // If true - support direct lookups.
   bool range = 2; // If true - support ranges filters.
+  optional bool is_tenant = 3; // If true - used for tenant optimization.
 }
 
 message FloatIndexParams {

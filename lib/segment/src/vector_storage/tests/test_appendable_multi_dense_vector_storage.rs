@@ -190,13 +190,13 @@ fn do_test_update_from_delete_points(
                 }
             });
         }
-        storage
-            .update_from(
-                &storage2,
-                &mut Box::new(0..points.len() as u32),
-                &Default::default(),
-            )
-            .unwrap();
+        let mut iter = (0..points.len()).map(|i| {
+            let i = i as PointOffsetType;
+            let vec = storage2.get_vector(i);
+            let deleted = storage2.is_deleted_vector(i);
+            (i, vec, deleted)
+        });
+        storage.update_from(&mut iter, &Default::default()).unwrap();
     }
 
     assert_eq!(
