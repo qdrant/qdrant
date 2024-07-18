@@ -181,6 +181,8 @@ impl TableOfContent {
                 .remove_collection(collection_name)?;
 
             let path = self.get_collection_path(collection_name);
+
+            // TODO(resharding): Gracefully cancel resharding and shard transfer tasks!?
             drop(removed);
 
             // Move collection to ".deleted" folder to prevent accidental reuse
