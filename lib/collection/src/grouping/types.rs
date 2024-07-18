@@ -56,7 +56,7 @@ pub struct QueryGroupRequest {
     pub group_size: usize,
 
     /// Limit of groups to return
-    pub limit: usize,
+    pub groups: usize,
 
     /// Options for specifying how to use the group id to lookup points in another collection
     pub with_lookup: Option<WithLookup>,
