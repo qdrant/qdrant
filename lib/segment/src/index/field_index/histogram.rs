@@ -17,7 +17,7 @@ const MIN_BUCKET_SIZE: usize = 10;
 const CONFIG_PATH: &str = "histogram_config.json";
 const BORDERS_PATH: &str = "histogram_borders.bin";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Counts {
     pub left: usize,
     pub right: usize,
@@ -110,7 +110,7 @@ impl Numericable for f64 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Histogram<T: Numericable + Serialize + DeserializeOwned> {
     max_bucket_size: usize,
     precision: f64,

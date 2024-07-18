@@ -251,15 +251,26 @@ fn test_build_histogram() {
         .collect_vec();
 
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);
+    request_histogram(&histogram, &points_index);
+    test_range_by_cardinality(&histogram);
+}
 
-    // test persistence
+#[test]
+fn test_save_load_histogram() {
+    let max_bucket_size = 1000;
+    let precision = 0.01;
+    let num_samples = 100_000;
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let points = (0..num_samples).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    let (histogram, _) = build_histogram(max_bucket_size, precision, points);
+
     let dir = tempfile::Builder::new()
         .prefix("histogram_dir")
         .tempdir()
         .unwrap();
     histogram.save(&dir).unwrap();
-    let histogram = Histogram::<f64>::load(&dir).unwrap();
 
-    request_histogram(&histogram, &points_index);
-    test_range_by_cardinality(&histogram);
+    let loaded_histogram = Histogram::<f64>::load(&dir).unwrap();
+    assert_eq!(histogram, loaded_histogram);
 }
