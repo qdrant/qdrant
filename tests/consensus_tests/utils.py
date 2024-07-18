@@ -12,6 +12,11 @@ from pathlib import Path
 import pytest
 from .assertions import assert_http_ok
 
+
+WAIT_TIME_SEC = 30
+RETRY_INTERVAL_SEC = 0.5
+
+
 # Tracks processes that need to be killed at the end of the test
 processes = []
 busy_ports = {}
@@ -469,10 +474,6 @@ def check_collection_cluster(peer_url, collection_name):
     return res.json()["result"]['local_shards'][0]
 
 
-WAIT_TIME_SEC = 30
-RETRY_INTERVAL_SEC = 0.5
-
-
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size, headers=headers)
     wait_for(leader_is_defined, peer_api_uri, headers=headers)
@@ -564,10 +565,12 @@ def wait_for_collection_shard_transfer_progress(peer_api_uri: str, collection_na
         raise e
 
 
-def wait_for_collection_resharding_operations_count(peer_api_uri: str, collection_name: str,
-                                              expected_resharding_operations_count: int, headers={}):
+def wait_for_collection_resharding_operations_count(peer_api_uri: str,
+                                                    collection_name: str,
+                                                    expected_resharding_operations_count:
+                                                    int, headers={}, **kwargs):
     try:
-        wait_for(check_collection_resharding_operations_count, peer_api_uri, collection_name, expected_resharding_operations_count, headers=headers)
+        wait_for(check_collection_resharding_operations_count, peer_api_uri, collection_name, expected_resharding_operations_count, headers=headers, **kwargs)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
@@ -589,13 +592,13 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
         raise e
 
 
-def wait_for(condition: Callable[..., bool], *args, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
+def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
     start = time.time()
     while not condition(*args, **kwargs):
         elapsed = time.time() - start
-        if elapsed > WAIT_TIME_SEC:
+        if elapsed > wait_for_timeout:
             raise Exception(
-                f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
+                f"Timeout waiting for condition {condition.__name__} to be satisfied in {wait_for_timeout} seconds")
         else:
             time.sleep(wait_for_interval)
 
