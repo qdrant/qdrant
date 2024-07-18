@@ -530,6 +530,20 @@ impl Collection {
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let resharding_state = self
+            .resharding_state()
+            .await
+            .filter(|state| state.peer_id == peer_id);
+
+        if let Some(state) = resharding_state {
+            if let Err(err) = self.abort_resharding(state.key(), true).await {
+                log::error!(
+                    "Failed to abort resharding {} while removing peer {peer_id}: {err}",
+                    state.key(),
+                );
+            }
+        }
+
         self.shards_holder
             .read()
             .await
