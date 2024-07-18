@@ -126,6 +126,8 @@ pub trait SegmentEntry {
         order_by: &'a OrderBy,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
+    fn read_random_filtered(&self, limit: usize, filter: Option<&Filter>) -> Vec<PointIdType>;
+
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
 

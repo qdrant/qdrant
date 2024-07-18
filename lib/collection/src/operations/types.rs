@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
-use segment::data_types::order_by::OrderValue;
+use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
@@ -342,6 +342,14 @@ pub struct ScrollRequestInternal {
     pub order_by: Option<OrderByInterface>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum ScrollOrder {
+    #[default]
+    ById,
+    ByField(OrderBy),
+    Random,
+}
+
 /// Scroll request, used as a part of query request
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryScrollRequestInternal {
@@ -358,7 +366,7 @@ pub struct QueryScrollRequestInternal {
     pub with_vector: WithVector,
 
     /// Order the records by a payload field.
-    pub order_by: Option<OrderByInterface>,
+    pub scroll_order: ScrollOrder,
 }
 
 impl ScrollRequestInternal {
