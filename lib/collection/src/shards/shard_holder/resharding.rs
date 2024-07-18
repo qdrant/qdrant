@@ -39,10 +39,22 @@ impl ShardHolder {
             }
         }
 
-        if self.shards.contains_key(shard_id) {
-            return Err(CollectionError::bad_request(format!(
-                "shard holder already contains shard {shard_id} replica set",
-            )));
+        let has_shard = self.shards.contains_key(shard_id);
+        match resharding_key.direction {
+            ReshardingDirection::Up => {
+                if has_shard {
+                    return Err(CollectionError::bad_request(format!(
+                        "shard holder already contains shard {shard_id} replica set",
+                    )));
+                }
+            }
+            ReshardingDirection::Down => {
+                if !has_shard {
+                    return Err(CollectionError::bad_request(format!(
+                        "shard holder does not contain shard {shard_id} replica set",
+                    )));
+                }
+            }
         }
 
         // TODO(resharding): Check that peer exists!?
