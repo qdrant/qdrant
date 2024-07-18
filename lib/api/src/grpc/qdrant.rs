@@ -641,7 +641,7 @@ pub struct CollectionConfig {
 pub struct KeywordIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "3")]
-    pub is_primary: ::core::option::Option<bool>,
+    pub is_tenant: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -653,9 +653,9 @@ pub struct IntegerIndexParams {
     /// If true - support ranges filters.
     #[prost(bool, tag = "2")]
     pub range: bool,
-    /// If true - used for tenant optimization. Currently only compatible with lookup.
+    /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "3")]
-    pub is_primary: ::core::option::Option<bool>,
+    pub is_tenant: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -1176,10 +1176,10 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_primary(&self) -> bool {
+    pub fn is_tenant(&self) -> bool {
         match self {
-            PayloadSchemaParams::Keyword(keyword) => keyword.is_primary.unwrap_or_default(),
-            PayloadSchemaParams::Integer(integer) => integer.is_primary.unwrap_or_default(),
+            PayloadSchemaParams::Keyword(keyword) => keyword.is_tenant.unwrap_or_default(),
+            PayloadSchemaParams::Integer(integer) => integer.is_tenant.unwrap_or_default(),
             _ => false,
         }
     }
@@ -1208,10 +1208,10 @@ impl PayloadFieldSchema {
         }
     }
 
-    pub fn is_primary(&self) -> bool {
+    pub fn is_tenant(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_primary(),
+            PayloadFieldSchema::FieldParams(params) => params.is_tenant(),
         }
     }
 }

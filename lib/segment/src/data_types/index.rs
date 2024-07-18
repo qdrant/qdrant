@@ -18,7 +18,7 @@ pub struct KeywordIndexParams {
 
     /// If true - used for tenant optimization. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_primary: Option<bool>,
+    pub is_tenant: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[cfg(any())]
@@ -47,8 +47,8 @@ pub struct IntegerIndexParams {
     /// If true - support ranges filters.
     pub range: bool,
 
-    /// If true - used for tenant optimization. Currently only compatible with lookup.
-    pub is_primary: Option<bool>,
+    /// If true - used for tenant optimization.
+    pub is_tenant: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,7 +62,7 @@ impl Default for IntegerIndexParams {
             r#type: Default::default(),
             lookup: true,
             range: true,
-            is_primary: None,
+            is_tenant: None,
         }
     }
 }
