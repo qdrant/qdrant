@@ -213,6 +213,22 @@ pub struct AbortShardTransfer {
 pub struct StartResharding {
     pub peer_id: Option<PeerId>,
     pub shard_key: Option<ShardKey>,
+    #[serde(default)]
+    // TODO(resharding): expose when releasing resharding with scaling down
+    #[schemars(skip)]
+    pub direction: ReshardingDirection,
+}
+
+/// Resharding direction, scale up or down in number of shards
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, Copy, Eq, PartialEq, Hash)]
+#[serde(rename_all = "snake_case")]
+// TODO(resharding): expose when releasing resharding with scaling down
+pub enum ReshardingDirection {
+    /// Scale up, add a new shard
+    #[default]
+    Up,
+    /// Scale down, remove a shard
+    Down,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
