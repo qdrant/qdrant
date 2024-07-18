@@ -552,7 +552,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<String> for MapIndex<str> {
+impl ValueIndexer for MapIndex<str> {
+    type ValueType = String;
+
     fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
             MapIndex::Mutable(index) => index.add_many_to_map(id, values),
@@ -577,7 +579,9 @@ impl ValueIndexer<String> for MapIndex<str> {
     }
 }
 
-impl ValueIndexer<IntPayloadType> for MapIndex<IntPayloadType> {
+impl ValueIndexer for MapIndex<IntPayloadType> {
+    type ValueType = IntPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,

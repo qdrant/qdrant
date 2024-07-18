@@ -506,7 +506,9 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
     }
 }
 
-impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType, IntPayloadType> {
+impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
+    type ValueType = IntPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
@@ -529,7 +531,9 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType, IntPayloadTyp
     }
 }
 
-impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType, DateTimePayloadType> {
+impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
+    type ValueType = DateTimePayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
@@ -554,7 +558,9 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType, DateTime
     }
 }
 
-impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType, FloatPayloadType> {
+impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
+    type ValueType = FloatPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,

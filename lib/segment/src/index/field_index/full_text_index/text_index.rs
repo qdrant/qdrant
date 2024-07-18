@@ -134,7 +134,9 @@ impl FullTextIndex {
     }
 }
 
-impl ValueIndexer<String> for FullTextIndex {
+impl ValueIndexer for FullTextIndex {
+    type ValueType = String;
+
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
