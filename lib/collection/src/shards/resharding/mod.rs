@@ -1,8 +1,14 @@
-use std::fmt;
-
 pub mod driver;
 pub mod tasks_pool;
 
+mod stage_commit_hashring;
+mod stage_finalize;
+mod stage_init;
+mod stage_migrate_points;
+mod stage_propagate_deletes;
+mod stage_replicate;
+
+use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
