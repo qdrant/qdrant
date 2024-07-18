@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -409,15 +410,18 @@ impl IdTracker for SimpleIdTracker {
 
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
         let rng = rand::thread_rng();
-        let available = self.internal_to_external.len();
-        let uniform = rand::distributions::Uniform::new(0, available);
+        let max_internal = self.internal_to_external.len();
+        if max_internal == 0 {
+            return Box::new(iter::empty());
+        }
+        let uniform = rand::distributions::Uniform::new(0, max_internal);
         let iter = Distribution::sample_iter(uniform, rng)
-            // TODO: this is not efficient if `available` is large and we iterate over most of them,
+            // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
             // but it's good enough for low limits.
             //
             // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
             .unique()
-            .take(available)
+            .take(max_internal)
             .filter_map(move |i| {
                 if self.deleted[i] {
                     None
