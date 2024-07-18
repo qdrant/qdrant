@@ -23,6 +23,7 @@ use serde_json::Value;
 
 use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
+use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
@@ -346,6 +347,13 @@ impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
         }
     }
 
+    pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
+    where
+        Self: ValueIndexer,
+    {
+        NumericIndexBuilder(Self::new(db, field, true))
+    }
+
     pub fn inner(&self) -> &NumericIndexInner<T> {
         &self.inner
     }
@@ -365,6 +373,29 @@ impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
         }
+    }
+}
+
+pub struct NumericIndexBuilder<T: Encodable + Numericable + Default, P>(NumericIndex<T, P>)
+where
+    NumericIndex<T, P>: ValueIndexer;
+
+impl<T: Encodable + Numericable + Default, P> FieldIndexBuilderTrait for NumericIndexBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer,
+{
+    type FieldIndexType = NumericIndex<T, P>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.0.inner.get_db_wrapper().recreate_column_family()
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
 
