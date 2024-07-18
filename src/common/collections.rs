@@ -6,7 +6,8 @@ use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation, RestartTransfer, RestartTransferOperation, StartResharding,
+    ReplicateShardOperation, ReshardingDirection, RestartTransfer, RestartTransferOperation,
+    StartResharding,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -520,7 +521,11 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::StartResharding(op) => {
-            let StartResharding { peer_id, shard_key } = op.start_resharding;
+            let StartResharding {
+                peer_id,
+                shard_key,
+                direction,
+            } = op.start_resharding;
 
             let peer_id = match peer_id {
                 Some(peer_id) => {
@@ -575,6 +580,7 @@ pub async fn do_update_collection_cluster(
                             peer_id,
                             shard_id,
                             shard_key,
+                            direction,
                         }),
                     ),
                     access,
@@ -597,6 +603,7 @@ pub async fn do_update_collection_cluster(
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
                             shard_key: state.shard_key.clone(),
+                            direction: state.direction,
                         }),
                     ),
                     access,

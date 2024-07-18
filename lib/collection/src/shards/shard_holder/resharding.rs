@@ -7,6 +7,7 @@ use segment::types::{Condition, Filter, ShardKey};
 
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRing};
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
@@ -59,6 +60,7 @@ impl ShardHolder {
             peer_id,
             shard_id,
             shard_key,
+            direction,
         } = resharding_key;
 
         // TODO(resharding): Delete shard on error!?
@@ -74,7 +76,7 @@ impl ShardHolder {
                 "resharding is already in progress:\n{state:#?}"
             );
 
-            *state = Some(ReshardState::new(peer_id, shard_id, shard_key));
+            *state = Some(ReshardState::new(peer_id, shard_id, shard_key, direction));
         })?;
 
         Ok(())
@@ -180,6 +182,7 @@ impl ShardHolder {
         let ReshardKey {
             peer_id,
             shard_id,
+            direction,
             ref shard_key,
         } = resharding_key;
 

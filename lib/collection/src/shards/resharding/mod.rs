@@ -27,6 +27,7 @@ use super::shard::{PeerId, ShardId};
 use super::transfer::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::config::CollectionConfig;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::shard_holder::LockedShardHolder;
@@ -40,15 +41,22 @@ pub struct ReshardState {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
+    pub direction: ReshardingDirection,
     pub stage: ReshardStage,
 }
 
 impl ReshardState {
-    pub fn new(peer_id: PeerId, shard_id: ShardId, shard_key: Option<ShardKey>) -> Self {
+    pub fn new(
+        peer_id: PeerId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+        direction: ReshardingDirection,
+    ) -> Self {
         Self {
             peer_id,
             shard_id,
             shard_key,
+            direction,
             stage: ReshardStage::MigratingPoints,
         }
     }
@@ -57,6 +65,7 @@ impl ReshardState {
         self.peer_id == key.peer_id
             && self.shard_id == key.shard_id
             && self.shard_key == key.shard_key
+            && self.direction == key.direction
     }
 
     pub fn key(&self) -> ReshardKey {
@@ -64,6 +73,7 @@ impl ReshardState {
             peer_id: self.peer_id,
             shard_id: self.shard_id,
             shard_key: self.shard_key.clone(),
+            direction: self.direction,
         }
     }
 }
@@ -88,6 +98,10 @@ pub struct ReshardKey {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
+    #[serde(default)]
+    // TODO(resharding): expose when releasing resharding with scaling down
+    #[schemars(skip)]
+    pub direction: ReshardingDirection,
 }
 
 impl fmt::Display for ReshardKey {
