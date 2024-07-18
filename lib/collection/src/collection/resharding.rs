@@ -1,5 +1,4 @@
 use std::num::NonZeroU32;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::Future;
@@ -29,7 +28,6 @@ impl Collection {
         &self,
         resharding_key: ReshardKey,
         consensus: Box<dyn ShardTransferConsensus>,
-        temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
     ) -> CollectionResult<()>
@@ -74,7 +72,7 @@ impl Collection {
         }
 
         // Drive resharding
-        self.drive_resharding(resharding_key, consensus, temp_dir, on_finish, on_error)
+        self.drive_resharding(resharding_key, consensus, false, on_finish, on_error)
             .await?;
 
         Ok(())
@@ -91,7 +89,6 @@ impl Collection {
     pub async fn resume_resharding_unchecked<T, F>(
         &self,
         consensus: Box<dyn ShardTransferConsensus>,
-        temp_dir: PathBuf,
         on_finish: T,
         on_error: F,
     ) -> CollectionResult<()>
@@ -103,7 +100,7 @@ impl Collection {
             return Ok(());
         };
 
-        self.drive_resharding(state.key(), consensus, temp_dir, on_finish, on_error)
+        self.drive_resharding(state.key(), consensus, true, on_finish, on_error)
             .await?;
 
         Ok(())
@@ -113,7 +110,7 @@ impl Collection {
         &self,
         resharding_key: ReshardKey,
         consensus: Box<dyn ShardTransferConsensus>,
-        temp_dir: PathBuf,
+        can_resume: bool,
         on_finish: T,
         on_error: F,
     ) -> CollectionResult<()>
@@ -146,7 +143,7 @@ impl Collection {
             collection_config,
             self.shared_storage_config.clone(),
             channel_service,
-            temp_dir,
+            can_resume,
             on_finish,
             on_error,
         );

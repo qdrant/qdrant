@@ -102,7 +102,7 @@ pub fn spawn_resharding_task<T, F>(
     collection_config: Arc<RwLock<CollectionConfig>>,
     shared_storage_config: Arc<SharedStorageConfig>,
     channel_service: ChannelService,
-    temp_dir: PathBuf,
+    can_resume: bool,
     on_finish: T,
     on_error: F,
 ) -> CancellableAsyncTaskHandle<bool>
@@ -134,7 +134,7 @@ where
                     collection_config.clone(),
                     &shared_storage_config,
                     channel_service.clone(),
-                    &temp_dir,
+                    can_resume,
                 )
                 .await
             };
