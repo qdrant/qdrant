@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,6 +21,7 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
+use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
@@ -527,26 +529,6 @@ pub async fn do_update_collection_cluster(
                 direction,
             } = op.start_resharding;
 
-            let peer_id = match peer_id {
-                Some(peer_id) => {
-                    validate_peer_exists(peer_id)?;
-                    peer_id
-                }
-
-                None => {
-                    // TODO(resharding): Select `peer_id` for resharding in a more reasonable way!?
-                    consensus_state
-                        .persistent
-                        .read()
-                        .peer_address_by_id
-                        .read()
-                        .keys()
-                        .copied()
-                        .next()
-                        .unwrap()
-                }
-            };
-
             let collection_state = collection.state().await;
 
             // TODO(resharding): select highest in current shard key
@@ -559,6 +541,53 @@ pub async fn do_update_collection_cluster(
             let shard_id = match direction {
                 ReshardingDirection::Up => max_shard_id + 1,
                 ReshardingDirection::Down => max_shard_id,
+            };
+
+            let peer_id = match (peer_id, direction) {
+                // Select user specified peer, but make sure it exists
+                (Some(peer_id), _) => {
+                    validate_peer_exists(peer_id)?;
+                    peer_id
+                }
+
+                // When scaling up, select peer with least number of shards for this collection
+                (None, ReshardingDirection::Up) => {
+                    let mut shards_on_peers = collection_state
+                        .shards
+                        .values()
+                        .flat_map(|shard_info| shard_info.replicas.keys())
+                        .fold(HashMap::new(), |mut counts, peer_id| {
+                            *counts.entry(*peer_id).or_insert(0) += 1;
+                            counts
+                        });
+                    consensus_state
+                        .persistent
+                        .read()
+                        .peer_address_by_id
+                        .read()
+                        .keys()
+                        .for_each(|peer_id| {
+                            // Add registered peers not holding any shard yet
+                            shards_on_peers.entry(*peer_id).or_insert(0);
+                        });
+                    shards_on_peers
+                        .into_iter()
+                        .min_by_key(|(_, count)| *count)
+                        .map(|(peer_id, _)| peer_id)
+                        .expect("expected at least one peer")
+                }
+
+                // When scaling down, select random peer that contains the shard we're dropping
+                // Other peers work, but are less efficient due to remote operations
+                (None, ReshardingDirection::Down) => collection_state
+                    .shards
+                    .get(&shard_id)
+                    .expect("select shard ID must always exist in collection state")
+                    .replicas
+                    .keys()
+                    .choose(&mut rand::thread_rng())
+                    .copied()
+                    .unwrap(),
             };
 
             if let Some(shard_key) = &shard_key {
