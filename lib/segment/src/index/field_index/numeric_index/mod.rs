@@ -362,6 +362,7 @@ impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
             pub fn load(&mut self) -> OperationResult<bool>;
             pub fn recreate(&self) -> OperationResult<()>;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
+            pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
         }
     }
