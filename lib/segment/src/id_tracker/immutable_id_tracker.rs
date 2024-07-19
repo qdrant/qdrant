@@ -933,7 +933,7 @@ pub(super) mod test {
         drop(immutable_id_tracker);
 
         let immutable_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
-        
+
         for (external_id, internal_id) in simple_id_tracker.iter_from(None) {
             assert_eq!(
                 simple_id_tracker.internal_version(internal_id).unwrap(),
