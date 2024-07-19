@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::iter;
-use std::mem::size_of_val;
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
