@@ -118,6 +118,25 @@ impl ShardHolder {
         Ok(())
     }
 
+    pub fn remove_shard_from_key_mapping(
+        &mut self,
+        shard_id: &ShardId,
+        shard_key: &ShardKey,
+    ) -> Result<(), CollectionError> {
+        self.key_mapping.write_optional(|key_mapping| {
+            if !key_mapping.contains_key(shard_key) {
+                return None;
+            }
+
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.get_mut(shard_key).unwrap().remove(shard_id);
+            Some(key_mapping)
+        })?;
+        self.shard_id_to_key_mapping.remove(shard_id);
+
+        Ok(())
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,

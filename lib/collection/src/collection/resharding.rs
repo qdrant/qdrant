@@ -189,6 +189,9 @@ impl Collection {
 
         if resharding_key.direction == ReshardingDirection::Down {
             // Remove the shard we've now migrated all points out of
+            if let Some(shard_key) = &resharding_key.shard_key {
+                shard_holder.remove_shard_from_key_mapping(&resharding_key.shard_id, shard_key)?;
+            }
             shard_holder
                 .drop_and_remove_shard(resharding_key.shard_id)
                 .await?;
