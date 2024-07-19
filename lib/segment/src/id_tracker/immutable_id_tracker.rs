@@ -629,7 +629,8 @@ pub(super) mod test {
             }
 
             // Check version
-            let expect_version = custom_version.get(&internal_id).unwrap_or(&0);
+            let expect_version = custom_version.get(&internal_id).unwrap_or(&DEFAULT_VERSION);
+
             assert_eq!(
                 id_tracker.internal_to_version.get(internal_id as usize),
                 Some(expect_version)
@@ -820,16 +821,16 @@ pub(super) mod test {
         }
     }
 
+    const DEFAULT_VERSION: SeqNumberType = 42;
+
     fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
         let mut id_tracker = InMemoryIdTracker::new();
-
-        let version = 42;
 
         for value in TEST_POINTS.iter() {
             let internal_id = id_tracker.total_point_count() as PointOffsetType;
             id_tracker.set_link(*value, internal_id).unwrap();
             id_tracker
-                .set_internal_version(internal_id, version)
+                .set_internal_version(internal_id, DEFAULT_VERSION)
                 .unwrap()
         }
 
