@@ -11,11 +11,11 @@ COLLECTION_NAME = "test_collection"
 
 # Test resharding.
 #
-# On a static collection, this performs resharding a few times and asserts the
-# shard and point counts are correct.
+# On a static collection, this performs resharding up and down a few times and
+# asserts the shard and point counts are correct.
 #
-# More specifically this starts at 1 shard, reshards 3 times and ends up with 4
-# shards.
+# More specifically this starts at 1 shard, reshards 3 times to 4 shards, and
+# reshards 3 times back to 1 shard.
 def test_resharding(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -44,7 +44,7 @@ def test_resharding(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
-    # Reshard 3 times in sequence
+    # Reshard up 3 times in sequence
     for shard_count in range(2, 5):
         # Start resharding
         r = requests.post(
@@ -52,6 +52,46 @@ def test_resharding(tmp_path: pathlib.Path):
                 "start_resharding": {
                     "peer_id": first_peer_id,
                     "shard_key": None,
+                    "direction": "up"
+                }
+            })
+        assert_http_ok(r)
+
+        # Wait for resharding operation to start and stop
+        wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+        for uri in peer_api_uris:
+            wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0)
+
+        # Assert node shard and point sum count
+        for uri in peer_api_uris:
+            assert check_collection_local_shards_count(uri, COLLECTION_NAME, shard_count)
+            assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
+
+    sleep(1)
+
+    # Match all points on all nodes exactly
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    check_data_consistency(data)
+
+    # Reshard down 3 times in sequence
+    for shard_count in range(3, 0, -1):
+        # Start resharding
+        r = requests.post(
+            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+                "start_resharding": {
+                    "peer_id": first_peer_id,
+                    "shard_key": None,
+                    "direction": "down"
                 }
             })
         assert_http_ok(r)
