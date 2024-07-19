@@ -97,7 +97,7 @@ impl DriverState {
     /// List the shard ID pairs we still need to migrate
     pub fn shards_to_migrate(&self) -> impl Iterator<Item = ShardId> + '_ {
         self.shards()
-            // Exlude current resharding shard, and already migrated shards
+            // Exclude current resharding shard, and already migrated shards
             .filter(|shard_id| {
                 *shard_id != self.key.shard_id && !self.migrated_shards.contains(shard_id)
             })
@@ -106,7 +106,7 @@ impl DriverState {
     /// List the shard IDs in which we still need to propagate point deletions.
     pub fn shards_to_delete(&self) -> impl Iterator<Item = ShardId> + '_ {
         self.shards()
-            // Exlude current resharding shard, and already deleted shards
+            // Exclude current resharding shard, and already deleted shards
             .filter(|shard_id| {
                 *shard_id != self.key.shard_id && !self.deleted_shards.contains(shard_id)
             })
@@ -133,9 +133,9 @@ impl DriverState {
                 self.key.shard_id,
             ),
             (Stage::S2_MigratePoints, ReshardingDirection::Down) => format!(
-                "migrate points: migrating points from shards {:?} to {}",
-                self.shards_to_migrate().collect::<Vec<_>>(),
+                "migrate points: migrating points from shard {} to shards {:?}",
                 self.key.shard_id,
+                self.shards_to_migrate().collect::<Vec<_>>(),
             ),
             (Stage::S3_Replicate, _) => "replicate: replicate new shard to other peers".into(),
             (Stage::S4_CommitHashring, _) => "commit hash ring: switching reads and writes".into(),
