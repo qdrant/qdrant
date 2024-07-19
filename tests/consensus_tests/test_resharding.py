@@ -27,7 +27,6 @@ def test_resharding(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -50,8 +49,7 @@ def test_resharding(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "direction": "up",
-                    "peer_id": first_peer_id
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -88,8 +86,7 @@ def test_resharding(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "direction": "down",
-                    "peer_id": first_peer_id
+                    "direction": "down"
                 }
             })
         assert_http_ok(r)
