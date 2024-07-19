@@ -9340,6 +9340,9 @@
           "shard_id"
         ],
         "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/ReshardingDirection"
+          },
           "shard_id": {
             "type": "integer",
             "format": "uint32",
@@ -9349,9 +9352,6 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
-          },
-          "direction": {
-            "$ref": "#/components/schemas/ReshardingDirection"
           },
           "shard_key": {
             "anyOf": [

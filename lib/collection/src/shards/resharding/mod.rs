@@ -95,9 +95,6 @@ pub enum ReshardStage {
 /// Unique identifier of a resharding task
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardKey {
-    // TODO(resharding): expose when releasing resharding with scaling down, remove default
-    #[serde(default)]
-    #[schemars(skip)]
     pub direction: ReshardingDirection,
     pub peer_id: PeerId,
     pub shard_id: ShardId,
