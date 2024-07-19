@@ -182,7 +182,16 @@ impl TableOfContent {
 
             let path = self.get_collection_path(collection_name);
 
-            // TODO(resharding): Gracefully cancel resharding and shard transfer tasks!?
+            if let Some(state) = removed.resharding_state().await {
+                if let Err(err) = removed.abort_resharding(state.key(), true).await {
+                    log::error!(
+                        "Failed to abort resharding {} when deleting collection {collection_name}: \
+                         {err}",
+                        state.key(),
+                    );
+                }
+            }
+
             drop(removed);
 
             // Move collection to ".deleted" folder to prevent accidental reuse
