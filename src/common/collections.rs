@@ -531,16 +531,41 @@ pub async fn do_update_collection_cluster(
 
             let collection_state = collection.state().await;
 
-            // TODO(resharding): select highest in current shard key
-            let max_shard_id = collection_state
-                .shards
-                .keys()
-                .copied()
-                .max()
-                .expect("no shards in collection");
-            let shard_id = match direction {
-                ReshardingDirection::Up => max_shard_id + 1,
-                ReshardingDirection::Down => max_shard_id,
+            if let Some(shard_key) = &shard_key {
+                if !collection_state.shards_key_mapping.contains_key(shard_key) {
+                    return Err(StorageError::bad_request(format!(
+                        "sharding key {shard_key} does not exists for collection {collection_name}"
+                    )));
+                }
+            }
+
+            let shard_id = match (direction, shard_key.as_ref()) {
+                // When scaling up, just pick the next shard ID
+                (ReshardingDirection::Up, _) => {
+                    collection_state
+                        .shards
+                        .keys()
+                        .copied()
+                        .max()
+                        .expect("no shards in collection")
+                        + 1
+                }
+                // When scaling down without shard keys, pick the last shard ID
+                (ReshardingDirection::Down, None) => collection_state
+                    .shards
+                    .keys()
+                    .copied()
+                    .max()
+                    .expect("no shards in collection"),
+                // When scaling down with shard keys, pick the last shard ID of that key
+                (ReshardingDirection::Down, Some(shard_key)) => collection_state
+                    .shards_key_mapping
+                    .get(shard_key)
+                    .expect("specified shard key must exist")
+                    .iter()
+                    .copied()
+                    .max()
+                    .expect("no shards in collection"),
             };
 
             let peer_id = match (peer_id, direction) {
@@ -589,14 +614,6 @@ pub async fn do_update_collection_cluster(
                     .copied()
                     .unwrap(),
             };
-
-            if let Some(shard_key) = &shard_key {
-                if !collection_state.shards_key_mapping.contains_key(shard_key) {
-                    return Err(StorageError::bad_request(format!(
-                        "sharding key {shard_key} does not exists for collection {collection_name}"
-                    )));
-                }
-            }
 
             if let Some(resharding) = &collection_state.resharding {
                 return Err(StorageError::bad_request(format!(
