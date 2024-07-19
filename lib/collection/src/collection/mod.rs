@@ -409,11 +409,11 @@ impl Collection {
             drop(shard_holder);
 
             self.abort_resharding(ReshardKey {
+                // Always up when setting resharding replica set state
+                direction: ReshardingDirection::Up,
                 peer_id,
                 shard_id,
                 shard_key,
-                // TODO(resharding): define proper direction here, likely up with resharding state
-                direction: ReshardingDirection::Up,
             })
             .await?;
 

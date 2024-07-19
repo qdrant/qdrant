@@ -50,8 +50,8 @@ def test_resharding(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "direction": "up"
+                    "direction": "up",
+                    "peer_id": first_peer_id
                 }
             })
         assert_http_ok(r)
@@ -88,8 +88,8 @@ def test_resharding(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "direction": "down"
+                    "direction": "down",
+                    "peer_id": first_peer_id
                 }
             })
         assert_http_ok(r)
@@ -179,8 +179,8 @@ def test_resharding_balance(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "direction": "up"
+                    "direction": "up",
+                    "peer_id": first_peer_id
                 }
             })
         assert_http_ok(r)
@@ -696,8 +696,8 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
-                "peer_id": first_peer_id,
-                "direction": "up"
+                "direction": "up",
+                "peer_id": first_peer_id
             }
         })
     assert_http_ok(r)

@@ -47,33 +47,33 @@ pub struct ReshardState {
 
 impl ReshardState {
     pub fn new(
+        direction: ReshardingDirection,
         peer_id: PeerId,
         shard_id: ShardId,
         shard_key: Option<ShardKey>,
-        direction: ReshardingDirection,
     ) -> Self {
         Self {
+            direction,
             peer_id,
             shard_id,
             shard_key,
-            direction,
             stage: ReshardStage::MigratingPoints,
         }
     }
 
     pub fn matches(&self, key: &ReshardKey) -> bool {
-        self.peer_id == key.peer_id
+        self.direction == key.direction
+            && self.peer_id == key.peer_id
             && self.shard_id == key.shard_id
             && self.shard_key == key.shard_key
-            && self.direction == key.direction
     }
 
     pub fn key(&self) -> ReshardKey {
         ReshardKey {
+            direction: self.direction,
             peer_id: self.peer_id,
             shard_id: self.shard_id,
             shard_key: self.shard_key.clone(),
-            direction: self.direction,
         }
     }
 }
@@ -95,13 +95,13 @@ pub enum ReshardStage {
 /// Unique identifier of a resharding task
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardKey {
+    // TODO(resharding): expose when releasing resharding with scaling down, remove default
+    #[serde(default)]
+    #[schemars(skip)]
+    pub direction: ReshardingDirection,
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
-    #[serde(default)]
-    // TODO(resharding): expose when releasing resharding with scaling down
-    #[schemars(skip)]
-    pub direction: ReshardingDirection,
 }
 
 impl fmt::Display for ReshardKey {
