@@ -14,8 +14,8 @@ const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
 const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmaped file. It's used in `MmapPointToValues` to store values.
-/// Lifetime `'a` is used to define lifetime for `&'a str` case
 pub trait MmapValue {
+    /// Lifetime `'a` is required to define lifetime for `&'a str` case
     type Referenced<'a>: Sized + Clone;
 
     fn mmaped_size(value: Self::Referenced<'_>) -> usize;
@@ -97,14 +97,9 @@ impl MmapValue for str {
 
     fn write_to_mmap(value: &str, bytes: &mut [u8]) -> Option<()> {
         u32::write_to_prefix(&(value.len() as u32), bytes)?;
-        let bytes =
-            bytes.get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?;
-
-        value
-            .as_bytes()
-            .iter()
-            .enumerate()
-            .for_each(|(i, &b)| bytes[i] = b);
+        bytes
+            .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
+            .copy_from_slice(value.as_bytes());
         Some(())
     }
 }
@@ -221,7 +216,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         })
     }
 
-    fn files(&self) -> Vec<PathBuf> {
+    pub fn files(&self) -> Vec<PathBuf> {
         vec![self.file_name.clone()]
     }
 
@@ -231,11 +226,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
     ) -> bool {
         if point_id < self.header.points_count as PointOffsetType {
-            let range_offset = (self.header.ranges_start as usize)
-                + (point_id as usize) * std::mem::size_of::<MmapRange>();
-            self.mmap
-                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
-                .and_then(MmapRange::read_from)
+            self.get_range(point_id)
                 .map(|range| {
                     let mut value_offset = range.start as usize;
                     for _ in 0..range.count {
@@ -259,16 +250,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         point_id: PointOffsetType,
     ) -> Option<impl Iterator<Item = T::Referenced<'a>> + 'a> {
         // first, get range of values for point
-        let range = if point_id < self.header.points_count as PointOffsetType {
-            let range_offset = (self.header.ranges_start as usize)
-                + (point_id as usize) * std::mem::size_of::<MmapRange>();
-            self.mmap
-                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
-                .and_then(MmapRange::read_from)
-                .unwrap_or_default()
-        } else {
-            return None;
-        };
+        let range = self.get_range(point_id)?;
 
         // second, define iteration step for values
         // iteration step gets remainder range from memmaped file and returns left range
@@ -296,13 +278,16 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
     }
 
     pub fn get_values_count(&self, point_id: PointOffsetType) -> Option<usize> {
+        self.get_range(point_id).map(|range| range.count as usize)
+    }
+
+    fn get_range(&self, point_id: PointOffsetType) -> Option<MmapRange> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
             self.mmap
                 .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
                 .and_then(MmapRange::read_from)
-                .map(|range| range.count as usize)
         } else {
             None
         }
