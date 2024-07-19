@@ -97,7 +97,7 @@ impl DriverState {
 
     /// List the shard ID pairs we still need to migrate
     ///
-    /// When scaling up this produces shard IDs to migrate points from. Whe scaling down this
+    /// When scaling up this produces shard IDs to migrate points from. When scaling down this
     /// produces shard IDs to migrate points into.
     pub fn shards_to_migrate(&self) -> impl Iterator<Item = ShardId> + '_ {
         self.shards()
