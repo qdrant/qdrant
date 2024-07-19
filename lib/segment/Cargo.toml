@@ -79,7 +79,7 @@ sha2 = { workspace = true }
 smallvec = "1.13.2"
 is_sorted = "0.1.1"
 strum = { workspace = true }
-byteorder = "1.5"
+byteorder = { workspace = true }
 
 sysinfo = "0.30"
 charabia = { version = "0.8.12", default-features = false, features = ["greek", "hebrew", "thai"] }
@@ -159,4 +159,8 @@ harness = false
 
 [[bench]]
 name = "range_filtering"
+harness = false
+
+[[bench]]
+name = "in_memory_id_tracker"
 harness = false
