@@ -106,7 +106,10 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
-    async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> Result<(), CollectionError> {
+    pub async fn drop_and_remove_shard(
+        &mut self,
+        shard_id: ShardId,
+    ) -> Result<(), CollectionError> {
         if let Some(replica_set) = self.shards.remove(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             drop(replica_set);

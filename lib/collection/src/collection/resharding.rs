@@ -57,7 +57,7 @@ impl Collection {
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
 
             // Increase the persisted shard count, loads new shard on restart
-            {
+            if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;
 
                 if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
@@ -187,6 +187,33 @@ impl Collection {
         let _ = self.stop_resharding_task(&resharding_key).await;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
+        if resharding_key.direction == ReshardingDirection::Down {
+            // Remove the shard we've now migrated all points out of
+            shard_holder
+                .drop_and_remove_shard(resharding_key.shard_id)
+                .await?;
+
+            // Decrease the persisted shard count, ensures we don't load dropped shard on restart
+            {
+                let mut config = self.collection_config.write().await;
+
+                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
+                    debug_assert_eq!(
+                        config.params.shard_number.get() - 1,
+                        resharding_key.shard_id,
+                    );
+                }
+
+                config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
+                    .expect("cannot have zero shards after finishing resharding");
+                if let Err(err) = config.save(&self.path) {
+                    log::error!(
+                        "Failed to update and save collection config during resharding: {err}"
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -194,7 +221,7 @@ impl Collection {
         let _ = self.stop_resharding_task(&resharding_key).await;
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
-        {
+        if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
 
             if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
