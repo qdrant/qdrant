@@ -8132,7 +8132,37 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Record"
-            }
+            },
+            "example": [
+              {
+                "id": 43,
+                "order_value": 23,
+                "payload": {
+                  "city": "London",
+                  "color": "green"
+                },
+                "shard_key": "region_1",
+                "vector": [
+                  0.875,
+                  0.140625,
+                  0.897599995136261
+                ]
+              },
+              {
+                "id": 44,
+                "order_value": 23,
+                "payload": {
+                  "city": "Paris",
+                  "color": "red"
+                },
+                "shard_key": "region_1",
+                "vector": [
+                  0.75,
+                  0.640625,
+                  0.8945000171661377
+                ]
+              }
+            ]
           },
           "next_page_offset": {
             "description": "Offset which should be used to retrieve a next page result",
