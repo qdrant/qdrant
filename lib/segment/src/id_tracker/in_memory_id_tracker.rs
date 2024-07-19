@@ -1,8 +1,11 @@
+use std::iter;
 use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
+use itertools::Itertools;
+use rand::distributions::Distribution;
 use uuid::Uuid;
 
 use super::immutable_id_tracker::{ImmutableIdTracker, PointMappings};
@@ -266,6 +269,31 @@ impl IdTracker for InMemoryIdTracker {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![]
+    }
+
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        let rng = rand::thread_rng();
+        let max_internal = self.mappings.internal_to_external.len();
+        if max_internal == 0 {
+            return Box::new(iter::empty());
+        }
+        let uniform = rand::distributions::Uniform::new(0, max_internal);
+        let iter = Distribution::sample_iter(uniform, rng)
+            // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
+            // but it's good enough for low limits.
+            //
+            // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
+            .unique()
+            .take(max_internal)
+            .filter_map(move |i| {
+                if self.deleted[i] {
+                    None
+                } else {
+                    Some((self.mappings.internal_to_external[i], i as PointOffsetType))
+                }
+            });
+
+        Box::new(iter)
     }
 }
 

@@ -276,6 +276,7 @@ impl IdTracker for IdTrackerEnum {
         match self {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_random(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_random(),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_random(),
         }
     }
 
