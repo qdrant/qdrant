@@ -6,6 +6,8 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::tests::histogram_test_utils::print_results;
@@ -181,7 +183,7 @@ pub fn request_histogram(histogram: &Histogram<f64>, points_index: &BTreeSet<Poi
     assert!(real.abs_diff(estimation) < 2 * histogram.current_bucket_size());
 }
 
-pub fn build_histogram<T: Numericable + PartialEq + PartialOrd + Copy + std::fmt::Debug>(
+pub fn build_histogram<T: Numericable + Serialize + DeserializeOwned + std::fmt::Debug>(
     max_bucket_size: usize,
     precision: f64,
     points: Vec<Point<T>>,
@@ -251,4 +253,29 @@ fn test_build_histogram() {
     let (histogram, points_index) = build_histogram(max_bucket_size, precision, points);
     request_histogram(&histogram, &points_index);
     test_range_by_cardinality(&histogram);
+}
+
+#[test]
+fn test_save_load_histogram() {
+    let max_bucket_size = 1000;
+    let precision = 0.01;
+    let num_samples = 100_000;
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let points = (0..num_samples)
+        .map(|i| Point {
+            val: rnd.gen_range(-10.0..10.0),
+            idx: i,
+        })
+        .collect_vec();
+    let (histogram, _) = build_histogram(max_bucket_size, precision, points);
+
+    let dir = tempfile::Builder::new()
+        .prefix("histogram_dir")
+        .tempdir()
+        .unwrap();
+    histogram.save(dir.path()).unwrap();
+
+    let loaded_histogram = Histogram::<f64>::load(dir.path()).unwrap();
+    assert_eq!(histogram, loaded_histogram);
 }

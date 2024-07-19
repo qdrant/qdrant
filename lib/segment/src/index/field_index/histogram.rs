@@ -2,21 +2,28 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
+use std::path::Path;
 
+use io::file_operations::{atomic_save_bin, atomic_save_json, read_bin, read_json};
 use itertools::Itertools;
 use num_traits::{Num, Signed};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::utils::check_boundaries;
 
 const MIN_BUCKET_SIZE: usize = 10;
+const CONFIG_PATH: &str = "histogram_config.json";
+const BORDERS_PATH: &str = "histogram_borders.bin";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Counts {
     pub left: usize,
     pub right: usize,
 }
 
-#[derive(PartialEq, PartialOrd, Debug, Clone)]
+#[derive(PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
 pub struct Point<T> {
     pub val: T,
     pub idx: usize,
@@ -103,15 +110,22 @@ impl Numericable for f64 {
     }
 }
 
-#[derive(Debug)]
-pub struct Histogram<T: Numericable + PartialEq + PartialOrd + Copy> {
+#[derive(Debug, PartialEq)]
+pub struct Histogram<T: Numericable + Serialize + DeserializeOwned> {
     max_bucket_size: usize,
     precision: f64,
     total_count: usize,
     borders: BTreeMap<Point<T>, Counts>,
 }
 
-impl<T: Numericable> Histogram<T> {
+#[derive(Debug, Serialize, Deserialize)]
+struct HistogramConfig {
+    max_bucket_size: usize,
+    precision: f64,
+    total_count: usize,
+}
+
+impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
     pub fn new(max_bucket_size: usize, precision: f64) -> Self {
         assert!(precision < 1.0);
         assert!(precision > 0.0);
@@ -121,6 +135,45 @@ impl<T: Numericable> Histogram<T> {
             total_count: 0,
             borders: BTreeMap::default(),
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn load(path: &Path) -> OperationResult<Self> {
+        let config_path = path.join(CONFIG_PATH);
+        let borders_path = path.join(BORDERS_PATH);
+
+        let histogram_config: HistogramConfig = read_json(&config_path)?;
+        let histogram_buckets: Vec<(Point<T>, Counts)> = read_bin(&borders_path)?;
+
+        Ok(Self {
+            max_bucket_size: histogram_config.max_bucket_size,
+            precision: histogram_config.precision,
+            total_count: histogram_config.total_count,
+            borders: histogram_buckets.into_iter().collect(),
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn save(&self, path: &Path) -> OperationResult<()> {
+        let config_path = path.join(CONFIG_PATH);
+        let borders_path = path.join(BORDERS_PATH);
+
+        atomic_save_json(
+            &config_path,
+            &HistogramConfig {
+                max_bucket_size: self.max_bucket_size,
+                precision: self.precision,
+                total_count: self.total_count,
+            },
+        )?;
+
+        let borders: Vec<(Point<T>, Counts)> = self
+            .borders
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        atomic_save_bin(&borders_path, &borders)?;
+        Ok(())
     }
 
     #[cfg(test)]

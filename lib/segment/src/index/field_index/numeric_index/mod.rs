@@ -15,6 +15,8 @@ use common::types::PointOffsetType;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value;
 
 use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
@@ -47,7 +49,7 @@ pub trait StreamRange<T> {
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 }
 
-pub trait Encodable: Copy {
+pub trait Encodable: Copy + Serialize + DeserializeOwned {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self);
