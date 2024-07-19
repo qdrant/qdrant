@@ -5004,26 +5004,29 @@ pub struct QueryPointGroups {
     /// Options for specifying which vectors to include into response
     #[prost(message, optional, tag = "9")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    #[prost(message, optional, tag = "10")]
+    pub lookup_from: ::core::option::Option<LookupLocation>,
     /// Max number of points. Default is 3.
-    #[prost(uint64, optional, tag = "10")]
+    #[prost(uint64, optional, tag = "11")]
     pub limit: ::core::option::Option<u64>,
     /// Maximum amount of points to return per group. Default to 10.
-    #[prost(uint64, optional, tag = "11")]
+    #[prost(uint64, optional, tag = "12")]
     pub group_size: ::core::option::Option<u64>,
     /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
-    #[prost(string, tag = "12")]
+    #[prost(string, tag = "13")]
     pub group_by: ::prost::alloc::string::String,
     /// Options for specifying read consistency guarantees
-    #[prost(message, optional, tag = "13")]
+    #[prost(message, optional, tag = "14")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// Options for specifying how to use the group id to lookup points in another collection
-    #[prost(message, optional, tag = "14")]
+    #[prost(message, optional, tag = "15")]
     pub with_lookup: ::core::option::Option<WithLookup>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
-    #[prost(uint64, optional, tag = "15")]
+    #[prost(uint64, optional, tag = "16")]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
-    #[prost(message, optional, tag = "16")]
+    #[prost(message, optional, tag = "17")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
