@@ -339,7 +339,11 @@ pub async fn drive_resharding(
 }
 
 fn resharding_state_path(reshard_key: &ReshardKey, collection_path: &Path) -> PathBuf {
-    collection_path.join(format!("resharding_state_{}.json", reshard_key.shard_id))
+    let up_down = serde_variant::to_variant_name(&reshard_key.direction).unwrap_or_default();
+    collection_path.join(format!(
+        "resharding_state_{up_down}_{}.json",
+        reshard_key.shard_id,
+    ))
 }
 
 /// Await for a resharding shard transfer to succeed.

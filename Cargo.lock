@@ -1126,6 +1126,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
+ "serde_variant",
  "sha2",
  "smallvec",
  "sparse",
