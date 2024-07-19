@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::iter;
-use std::mem::size_of_val;
+use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
 use bitvec::prelude::BitSlice;
@@ -76,7 +76,6 @@ impl PointMappings {
             internal_to_external.push(external_id);
 
             let deleted = filter
-                .as_ref()
                 .and_then(|deleted| deleted.get(i).as_deref().copied())
                 .unwrap_or_default();
 
@@ -97,10 +96,7 @@ impl PointMappings {
         // Check that the file has ben fully read.
         #[cfg(debug_assertions)] // Only for dev builds
         {
-            let mut buf = vec![];
-            let read_bytes = reader.read_to_end(&mut buf).unwrap();
-            assert_eq!(buf.len(), 0);
-            assert_eq!(read_bytes, 0);
+            debug_assert_eq!(reader.bytes().map(Result::unwrap).count(), 0,);
         }
 
         Ok(PointMappings {
@@ -248,14 +244,31 @@ impl ImmutableIdTracker {
 
         // Create mmap file for internal-to-version list
         let version_filepath = Self::version_mapping_file_path(path);
+
+        // Amount of points without version
+        let missing_version_count = mappings
+            .internal_to_external
+            .len()
+            .saturating_sub(internal_to_version.len());
+
+        let missing_versions_size = missing_version_count * size_of::<SeqNumberType>();
+        let internal_to_version_size = size_of_val(internal_to_version);
+        let min_size = internal_to_version_size + missing_versions_size;
         {
-            let version_size = size_of_val(internal_to_version);
+            let version_size = mmap_size::<SeqNumberType>(min_size);
             create_and_ensure_length(&version_filepath, version_size)?;
         }
         let mut internal_to_version_wrapper =
             unsafe { MmapSlice::try_from(open_write_mmap(&version_filepath)?)? };
-        internal_to_version_wrapper.copy_from_slice(internal_to_version);
+
+        internal_to_version_wrapper[..internal_to_version.len()]
+            .copy_from_slice(internal_to_version);
         let internal_to_version = internal_to_version_wrapper.to_vec();
+
+        debug_assert_eq!(
+            internal_to_version.len(),
+            mappings.internal_to_external.len()
+        );
 
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
@@ -287,11 +300,16 @@ impl ImmutableIdTracker {
     }
 }
 
+/// Returns the required mmap filesize for a given length of a slice of type `T`.
+fn mmap_size<T>(len: usize) -> usize {
+    let item_width = size_of::<T>();
+    len.div_ceil(item_width) * item_width // Make it a multiple of usize-width.
+}
+
 /// Returns the required mmap filesize for a `BitSlice`.
 fn bitmap_mmap_size(deleted: &BitSlice) -> usize {
-    let usize_bytes = std::mem::size_of::<usize>();
-    let num_bytes = deleted.len().div_ceil(8); // used bytes
-    num_bytes.div_ceil(usize_bytes) * usize_bytes // Make it a multiple of usize-width.
+    const BITS_TO_BYTES: usize = 8; // .len() returns bits but we want bytes!
+    mmap_size::<usize>(deleted.len().div_ceil(BITS_TO_BYTES))
 }
 
 impl IdTracker for ImmutableIdTracker {

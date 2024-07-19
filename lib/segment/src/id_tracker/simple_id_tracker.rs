@@ -18,7 +18,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
-use crate::id_tracker::immutable_id_tracker::{ImmutableIdTracker, PointMappings};
+use crate::id_tracker::immutable_id_tracker::PointMappings;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
@@ -227,31 +227,18 @@ impl SimpleIdTracker {
     // TODO: Remove when we release the next version and integrate the immutable id tracker
     #[allow(dead_code)]
     pub(crate) fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        let external_to_internal_num = self
-            .external_to_internal_num
-            .iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-
-        let external_to_internal_uuid = self
-            .external_to_internal_uuid
-            .iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-
         let mappings = PointMappings {
-            external_to_internal_num,
-            external_to_internal_uuid,
+            external_to_internal_num: self.external_to_internal_num.clone(),
+            external_to_internal_uuid: self.external_to_internal_uuid.clone(),
             internal_to_external: self.internal_to_external.clone(),
         };
 
-        let mut internal_to_version = self.internal_to_version.clone();
-        if internal_to_version.len() < mappings.internal_to_external.len() {
-            internal_to_version.resize(mappings.internal_to_external.len(), 0);
-        }
-
-        let immutable_tracker =
-            ImmutableIdTracker::new(save_path, &self.deleted, &internal_to_version, mappings)?;
+        let immutable_tracker = super::immutable_id_tracker::ImmutableIdTracker::new(
+            save_path,
+            &self.deleted,
+            &self.internal_to_version,
+            mappings,
+        )?;
 
         Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
     }
