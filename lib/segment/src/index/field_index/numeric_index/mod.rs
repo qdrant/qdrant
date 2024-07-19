@@ -5,6 +5,7 @@ mod mutable_numeric_index;
 mod tests;
 
 use std::cmp::{max, min};
+use std::marker::PhantomData;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 
 use chrono::DateTime;
 use common::types::PointOffsetType;
+use delegate::delegate;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -140,45 +142,53 @@ impl<T: Encodable + Numericable> Range<T> {
     }
 }
 
-pub enum NumericIndex<T: Encodable + Numericable + Default> {
+pub enum NumericIndexInner<T: Encodable + Numericable + Default> {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable + Default> NumericIndex<T> {
+impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
-            NumericIndex::Mutable(MutableNumericIndex::new(db, field))
+            NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
         } else {
-            NumericIndex::Immutable(ImmutableNumericIndex::new(db, field))
+            NumericIndexInner::Immutable(ImmutableNumericIndex::new(db, field))
+        }
+    }
+
+    #[cfg(test)]
+    pub fn wrap<P>(self) -> NumericIndex<T, P> {
+        NumericIndex {
+            inner: self,
+            _phantom: PhantomData,
         }
     }
 
     fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
-            NumericIndex::Mutable(index) => index.get_db_wrapper(),
-            NumericIndex::Immutable(index) => index.get_db_wrapper(),
+            NumericIndexInner::Mutable(index) => index.get_db_wrapper(),
+            NumericIndexInner::Immutable(index) => index.get_db_wrapper(),
         }
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
-            NumericIndex::Mutable(index) => &index.histogram,
-            NumericIndex::Immutable(index) => &index.histogram,
+            NumericIndexInner::Mutable(index) => &index.histogram,
+            NumericIndexInner::Immutable(index) => &index.histogram,
         }
     }
 
     fn get_points_count(&self) -> usize {
         match self {
-            NumericIndex::Mutable(index) => index.points_count,
-            NumericIndex::Immutable(index) => index.points_count,
+            NumericIndexInner::Mutable(index) => index.points_count,
+            NumericIndexInner::Immutable(index) => index.points_count,
         }
     }
 
     fn total_unique_values_count(&self) -> usize {
         match self {
-            NumericIndex::Mutable(index) => index.total_unique_values_count(),
-            NumericIndex::Immutable(index) => index.total_unique_values_count(),
+            NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
+            NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
         }
     }
 
@@ -192,8 +202,8 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
 
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
-            NumericIndex::Mutable(index) => index.load(),
-            NumericIndex::Immutable(index) => index.load(),
+            NumericIndexInner::Mutable(index) => index.load(),
+            NumericIndexInner::Immutable(index) => index.load(),
         }
     }
 
@@ -203,29 +213,29 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         match self {
-            NumericIndex::Mutable(index) => index.remove_point(idx),
-            NumericIndex::Immutable(index) => index.remove_point(idx),
+            NumericIndexInner::Mutable(index) => index.remove_point(idx),
+            NumericIndexInner::Immutable(index) => index.remove_point(idx),
         }
     }
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
         match self {
-            NumericIndex::Mutable(index) => index.check_values_any(idx, check_fn),
-            NumericIndex::Immutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
         }
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         match self {
-            NumericIndex::Mutable(index) => index.get_values(idx),
-            NumericIndex::Immutable(index) => index.get_values(idx),
+            NumericIndexInner::Mutable(index) => index.get_values(idx),
+            NumericIndexInner::Immutable(index) => index.get_values(idx),
         }
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
         match self {
-            NumericIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
-            NumericIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
+            NumericIndexInner::Mutable(index) => index.values_count(idx).unwrap_or_default(),
+            NumericIndexInner::Immutable(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -236,8 +246,8 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
     /// Zero if the index is empty.
     pub fn max_values_per_point(&self) -> usize {
         match self {
-            NumericIndex::Mutable(index) => index.max_values_per_point,
-            NumericIndex::Immutable(index) => index.max_values_per_point,
+            NumericIndexInner::Mutable(index) => index.max_values_per_point,
+            NumericIndexInner::Immutable(index) => index.max_values_per_point,
         }
     }
 
@@ -323,13 +333,47 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T> {
+pub struct NumericIndex<T: Encodable + Numericable + Default, P> {
+    inner: NumericIndexInner<T>,
+    _phantom: PhantomData<P>,
+}
+
+impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
+    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+        Self {
+            inner: NumericIndexInner::new(db, field, is_appendable),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn inner(&self) -> &NumericIndexInner<T> {
+        &self.inner
+    }
+
+    pub fn mut_inner(&mut self) -> &mut NumericIndexInner<T> {
+        &mut self.inner
+    }
+
+    delegate! {
+        to self.inner {
+            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool;
+            pub fn clear(self) -> OperationResult<()>;
+            pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
+            pub fn load(&mut self) -> OperationResult<bool>;
+            pub fn recreate(&self) -> OperationResult<()>;
+            pub fn values_count(&self, idx: PointOffsetType) -> usize;
+            pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
+        }
+    }
+}
+
+impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInner<T> {
     fn count_indexed_points(&self) -> usize {
         self.get_points_count()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        NumericIndex::load(self)
+        NumericIndexInner::load(self)
     }
 
     fn clear(self) -> OperationResult<()> {
@@ -337,7 +381,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
     }
 
     fn flusher(&self) -> Flusher {
-        NumericIndex::flusher(self)
+        NumericIndexInner::flusher(self)
     }
 
     fn filter(
@@ -364,12 +408,14 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         }
 
         Ok(match self {
-            NumericIndex::Mutable(index) => {
+            NumericIndexInner::Mutable(index) => {
                 let start_bound = start_bound.map(|k| k.encode());
                 let end_bound = end_bound.map(|k| k.encode());
                 Box::new(index.values_range(start_bound, end_bound))
             }
-            NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
+            NumericIndexInner::Immutable(index) => {
+                Box::new(index.values_range(start_bound, end_bound))
+            }
         })
     }
 
@@ -462,15 +508,17 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
     }
 }
 
-impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
+impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
+    type ValueType = IntPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
     ) -> OperationResult<()> {
-        match self {
-            NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+        match &mut self.inner {
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
         }
@@ -481,21 +529,23 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        NumericIndex::remove_point(self, id)
+        self.inner.remove_point(id)
     }
 }
 
-impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
+impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
+    type ValueType = DateTimePayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
         values: Vec<DateTimePayloadType>,
     ) -> OperationResult<()> {
-        match self {
-            NumericIndex::Mutable(index) => {
+        match &mut self.inner {
+            NumericIndexInner::Mutable(index) => {
                 index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp()))
             }
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+            NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
         }
@@ -506,19 +556,21 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        NumericIndex::remove_point(self, id)
+        self.inner.remove_point(id)
     }
 }
 
-impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
+impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
+    type ValueType = FloatPayloadType;
+
     fn add_many(
         &mut self,
         id: PointOffsetType,
         values: Vec<FloatPayloadType>,
     ) -> OperationResult<()> {
-        match self {
-            NumericIndex::Mutable(index) => index.add_many_to_list(id, values),
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+        match &mut self.inner {
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
         }
@@ -529,11 +581,11 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        NumericIndex::remove_point(self, id)
+        self.inner.remove_point(id)
     }
 }
 
-impl<T> StreamRange<T> for NumericIndex<T>
+impl<T> StreamRange<T> for NumericIndexInner<T>
 where
     T: Encodable + Numericable + Default,
 {
@@ -556,12 +608,12 @@ where
         }
 
         match self {
-            NumericIndex::Mutable(index) => {
+            NumericIndexInner::Mutable(index) => {
                 let start_bound = start_bound.map(|k| k.encode());
                 let end_bound = end_bound.map(|k| k.encode());
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
-            NumericIndex::Immutable(index) => {
+            NumericIndexInner::Immutable(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
         }

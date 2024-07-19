@@ -10,13 +10,13 @@ use crate::json_path::JsonPath;
 
 const COLUMN_NAME: &str = "test";
 
-fn get_index() -> (TempDir, NumericIndex<f64>) {
+fn get_index() -> (TempDir, NumericIndexInner<f64>) {
     let temp_dir = Builder::new()
         .prefix("test_numeric_index")
         .tempdir()
         .unwrap();
     let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
-    let index: NumericIndex<_> = NumericIndex::new(db, COLUMN_NAME, true);
+    let index: NumericIndexInner<_> = NumericIndexInner::new(db, COLUMN_NAME, true);
     index.recreate().unwrap();
     (temp_dir, index)
 }
@@ -25,17 +25,17 @@ fn random_index(
     num_points: usize,
     values_per_point: usize,
     immutable: bool,
-) -> (TempDir, NumericIndex<f64>) {
+) -> (TempDir, NumericIndexInner<f64>) {
     let mut rng = StdRng::seed_from_u64(42);
     let (temp_dir, mut index) = get_index();
 
     for i in 0..num_points {
         let values = (0..values_per_point).map(|_| rng.gen_range(0.0..100.0));
         match &mut index {
-            NumericIndex::Mutable(index) => index
+            NumericIndexInner::Mutable(index) => index
                 .add_many_to_list(i as PointOffsetType, values)
                 .unwrap(),
-            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
+            NumericIndexInner::Immutable(_) => unreachable!("index is mutable"),
         }
     }
 
@@ -44,7 +44,8 @@ fn random_index(
     // if immutable, we have to reload the index
     if immutable {
         let db_ref = index.get_db_wrapper().get_database();
-        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
+        let mut new_index: NumericIndexInner<f64> =
+            NumericIndexInner::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         (temp_dir, new_index)
     } else {
@@ -53,7 +54,7 @@ fn random_index(
 }
 
 fn cardinality_request(
-    index: &NumericIndex<f64>,
+    index: &NumericIndexInner<f64>,
     query: Range<FloatPayloadType>,
 ) -> CardinalityEstimation {
     let estimation = index.range_cardinality(&RangeInterface::Float(query.clone()));
@@ -73,18 +74,19 @@ fn cardinality_request(
 
 #[test]
 fn test_set_empty_payload() {
-    let (_temp_dir, mut index) = random_index(1000, 1, false);
+    let (_temp_dir, index) = random_index(1000, 1, false);
+    let mut index = index.wrap();
 
     let point_id = 42;
 
-    let values_count = index.get_values(point_id).unwrap().count();
+    let values_count = index.inner().get_values(point_id).unwrap().count();
 
     assert_ne!(values_count, 0);
 
     let payload = serde_json::json!(null);
     index.add_point(point_id, &[&payload]).unwrap();
 
-    let values_count = index.get_values(point_id).unwrap().count();
+    let values_count = index.inner().get_values(point_id).unwrap().count();
 
     assert_eq!(values_count, 0);
 }
@@ -211,10 +213,10 @@ fn test_payload_blocks_small(#[case] immutable: bool) {
         .into_iter()
         .enumerate()
         .for_each(|(idx, values)| match &mut index {
-            NumericIndex::Mutable(index) => index
+            NumericIndexInner::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
-            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
+            NumericIndexInner::Immutable(_) => unreachable!("index is mutable"),
         });
 
     index.flusher()().unwrap();
@@ -222,7 +224,8 @@ fn test_payload_blocks_small(#[case] immutable: bool) {
     // if immutable, we have to reload the index
     let index = if immutable {
         let db_ref = index.get_db_wrapper().get_database();
-        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
+        let mut new_index: NumericIndexInner<f64> =
+            NumericIndexInner::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         new_index
     } else {
@@ -257,16 +260,17 @@ fn test_numeric_index_load_from_disk(#[case] immutable: bool) {
         .into_iter()
         .enumerate()
         .for_each(|(idx, values)| match &mut index {
-            NumericIndex::Mutable(index) => index
+            NumericIndexInner::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
-            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
+            NumericIndexInner::Immutable(_) => unreachable!("index is mutable"),
         });
 
     index.flusher()().unwrap();
 
     let db_ref = index.get_db_wrapper().get_database();
-    let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, !immutable);
+    let mut new_index: NumericIndexInner<f64> =
+        NumericIndexInner::new(db_ref, COLUMN_NAME, !immutable);
     new_index.load().unwrap();
 
     test_cond(
@@ -303,10 +307,10 @@ fn test_numeric_index(#[case] immutable: bool) {
         .into_iter()
         .enumerate()
         .for_each(|(idx, values)| match &mut index {
-            NumericIndex::Mutable(index) => index
+            NumericIndexInner::Mutable(index) => index
                 .add_many_to_list(idx as PointOffsetType + 1, values)
                 .unwrap(),
-            NumericIndex::Immutable(_) => unreachable!("index is mutable"),
+            NumericIndexInner::Immutable(_) => unreachable!("index is mutable"),
         });
 
     index.flusher()().unwrap();
@@ -314,7 +318,8 @@ fn test_numeric_index(#[case] immutable: bool) {
     // if immutable, we have to reload the index
     let index = if immutable {
         let db_ref = index.get_db_wrapper().get_database();
-        let mut new_index: NumericIndex<f64> = NumericIndex::new(db_ref, COLUMN_NAME, false);
+        let mut new_index: NumericIndexInner<f64> =
+            NumericIndexInner::new(db_ref, COLUMN_NAME, false);
         new_index.load().unwrap();
         new_index
     } else {
@@ -378,7 +383,7 @@ fn test_numeric_index(#[case] immutable: bool) {
 }
 
 fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + Default>(
-    index: &NumericIndex<T>,
+    index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,
 ) {

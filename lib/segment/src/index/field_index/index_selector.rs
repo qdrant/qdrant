@@ -10,7 +10,7 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
 use crate::json_path::JsonPath;
-use crate::types::{FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams};
+use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 
 /// Selects index types based on field type
 pub fn index_selector(
@@ -32,19 +32,17 @@ pub fn index_selector(
             let lookup = integer_params
                 .lookup
                 .then(|| FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable)));
-            let range = integer_params.range.then(|| {
-                FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
-                    db,
-                    field,
-                    is_appendable,
-                ))
-            });
+            let range = integer_params
+                .range
+                .then(|| FieldIndex::IntIndex(NumericIndex::new(db, field, is_appendable)));
             lookup.into_iter().chain(range).collect()
         }
         PayloadSchemaParams::Float(_) => {
-            vec![FieldIndex::FloatIndex(
-                NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),
-            )]
+            vec![FieldIndex::FloatIndex(NumericIndex::new(
+                db,
+                field,
+                is_appendable,
+            ))]
         }
         PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
             db,
@@ -58,9 +56,11 @@ pub fn index_selector(
             vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))]
         }
         PayloadSchemaParams::Datetime(_) => {
-            vec![FieldIndex::DatetimeIndex(
-                NumericIndex::<IntPayloadType>::new(db, field, is_appendable),
-            )]
+            vec![FieldIndex::DatetimeIndex(NumericIndex::new(
+                db,
+                field,
+                is_appendable,
+            ))]
         }
     }
 }

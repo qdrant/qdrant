@@ -287,7 +287,9 @@ impl GeoMapIndex {
     }
 }
 
-impl ValueIndexer<GeoPoint> for GeoMapIndex {
+impl ValueIndexer for GeoMapIndex {
+    type ValueType = GeoPoint;
+
     fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values),
