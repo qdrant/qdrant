@@ -465,6 +465,19 @@ mod test {
         [3, 6, 9, 12, 13, 16, 19, 22, 26, 27]
     }
 
+    #[rustfmt::skip]
+    fn input_5() -> [Vec<i32>; 3] {
+        [
+            vec![1, 2, 3, 4, 5, 6, 7],
+            vec![               6, 7],
+            vec![1, 2, 3, 4         ],
+        ]
+    }
+
+    fn expected_5_majority() -> [i32; 6] {
+        [1, 2, 3, 4, 6, 7]
+    }
+
     #[test]
     fn resolve_0_all() {
         resolve_0(ResolveCondition::All);
@@ -530,6 +543,11 @@ mod test {
         test_resolve_simple(input_4(), expected_4_majority(), ResolveCondition::Majority);
     }
 
+    #[test]
+    fn resolve_5_majority() {
+        test_resolve_simple(input_5(), expected_5_majority(), ResolveCondition::Majority);
+    }
+
     fn test_resolve<T, E>(input: Vec<T>, expected: E, condition: ResolveCondition)
     where
         T: Resolve + Clone + PartialEq<E> + fmt::Debug,
@@ -570,10 +588,7 @@ mod test {
 
     impl Resolve for Vec<Val> {
         fn resolve(values: Vec<Self>, condition: ResolveCondition) -> Self {
-            let mut resolved = Resolver::resolve(values, |val| val.0, PartialEq::eq, condition);
-
-            resolved.sort_unstable();
-            resolved
+            Resolver::resolve(values, |val| val.0, PartialEq::eq, condition)
         }
     }
 }
