@@ -12,6 +12,7 @@ use tokio::time::sleep;
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::config::CollectionConfig;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
@@ -95,6 +96,9 @@ impl DriverState {
     }
 
     /// List the shard ID pairs we still need to migrate
+    ///
+    /// When scaling up this produces shard IDs to migrate points from. Whe scaling down this
+    /// produces shard IDs to migrate points into.
     pub fn shards_to_migrate(&self) -> impl Iterator<Item = ShardId> + '_ {
         self.shards()
             // Exclude current resharding shard, and already migrated shards
@@ -103,13 +107,22 @@ impl DriverState {
             })
     }
 
-    /// List the shard IDs in which we still need to propagate point deletions.
-    pub fn shards_to_delete(&self) -> impl Iterator<Item = ShardId> + '_ {
-        self.shards()
-            // Exclude current resharding shard, and already deleted shards
-            .filter(|shard_id| {
-                *shard_id != self.key.shard_id && !self.deleted_shards.contains(shard_id)
-            })
+    /// List the shard IDs in which we still need to propagate point deletions
+    ///
+    /// This is only relevant for resharding up.
+    pub fn shards_to_delete(&self) -> Box<dyn Iterator<Item = ShardId> + '_> {
+        // If sharding down we don't delete points, we just drop the shard
+        if self.key.direction == ReshardingDirection::Down {
+            return Box::new(std::iter::empty());
+        }
+
+        Box::new(
+            self.shards()
+                // Exclude current resharding shard, and already deleted shards
+                .filter(|shard_id| {
+                    *shard_id != self.key.shard_id && !self.deleted_shards.contains(shard_id)
+                }),
+        )
     }
 
     /// Get all shard IDs which are participating in this resharding process.
