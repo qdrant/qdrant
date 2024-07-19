@@ -51,7 +51,6 @@ def test_resharding(tmp_path: pathlib.Path):
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
                     "peer_id": first_peer_id,
-                    "shard_key": None,
                     "direction": "up"
                 }
             })
@@ -90,7 +89,6 @@ def test_resharding(tmp_path: pathlib.Path):
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
                     "peer_id": first_peer_id,
-                    "shard_key": None,
                     "direction": "down"
                 }
             })
@@ -182,7 +180,7 @@ def test_resharding_balance(tmp_path: pathlib.Path):
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
                     "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -228,7 +226,6 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -264,8 +261,7 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -324,7 +320,6 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -347,8 +342,7 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -409,7 +403,6 @@ def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -432,8 +425,7 @@ def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -498,7 +490,6 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -535,8 +526,7 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -590,7 +580,6 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
     }
 
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
-    first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
@@ -627,8 +616,7 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "peer_id": first_peer_id,
-                    "shard_key": None,
+                    "direction": "up"
                 }
             })
         assert_http_ok(r)
@@ -709,7 +697,7 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
                 "peer_id": first_peer_id,
-                "shard_key": None,
+                "direction": "up"
             }
         })
     assert_http_ok(r)
