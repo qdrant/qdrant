@@ -264,6 +264,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             score_threshold,
             with_vector,
             with_payload,
+            lookup_from,
             group_by,
             group_size,
             limit,
@@ -281,7 +282,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             params,
             with_vector,
             with_payload,
-            lookup_from: None,
+            lookup_from,
         };
 
         GroupRequest {

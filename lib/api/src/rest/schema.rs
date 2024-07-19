@@ -617,6 +617,11 @@ pub struct QueryGroupsRequestInternal {
     /// Options for specifying which payload to include or not. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
 
+    /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+    /// Note: the other collection vectors should have the same vector size as the 'using' vector in the current collection
+    #[serde(default)]
+    pub lookup_from: Option<LookupLocation>,
+
     #[serde(flatten)]
     #[validate]
     pub group_request: QueryBaseGroupRequest,

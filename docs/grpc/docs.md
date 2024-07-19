@@ -3236,6 +3236,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | score_threshold | [float](#float) | optional | Return points with scores better than this threshold. |
 | with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) |  | Options for specifying which payload to include or not |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
+| lookup_from | [LookupLocation](#qdrant-LookupLocation) | optional | The location to use for IDs lookup, if not specified - use the current collection and the &#39;using&#39; vector |
 | limit | [uint64](#uint64) | optional | Max number of points. Default is 3. |
 | group_size | [uint64](#uint64) | optional | Maximum amount of points to return per group. Default to 10. |
 | group_by | [string](#string) |  | Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups. |

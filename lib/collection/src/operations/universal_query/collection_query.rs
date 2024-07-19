@@ -69,6 +69,7 @@ pub struct CollectionQueryGroupsRequest {
     pub score_threshold: Option<ScoreType>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
+    pub lookup_from: Option<LookupLocation>,
     pub group_by: JsonPath,
     pub group_size: usize,
     pub limit: usize,
@@ -564,6 +565,7 @@ mod from_rest {
                 params,
                 with_vector,
                 with_payload,
+                lookup_from,
                 group_request,
             } = value;
 
@@ -576,6 +578,7 @@ mod from_rest {
                 params,
                 with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
                 with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+                lookup_from,
                 limit: group_request
                     .limit
                     .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
@@ -772,6 +775,7 @@ pub mod from_grpc {
                 score_threshold,
                 with_payload,
                 with_vectors,
+                lookup_from,
                 limit,
                 group_size,
                 group_by,
@@ -797,6 +801,7 @@ pub mod from_grpc {
                     .map(TryFrom::try_from)
                     .transpose()?
                     .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+                lookup_from: lookup_from.map(From::from),
                 group_by: json_path_from_proto(&group_by)?,
                 group_size: group_size
                     .map(|s| s as usize)

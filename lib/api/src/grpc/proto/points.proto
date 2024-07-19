@@ -565,13 +565,14 @@ message QueryPointGroups {
   optional float score_threshold = 7; // Return points with scores better than this threshold.
   WithPayloadSelector with_payload = 8; // Options for specifying which payload to include or not
   optional WithVectorsSelector with_vectors = 9; // Options for specifying which vectors to include into response
-  optional uint64 limit = 10; // Max number of points. Default is 3.
-  optional uint64 group_size = 11; // Maximum amount of points to return per group. Default to 10.
-  string group_by = 12; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
-  optional ReadConsistency read_consistency = 13; // Options for specifying read consistency guarantees
-  optional WithLookup with_lookup = 14; // Options for specifying how to use the group id to lookup points in another collection
-  optional uint64 timeout = 15; // If set, overrides global timeout setting for this request. Unit is seconds.
-  optional ShardKeySelector shard_key_selector = 16; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional LookupLocation lookup_from = 10; // The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
+  optional uint64 limit = 11; // Max number of points. Default is 3.
+  optional uint64 group_size = 12; // Maximum amount of points to return per group. Default to 10.
+  string group_by = 13; // Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
+  optional ReadConsistency read_consistency = 14; // Options for specifying read consistency guarantees
+  optional WithLookup with_lookup = 15; // Options for specifying how to use the group id to lookup points in another collection
+  optional uint64 timeout = 16; // If set, overrides global timeout setting for this request. Unit is seconds.
+  optional ShardKeySelector shard_key_selector = 17; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
 message PointsUpdateOperation {
