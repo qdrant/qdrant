@@ -27,7 +27,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::resharding_stream_records::transfer_resharding_stream_records;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 /// Maximum time a point migration transfer might take.
 const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -82,8 +82,6 @@ pub(super) async fn drive(
                 shard_holder,
                 consensus,
                 channel_service,
-                collection_id,
-                shared_storage_config,
             )
             .await?;
         }
@@ -261,17 +259,24 @@ async fn drive_up(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn drive_down(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
-    _channel_service: &ChannelService,
-    _collection_id: &CollectionId,
-    _shared_storage_config: &SharedStorageConfig,
+    channel_service: &ChannelService,
 ) -> CollectionResult<()> {
+    // Sync cluster
+    // We move points without a proxy, so all peers must have the updated hash ring to also forward
+    // updates to the new shard
+    progress
+        .lock()
+        .description
+        .replace(format!("{} (await cluster sync)", state.read().describe()));
+    await_consensus_sync(consensus, channel_service).await;
+    progress.lock().description.replace(state.read().describe());
+
     let hashring = {
         let shard_holder = shard_holder.read().await;
         let shard_key = shard_holder
