@@ -39,6 +39,9 @@ impl IdTracker for InMemoryIdTracker {
         if self.external_id(internal_id).is_some() {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
+            } else {
+                self.internal_to_version.resize(internal_id as usize + 1, 0);
+                self.internal_to_version[internal_id as usize] = version;
             }
         }
 

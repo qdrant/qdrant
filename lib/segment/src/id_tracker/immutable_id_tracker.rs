@@ -355,7 +355,12 @@ impl IdTracker for ImmutableIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if self.external_id(internal_id).is_some() {
-            if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
+            let old_version = self.internal_to_version.get_mut(internal_id as usize);
+            debug_assert!(
+                old_version.is_some(),
+                "Can't extend version list in immutable tracker"
+            );
+            if let Some(old_version) = old_version {
                 *old_version = version;
                 self.internal_to_version_wrapper
                     .set(internal_id as usize, version);
@@ -490,6 +495,8 @@ pub(super) mod test {
     use uuid::Uuid;
 
     use super::*;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
 
@@ -873,6 +880,95 @@ pub(super) mod test {
             assert_eq!(
                 in_memory_id_tracker.external_id(internal),
                 immutable_id_tracker.external_id(internal)
+            );
+        }
+    }
+
+    #[test]
+    fn simple_id_tracker_vs_immutable_tracker_congruence() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        let mut id_tracker = InMemoryIdTracker::new();
+        let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
+
+        // Insert 100 random points into id_tracker
+
+        let num_points = 200;
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        for _ in 0..num_points {
+            // Generate num id in range from 0 to 100
+
+            let point_id = PointIdType::NumId(rng.gen_range(0..num_points as u64));
+
+            let version = rng.gen_range(0..1000);
+
+            let internal_id_mmap = id_tracker.total_point_count() as PointOffsetType;
+            let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;
+
+            assert_eq!(internal_id_mmap, internal_id_simple);
+
+            if id_tracker.internal_id(point_id).is_some() {
+                id_tracker.drop(point_id).unwrap();
+            }
+            id_tracker.set_link(point_id, internal_id_mmap).unwrap();
+            id_tracker
+                .set_internal_version(internal_id_mmap, version)
+                .unwrap();
+
+            if simple_id_tracker.internal_id(point_id).is_some() {
+                simple_id_tracker.drop(point_id).unwrap();
+            }
+            simple_id_tracker
+                .set_link(point_id, internal_id_simple)
+                .unwrap();
+            simple_id_tracker
+                .set_internal_version(internal_id_simple, version)
+                .unwrap();
+        }
+
+        let immutable_id_tracker =
+            ImmutableIdTracker::from_in_memory_tracker(id_tracker, dir.path()).unwrap();
+        drop(immutable_id_tracker);
+
+        let immutable_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        
+        for (external_id, internal_id) in simple_id_tracker.iter_from(None) {
+            assert_eq!(
+                simple_id_tracker.internal_version(internal_id).unwrap(),
+                immutable_id_tracker.internal_version(internal_id).unwrap()
+            );
+            assert_eq!(
+                simple_id_tracker.external_id(internal_id),
+                immutable_id_tracker.external_id(internal_id)
+            );
+            assert_eq!(
+                external_id,
+                immutable_id_tracker.external_id(internal_id).unwrap()
+            );
+            assert_eq!(
+                simple_id_tracker.external_id(internal_id).unwrap(),
+                immutable_id_tracker.external_id(internal_id).unwrap()
+            );
+        }
+
+        for (external_id, internal_id) in immutable_id_tracker.iter_from(None) {
+            assert_eq!(
+                simple_id_tracker.internal_version(internal_id).unwrap(),
+                simple_id_tracker.internal_version(internal_id).unwrap()
+            );
+            assert_eq!(
+                simple_id_tracker.external_id(internal_id),
+                simple_id_tracker.external_id(internal_id)
+            );
+            assert_eq!(
+                external_id,
+                simple_id_tracker.external_id(internal_id).unwrap()
+            );
+            assert_eq!(
+                simple_id_tracker.external_id(internal_id).unwrap(),
+                immutable_id_tracker.external_id(internal_id).unwrap()
             );
         }
     }
