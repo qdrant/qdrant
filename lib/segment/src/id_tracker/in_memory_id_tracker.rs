@@ -1,23 +1,17 @@
-use std::iter;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
-use itertools::Itertools;
-use rand::distributions::Distribution;
-use uuid::Uuid;
 
-use super::immutable_id_tracker::{ImmutableIdTracker, PointMappings};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
-/// A non persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
+/// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
 #[derive(Debug, Default)]
 pub struct InMemoryIdTracker {
-    deleted: BitVec,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 }
@@ -27,14 +21,8 @@ impl InMemoryIdTracker {
         Self::default()
     }
 
-    /// Converts the in memory idtracker to an immutable one, stored into `segment_path`.
-    pub fn make_immutable(self, segment_path: &Path) -> OperationResult<ImmutableIdTracker> {
-        ImmutableIdTracker::new(
-            segment_path,
-            &self.deleted,
-            &self.internal_to_version,
-            self.mappings,
-        )
+    pub fn into_internal(self) -> (Vec<SeqNumberType>, PointMappings) {
+        (self.internal_to_version, self.mappings)
     }
 }
 
@@ -58,21 +46,11 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        match external_id {
-            PointIdType::NumId(num) => self.mappings.external_to_internal_num.get(&num).copied(),
-            PointIdType::Uuid(uuid) => self.mappings.external_to_internal_uuid.get(&uuid).copied(),
-        }
+        self.mappings.internal_id(&external_id)
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        if *self.deleted.get(internal_id as usize)? {
-            return None;
-        }
-
-        self.mappings
-            .internal_to_external
-            .get(internal_id as usize)
-            .map(|i| i.into())
+        self.mappings.external_id(internal_id)
     }
 
     fn set_link(
@@ -80,145 +58,56 @@ impl IdTracker for InMemoryIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        match external_id {
-            PointIdType::NumId(idx) => {
-                self.mappings
-                    .external_to_internal_num
-                    .insert(idx, internal_id);
-            }
-            PointIdType::Uuid(uuid) => {
-                self.mappings
-                    .external_to_internal_uuid
-                    .insert(uuid, internal_id);
-            }
-        }
-
-        let internal_id = internal_id as usize;
-        if internal_id >= self.mappings.internal_to_external.len() {
-            self.mappings
-                .internal_to_external
-                .resize(internal_id + 1, PointIdType::NumId(u64::MAX));
-        }
-        if internal_id >= self.deleted.len() {
-            self.deleted.resize(internal_id + 1, true);
-        }
-        self.mappings.internal_to_external[internal_id] = external_id;
-        self.deleted.set(internal_id, false);
-
+        let _replaced_internal_id = self.mappings.set_link(external_id, internal_id);
         Ok(())
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = match external_id {
-            PointIdType::NumId(num) => self.mappings.external_to_internal_num.remove(&num),
-            PointIdType::Uuid(uuid) => self.mappings.external_to_internal_uuid.remove(&uuid),
-        };
-
-        if let Some(internal_id) = internal_id {
-            self.deleted.set(internal_id as usize, true);
-        }
-
+        self.mappings.drop(external_id);
         Ok(())
     }
 
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        let iter_num = self
-            .mappings
-            .external_to_internal_num
-            .keys()
-            .map(|i| PointIdType::NumId(*i));
-
-        let iter_uuid = self
-            .mappings
-            .external_to_internal_uuid
-            .keys()
-            .map(|i| PointIdType::Uuid(*i));
-        // order is important here, we want to iterate over the u64 ids first
-        Box::new(iter_num.chain(iter_uuid))
+        self.mappings.iter_external()
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            (0..self.mappings.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
-        )
+        self.mappings.iter_internal()
     }
 
     fn iter_from(
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let full_num_iter = || {
-            self.mappings
-                .external_to_internal_num
-                .iter()
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let offset_num_iter = |offset: u64| {
-            self.mappings
-                .external_to_internal_num
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let full_uuid_iter = || {
-            self.mappings
-                .external_to_internal_uuid
-                .iter()
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-        let offset_uuid_iter = |offset: Uuid| {
-            self.mappings
-                .external_to_internal_uuid
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-
-        match external_id {
-            None => {
-                let iter_num = full_num_iter();
-                let iter_uuid = full_uuid_iter();
-                // order is important here, we want to iterate over the u64 ids first
-                Box::new(iter_num.chain(iter_uuid))
-            }
-            Some(offset) => match offset {
-                PointIdType::NumId(idx) => {
-                    // Because u64 keys are less that uuid key, we can just use the full iterator for uuid
-                    let iter_num = offset_num_iter(idx);
-                    let iter_uuid = full_uuid_iter();
-                    // order is important here, we want to iterate over the u64 ids first
-                    Box::new(iter_num.chain(iter_uuid))
-                }
-                PointIdType::Uuid(uuid) => {
-                    // if offset is a uuid, we can only iterate over uuids
-                    Box::new(offset_uuid_iter(uuid))
-                }
-            },
-        }
+        self.mappings.iter_from(external_id)
     }
 
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         self.iter_internal()
     }
 
+    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
+        self.mappings.iter_random()
+    }
+
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
-        // Only flush deletions because mappings are immutable
-        // self.deleted_wrapper.flusher()
+        debug_assert!(false, "InMemoryIdTracker should not be flushed");
         Box::new(|| Ok(()))
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
     fn versions_flusher(&self) -> Flusher {
+        debug_assert!(false, "InMemoryIdTracker should not be flushed");
         Box::new(|| Ok(()))
-        // self.internal_to_version_wrapper.flusher()
     }
 
     fn total_point_count(&self) -> usize {
-        self.mappings.internal_to_external.len()
+        self.mappings.total_point_count()
     }
 
     fn available_point_count(&self) -> usize {
-        self.mappings.external_to_internal_num.len() + self.mappings.external_to_internal_uuid.len()
+        self.mappings.available_point_count()
     }
 
     fn deleted_point_count(&self) -> usize {
@@ -226,15 +115,11 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn deleted_point_bitslice(&self) -> &BitSlice {
-        &self.deleted
+        self.mappings.deleted()
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        let key = key as usize;
-        if key >= self.deleted.len() {
-            return true;
-        }
-        self.deleted[key]
+        self.mappings.is_deleted_point(key)
     }
 
     fn name(&self) -> &'static str {
@@ -263,116 +148,7 @@ impl IdTracker for InMemoryIdTracker {
     }
 
     fn files(&self) -> Vec<PathBuf> {
+        debug_assert!(false, "InMemoryIdTracker should not be persisted");
         vec![]
-    }
-
-    fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let rng = rand::thread_rng();
-        let max_internal = self.mappings.internal_to_external.len();
-        if max_internal == 0 {
-            return Box::new(iter::empty());
-        }
-        let uniform = rand::distributions::Uniform::new(0, max_internal);
-        let iter = Distribution::sample_iter(uniform, rng)
-            // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
-            // but it's good enough for low limits.
-            //
-            // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
-            .unique()
-            .take(max_internal)
-            .filter_map(move |i| {
-                if self.deleted[i] {
-                    None
-                } else {
-                    Some((self.mappings.internal_to_external[i], i as PointOffsetType))
-                }
-            });
-
-        Box::new(iter)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use tempfile::Builder;
-
-    use super::super::immutable_id_tracker::test::TEST_POINTS;
-    use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
-    use crate::id_tracker::IdTrackerEnum;
-
-    fn make_in_memory_tracker_from_memory(path: &Path) -> ImmutableIdTracker {
-        let mut id_tracker = InMemoryIdTracker::new();
-
-        for (id, value) in TEST_POINTS.iter().enumerate() {
-            id_tracker.set_link(*value, id as PointOffsetType).unwrap();
-        }
-
-        id_tracker.make_immutable(path).unwrap()
-    }
-
-    fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker {
-        let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
-
-        for (id, value) in TEST_POINTS.iter().enumerate() {
-            id_tracker.set_link(*value, id as PointOffsetType).unwrap();
-        }
-
-        match id_tracker.make_immutable(path).unwrap() {
-            IdTrackerEnum::ImmutableIdTracker(m) => {
-                m.mapping_flusher()().unwrap();
-                m.versions_flusher()().unwrap();
-                m
-            }
-            _ => {
-                unreachable!()
-            }
-        }
-    }
-
-    #[test]
-    fn test_idtracker_equal() {
-        let in_memory_dir = Builder::new()
-            .prefix("storage_dir_memory")
-            .tempdir()
-            .unwrap();
-        let in_memory_idtracker = make_in_memory_tracker_from_memory(in_memory_dir.path());
-
-        let immutable_id_tracker_dir = Builder::new()
-            .prefix("storage_dir_immutable")
-            .tempdir()
-            .unwrap();
-        let immutable_id_tracker = make_immutable_tracker(immutable_id_tracker_dir.path());
-
-        assert_eq!(
-            in_memory_idtracker.available_point_count(),
-            immutable_id_tracker.available_point_count()
-        );
-        assert_eq!(
-            in_memory_idtracker.total_point_count(),
-            immutable_id_tracker.total_point_count()
-        );
-
-        for (internal, external) in TEST_POINTS.iter().enumerate() {
-            let internal = internal as PointOffsetType;
-
-            assert_eq!(
-                in_memory_idtracker.internal_id(*external),
-                immutable_id_tracker.internal_id(*external)
-            );
-
-            assert_eq!(
-                in_memory_idtracker.internal_version(internal),
-                immutable_id_tracker.internal_version(internal)
-            );
-
-            assert_eq!(
-                in_memory_idtracker.external_id(internal),
-                immutable_id_tracker.external_id(internal)
-            );
-        }
     }
 }
