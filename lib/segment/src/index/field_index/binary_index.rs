@@ -320,7 +320,9 @@ impl PayloadFieldIndex for BinaryIndex {
     }
 }
 
-impl ValueIndexer<bool> for BinaryIndex {
+impl ValueIndexer for BinaryIndex {
+    type ValueType = bool;
+
     fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
