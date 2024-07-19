@@ -239,11 +239,11 @@ pub struct ShardTransferInfo {
 
 #[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct ReshardingInfo {
+    pub direction: ReshardingDirection,
+
     pub shard_id: ShardId,
 
     pub peer_id: PeerId,
-
-    pub direction: ReshardingDirection,
 
     pub shard_key: Option<ShardKey>,
 

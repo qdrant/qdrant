@@ -69,10 +69,10 @@ impl ShardHolder {
         new_shard: Option<ShardReplicaSet>,
     ) -> CollectionResult<()> {
         let ReshardKey {
+            direction,
             peer_id,
             shard_id,
             shard_key,
-            direction,
         } = resharding_key;
 
         // TODO(resharding): Delete shard on error!?
@@ -92,7 +92,7 @@ impl ShardHolder {
                 "resharding is already in progress:\n{state:#?}",
             );
 
-            *state = Some(ReshardState::new(peer_id, shard_id, shard_key, direction));
+            *state = Some(ReshardState::new(direction, peer_id, shard_id, shard_key));
         })?;
 
         Ok(())
@@ -228,9 +228,9 @@ impl ShardHolder {
         force: bool,
     ) -> CollectionResult<()> {
         let ReshardKey {
+            direction,
             peer_id,
             shard_id,
-            direction,
             ref shard_key,
         } = resharding_key;
 

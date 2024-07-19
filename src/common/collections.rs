@@ -524,9 +524,9 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::StartResharding(op) => {
             let StartResharding {
+                direction,
                 peer_id,
                 shard_key,
-                direction,
             } = op.start_resharding;
 
             let collection_state = collection.state().await;
@@ -627,10 +627,10 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::Start(ReshardKey {
+                            direction,
                             peer_id,
                             shard_id,
                             shard_key,
-                            direction,
                         }),
                     ),
                     access,
@@ -650,10 +650,10 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::Abort(ReshardKey {
+                            direction: state.direction,
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
                             shard_key: state.shard_key.clone(),
-                            direction: state.direction,
                         }),
                     ),
                     access,
