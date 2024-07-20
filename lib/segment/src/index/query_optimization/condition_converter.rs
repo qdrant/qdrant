@@ -369,7 +369,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                     }))
                 }
             }
-            _ => None
+            _ => None,
         },
     }
 }
