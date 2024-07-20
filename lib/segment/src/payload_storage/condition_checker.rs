@@ -146,7 +146,7 @@ impl ValueChecker for Match {
                 (Value::Number(_), _) => true,
                 (Value::String(_), _) => true,
             },
-            Match::Subset(MatchSubset{subset}) => match (payload, subset) {
+            Match::Subset(MatchSubset { subset }) => match (payload, subset) {
                 (Value::String(stored), AnyVariants::Keywords(list)) => {
                     if list.len() < INDEXSET_ITER_THRESHOLD {
                         list.iter().any(|i| i.as_str() == stored.as_str())
@@ -165,7 +165,7 @@ impl ValueChecker for Match {
                     })
                     .unwrap_or(false),
                 _ => false,
-            }
+            },
         }
     }
 }

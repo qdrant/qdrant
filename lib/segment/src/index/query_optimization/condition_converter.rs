@@ -15,8 +15,8 @@ use crate::payload_storage::query_checker::{
 };
 use crate::types::{
     AnyVariants, Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox,
-    GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchSubset,
-    MatchText, MatchValue, OwnedPayloadRef, PayloadContainer, Range, RangeInterface, ValueVariants,
+    GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchSubset, MatchText,
+    MatchValue, OwnedPayloadRef, PayloadContainer, Range, RangeInterface, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -344,12 +344,13 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
                 index.values_count(point_id) > 0
             })),
         },
-        Match::Subset(MatchSubset{subset}) => match (subset, index) {
+        Match::Subset(MatchSubset { subset }) => match (subset, index) {
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.get_values(point_id).map_or(false, |values| {
                         if list.len() < INDEXSET_ITER_THRESHOLD {
-                            list.iter().all(|s| values.iter().any(|k| s.as_str() == k.as_ref()))
+                            list.iter()
+                                .all(|s| values.iter().any(|k| s.as_str() == k.as_ref()))
                         } else {
                             list.iter().all(|s| values.iter().any(|k| s == k.as_str()))
                         }

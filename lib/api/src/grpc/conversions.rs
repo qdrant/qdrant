@@ -1557,16 +1557,16 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Integers(ints) => ints.integers.into(),
                 MatchValue::ExceptKeywords(kwds) => {
                     segment::types::Match::Except(kwds.strings.into())
-                },
+                }
                 MatchValue::ExceptIntegers(ints) => {
                     segment::types::Match::Except(ints.integers.into())
-                },
+                }
                 MatchValue::SubsetKeywords(kwds) => {
                     segment::types::Match::Subset(kwds.strings.into())
-                },
+                }
                 MatchValue::SubsetIntegers(ints) => {
                     segment::types::Match::Subset(ints.integers.into())
-                },
+                }
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -1613,7 +1613,7 @@ impl From<segment::types::Match> for Match {
                     let integers = integers.into_iter().collect();
                     MatchValue::SubsetIntegers(RepeatedIntegers { integers })
                 }
-            }
+            },
         };
         Self {
             match_value: Some(match_value),
