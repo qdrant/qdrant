@@ -7121,6 +7121,9 @@
           },
           {
             "$ref": "#/components/schemas/MatchExcept"
+          },
+          {
+            "$ref": "#/components/schemas/MatchSubset"
           }
         ]
       },
@@ -7201,6 +7204,18 @@
         ],
         "properties": {
           "except": {
+            "$ref": "#/components/schemas/AnyVariants"
+          }
+        }
+      },
+      "MatchSubset": {
+        "description": "Should have all values matching any of the given values",
+        "type": "object",
+        "required": [
+          "subset"
+        ],
+        "properties": {
+          "subset": {
             "$ref": "#/components/schemas/AnyVariants"
           }
         }

@@ -212,6 +212,7 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
             }
             Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
+            Match::Subset(match_subset) => infer_schema_from_any_variants(&match_subset.subset),
         })
     }
     if let Some(range_interface) = range {

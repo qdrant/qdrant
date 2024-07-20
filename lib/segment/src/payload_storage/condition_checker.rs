@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use crate::types::{
     AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
-    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
+    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchSubset, MatchText, MatchValue, Range,
     RangeInterface, ValueVariants, ValuesCount,
 };
 
@@ -19,15 +19,23 @@ pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;
 
     #[inline]
-    fn _check(&self, payload: &Value) -> bool {
+    fn _check_any(&self, payload: &Value) -> bool {
         match payload {
             Value::Array(values) => values.iter().any(|x| self.check_match(x)),
             _ => self.check_match(payload),
         }
     }
 
+    #[inline]
+    fn _check_all(&self, payload: &Value) -> bool {
+        match payload {
+            Value::Array(values) => values.iter().all(|x| self.check_match(x)),
+            _ => self.check_match(payload),
+        }
+    }
+
     fn check(&self, payload: &Value) -> bool {
-        self._check(payload)
+        self._check_any(payload)
     }
 }
 
@@ -70,8 +78,10 @@ impl ValueChecker for FieldCondition {
     fn check(&self, payload: &Value) -> bool {
         if self.values_count.is_some() {
             self.values_count.as_ref().unwrap().check_count(payload)
+        } else if let Some(Match::Subset(_)) = self.r#match {
+            self._check_all(payload)
         } else {
-            self._check(payload)
+            self._check_any(payload)
         }
     }
 }
@@ -136,6 +146,26 @@ impl ValueChecker for Match {
                 (Value::Number(_), _) => true,
                 (Value::String(_), _) => true,
             },
+            Match::Subset(MatchSubset{subset}) => match (payload, subset) {
+                (Value::String(stored), AnyVariants::Keywords(list)) => {
+                    if list.len() < INDEXSET_ITER_THRESHOLD {
+                        list.iter().any(|i| i.as_str() == stored.as_str())
+                    } else {
+                        list.contains(stored.as_str())
+                    }
+                }
+                (Value::Number(stored), AnyVariants::Integers(list)) => stored
+                    .as_i64()
+                    .map(|num| {
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            list.iter().any(|i| *i == num)
+                        } else {
+                            list.contains(&num)
+                        }
+                    })
+                    .unwrap_or(false),
+                _ => false,
+            }
         }
     }
 }

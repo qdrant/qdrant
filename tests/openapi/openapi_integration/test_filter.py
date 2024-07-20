@@ -67,3 +67,34 @@ def test_just_key():
     error = response.json()["status"]["error"]
     assert "Validation error in JSON body" in error
     assert "At least one field condition must be specified" in error
+
+
+def test_match_subset():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 3,
+            "filter": {
+                "must": [
+                    {
+                        "key": "city",
+                        "match": {
+                            "subset": ["Berlin", "Moscow"]
+                        }
+                    }
+                ]
+            }
+        }
+    )
+    assert response.ok
+
+    json = response.json()
+    assert len(json['result']) == 3
+
+    ids = [x['id'] for x in json['result']]
+    assert 1 in ids
+    assert 3 in ids
+    assert 8 in ids

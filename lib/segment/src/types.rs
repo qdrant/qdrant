@@ -1344,6 +1344,13 @@ pub struct MatchExcept {
     pub except: AnyVariants,
 }
 
+/// Should have all the values matching any of the given values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchSubset {
+    pub subset: AnyVariants,
+}
+
 /// Match filter request
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
@@ -1352,6 +1359,7 @@ pub enum MatchInterface {
     Text(MatchText),
     Any(MatchAny),
     Except(MatchExcept),
+    Subset(MatchSubset),
 }
 
 /// Match filter request
@@ -1362,6 +1370,7 @@ pub enum Match {
     Text(MatchText),
     Any(MatchAny),
     Except(MatchExcept),
+    Subset(MatchSubset),
 }
 
 impl Match {
@@ -1380,6 +1389,10 @@ impl Match {
     pub fn new_except(except: AnyVariants) -> Self {
         Self::Except(MatchExcept { except })
     }
+
+    pub fn new_subset(subset: AnyVariants) -> Self {
+        Self::Subset(MatchSubset { subset })
+    }
 }
 
 impl From<AnyVariants> for Match {
@@ -1396,6 +1409,9 @@ impl From<MatchInterface> for Match {
             MatchInterface::Any(any) => Self::Any(MatchAny { any: any.any }),
             MatchInterface::Except(except) => Self::Except(MatchExcept {
                 except: except.except,
+            }),
+            MatchInterface::Subset(subset) => Self::Subset(MatchSubset {
+                subset: subset.subset,
             }),
         }
     }
@@ -1451,6 +1467,15 @@ impl From<Vec<String>> for MatchExcept {
     }
 }
 
+impl From<Vec<String>> for MatchSubset {
+    fn from(keywords: Vec<String>) -> Self {
+        let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
+        MatchSubset {
+            subset: AnyVariants::Keywords(keywords),
+        }
+    }
+}
+
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
         let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
@@ -1465,6 +1490,15 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
         let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Integers(integers),
+        }
+    }
+}
+
+impl From<Vec<IntPayloadType>> for MatchSubset {
+    fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
+        MatchSubset {
+            subset: AnyVariants::Integers(integers),
         }
     }
 }

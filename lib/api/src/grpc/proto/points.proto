@@ -854,6 +854,8 @@ message Match {
     RepeatedIntegers integers = 6; // Match multiple integers
     RepeatedIntegers except_integers = 7; // Match any other value except those integers
     RepeatedStrings except_keywords = 8; // Match any other value except those keywords
+    RepeatedStrings subset_integers = 9; // Match all integers are in those integers
+    RepeatedStrings subset_keywords = 10; // Match all keywords are in those keywords
   }
 }
 

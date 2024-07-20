@@ -1555,12 +1555,18 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Text(text) => segment::types::Match::Text(text.into()),
                 MatchValue::Keywords(kwds) => kwds.strings.into(),
                 MatchValue::Integers(ints) => ints.integers.into(),
-                MatchValue::ExceptIntegers(kwds) => {
-                    segment::types::Match::Except(kwds.integers.into())
-                }
-                MatchValue::ExceptKeywords(ints) => {
-                    segment::types::Match::Except(ints.strings.into())
-                }
+                MatchValue::ExceptKeywords(kwds) => {
+                    segment::types::Match::Except(kwds.strings.into())
+                },
+                MatchValue::ExceptIntegers(ints) => {
+                    segment::types::Match::Except(ints.integers.into())
+                },
+                MatchValue::SubsetKeywords(kwds) => {
+                    segment::types::Match::Subset(kwds.strings.into())
+                },
+                MatchValue::SubsetIntegers(ints) => {
+                    segment::types::Match::Subset(ints.integers.into())
+                },
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -1598,6 +1604,16 @@ impl From<segment::types::Match> for Match {
                     MatchValue::ExceptIntegers(RepeatedIntegers { integers })
                 }
             },
+            segment::types::Match::Subset(subset) => match subset.subset {
+                segment::types::AnyVariants::Keywords(strings) => {
+                    let strings = strings.into_iter().collect();
+                    MatchValue::SubsetKeywords(RepeatedStrings { strings })
+                }
+                segment::types::AnyVariants::Integers(integers) => {
+                    let integers = integers.into_iter().collect();
+                    MatchValue::SubsetIntegers(RepeatedIntegers { integers })
+                }
+            }
         };
         Self {
             match_value: Some(match_value),
