@@ -89,6 +89,13 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
+    pub fn check_values_all(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        match self {
+            MapIndex::Mutable(index) => index.check_values_all(idx, check_fn),
+            MapIndex::Immutable(index) => index.check_values_all(idx, check_fn),
+        }
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = &N> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),

@@ -198,6 +198,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .check_values_any(idx, |v| check_fn(v.borrow()))
     }
 
+    pub fn check_values_all(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        self.point_to_values
+            .check_values_all(idx, |v| check_fn(v.borrow()))
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         Some(self.point_to_values.get_values(idx)?.map(|v| v.borrow()))
     }

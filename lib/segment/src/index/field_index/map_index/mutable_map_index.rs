@@ -125,6 +125,13 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             .unwrap_or(false)
     }
 
+    pub fn check_values_all(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+        self.point_to_values
+            .get(idx as usize)
+            .map(|values| values.iter().all(|v| check_fn(v.borrow())))
+            .unwrap_or(false)
+    }
+
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
         Some(
             self.point_to_values
