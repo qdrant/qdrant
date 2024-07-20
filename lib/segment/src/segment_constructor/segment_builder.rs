@@ -383,9 +383,6 @@ impl SegmentBuilder {
             }
         }
 
-        self.id_tracker.mapping_flusher()()?;
-        self.id_tracker.versions_flusher()()?;
-
         Ok(true)
     }
 
