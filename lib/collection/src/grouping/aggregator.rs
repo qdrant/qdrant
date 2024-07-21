@@ -9,8 +9,7 @@ use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterab
 use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
 use serde_json::Value;
 
-use super::types::AggregatorError::{self, *};
-use super::types::Group;
+use super::types::{AggregatorError, Group};
 
 type Hits = HashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
@@ -58,13 +57,13 @@ impl GroupsAggregator {
                     })
                     .collect()
             })
-            .ok_or(KeyNotFound)?;
+            .ok_or(AggregatorError::KeyNotFound)?;
 
         let group_keys = payload_values
             .into_iter()
             .map(GroupId::try_from)
             .collect::<Result<Vec<GroupId>, ()>>()
-            .map_err(|_| BadKeyType)?;
+            .map_err(|_| AggregatorError::BadKeyType)?;
 
         let unique_group_keys: Vec<_> = group_keys.into_iter().unique().collect();
 
@@ -114,7 +113,10 @@ impl GroupsAggregator {
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
         for point in points {
             match self.add_point(point.to_owned()) {
-                Ok(()) | Err(KeyNotFound | BadKeyType) => continue, // ignore points that don't have the group_by field
+                Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
+                    // ignore points that don't have the group_by field
+                    continue;
+                }
             }
         }
     }
@@ -300,8 +302,8 @@ mod unit_tests {
             Case::new(json!("a"), 8, 4, Ok(()), point(104, 0.35, json!("a"))), // small score 'a'
             Case::new(json!("a"), 9, 4, Ok(()), point(105, 0.36, json!("a"))), // small score 'a'
             Case::new(json!("b"), 3, 4, Ok(()), point(7, 1.0, json!("b"))),
-            Case::new(json!("false"), 0, 4, Err(BadKeyType), point(8, 1.0, json!(false))),
-            Case::new(json!("none"), 0, 4, Err(KeyNotFound), empty_point(9, 1.0)),
+            Case::new(json!("false"), 0, 4, Err(AggregatorError::BadKeyType), point(8, 1.0, json!(false))),
+            Case::new(json!("none"), 0, 4, Err(AggregatorError::KeyNotFound), empty_point(9, 1.0)),
             Case::new(json!(3), 2, 4, Ok(()), point(10, 0.6, json!(3))),
             Case::new(json!(3), 3, 4, Ok(()), point(11, 0.1, json!(3))),
         ]
