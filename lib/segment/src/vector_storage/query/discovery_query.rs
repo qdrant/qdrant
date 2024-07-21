@@ -109,9 +109,9 @@ mod test {
     fn context_ranking(#[case] pairs: Vec<(isize, isize)>, #[case] expected: RankType) {
         let pairs = pairs.into_iter().map(ContextPair::from).collect();
 
-        let _target = 42;
+        let target = 42;
 
-        let query = DiscoveryQuery::new(_target, pairs);
+        let query = DiscoveryQuery::new(target, pairs);
 
         let rank = query.rank_by(dummy_similarity);
 

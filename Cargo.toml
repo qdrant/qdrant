@@ -141,6 +141,7 @@ ref_option_ref = "warn"
 uninlined_format_args = "warn"
 unnecessary_wraps = "warn"
 unused_self = "warn"
+used_underscore_binding = "warn"
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
