@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash;
+use std::iter::Peekable;
+use std::rc::Rc;
 
-use itertools::Itertools;
+use itertools::{Itertools, Position};
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
@@ -99,20 +101,21 @@ fn payload_eq(this: &Option<Payload>, other: &Option<Payload>) -> bool {
     }
 }
 
+/// Expected number of replicas
+const EXPECTED_REPLICAS: usize = 5;
+
+type ResolverRecords<'a, Item> = TinyVec<[ResolverRecord<'a, Item>; EXPECTED_REPLICAS]>;
+
 struct Resolver<'a, Item, Id, Ident, Cmp> {
     items: HashMap<Id, ResolverRecords<'a, Item>>,
     identify: Ident,
     compare: Cmp,
 }
 
-type ResolverRecords<'a, Item> = TinyVec<[ResolverRecord<'a, Item>; RESOLVER_RECORDS_CAPACITY]>;
-
-const RESOLVER_RECORDS_CAPACITY: usize = 5; // Expected number of replicas
-
 impl<'a, Item, Id, Ident, Cmp> Resolver<'a, Item, Id, Ident, Cmp>
 where
     Id: Eq + hash::Hash,
-    Ident: Fn(&Item) -> Id,
+    Ident: Fn(&Item) -> Id + Clone,
     Cmp: Fn(&Item, &Item) -> bool,
 {
     pub fn resolve(
@@ -126,45 +129,42 @@ where
             ResolveCondition::Majority => items.len() / 2 + 1,
         };
 
-        let mut resolver = Resolver::new(items.first().map_or(0, Vec::len), identify, compare);
+        let mut resolver =
+            Resolver::new(items.first().map_or(0, Vec::len), identify.clone(), compare);
         resolver.add_all(&items);
 
         // Select coordinates of accepted items, avoiding copying
-        let resolved_items: HashMap<_, _> = resolver
+        let resolved_coords: HashSet<_> = resolver
             .items
             .into_iter()
             .filter_map(|(_, points)| {
                 points
                     .into_iter()
                     .find(|point| point.count >= resolution_count)
-                    .map(|point| ((point.row, point.index), point.precedence))
+                    .map(|point| point.coordinates.into_iter())
             })
+            .flatten()
             .collect();
 
         // Shortcut if everything is consistent: return first items, avoiding filtering
-        let is_consistent = resolved_items.len() == items.first().map_or(0, Vec::len)
-            && resolved_items.keys().all(|&(row, _)| row == 0);
+        let is_consistent = resolved_coords.len() == items.first().map_or(0, Vec::len)
+            && resolved_coords.iter().all(|&(row, _)| row == 0);
 
         if is_consistent {
             items.into_iter().next().unwrap_or_default()
         } else {
-            items
-                .into_iter()
-                .enumerate()
-                .flat_map(|(row, items)| {
-                    items
-                        .into_iter()
-                        .enumerate()
-                        .map(move |(index, item)| (row, index, item))
-                })
-                .filter_map(|(row, index, item)| {
-                    resolved_items
-                        .get(&(row, index))
-                        .map(|precedence| (item, precedence))
-                })
-                .sorted_unstable_by_key(|(_, precedence)| *precedence)
-                .map(|(item, _)| item)
-                .collect()
+            let resolved_coords = Rc::new(resolved_coords);
+
+            let resolved_iters = items.into_iter().enumerate().map(|(row, list)| {
+                let resolved_coords = resolved_coords.clone();
+                list.into_iter()
+                    .enumerate()
+                    .filter_map(move |(index, item)| {
+                        resolved_coords.contains(&(row, index)).then_some(item)
+                    })
+            });
+
+            Merger::new(resolved_iters, identify, resolution_count).collect_vec()
         }
     }
 
@@ -194,7 +194,7 @@ where
         for point in points.iter_mut() {
             if (self.compare)(item, point.item.unwrap()) {
                 point.count += 1;
-                point.precedence += index;
+                point.coordinates.push((row, index));
                 return;
             }
         }
@@ -203,48 +203,130 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
-    /// Offset within all results
-    row: usize,
-    /// Offset within a set of results
-    index: usize,
+    /// Store all coordinates of equal items in `(row, index)` tuples
+    coordinates: TinyVec<[(usize, usize); EXPECTED_REPLICAS]>,
     /// Keeps track of the amount of times we see this same item
     count: usize,
-    /// Keeps track of the index of the same item in different results. The lower, the earlier.
-    precedence: usize,
-}
-
-impl<'a, T> Copy for ResolverRecord<'a, T> {}
-
-impl<'a, T> Clone for ResolverRecord<'a, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 
 impl<'a, T> Default for ResolverRecord<'a, T> {
     fn default() -> Self {
         Self {
             item: None,
-            row: 0,
-            index: 0,
+            coordinates: Default::default(),
             count: 0,
-            precedence: 0,
         }
     }
 }
 
 impl<'a, T> ResolverRecord<'a, T> {
     fn new(item: &'a T, row: usize, index: usize) -> Self {
+        let mut coordinates = TinyVec::new();
+        coordinates.push((row, index));
+
         Self {
             item: Some(item),
-            row,
-            index,
+            coordinates,
             count: 1,
-            precedence: index,
         }
+    }
+}
+
+struct Merger<I: Iterator, Ident> {
+    /// One iterator per set of results, which outputs items that comply with resolution count, in their original order
+    resolved_iters: Vec<Peekable<I>>,
+    /// Closure which retrieves the item's ID
+    ident: Ident,
+
+    /// Only used to debug_assert correctness
+    resolution_count: usize,
+}
+
+impl<Iter, Ident, Id, Item> Merger<Iter, Ident>
+where
+    Id: Eq + hash::Hash,
+    Ident: Fn(&Item) -> Id,
+    Iter: Iterator<Item = Item>,
+{
+    fn new(
+        resolved_iters: impl Iterator<Item = Iter>,
+        identify: Ident,
+        resolution_count: usize,
+    ) -> Self {
+        let resolved_iters = resolved_iters.map(|iter| iter.peekable()).collect();
+
+        Self {
+            resolved_iters,
+            ident: identify,
+            resolution_count,
+        }
+    }
+
+    fn peek_heads(&mut self) -> impl Iterator<Item = (usize, Id)> + '_ {
+        self.resolved_iters
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(row, iter)| iter.peek().map(|peeked| (row, (self.ident)(peeked))))
+    }
+
+    /// Peeks each row, then maps IDs to the peeked rows in which each ID appears
+    fn heads_map(&mut self) -> HashMap<Id, Vec<usize>> {
+        let capacity = self.resolved_iters.len();
+        self.peek_heads()
+            .fold(HashMap::with_capacity(capacity), |mut map, (row, id)| {
+                let entry = map.entry(id).or_default();
+                entry.push(row);
+                map
+            })
+    }
+
+    /// Advances the rows and returns the item in the first of them
+    ///
+    /// Minimum len of `row_ids` should be the resolution count.
+    fn advance_rows(&mut self, row_ids: &[usize]) -> Option<Item> {
+        debug_assert!(row_ids.len() >= self.resolution_count);
+
+        let mut merged_item = None;
+        for (position, row) in row_ids.into_iter().with_position() {
+            match position {
+                Position::First => {
+                    // use this one to return
+                    merged_item = self.resolved_iters[*row].next();
+                }
+                Position::Only => {
+                    debug_assert!(
+                        false,
+                        "this should never happen, 
+                        because it means that we got only one row to advance,
+                        while the minimum is 2 to have majority with 2 or more replicas"
+                    )
+                }
+                _ => {
+                    // discard the rest of equal items
+                    self.resolved_iters[*row].next();
+                }
+            }
+        }
+        merged_item
+    }
+}
+
+impl<Iter, Ident, Id, Item> Iterator for Merger<Iter, Ident>
+where
+    Id: Eq + hash::Hash,
+    Ident: Fn(&Item) -> Id,
+    Iter: Iterator<Item = Item>,
+{
+    type Item = Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Choose the item that appears the most times in the heads
+        let chosen_rows = self.heads_map().into_values().max_by_key(|kv| kv.len())?;
+
+        self.advance_rows(&chosen_rows)
     }
 }
 
