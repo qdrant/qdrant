@@ -125,6 +125,7 @@ rstack-self = { version = "0.3.0", optional = true }
 tikv-jemallocator = "0.6"
 
 [workspace.lints.clippy]
+doc_link_with_quotes = "warn"
 enum_glob_use = "warn"
 filter_map_next = "warn"
 flat_map_option = "warn"
