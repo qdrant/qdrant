@@ -1744,8 +1744,16 @@ impl Validate for SparseVectorsConfig {
     }
 }
 
+fn alias_description_example() -> AliasDescription {
+    AliasDescription {
+        alias_name: "blogs-title".to_string(),
+        collection_name: "arivx-title".to_string(),
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "alias_description_example")]
 pub struct AliasDescription {
     pub alias_name: String,
     pub collection_name: String,

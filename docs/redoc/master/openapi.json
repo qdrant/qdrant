@@ -11054,6 +11054,10 @@
           "collection_name": {
             "type": "string"
           }
+        },
+        "example": {
+          "alias_name": "blogs-title",
+          "collection_name": "arivx-title"
         }
       },
       "WriteOrdering": {
