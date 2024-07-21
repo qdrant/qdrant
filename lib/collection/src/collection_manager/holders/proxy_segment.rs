@@ -905,9 +905,8 @@ impl SegmentEntry for ProxySegment {
             .create_field_index(op_num, key, field_schema)?;
         let indexed_fields = self.write_segment.get().read().get_indexed_fields();
 
-        let payload_schema = match indexed_fields.get(key) {
-            Some(schema_type) => schema_type,
-            None => return Ok(false),
+        let Some(payload_schema) = indexed_fields.get(key) else {
+            return Ok(false);
         };
 
         self.created_indexes

@@ -1209,11 +1209,8 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                         })
                     }
                     api::grpc::qdrant::query_enum::Query::Discover(query) => {
-                        let target = match query.target {
-                            Some(target) => target,
-                            None => {
-                                return Err(Status::invalid_argument("Target is not specified"))
-                            }
+                        let Some(target) = query.target else {
+                            return Err(Status::invalid_argument("Target is not specified"));
                         };
 
                         let pairs = query

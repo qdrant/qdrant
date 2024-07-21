@@ -105,9 +105,8 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
         Some(kind) => match kind {
             Kind::NullValue(_) => Ok(serde_json::Value::Null),
             Kind::DoubleValue(n) => {
-                let v = match serde_json::Number::from_f64(n) {
-                    Some(f) => f,
-                    None => return Err(Status::invalid_argument("cannot convert to json number")),
+                let Some(v) = serde_json::Number::from_f64(n) else {
+                    return Err(Status::invalid_argument("cannot convert to json number"));
                 };
                 Ok(serde_json::Value::Number(v))
             }

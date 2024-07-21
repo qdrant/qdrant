@@ -278,10 +278,7 @@ impl TableOfContent {
         operation: ReshardingOperation,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
-        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
-        {
-            proposal_sender
-        } else {
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
             return Err(StorageError::service_error(
                 "Can't handle resharding, this is a single node deployment",
             ));
@@ -375,10 +372,7 @@ impl TableOfContent {
         collection_id: CollectionId,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
-        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
-        {
-            proposal_sender
-        } else {
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
             return Err(StorageError::service_error(
                 "Can't handle resharding, this is a single node deployment",
             ));
@@ -436,10 +430,7 @@ impl TableOfContent {
         transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(&collection_id).await?;
-        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
-        {
-            proposal_sender
-        } else {
+        let Some(proposal_sender) = self.consensus_proposal_sender.clone() else {
             return Err(StorageError::service_error(
                 "Can't handle transfer, this is a single node deployment",
             ));

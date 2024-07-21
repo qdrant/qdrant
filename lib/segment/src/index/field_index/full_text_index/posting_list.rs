@@ -278,13 +278,10 @@ impl<'a> CompressedPostingVisitor<'a> {
 
         // decompressed chunk is not in the range, so we need to decompress another chunk
         // first, check if there is a chunk that contains the value
-        let chunk_index = match self.postings.find_chunk(val, self.decompressed_chunk_idx) {
-            Some(idx) => idx,
-            None => {
-                // value is in the noncompressed postings range
-                self.decompressed_chunk_idx = None;
-                return self.postings.reminder_postings.binary_search(val).is_ok();
-            }
+        let Some(chunk_index) = self.postings.find_chunk(val, self.decompressed_chunk_idx) else {
+            // value is in the noncompressed postings range
+            self.decompressed_chunk_idx = None;
+            return self.postings.reminder_postings.binary_search(val).is_ok();
         };
         // if the value is the initial value of the chunk, we don't need to decompress the chunk
         if self.postings.chunks[chunk_index].initial == *val {

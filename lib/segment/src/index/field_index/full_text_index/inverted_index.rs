@@ -378,9 +378,8 @@ impl MutableInvertedIndex {
             return false; // Already removed or never actually existed
         }
 
-        let removed_doc = match std::mem::take(&mut self.point_to_docs[idx as usize]) {
-            Some(doc) => doc,
-            None => return false,
+        let Some(removed_doc) = std::mem::take(&mut self.point_to_docs[idx as usize]) else {
+            return false;
         };
 
         self.points_count -= 1;

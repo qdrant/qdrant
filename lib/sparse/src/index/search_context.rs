@@ -251,9 +251,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             }
 
             // prepare next iterator of batched ids
-            let start_batch_id = match self.min_record_id {
-                Some(min_id) => min_id,
-                None => break, // all posting lists exhausted
+            let Some(start_batch_id) = self.min_record_id else {
+                break;
             };
 
             // compute batch range of contiguous ids for the next batch

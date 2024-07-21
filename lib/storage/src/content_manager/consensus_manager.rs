@@ -302,9 +302,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         loop {
             let unapplied_index = self.persistent.read().current_unapplied_entry();
-            let entry_index = match unapplied_index {
-                Some(index) => index,
-                None => break,
+            let Some(entry_index) = unapplied_index else {
+                break;
             };
             log::debug!("Applying committed entry with index {entry_index}");
             let entry = self

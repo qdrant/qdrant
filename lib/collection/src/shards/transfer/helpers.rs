@@ -90,9 +90,7 @@ pub fn validate_transfer(
     current_transfers: &HashSet<ShardTransfer>,
     shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
-    let shard_state = if let Some(shard_state) = shard_state {
-        shard_state
-    } else {
+    let Some(shard_state) = shard_state else {
         return Err(CollectionError::service_error(format!(
             "Shard {} does not exist",
             transfer.shard_id,

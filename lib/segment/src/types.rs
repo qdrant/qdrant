@@ -2680,16 +2680,14 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::Field(c)) => c,
-            _ => panic!("Condition::Field expected"),
+        let Some(Condition::Field(c)) = should.first() else {
+            panic!("Condition::Field expected")
         };
 
         assert_eq!(c.key.to_string(), "Jason");
 
-        let m = match c.r#match.as_ref().unwrap() {
-            Match::Any(m) => m,
-            _ => panic!("Match::Any expected"),
+        let Match::Any(m) = c.r#match.as_ref().unwrap() else {
+            panic!("Match::Any expected")
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
@@ -2790,9 +2788,8 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::IsEmpty(c)) => c,
-            _ => panic!("Condition::IsEmpty expected"),
+        let Some(Condition::IsEmpty(c)) = should.first() else {
+            panic!("Condition::IsEmpty expected")
         };
 
         assert_eq!(c.is_empty.key.to_string(), "Jason");
@@ -2816,9 +2813,8 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::IsNull(c)) => c,
-            _ => panic!("Condition::IsNull expected"),
+        let Some(Condition::IsNull(c)) = should.first() else {
+            panic!("Condition::IsNull expected")
         };
 
         assert_eq!(c.is_null.key.to_string(), "Jason");
