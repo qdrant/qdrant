@@ -13,6 +13,9 @@ edition = "2021"
 rust-version = "1.77"
 default-run = "qdrant"
 
+[lints]
+workspace = true
+
 [features]
 default = ["web", "parking_lot"]
 web = ["actix-web"]
@@ -120,6 +123,8 @@ rstack-self = { version = "0.3.0", optional = true }
 
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 tikv-jemallocator = "0.6"
+
+[workspace.lints.clippy]
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
