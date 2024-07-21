@@ -120,9 +120,9 @@ impl<'a> RetrieveRequest for CollectionQueryResolveRequest<'a> {
 
     fn get_lookup_vector_name(&self) -> String {
         match &self.lookup_from {
-            None => self.using.to_owned(),
+            None => self.using.clone(),
             Some(lookup_from) => match &lookup_from.vector {
-                None => self.using.to_owned(),
+                None => self.using.clone(),
                 Some(vector_name) => vector_name.clone(),
             },
         }

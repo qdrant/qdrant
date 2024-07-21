@@ -155,8 +155,8 @@ pub fn init(
                 .service(get_point)
                 .service(get_points);
 
-            if let Some(static_folder) = web_ui_available.to_owned() {
-                app = app.service(web_ui_factory(&static_folder));
+            if let Some(static_folder) = web_ui_available.as_deref() {
+                app = app.service(web_ui_factory(static_folder));
             }
 
             app
