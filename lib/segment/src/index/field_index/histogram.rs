@@ -186,15 +186,6 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         &self.borders
     }
 
-    #[allow(dead_code)]
-    fn validate(&self) -> Result<(), String> {
-        // Iterate over chunks of borders
-        for (left, right) in self.borders.values().tuple_windows() {
-            assert_eq!(left.right, right.left);
-        }
-        Ok(())
-    }
-
     pub fn current_bucket_size(&self) -> usize {
         let bucket_size = (self.total_count as f64 * self.precision) as usize;
         bucket_size.clamp(MIN_BUCKET_SIZE, self.max_bucket_size)

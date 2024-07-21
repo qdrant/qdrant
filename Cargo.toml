@@ -134,6 +134,7 @@ inefficient_to_string = "warn"
 manual_is_variant_and = "warn"
 manual_let_else = "warn"
 ref_option_ref = "warn"
+unnecessary_wraps = "warn"
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }

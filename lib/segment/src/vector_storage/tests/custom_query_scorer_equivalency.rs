@@ -125,7 +125,7 @@ fn async_memmap_storage(dir: &std::path::Path) -> VectorStorageEnum {
     open_memmap_vector_storage_with_async_io(dir, DIMS, DISTANCE, true).unwrap()
 }
 
-fn scalar_u8() -> Option<WithQuantization> {
+fn scalar_u8() -> WithQuantization {
     let config = ScalarQuantizationConfig {
         r#type: crate::types::ScalarType::Int8,
         quantile: Some(0.5),
@@ -138,10 +138,10 @@ fn scalar_u8() -> Option<WithQuantization> {
         Box::new(rng.sample_iter(rand_distr::Normal::new(0.0, 8.0).unwrap()))
     };
 
-    Some((config, sampler))
+    (config, sampler)
 }
 
-fn product_x4() -> Option<WithQuantization> {
+fn product_x4() -> WithQuantization {
     let config = ProductQuantizationConfig {
         compression: crate::types::CompressionRatio::X4,
         always_ram: Some(true),
@@ -153,10 +153,10 @@ fn product_x4() -> Option<WithQuantization> {
         Box::new(rng.sample_iter(rand::distributions::Standard))
     };
 
-    Some((config, sampler))
+    (config, sampler)
 }
 
-fn binary() -> Option<WithQuantization> {
+fn binary() -> WithQuantization {
     let config = BinaryQuantizationConfig {
         always_ram: Some(true),
     }
@@ -170,7 +170,7 @@ fn binary() -> Option<WithQuantization> {
         )
     };
 
-    Some((config, sampler))
+    (config, sampler)
 }
 
 enum QueryVariant {
@@ -328,9 +328,8 @@ fn compare_scoring_equivalency(
     )]
     query_variant: QueryVariant,
     #[values(ram_storage)] other_storage: impl FnOnce(&std::path::Path) -> VectorStorageEnum,
-    #[values(None, product_x4(), scalar_u8(), binary())] quantization_config: Option<
-        WithQuantization,
-    >,
+    #[values(None, Some(product_x4()), Some(scalar_u8()), Some(binary()))]
+    quantization_config: Option<WithQuantization>,
 ) -> Result<()> {
     scoring_equivalency(query_variant, other_storage, quantization_config)
 }

@@ -1143,7 +1143,7 @@ impl<'s> SegmentHolder {
     ///
     /// Deduplication works with plain segments only.
     pub fn deduplicate_points(&self) -> OperationResult<usize> {
-        let points_to_remove = self.find_duplicated_points()?;
+        let points_to_remove = self.find_duplicated_points();
 
         let mut removed_points = 0;
         for (segment_id, points) in points_to_remove {
@@ -1160,7 +1160,7 @@ impl<'s> SegmentHolder {
         Ok(removed_points)
     }
 
-    fn find_duplicated_points(&self) -> OperationResult<HashMap<SegmentId, Vec<PointIdType>>> {
+    fn find_duplicated_points(&self) -> HashMap<SegmentId, Vec<PointIdType>> {
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
@@ -1236,7 +1236,7 @@ impl<'s> SegmentHolder {
             }
         }
 
-        Ok(points_to_remove)
+        points_to_remove
     }
 }
 

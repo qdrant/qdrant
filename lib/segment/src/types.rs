@@ -960,6 +960,7 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
+#[allow(clippy::unnecessary_wraps)] // Used as schemars example
 fn payload_example() -> Option<Payload> {
     Some(Payload::from(serde_json::json!({
         "city": "London",
