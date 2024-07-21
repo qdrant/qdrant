@@ -19,7 +19,7 @@ impl CollectionTelemetry {
     pub fn count_vectors(&self) -> usize {
         self.shards
             .iter()
-            .flat_map(|shard| shard.local.as_ref())
+            .filter_map(|shard| shard.local.as_ref())
             .flat_map(|x| x.segments.iter())
             .map(|s| s.info.num_vectors)
             .sum()
