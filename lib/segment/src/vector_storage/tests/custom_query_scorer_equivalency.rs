@@ -279,8 +279,7 @@ fn scoring_equivalency(
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
                 raw_scores, other_scores,
-                "Scorer results are not equal, attempt: {}, query: {:?}",
-                i, query
+                "Scorer results are not equal, attempt: {i}, query: {query:?}"
             );
         } else {
             // Quantization is used for the other storage, so score should be similar

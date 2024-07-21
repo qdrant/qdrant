@@ -291,7 +291,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
             let flattened_vectors = self
                 .vectors
                 .get_many(metadata.start, metadata.inner_vectors_count)
-                .unwrap_or_else(|| panic!("Vectors does not contain data for {:?}", metadata));
+                .unwrap_or_else(|| panic!("Vectors does not contain data for {metadata:?}"));
             TypedMultiDenseVectorRef {
                 flattened_vectors,
                 dim: self.dim,

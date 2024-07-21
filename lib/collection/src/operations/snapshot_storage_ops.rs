@@ -41,7 +41,7 @@ pub async fn get_snapshot_description(
     let file_meta: object_store::ObjectMeta = client
         .head(&trim_dot_slash(path)?)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get head: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to get head: {e}")))?;
 
     let name = get_filename(path.to_str().ok_or_else(|| {
         CollectionError::object_storage_error(format!(
@@ -81,8 +81,7 @@ pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionR
     // check if the file size exceeds the maximum upload size
     if file_size > MAX_UPLOAD_SIZE {
         return Err(CollectionError::service_error(format!(
-            "File size exceeds the maximum upload size: {}",
-            MAX_UPLOAD_SIZE
+            "File size exceeds the maximum upload size: {MAX_UPLOAD_SIZE}"
         )));
     }
 
@@ -104,7 +103,7 @@ pub async fn multipart_upload(
     let upload = client
         .put_multipart(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to put multipart: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to put multipart: {e}")))?;
 
     let chunk_size: usize = get_appropriate_chunk_size(source_path).await?;
     let mut write = WriteMultipart::new_with_chunk_size(upload, chunk_size);
@@ -125,7 +124,7 @@ pub async fn multipart_upload(
     write
         .finish() //  2. write.finish() will wait for all the worker threads to finish.
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to finish upload: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to finish upload: {e}")))?;
 
     Ok(())
 }
@@ -138,10 +137,11 @@ pub async fn list_snapshot_descriptions(
     let mut list_stream = client.list(Some(&prefix));
 
     let mut snapshots = Vec::new();
-    while let Some(meta) =
-        list_stream.next().await.transpose().map_err(|e| {
-            CollectionError::service_error(format!("Failed to list snapshots: {}", e))
-        })?
+    while let Some(meta) = list_stream
+        .next()
+        .await
+        .transpose()
+        .map_err(|e| CollectionError::service_error(format!("Failed to list snapshots: {e}")))?
     {
         snapshots.push(SnapshotDescription {
             name: get_filename(meta.location.as_ref())?,
@@ -160,7 +160,7 @@ pub async fn delete_snapshot(
     client
         .delete(&trim_dot_slash(path)?)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to delete snapshot: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to delete snapshot: {e}")))?;
     Ok(true)
 }
 
@@ -173,7 +173,7 @@ pub async fn download_snapshot(
     let download = client
         .get(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get {}: {}", s3_path, e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to get {s3_path}: {e}")))?;
 
     let mut stream = download.into_stream();
 
@@ -186,22 +186,22 @@ pub async fn download_snapshot(
 
     let mut file = tokio::fs::File::create(target_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to create file: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to create file: {e}")))?;
 
     let mut total_size = 0;
     while let Some(data) = stream.next().await {
         let data = data.map_err(|e| {
-            CollectionError::service_error(format!("Failed to get data from stream: {}", e))
+            CollectionError::service_error(format!("Failed to get data from stream: {e}"))
         })?;
-        file.write_all(&data).await.map_err(|e| {
-            CollectionError::service_error(format!("Failed to write to file: {}", e))
-        })?;
+        file.write_all(&data)
+            .await
+            .map_err(|e| CollectionError::service_error(format!("Failed to write to file: {e}")))?;
         total_size += data.len();
     }
     // ensure flush
     file.flush()
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {e}")))?;
 
     // check len to file len
     let file_meta = tokio::fs::metadata(target_path).await?;

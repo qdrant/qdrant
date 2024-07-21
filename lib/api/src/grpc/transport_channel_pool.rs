@@ -307,8 +307,7 @@ impl TransportChannelPool {
                             // Meaning that the peer is not available anymore.
                             // So we can just fail the request.
                             RetryAction::Fail(Status::unavailable(format!(
-                                "Peer {} is not available",
-                                uri
+                                "Peer {uri} is not available"
                             )))
                         }
                         HealthCheckError::ConnectionError(error) => {
@@ -318,8 +317,7 @@ impl TransportChannelPool {
                             // Actions:
                             // - retry no backoff
                             RetryAction::RetryImmediately(Status::unavailable(format!(
-                                "Failed to connect to {}, error: {}",
-                                uri, error
+                                "Failed to connect to {uri}, error: {error}"
                             )))
                         }
                         HealthCheckError::RequestError(status) => {
@@ -355,8 +353,7 @@ impl TransportChannelPool {
                     // Actions:
                     // - retry with backoff
                     RetryAction::RetryWithBackoff(Status::unavailable(format!(
-                        "Failed to connect to {}, error: {}",
-                        uri, error
+                        "Failed to connect to {uri}, error: {error}"
                     )))
                 }
             };

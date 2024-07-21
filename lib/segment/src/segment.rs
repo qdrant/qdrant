@@ -541,8 +541,7 @@ impl Segment {
 
             if let Some(symlink) = find_symlink(&files_path) {
                 return Err(OperationError::service_error(format!(
-                    "Snapshot is corrupted, can't read file: {:?}",
-                    symlink
+                    "Snapshot is corrupted, can't read file: {symlink:?}"
                 )));
             }
 

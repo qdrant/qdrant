@@ -179,7 +179,7 @@ impl BinaryIndex {
     }
 
     fn storage_cf_name(field: &str) -> String {
-        format!("{}_binary", field)
+        format!("{field}_binary")
     }
 
     pub fn recreate(&self) -> OperationResult<()> {

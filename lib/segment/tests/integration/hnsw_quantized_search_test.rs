@@ -276,8 +276,8 @@ fn check_oversampling(
         let worst_2 = oversampling_2_result[0].last().unwrap();
 
         if best_2.score < best_1.score {
-            println!("oversampling_1_result = {:?}", oversampling_1_result);
-            println!("oversampling_2_result = {:?}", oversampling_2_result);
+            println!("oversampling_1_result = {oversampling_1_result:?}");
+            println!("oversampling_2_result = {oversampling_2_result:?}");
         }
 
         assert!(best_2.score >= best_1.score);

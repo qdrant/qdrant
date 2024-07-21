@@ -1936,7 +1936,7 @@ impl TryFrom<i32> for crate::rest::RecommendStrategy {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         let strategy = RecommendStrategy::from_i32(value).ok_or_else(|| {
-            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
+            Status::invalid_argument(format!("Unknown recommend strategy: {value}"))
         })?;
         Ok(strategy.into())
     }

@@ -1537,9 +1537,8 @@ fn incompatible_vectors_error<'a, 'b>(
     CollectionError::BadInput {
         description: format!(
             "Vectors configuration is not compatible: \
-             origin collection have vectors [{}], \
-             while other vectors [{}]",
-            this_vectors, other_vectors
+             origin collection have vectors [{this_vectors}], \
+             while other vectors [{other_vectors}]"
         ),
     }
 }
@@ -1548,8 +1547,7 @@ fn missing_vector_error(vector_name: &str) -> CollectionError {
     CollectionError::BadInput {
         description: format!(
             "Vectors configuration is not compatible: \
-             origin collection have vector {}, while other collection does not",
-            vector_name
+             origin collection have vector {vector_name}, while other collection does not"
         ),
     }
 }

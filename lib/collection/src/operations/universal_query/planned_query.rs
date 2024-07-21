@@ -95,8 +95,7 @@ impl PlannedQuery {
         let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
                 return Err(CollectionError::bad_request(format!(
-                    "prefetches depth {} exceeds max depth {}",
-                    depth, MAX_PREFETCH_DEPTH
+                    "prefetches depth {depth} exceeds max depth {MAX_PREFETCH_DEPTH}"
                 )));
             }
 

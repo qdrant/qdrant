@@ -105,8 +105,7 @@ fn test_graph_connectivity() {
     for point_id in 0..num_vectors {
         assert!(
             !reverse_links[point_id as usize].is_empty(),
-            "Point {} has no inbound links",
-            point_id
+            "Point {point_id} has no inbound links"
         );
     }
 }

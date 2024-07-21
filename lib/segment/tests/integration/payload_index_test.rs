@@ -233,7 +233,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         .create_field_index(opnum, &deep_nested_str_proj_key, Some(&Keyword.into()))
         .unwrap();
 
-    eprintln!("{}", deep_nested_str_proj_key);
+    eprintln!("{deep_nested_str_proj_key}");
 
     opnum += 1;
     for n in 0..num_points {
@@ -505,7 +505,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
     let primary_clause = estimation.primary_clauses.first().unwrap();
 
     let expected_primary_clause = FieldCondition::new_match(
-        JsonPath::new(&format!("{}[].{}", STR_ROOT_PROJ_KEY, nested_key)), // full key expected
+        JsonPath::new(&format!("{STR_ROOT_PROJ_KEY}[].{nested_key}")), // full key expected
         "some value".to_owned().into(),
     );
 
@@ -513,7 +513,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
         PrimaryCondition::Condition(field_condition) => {
             assert_eq!(field_condition, &expected_primary_clause);
         }
-        o => panic!("unexpected primary clause: {:?}", o),
+        o => panic!("unexpected primary clause: {o:?}"),
     }
 
     let payload_index = struct_segment.payload_index.borrow();
@@ -567,8 +567,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
     let expected_primary_clause = FieldCondition::new_match(
         // full key expected
         JsonPath::new(&format!(
-            "{}[].nested_1[].{}",
-            STR_ROOT_PROJ_KEY, nested_match_key
+            "{STR_ROOT_PROJ_KEY}[].nested_1[].{nested_match_key}"
         )),
         "some value".to_owned().into(),
     );
@@ -577,7 +576,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
         PrimaryCondition::Condition(field_condition) => {
             assert_eq!(field_condition, &expected_primary_clause);
         }
-        o => panic!("unexpected primary clause: {:?}", o),
+        o => panic!("unexpected primary clause: {o:?}"),
     }
 
     let payload_index = struct_segment.payload_index.borrow();
@@ -914,7 +913,7 @@ fn test_any_matcher_cardinality_estimation() {
             PrimaryCondition::Condition(field_condition) => {
                 assert_eq!(field_condition, &expected_primary_clause);
             }
-            o => panic!("unexpected primary clause: {:?}", o),
+            o => panic!("unexpected primary clause: {o:?}"),
         }
     }
 

@@ -253,10 +253,10 @@ fn test_multi_filterable_hnsw(
         if plain_result == index_result {
             hits += 1;
         } else {
-            eprintln!("Attempt {}/{}", i, attempts);
-            eprintln!("Different results for query {:?}", query);
-            eprintln!("plain_result = {:#?}", plain_result);
-            eprintln!("index_result = {:#?}", index_result);
+            eprintln!("Attempt {i}/{attempts}");
+            eprintln!("Different results for query {query:?}");
+            eprintln!("plain_result = {plain_result:#?}");
+            eprintln!("index_result = {index_result:#?}");
         }
     }
     assert!(

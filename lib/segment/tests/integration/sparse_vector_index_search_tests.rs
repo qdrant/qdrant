@@ -114,10 +114,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
             assert_eq!(
                 filter_result.len(),
                 no_filter_result.len(),
-                "query = {:#?}, filter_result = {:#?} no_filter_result = {:#?}",
-                query,
-                filter_result,
-                no_filter_result,
+                "query = {query:#?}, filter_result = {filter_result:#?} no_filter_result = {no_filter_result:#?}",
             );
             // skip zero scores because index skips non-overlapping points, but plain search does not
             for (filter_result, no_filter_result) in filter_result

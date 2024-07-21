@@ -43,7 +43,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 
 fn get_random_keyword_of<R: Rng + ?Sized>(num_options: usize, rnd: &mut R) -> String {
     let random_number = rnd.gen_range(0..num_options);
-    format!("keyword_{}", random_number)
+    format!("keyword_{random_number}")
 }
 
 /// Checks discovery search precision when using hnsw index, this is different from the tests in

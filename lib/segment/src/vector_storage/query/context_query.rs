@@ -155,8 +155,8 @@ mod test {
             let query = ContextQuery::new(vec![ContextPair::from((p, n))]);
 
             let score = query.score_by(dummy_similarity);
-            assert!(score <= 0.0, "similarity: {}", score);
-            assert!(score > -1.0, "similarity: {}", score);
+            assert!(score <= 0.0, "similarity: {score}");
+            assert!(score > -1.0, "similarity: {score}");
         }
     }
 }

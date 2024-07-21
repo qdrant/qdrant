@@ -182,7 +182,7 @@ mod tests {
     }
 
     fn assert_close(a: f32, b: f32) {
-        assert!((a - b).abs() < 1e-2, "{} is not close to {}", a, b);
+        assert!((a - b).abs() < 1e-2, "{a} is not close to {b}");
     }
 
     proptest! {

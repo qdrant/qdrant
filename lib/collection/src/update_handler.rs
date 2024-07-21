@@ -631,8 +631,7 @@ impl UpdateHandler {
                     let flush_res = if wait {
                         wal.lock().flush().map_err(|err| {
                             CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {} - {}",
-                                op_num, err
+                                "Can't flush WAL before operation {op_num} - {err}"
                             ))
                         })
                     } else {

@@ -2876,7 +2876,7 @@ mod tests {
                     _ => panic!("Condition::Field expected"),
                 }
             }
-            o => panic!("Condition::Nested expected but got {:?}", o),
+            o => panic!("Condition::Nested expected but got {o:?}"),
         };
     }
 
@@ -2905,7 +2905,7 @@ mod tests {
 
         let first_must = musts.first().unwrap();
         let Condition::Nested(nested_condition) = first_must else {
-            panic!("Condition::Nested expected but got {:?}", first_must)
+            panic!("Condition::Nested expected but got {first_must:?}")
         };
 
         assert_eq!(nested_condition.raw_key().to_string(), "country.cities");
@@ -2916,7 +2916,7 @@ mod tests {
 
         let must = nested_must.first().unwrap();
         let Condition::Field(c) = must else {
-            panic!("Condition::Field expected, got {:?}", must)
+            panic!("Condition::Field expected, got {must:?}")
         };
 
         assert_eq!(c.key.to_string(), "population");
@@ -3529,8 +3529,8 @@ impl From<u64> for ShardKey {
 impl Display for ShardKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
-            ShardKey::Number(number) => write!(f, "{}", number),
+            ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
+            ShardKey::Number(number) => write!(f, "{number}"),
         }
     }
 }

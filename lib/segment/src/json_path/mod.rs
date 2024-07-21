@@ -473,7 +473,7 @@ impl Display for JsonPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let write_key = |f: &mut Formatter<'_>, key: &str| {
             if parse::key_needs_quoting(key) {
-                write!(f, "\"{}\"", key)
+                write!(f, "\"{key}\"")
             } else {
                 f.write_str(key)
             }
@@ -486,7 +486,7 @@ impl Display for JsonPath {
                     f.write_str(".")?;
                     write_key(f, key)?;
                 }
-                JsonPathItem::Index(index) => write!(f, "[{}]", index)?,
+                JsonPathItem::Index(index) => write!(f, "[{index}]")?,
                 JsonPathItem::WildcardIndex => f.write_str("[]")?,
             }
         }

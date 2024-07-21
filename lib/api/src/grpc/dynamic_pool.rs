@@ -200,7 +200,7 @@ mod tests {
         }
 
         for (idx, item) in pool.items.iter() {
-            println!("{} -> {:?}", idx, item);
+            println!("{idx} -> {item:?}");
         }
 
         assert!(pool.choose().is_some());

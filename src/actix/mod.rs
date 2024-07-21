@@ -217,7 +217,7 @@ fn validation_error_handler(
         actix_web_validator::Error::JsonPayloadError(
             actix_web::error::JsonPayloadError::Deserialize(err),
         ) => {
-            format!("Format error in {name}: {}", err,)
+            format!("Format error in {name}: {err}",)
         }
         err => err.to_string(),
     };

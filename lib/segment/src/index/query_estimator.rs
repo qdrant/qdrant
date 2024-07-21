@@ -49,21 +49,11 @@ pub fn adjust_to_available_vectors(
 
     debug_assert!(
         min <= exp,
-        "estimation: {:?}, available_vectors: {}, available_points: {}, min: {}, exp: {}",
-        estimation,
-        available_vectors,
-        available_points,
-        min,
-        exp
+        "estimation: {estimation:?}, available_vectors: {available_vectors}, available_points: {available_points}, min: {min}, exp: {exp}"
     );
     debug_assert!(
         exp <= max,
-        "estimation: {:?}, available_vectors: {}, available_points: {}, exp: {}, max: {}",
-        estimation,
-        available_vectors,
-        available_points,
-        exp,
-        max
+        "estimation: {estimation:?}, available_vectors: {available_vectors}, available_points: {available_points}, exp: {exp}, max: {max}"
     );
 
     CardinalityEstimation {

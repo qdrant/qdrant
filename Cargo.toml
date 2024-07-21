@@ -136,6 +136,7 @@ manual_is_variant_and = "warn"
 manual_let_else = "warn"
 needless_continue = "warn"
 ref_option_ref = "warn"
+uninlined_format_args = "warn"
 unnecessary_wraps = "warn"
 unused_self = "warn"
 

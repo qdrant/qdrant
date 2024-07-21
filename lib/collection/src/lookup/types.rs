@@ -61,9 +61,9 @@ pub enum PseudoId {
 impl Display for PseudoId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PseudoId::String(s) => write!(f, "{}", s),
-            PseudoId::NumberU64(n) => write!(f, "{}", n),
-            PseudoId::NumberI64(n) => write!(f, "{}", n),
+            PseudoId::String(s) => write!(f, "{s}"),
+            PseudoId::NumberU64(n) => write!(f, "{n}"),
+            PseudoId::NumberI64(n) => write!(f, "{n}"),
         }
     }
 }

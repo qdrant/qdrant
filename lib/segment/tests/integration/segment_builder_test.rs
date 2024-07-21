@@ -351,10 +351,7 @@ fn estimate_build_time(
         Ok(_) => false,
         Err(OperationError::Cancelled { .. }) => true,
         Err(err) => {
-            eprintln!(
-                "Was expecting cancellation signal but got unexpected error: {:?}",
-                err
-            );
+            eprintln!("Was expecting cancellation signal but got unexpected error: {err:?}");
             false
         }
     };
@@ -394,7 +391,7 @@ fn test_building_cancellation() {
     // Get normal build time
     let (time_baseline, was_cancelled_baseline) = estimate_build_time(baseline_segment, None);
     assert!(!was_cancelled_baseline);
-    eprintln!("baseline time: {}", time_baseline);
+    eprintln!("baseline time: {time_baseline}");
 
     // Checks that optimization with longer cancellation delay will also finish fast
     let early_stop_delay = time_baseline / 20;
@@ -407,24 +404,17 @@ fn test_building_cancellation() {
     assert!(was_cancelled_early);
     assert!(
         time_fast < early_stop_delay + acceptable_stopping_delay,
-        "time_early: {}, early_stop_delay: {}",
-        time_fast,
-        early_stop_delay
+        "time_early: {time_fast}, early_stop_delay: {early_stop_delay}"
     );
 
     assert!(was_cancelled_later);
     assert!(
         time_long < late_stop_delay + acceptable_stopping_delay,
-        "time_later: {}, late_stop_delay: {}",
-        time_long,
-        late_stop_delay
+        "time_later: {time_long}, late_stop_delay: {late_stop_delay}"
     );
 
     assert!(
         time_fast < time_long,
-        "time_early: {}, time_later: {}, was_cancelled_later: {}",
-        time_fast,
-        time_long,
-        was_cancelled_later,
+        "time_early: {time_fast}, time_later: {time_long}, was_cancelled_later: {was_cancelled_later}",
     );
 }

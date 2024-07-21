@@ -117,8 +117,7 @@ mod test {
 
         assert_eq!(
             rank, expected,
-            "Ranking is incorrect, expected {}, but got {rank}",
-            expected
+            "Ranking is incorrect, expected {expected}, but got {rank}"
         );
     }
 

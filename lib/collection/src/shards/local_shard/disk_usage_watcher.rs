@@ -106,7 +106,7 @@ impl DiskUsageWatcher {
         let result = tokio::task::spawn_blocking(move || fs4::available_space(path.as_path()))
             .await
             .map_err(|e| {
-                CollectionError::service_error(format!("Failed to join async task: {}", e))
+                CollectionError::service_error(format!("Failed to join async task: {e}"))
             })?;
 
         let result = match result {
