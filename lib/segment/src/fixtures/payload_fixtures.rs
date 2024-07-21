@@ -60,7 +60,7 @@ pub const TEXT_KEY: &str = "text";
 pub const BOOL_KEY: &str = "bool";
 
 pub fn random_adj<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {
-    ADJECTIVE.choose(rnd_gen).unwrap().to_string()
+    ADJECTIVE.choose(rnd_gen).copied().unwrap().to_string()
 }
 
 pub fn random_keyword<R: Rng + ?Sized>(rnd_gen: &mut R) -> String {

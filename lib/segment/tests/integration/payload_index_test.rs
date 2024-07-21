@@ -890,8 +890,10 @@ fn test_any_matcher_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let keywords: IndexSet<String, FnvBuildHasher> =
-        ["value1", "value2"].iter().map(|i| i.to_string()).collect();
+    let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
+        .iter()
+        .map(|&i| i.to_string())
+        .collect();
     let any_match = FieldCondition::new_match(
         JsonPath::new(STR_KEY),
         Match::new_any(AnyVariants::Keywords(keywords)),
