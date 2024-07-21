@@ -714,11 +714,10 @@ impl From<segment_vectors::VectorStructInternal> for Vectors {
             }
             segment_vectors::VectorStructInternal::Named(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
-                    vectors: HashMap::from_iter(
-                        vectors
-                            .into_iter()
-                            .map(|(name, vector)| (name, Vector::from(vector))),
-                    ),
+                    vectors: vectors
+                        .into_iter()
+                        .map(|(name, vector)| (name, Vector::from(vector)))
+                        .collect(),
                 })),
             },
         }

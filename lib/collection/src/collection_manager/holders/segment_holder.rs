@@ -1164,16 +1164,14 @@ impl<'s> SegmentHolder {
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
             .collect::<Vec<_>>();
-        let locked_segments = BTreeMap::from_iter(
-            segments
-                .iter()
-                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read())),
-        );
-        let mut iterators = BTreeMap::from_iter(
-            locked_segments
-                .iter()
-                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points())),
-        );
+        let locked_segments = segments
+            .iter()
+            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
+            .collect::<BTreeMap<_, _>>();
+        let mut iterators = locked_segments
+            .iter()
+            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points()))
+            .collect::<BTreeMap<_, _>>();
 
         // heap contains the current iterable point id from each segment
         let mut heap = iterators

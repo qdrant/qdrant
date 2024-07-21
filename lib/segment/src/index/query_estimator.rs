@@ -279,9 +279,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-    use std::iter::FromIterator;
-
     use super::*;
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, HasIdCondition};
@@ -505,7 +502,7 @@ mod tests {
             min_should: None,
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
+                has_id: [1, 2, 3, 4, 5].into_iter().map(|x| x.into()).collect(),
             })]),
         };
 
@@ -536,7 +533,7 @@ mod tests {
                 }),
             ]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
-                has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
+                has_id: [1, 2, 3, 4, 5].into_iter().map(|x| x.into()).collect(),
             })]),
         };
 

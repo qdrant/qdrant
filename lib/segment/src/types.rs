@@ -2692,11 +2692,10 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            let expect: IndexSet<_, FnvBuildHasher> = IndexSet::from_iter(
-                ["Bourne", "Momoa", "Statham"]
-                    .into_iter()
-                    .map(|i| i.to_string()),
-            );
+            let expect: IndexSet<_, FnvBuildHasher> = ["Bourne", "Momoa", "Statham"]
+                .into_iter()
+                .map(|i| i.to_string())
+                .collect();
             assert_eq!(kws, &expect);
         } else {
             panic!("AnyVariants::Keywords expected");

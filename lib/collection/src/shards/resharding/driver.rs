@@ -50,7 +50,10 @@ impl DriverState {
     pub fn new(key: ReshardKey, source_shard_ids: HashSet<ShardId>, peers: &[PeerId]) -> Self {
         Self {
             key,
-            peers: HashMap::from_iter(peers.iter().map(|peer_id| (*peer_id, Stage::default()))),
+            peers: peers
+                .iter()
+                .map(|peer_id| (*peer_id, Stage::default()))
+                .collect(),
             source_shard_ids,
             migrated_shards: vec![],
             deleted_shards: vec![],
