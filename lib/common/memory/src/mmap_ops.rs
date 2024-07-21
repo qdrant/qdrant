@@ -3,7 +3,7 @@ use std::hint::black_box;
 use std::mem::{align_of, size_of};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{io, mem, ops, time};
+use std::{io, mem, ops, ptr, time};
 
 use memmap2::{Mmap, MmapMut};
 
@@ -140,7 +140,7 @@ pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v as *const T as *const u8, mem::size_of_val(v)) }
+    unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v) as *const u8, mem::size_of_val(v)) }
 }
 
 pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
