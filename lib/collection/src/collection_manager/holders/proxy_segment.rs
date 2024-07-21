@@ -185,7 +185,6 @@ impl ProxySegment {
     }
 
     fn add_deleted_points_condition_to_filter(
-        &self,
         filter: Option<&Filter>,
         deleted_points: &HashSet<PointIdType>,
     ) -> Filter {
@@ -364,7 +363,7 @@ impl SegmentEntry for ProxySegment {
                 )?
             } else {
                 let wrapped_filter =
-                    self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+                    Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
 
                 self.wrapped_segment.get().read().search_batch(
                     vector_name,
@@ -616,7 +615,7 @@ impl SegmentEntry for ProxySegment {
                 .read_filtered(offset, limit, filter)
         } else {
             let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment
                 .get()
                 .read()
@@ -646,7 +645,7 @@ impl SegmentEntry for ProxySegment {
                 .read_ordered_filtered(limit, filter, order_by)?
         } else {
             let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment.get().read().read_ordered_filtered(
                 limit,
                 Some(&wrapped_filter),
@@ -676,7 +675,7 @@ impl SegmentEntry for ProxySegment {
                 .read_random_filtered(limit, filter)
         } else {
             let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment
                 .get()
                 .read()

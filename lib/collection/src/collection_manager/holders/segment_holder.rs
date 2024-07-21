@@ -387,7 +387,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(&self, ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -445,7 +445,7 @@ impl<'s> SegmentHolder {
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_arc = segment.get();
             let segment_lock = segment_arc.upgradable_read();
-            let segment_points = self.segment_points(ids, segment_lock.deref());
+            let segment_points = Self::segment_points(ids, segment_lock.deref());
             if !segment_points.is_empty() {
                 let mut write_segment = RwLockUpgradableReadGuard::upgrade(segment_lock);
                 let segment_data = segment_data(write_segment.deref());
@@ -461,10 +461,9 @@ impl<'s> SegmentHolder {
 
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
-    fn aloha_lock_segment_read<'a>(
-        &'a self,
-        segment: &'a Arc<RwLock<dyn SegmentEntry>>,
-    ) -> RwLockReadGuard<dyn SegmentEntry> {
+    fn aloha_lock_segment_read(
+        segment: &'_ Arc<RwLock<dyn SegmentEntry>>,
+    ) -> RwLockReadGuard<'_, dyn SegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
@@ -670,7 +669,7 @@ impl<'s> SegmentHolder {
         let mut segment_reads: Vec<_> = segments
             .iter()
             .rev()
-            .map(|segment| self.aloha_lock_segment_read(segment))
+            .map(|segment| Self::aloha_lock_segment_read(segment))
             .collect();
         segment_reads.reverse();
 

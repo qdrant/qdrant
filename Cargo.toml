@@ -136,6 +136,7 @@ manual_let_else = "warn"
 needless_continue = "warn"
 ref_option_ref = "warn"
 unnecessary_wraps = "warn"
+unused_self = "warn"
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }

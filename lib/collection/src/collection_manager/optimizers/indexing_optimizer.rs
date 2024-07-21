@@ -54,7 +54,6 @@ impl IndexingOptimizer {
     }
 
     fn smallest_indexed_segment(
-        &self,
         segments: &SegmentHolder,
         excluded_ids: &HashSet<SegmentId>,
     ) -> Option<(SegmentId, usize)> {
@@ -218,7 +217,7 @@ impl IndexingOptimizer {
         }
 
         // Find smallest indexed to check if we can reindex together
-        let smallest_indexed = self.smallest_indexed_segment(&segments_read_guard, excluded_ids);
+        let smallest_indexed = Self::smallest_indexed_segment(&segments_read_guard, excluded_ids);
         if let Some((idx, size)) = smallest_indexed {
             if idx != selected_segment_id
                 && selected_segment_size + size
