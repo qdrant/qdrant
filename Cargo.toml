@@ -128,6 +128,7 @@ tikv-jemallocator = "0.6"
 enum_glob_use = "warn"
 filter_map_next = "warn"
 manual_let_else = "warn"
+ref_option_ref = "warn"
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
