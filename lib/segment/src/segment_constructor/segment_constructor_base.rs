@@ -497,8 +497,8 @@ fn create_segment(
         vector_data.insert(
             vector_name.to_owned(),
             VectorData {
-                vector_storage,
                 vector_index,
+                vector_storage,
                 quantized_vectors,
             },
         );

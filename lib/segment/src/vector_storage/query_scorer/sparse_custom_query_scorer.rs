@@ -28,8 +28,8 @@ impl<
         .unwrap();
 
         Self {
-            query,
             vector_storage,
+            query,
         }
     }
 }

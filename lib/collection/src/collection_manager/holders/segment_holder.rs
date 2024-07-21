@@ -1181,8 +1181,8 @@ impl<'s> SegmentHolder {
             .iter_mut()
             .filter_map(|(&segment_id, iter)| {
                 iter.next().map(|point_id| DedupPoint {
-                    segment_id,
                     point_id,
+                    segment_id,
                 })
             })
             .collect::<BinaryHeap<_>>();

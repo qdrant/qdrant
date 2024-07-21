@@ -1831,7 +1831,7 @@ impl From<sparse::common::sparse_vector::SparseVector> for SparseVector {
     fn from(value: sparse::common::sparse_vector::SparseVector) -> Self {
         let sparse::common::sparse_vector::SparseVector { indices, values } = value;
 
-        Self { indices, values }
+        Self { values, indices }
     }
 }
 
