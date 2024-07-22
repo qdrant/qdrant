@@ -422,6 +422,7 @@ fn points_example() -> Vec<api::rest::Record> {
         },
     ]
 }
+
 /// Result of the points read request
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

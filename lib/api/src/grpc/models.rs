@@ -69,6 +69,7 @@ fn example_collectios_response() -> CollectionsResponse {
         ],
     }
 }
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(example = "example_collectios_response")]
