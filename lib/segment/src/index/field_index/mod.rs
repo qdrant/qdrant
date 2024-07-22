@@ -12,6 +12,7 @@ mod histogram;
 mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
+mod mmap_point_to_values;
 pub mod numeric_index;
 mod stat_tools;
 
