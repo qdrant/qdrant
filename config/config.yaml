@@ -78,6 +78,11 @@ storage:
     # If null - allow unlimited transfers.
     #outgoing_shard_transfers_limit: 1
 
+    # Enable async scorer which uses io_uring when rescoring.
+    # Only supported on Linux, must be enabled in your kernel.
+    # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
+    #async_scorer: false
+    
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     deleted_threshold: 0.2
