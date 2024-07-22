@@ -56,23 +56,26 @@ impl Collection {
 
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
 
-            // Increase the persisted shard count, loads new shard on restart
             if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;
+                match config.params.sharding_method.unwrap_or_default() {
+                    // If adding a shard, increase persisted count so we load it on restart
+                    ShardingMethod::Auto => {
+                        debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
 
-                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                    debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
-                }
-
-                config.params.shard_number = config
-                    .params
-                    .shard_number
-                    .checked_add(1)
-                    .expect("cannot have more than u32::MAX shards after resharding");
-                if let Err(err) = config.save(&self.path) {
-                    log::error!(
-                        "Failed to update and save collection config during resharding: {err}",
-                    );
+                        config.params.shard_number = config
+                            .params
+                            .shard_number
+                            .checked_add(1)
+                            .expect("cannot have more than u32::MAX shards after resharding");
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}",
+                            );
+                        }
+                    }
+                    // Custom shards don't use the persisted count, we don't change it
+                    ShardingMethod::Custom => {}
                 }
             }
         }
@@ -196,23 +199,27 @@ impl Collection {
                 .drop_and_remove_shard(resharding_key.shard_id)
                 .await?;
 
-            // Decrease the persisted shard count, ensures we don't load dropped shard on restart
             {
                 let mut config = self.collection_config.write().await;
+                match config.params.sharding_method.unwrap_or_default() {
+                    // If removing a shard, decrease persisted count so we don't load it on restart
+                    ShardingMethod::Auto => {
+                        debug_assert_eq!(
+                            config.params.shard_number.get() - 1,
+                            resharding_key.shard_id,
+                        );
 
-                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                    debug_assert_eq!(
-                        config.params.shard_number.get() - 1,
-                        resharding_key.shard_id,
-                    );
-                }
-
-                config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
-                    .expect("cannot have zero shards after finishing resharding");
-                if let Err(err) = config.save(&self.path) {
-                    log::error!(
-                        "Failed to update and save collection config during resharding: {err}"
-                    );
+                        config.params.shard_number =
+                            NonZeroU32::new(config.params.shard_number.get() - 1)
+                                .expect("cannot have zero shards after finishing resharding");
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}"
+                            );
+                        }
+                    }
+                    // Custom shards don't use the persisted count, we don't change it
+                    ShardingMethod::Custom => {}
                 }
             }
         }
@@ -226,18 +233,25 @@ impl Collection {
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
         if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
+            match config.params.sharding_method.unwrap_or_default() {
+                // If removing a shard, decrease persisted count so we don't load it on restart
+                ShardingMethod::Auto => {
+                    debug_assert_eq!(
+                        config.params.shard_number.get() - 1,
+                        resharding_key.shard_id,
+                    );
 
-            if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                debug_assert_eq!(
-                    config.params.shard_number.get() - 1,
-                    resharding_key.shard_id,
-                );
-            }
-
-            config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
-                .expect("cannot have zero shards after aborting resharding");
-            if let Err(err) = config.save(&self.path) {
-                log::error!("Failed to update and save collection config during resharding: {err}");
+                    config.params.shard_number =
+                        NonZeroU32::new(config.params.shard_number.get() - 1)
+                            .expect("cannot have zero shards after aborting resharding");
+                    if let Err(err) = config.save(&self.path) {
+                        log::error!(
+                            "Failed to update and save collection config during resharding: {err}"
+                        );
+                    }
+                }
+                // Custom shards don't use the persisted count, we don't change it
+                ShardingMethod::Custom => {}
             }
         }
 
