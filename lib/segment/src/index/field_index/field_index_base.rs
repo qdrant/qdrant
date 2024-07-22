@@ -1,10 +1,14 @@
 use std::fmt::Formatter;
 
 use common::types::PointOffsetType;
+use delegate::delegate;
 use serde_json::Value;
 
-use super::map_index::MapIndex;
-use super::numeric_index::{NumericIndex, StreamRange};
+use super::binary_index::BinaryIndexBuilder;
+use super::full_text_index::text_index::FullTextIndexBuilder;
+use super::geo_index::GeoMapIndexBuilder;
+use super::map_index::{MapIndex, MapIndexBuilder};
+use super::numeric_index::{NumericIndex, NumericIndexBuilder, StreamRange};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
@@ -340,6 +344,62 @@ impl FieldIndex {
             | FieldIndex::BinaryIndex(_)
             | FieldIndex::FullTextIndex(_) => None,
         }
+    }
+}
+
+pub trait FieldIndexBuilderTrait {
+    /// The resulting type of the index
+    type FieldIndexType;
+
+    fn init(&mut self) -> OperationResult<()>;
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType>;
+}
+
+/// Builders for all index types
+pub enum FieldIndexBuilder {
+    IntIndex(NumericIndexBuilder<IntPayloadType, IntPayloadType>),
+    DatetimeIndex(NumericIndexBuilder<IntPayloadType, DateTimePayloadType>),
+    IntMapIndex(MapIndexBuilder<IntPayloadType>),
+    KeywordIndex(MapIndexBuilder<str>),
+    FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
+    GeoIndex(GeoMapIndexBuilder),
+    FullTextIndex(FullTextIndexBuilder),
+    BinaryIndex(BinaryIndexBuilder),
+}
+
+impl FieldIndexBuilderTrait for FieldIndexBuilder {
+    type FieldIndexType = FieldIndex;
+
+    delegate! {
+        to match self {
+            Self::IntIndex(index) => index,
+            Self::DatetimeIndex(index) => index,
+            Self::IntMapIndex(index) => index,
+            Self::KeywordIndex(index) => index,
+            Self::FloatIndex(index) => index,
+            Self::GeoIndex(index) => index,
+            Self::BinaryIndex(index) => index,
+            Self::FullTextIndex(index) => index,
+        } {
+            fn init(&mut self) -> OperationResult<()>;
+            fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
+        }
+    }
+
+    fn finalize(self) -> OperationResult<FieldIndex> {
+        Ok(match self {
+            Self::IntIndex(index) => FieldIndex::IntIndex(index.finalize()?),
+            Self::DatetimeIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
+            Self::IntMapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
+            Self::KeywordIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
+            Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
+            Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
+            Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
+            Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
+        })
     }
 }
 

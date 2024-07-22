@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
+use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
@@ -44,6 +45,10 @@ impl GeoMapIndex {
         } else {
             GeoMapIndex::Immutable(ImmutableGeoMapIndex::new(db, &store_cf_name))
         }
+    }
+
+    pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
+        GeoMapIndexBuilder(Self::new(db, field, true))
     }
 
     fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
@@ -282,6 +287,24 @@ impl GeoMapIndex {
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx) == 0
+    }
+}
+
+pub struct GeoMapIndexBuilder(GeoMapIndex);
+
+impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
+    type FieldIndexType = GeoMapIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.0.db_wrapper().recreate_column_family()
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
 

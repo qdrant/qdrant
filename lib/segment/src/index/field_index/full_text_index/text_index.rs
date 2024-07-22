@@ -17,7 +17,8 @@ use crate::index::field_index::full_text_index::inverted_index::{
 };
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
-    CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
@@ -82,6 +83,14 @@ impl FullTextIndex {
         }
     }
 
+    pub fn builder(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+    ) -> FullTextIndexBuilder {
+        FullTextIndexBuilder(Self::new(db, config, field, true))
+    }
+
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
@@ -131,6 +140,24 @@ impl FullTextIndex {
 
     pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         self.inverted_index.check_match(parsed_query, point_id)
+    }
+}
+
+pub struct FullTextIndexBuilder(FullTextIndex);
+
+impl FieldIndexBuilderTrait for FullTextIndexBuilder {
+    type FieldIndexType = FullTextIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.0.recreate()
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
 

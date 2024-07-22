@@ -15,6 +15,7 @@ use smol_str::SmolStr;
 
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
+use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
@@ -66,6 +67,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         } else {
             MapIndex::Immutable(ImmutableMapIndex::new(db, field_name))
         }
+    }
+
+    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
+        MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
     }
 
     fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
@@ -320,6 +325,27 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 .flat_map(|key| self.get_iterator(key.borrow()))
                 .unique(),
         )
+    }
+}
+
+pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>);
+
+impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexBuilder<N>
+where
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+{
+    type FieldIndexType = MapIndex<N>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.0.recreate()
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, values)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
 
