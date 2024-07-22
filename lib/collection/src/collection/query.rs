@@ -205,7 +205,7 @@ impl Collection {
         for (resolver_req, _) in &resolver_requests {
             for point_id in resolver_req.get_referenced_point_ids() {
                 let lookup_collection = resolver_req.get_lookup_collection();
-                if ids_to_vectors.get(&lookup_collection, point_id).is_none() {
+                if ids_to_vectors.get(lookup_collection, point_id).is_none() {
                     return Err(CollectionError::PointNotFound {
                         missed_point_id: point_id,
                     });

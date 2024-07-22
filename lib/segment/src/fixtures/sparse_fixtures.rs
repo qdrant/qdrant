@@ -63,7 +63,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         borrowed_storage
             .insert_vector(idx as PointOffsetType, (&vec).into())
             .unwrap();
-        num_vectors_not_empty += !vec.is_empty() as usize;
+        num_vectors_not_empty += usize::from(!vec.is_empty());
     }
     drop(borrowed_storage);
 

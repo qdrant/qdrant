@@ -34,7 +34,7 @@ impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
         let optimizers_status = telemetry
             .shards
             .iter()
-            .flat_map(|shard| shard.local.as_ref().map(|x| x.optimizations.status.clone()))
+            .filter_map(|shard| shard.local.as_ref().map(|x| x.optimizations.status.clone()))
             .max()
             .unwrap_or(OptimizersStatus::Ok);
 

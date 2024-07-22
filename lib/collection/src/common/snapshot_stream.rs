@@ -27,10 +27,10 @@ impl Responder for SnapshotStream {
                 Ok(file) => file.into_response(&stream.req),
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::NotFound => {
-                        HttpResponse::NotFound().body(format!("File not found: {}", e))
+                        HttpResponse::NotFound().body(format!("File not found: {e}"))
                     }
                     _ => HttpResponse::InternalServerError()
-                        .body(format!("Failed to open file: {}", e)),
+                        .body(format!("Failed to open file: {e}")),
                 },
             },
 

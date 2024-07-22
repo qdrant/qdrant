@@ -202,7 +202,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     };
 
     borrowed_id_tracker
-        .drop(PointIdType::NumId(top_idx as u64))
+        .drop(PointIdType::NumId(u64::from(top_idx)))
         .unwrap();
 
     let raw_scorer =

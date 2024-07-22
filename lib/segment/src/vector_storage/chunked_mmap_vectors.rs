@@ -336,8 +336,7 @@ mod tests {
                 assert_eq!(
                     chunked_mmap.get(i).unwrap(),
                     vec,
-                    "Vectors at index {} are not equal",
-                    i
+                    "Vectors at index {i} are not equal"
                 );
             }
         }

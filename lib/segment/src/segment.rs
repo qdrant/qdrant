@@ -474,10 +474,7 @@ impl Segment {
         }
     }
 
-    fn all_vectors_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-    ) -> OperationResult<NamedVectors> {
+    fn all_vectors_by_offset(&self, point_offset: PointOffsetType) -> NamedVectors {
         let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             let is_vector_deleted = vector_data
@@ -493,7 +490,7 @@ impl Segment {
                 vectors.insert(vector_name.clone(), vector);
             }
         }
-        Ok(vectors)
+        vectors
     }
 
     /// Retrieve payload by internal ID
@@ -544,8 +541,7 @@ impl Segment {
 
             if let Some(symlink) = find_symlink(&files_path) {
                 return Err(OperationError::service_error(format!(
-                    "Snapshot is corrupted, can't read file: {:?}",
-                    symlink
+                    "Snapshot is corrupted, can't read file: {symlink:?}"
                 )));
             }
 
@@ -635,9 +631,7 @@ impl Segment {
                 };
                 let vector = match with_vector {
                     WithVector::Bool(false) => None,
-                    WithVector::Bool(true) => {
-                        Some(self.all_vectors_by_offset(point_offset)?.into())
-                    }
+                    WithVector::Bool(true) => Some(self.all_vectors_by_offset(point_offset).into()),
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
@@ -1765,7 +1759,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         for point_id in self.read_filtered(None, None, Some(filter)) {
-            deleted_points += self.delete_point(op_num, point_id)? as usize;
+            deleted_points += usize::from(self.delete_point(op_num, point_id)?);
         }
 
         Ok(deleted_points)

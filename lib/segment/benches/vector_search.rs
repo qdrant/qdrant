@@ -98,7 +98,7 @@ fn random_access_benchmark(c: &mut Criterion) {
             total_score += scorer.score_point(random_id);
         })
     });
-    eprintln!("total_score = {:?}", total_score);
+    eprintln!("total_score = {total_score:?}");
 }
 
 criterion_group!(benches, benchmark_naive, random_access_benchmark);

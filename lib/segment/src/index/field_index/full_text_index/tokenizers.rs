@@ -43,10 +43,10 @@ impl PrefixTokenizer {
     /// For querying prefixes, it makes sense to use a maximal ngram only.
     /// E.g.
     ///
-    /// Docs. tokens: "hello" -> ["he", "hel", "hell", "hello"]
-    /// Query tokens: "hel"   -> ["hel"]
-    /// Query tokens: "hell"  -> ["hell"]
-    /// Query tokens: "hello" -> ["hello"]
+    /// Docs. tokens: `"hello"` -> `["he", "hel", "hell", "hello"]`
+    /// Query tokens: `"hel"`   -> `["hel"]`
+    /// Query tokens: `"hell"`  -> `["hell"]`
+    /// Query tokens: `"hello"` -> `["hello"]`
     fn tokenize_query<C: FnMut(&str)>(text: &str, max_ngram: usize, mut callback: C) {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())

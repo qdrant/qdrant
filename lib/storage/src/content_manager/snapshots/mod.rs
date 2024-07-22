@@ -103,7 +103,7 @@ async fn _do_create_full_snapshot(
 
     let collection_name_to_snapshot_path: HashMap<_, _> = created_snapshots
         .iter()
-        .map(|(collection_name, snapshot_details)| {
+        .map(|&(collection_name, ref snapshot_details)| {
             (collection_name.to_string(), snapshot_details.name.clone())
         })
         .collect();

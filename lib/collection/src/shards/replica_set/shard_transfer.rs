@@ -74,9 +74,8 @@ impl ShardReplicaSet {
 
         // Explicit `match` instead of `if-let` to catch `unreachable` condition if top `match` is
         // changed
-        let local_shard = match local.take() {
-            Some(Shard::Local(local_shard)) => local_shard,
-            _ => unreachable!(),
+        let Some(Shard::Local(local_shard)) = local.take() else {
+            unreachable!()
         };
 
         let proxy_shard = ForwardProxyShard::new(

@@ -95,8 +95,7 @@ impl PlannedQuery {
         let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
                 return Err(CollectionError::bad_request(format!(
-                    "prefetches depth {} exceeds max depth {}",
-                    depth, MAX_PREFETCH_DEPTH
+                    "prefetches depth {depth} exceeds max depth {MAX_PREFETCH_DEPTH}"
                 )));
             }
 
@@ -816,7 +815,7 @@ mod tests {
     fn dummy_core_prefetch(limit: usize) -> ShardPrefetch {
         ShardPrefetch {
             prefetches: vec![],
-            query: nearest_query(),
+            query: Some(nearest_query()),
             filter: None,
             params: None,
             limit,
@@ -835,10 +834,10 @@ mod tests {
         }
     }
 
-    fn nearest_query() -> Option<ScoringQuery> {
-        Some(ScoringQuery::Vector(QueryEnum::Nearest(
-            NamedVectorStruct::Default(vec![0.1, 0.2, 0.3, 0.4]),
-        )))
+    fn nearest_query() -> ScoringQuery {
+        ScoringQuery::Vector(QueryEnum::Nearest(NamedVectorStruct::Default(vec![
+            0.1, 0.2, 0.3, 0.4,
+        ])))
     }
 
     #[test]
@@ -847,7 +846,7 @@ mod tests {
             // A no-prefetch core_search query
             ShardQueryRequest {
                 prefetches: vec![],
-                query: nearest_query(),
+                query: Some(nearest_query()),
                 filter: None,
                 score_threshold: None,
                 limit: 10,

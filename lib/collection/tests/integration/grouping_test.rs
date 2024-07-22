@@ -540,8 +540,8 @@ mod group_by_builder {
 
         Resources {
             request,
-            collection,
             lookup_collection,
+            collection,
         }
     }
 

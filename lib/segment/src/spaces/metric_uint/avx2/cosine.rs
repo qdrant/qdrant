@@ -24,8 +24,8 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let len = v1.len();
     for _ in 0..len / 32 {
         // load 32 bytes
-        let p1 = _mm256_loadu_si256(ptr1 as *const __m256i);
-        let p2 = _mm256_loadu_si256(ptr2 as *const __m256i);
+        let p1 = _mm256_loadu_si256(ptr1.cast::<__m256i>());
+        let p2 = _mm256_loadu_si256(ptr2.cast::<__m256i>());
         ptr1 = ptr1.add(32);
         ptr2 = ptr2.add(32);
 
@@ -86,9 +86,9 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
             let v2 = *ptr2;
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
-            remainder_dot_product += (v1 as i32) * (v2 as i32);
-            remainder_norm1 += (v1 as i32) * (v1 as i32);
-            remainder_norm2 += (v2 as i32) * (v2 as i32);
+            remainder_dot_product += i32::from(v1) * i32::from(v2);
+            remainder_norm1 += i32::from(v1) * i32::from(v1);
+            remainder_norm2 += i32::from(v2) * i32::from(v2);
         }
         dot_product += remainder_dot_product as f32;
         norm1 += remainder_norm1 as f32;

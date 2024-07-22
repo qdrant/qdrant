@@ -61,10 +61,7 @@ impl ConsensusOpWal {
         let entries = (low..high)
             .map(|id| self.entry(id))
             .take_while(|entry| {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => return true,
-                };
+                let Ok(entry) = entry else { return true };
 
                 // It's somewhat unclear how `max_size == Some(0)` should be treated.
                 //

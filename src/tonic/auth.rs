@@ -29,9 +29,9 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             AuthError::StorageError(e) => error_to_status(e),
         })?;
 
-    let _previous = req.extensions_mut().insert::<Access>(access);
+    let previous = req.extensions_mut().insert::<Access>(access);
     debug_assert!(
-        _previous.is_none(),
+        previous.is_none(),
         "Previous access object should not exist in the request"
     );
 

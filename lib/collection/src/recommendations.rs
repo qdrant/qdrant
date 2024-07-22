@@ -183,7 +183,7 @@ pub fn recommend_into_core_search(
 
     for &point_id in &reference_vectors_ids {
         if all_vectors_records_map
-            .get(&lookup_collection_name, point_id)
+            .get(lookup_collection_name, point_id)
             .is_none()
         {
             return Err(CollectionError::PointNotFound {

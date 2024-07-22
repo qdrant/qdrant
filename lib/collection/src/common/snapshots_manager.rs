@@ -84,7 +84,7 @@ impl SnapshotStorageManager {
                 }
                 let client: Box<dyn object_store::ObjectStore> =
                     Box::new(builder.build().map_err(|e| {
-                        CollectionError::service_error(format!("Failed to create S3 client: {}", e))
+                        CollectionError::service_error(format!("Failed to create S3 client: {e}"))
                     })?);
 
                 Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
@@ -488,9 +488,9 @@ impl SnapshotStorageCloud {
         let snapshot_path = snapshot_storage_ops::trim_dot_slash(snapshot_path)?;
         let download = self.client.get(&snapshot_path).await.map_err(|e| match e {
             object_store::Error::NotFound { path, source } => {
-                CollectionError::not_found(format!("Snapshot {} does not exist: {}", path, source))
+                CollectionError::not_found(format!("Snapshot {path} does not exist: {source}"))
             }
-            _ => CollectionError::service_error(format!("Failed to get {}: {}", snapshot_path, e)),
+            _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
         Ok(SnapshotStream::CloudStorage(SnapShotStreamCloudStrage {
             streamer: Box::pin(download.into_stream()),

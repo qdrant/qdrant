@@ -324,7 +324,7 @@ impl ShardReplicaSet {
         // 3. ???
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
-            format!("Failed peer: {}, error: {}", peer_id, collection_error)
+            format!("Failed peer: {peer_id}, error: {collection_error}")
         } else {
             "".to_string()
         };

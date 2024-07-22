@@ -443,8 +443,7 @@ fn sampling_limit(
     }
     let segment_probability = segment_points as f64 / total_points as f64;
     let poisson_sampling =
-        find_search_sampling_over_point_distribution(limit as f64, segment_probability)
-            .unwrap_or(limit);
+        find_search_sampling_over_point_distribution(limit as f64, segment_probability);
 
     // if no ef_limit was found, it is a plain index => sampling optimization is not needed.
     let effective = ef_limit.map_or(limit, |ef_limit| {

@@ -356,7 +356,7 @@ pub(crate) fn create_sparse_vector_index(
     ) {
         (_, a @ (VectorStorageDatatype::Float16 | VectorStorageDatatype::Uint8), false) => {
             Err(OperationError::ValidationError {
-                description: format!("{:?} datatype is not supported", a),
+                description: format!("{a:?} datatype is not supported"),
             })?
         }
 
@@ -497,8 +497,8 @@ fn create_segment(
         vector_data.insert(
             vector_name.to_owned(),
             VectorData {
-                vector_storage,
                 vector_index,
+                vector_storage,
                 quantized_vectors,
             },
         );

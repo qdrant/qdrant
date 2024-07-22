@@ -502,7 +502,7 @@ fn main() -> anyhow::Result<()> {
 
     touch_started_file_indicator();
 
-    for handle in handles.into_iter() {
+    for handle in handles {
         log::debug!(
             "Waiting for thread {} to finish",
             handle.thread().name().unwrap()

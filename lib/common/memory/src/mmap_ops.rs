@@ -3,7 +3,7 @@ use std::hint::black_box;
 use std::mem::{align_of, size_of};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{io, mem, ops, time};
+use std::{io, mem, ops, ptr, time};
 
 use memmap2::{Mmap, MmapMut};
 
@@ -136,11 +136,11 @@ pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
         v.as_ptr().align_offset(align_of::<T>()),
     );
 
-    unsafe { &*(v.as_ptr() as *const T) }
+    unsafe { &*v.as_ptr().cast::<T>() }
 }
 
 pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v as *const T as *const u8, mem::size_of_val(v)) }
+    unsafe { std::slice::from_raw_parts(ptr::from_ref::<T>(v).cast::<u8>(), mem::size_of_val(v)) }
 }
 
 pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
@@ -159,7 +159,7 @@ pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     );
 
     let len = data.len() / size_of::<T>();
-    let ptr = data.as_ptr() as *const T;
+    let ptr = data.as_ptr().cast::<T>();
     unsafe { std::slice::from_raw_parts(ptr, len) }
 }
 
@@ -179,10 +179,10 @@ pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     );
 
     let len = data.len() / size_of::<T>();
-    let ptr = data.as_mut_ptr() as *mut T;
+    let ptr = data.as_mut_ptr().cast::<T>();
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
 pub fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, mem::size_of_val(v)) }
+    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
 }

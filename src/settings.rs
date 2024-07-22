@@ -292,6 +292,7 @@ const fn default_message_timeout_tics() -> u64 {
     10
 }
 
+#[allow(clippy::unnecessary_wraps)] // Used as serde default
 const fn default_tls_cert_ttl() -> Option<u64> {
     // Default one hour
     Some(3600)

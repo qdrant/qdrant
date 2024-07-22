@@ -960,6 +960,7 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
+#[allow(clippy::unnecessary_wraps)] // Used as schemars example
 fn payload_example() -> Option<Payload> {
     Some(Payload::from(serde_json::json!({
         "city": "London",
@@ -2680,24 +2681,21 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::Field(c)) => c,
-            _ => panic!("Condition::Field expected"),
+        let Some(Condition::Field(c)) = should.first() else {
+            panic!("Condition::Field expected")
         };
 
         assert_eq!(c.key.to_string(), "Jason");
 
-        let m = match c.r#match.as_ref().unwrap() {
-            Match::Any(m) => m,
-            _ => panic!("Match::Any expected"),
+        let Match::Any(m) = c.r#match.as_ref().unwrap() else {
+            panic!("Match::Any expected")
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            let expect: IndexSet<_, FnvBuildHasher> = IndexSet::from_iter(
-                ["Bourne", "Momoa", "Statham"]
-                    .into_iter()
-                    .map(|i| i.to_string()),
-            );
+            let expect: IndexSet<_, FnvBuildHasher> = ["Bourne", "Momoa", "Statham"]
+                .into_iter()
+                .map(|i| i.to_string())
+                .collect();
             assert_eq!(kws, &expect);
         } else {
             panic!("AnyVariants::Keywords expected");
@@ -2790,9 +2788,8 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::IsEmpty(c)) => c,
-            _ => panic!("Condition::IsEmpty expected"),
+        let Some(Condition::IsEmpty(c)) = should.first() else {
+            panic!("Condition::IsEmpty expected")
         };
 
         assert_eq!(c.is_empty.key.to_string(), "Jason");
@@ -2816,9 +2813,8 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
-            Some(Condition::IsNull(c)) => c,
-            _ => panic!("Condition::IsNull expected"),
+        let Some(Condition::IsNull(c)) = should.first() else {
+            panic!("Condition::IsNull expected")
         };
 
         assert_eq!(c.is_null.key.to_string(), "Jason");
@@ -2880,7 +2876,7 @@ mod tests {
                     _ => panic!("Condition::Field expected"),
                 }
             }
-            o => panic!("Condition::Nested expected but got {:?}", o),
+            o => panic!("Condition::Nested expected but got {o:?}"),
         };
     }
 
@@ -2909,7 +2905,7 @@ mod tests {
 
         let first_must = musts.first().unwrap();
         let Condition::Nested(nested_condition) = first_must else {
-            panic!("Condition::Nested expected but got {:?}", first_must)
+            panic!("Condition::Nested expected but got {first_must:?}")
         };
 
         assert_eq!(nested_condition.raw_key().to_string(), "country.cities");
@@ -2920,7 +2916,7 @@ mod tests {
 
         let must = nested_must.first().unwrap();
         let Condition::Field(c) = must else {
-            panic!("Condition::Field expected, got {:?}", must)
+            panic!("Condition::Field expected, got {must:?}")
         };
 
         assert_eq!(c.key.to_string(), "population");
@@ -3533,8 +3529,8 @@ impl From<u64> for ShardKey {
 impl Display for ShardKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShardKey::Keyword(keyword) => write!(f, "\"{}\"", keyword),
-            ShardKey::Number(number) => write!(f, "{}", number),
+            ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
+            ShardKey::Number(number) => write!(f, "{number}"),
         }
     }
 }

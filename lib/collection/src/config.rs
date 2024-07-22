@@ -218,16 +218,14 @@ impl CollectionParams {
                         .get(vector_name)
                         .ok_or_else(|| CollectionError::BadInput {
                             description: format!(
-                                "Vector params for {vector_name} are not specified in config",
-                                vector_name = vector_name
+                                "Vector params for {vector_name} are not specified in config"
                             ),
                         })
                         .map(|_params| Distance::Dot)
                 } else {
                     Err(CollectionError::BadInput {
                         description: format!(
-                            "Vector params for {vector_name} are not specified in config",
-                            vector_name = vector_name
+                            "Vector params for {vector_name} are not specified in config"
                         ),
                     })
                 }

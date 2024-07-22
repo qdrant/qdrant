@@ -67,7 +67,7 @@ impl IdTracker for FixtureIdTracker {
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         assert!(internal_id < self.ids.len() as PointOffsetType);
-        Some(PointIdType::NumId(internal_id as u64))
+        Some(PointIdType::NumId(u64::from(internal_id)))
     }
 
     fn set_link(
@@ -91,7 +91,7 @@ impl IdTracker for FixtureIdTracker {
             self.ids
                 .iter()
                 .copied()
-                .map(|id| PointIdType::NumId(id as u64)),
+                .map(|id| PointIdType::NumId(u64::from(id))),
         )
     }
 
@@ -116,7 +116,7 @@ impl IdTracker for FixtureIdTracker {
                 .iter()
                 .copied()
                 .skip_while(move |x| *x < start)
-                .map(|x| (PointIdType::NumId(x as u64), x)),
+                .map(|x| (PointIdType::NumId(u64::from(x)), x)),
         )
     }
 

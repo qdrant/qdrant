@@ -461,7 +461,7 @@ impl IdTracker for ImmutableIdTracker {
                 if let Some(external_id) = self.external_id(internal_id) {
                     to_remove.push(external_id);
                 } else {
-                    debug_assert!(false, "internal id {} has no external id", internal_id);
+                    debug_assert!(false, "internal id {internal_id} has no external id");
                 }
             }
         }

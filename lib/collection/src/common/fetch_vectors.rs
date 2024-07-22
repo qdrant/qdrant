@@ -126,13 +126,13 @@ impl ReferencedVectors {
 
     pub fn get(
         &self,
-        lookup_collection_name: &Option<&CollectionName>,
+        lookup_collection_name: Option<&CollectionName>,
         point_id: PointIdType,
     ) -> Option<&Record> {
         match lookup_collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
-                let collection_mapping = self.collection_mapping.get(*collection)?;
+                let collection_mapping = self.collection_mapping.get(collection)?;
                 collection_mapping.get(&point_id)
             }
         }
@@ -149,7 +149,7 @@ impl ReferencedVectors {
         match vector_input {
             VectorInput::Vector(vector) => Some(vector),
             VectorInput::Id(vid) => {
-                let rec = self.get(&collection_name, vid)?;
+                let rec = self.get(collection_name, vid)?;
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         }
@@ -202,7 +202,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
 
         let mut collections_names = Vec::new();
         let mut vector_retrieves = Vec::new();
-        for (collection_name, reference_vectors_ids) in self.ids_per_collection.into_iter() {
+        for (collection_name, reference_vectors_ids) in self.ids_per_collection {
             collections_names.push(collection_name);
             let points: Vec<_> = reference_vectors_ids.into_iter().collect();
             let vector_names: Vec<_> = self
@@ -270,7 +270,7 @@ pub fn convert_to_vectors_owned(
             RecommendExample::Dense(vector) => Some(vector.into()),
             RecommendExample::Sparse(vector) => Some(vector.into()),
             RecommendExample::PointId(vid) => {
-                let rec = all_vectors_records_map.get(&collection_name, vid).unwrap();
+                let rec = all_vectors_records_map.get(collection_name, vid).unwrap();
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         })
@@ -287,7 +287,7 @@ pub fn convert_to_vectors<'a>(
         RecommendExample::Dense(vector) => Some(vector.into()),
         RecommendExample::Sparse(vector) => Some(vector.into()),
         RecommendExample::PointId(vid) => {
-            let rec = all_vectors_records_map.get(&collection_name, *vid).unwrap();
+            let rec = all_vectors_records_map.get(collection_name, *vid).unwrap();
             rec.get_vector_by_name(vector_name)
         }
     })

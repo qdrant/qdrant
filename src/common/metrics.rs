@@ -278,15 +278,15 @@ impl OperationDurationMetricsBuilder {
         }
 
         self.avg_secs.push(gauge(
-            stat.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            f64::from(stat.avg_duration_micros.unwrap_or(0.0)) / 1_000_000.0,
             labels,
         ));
         self.min_secs.push(gauge(
-            stat.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            f64::from(stat.min_duration_micros.unwrap_or(0.0)) / 1_000_000.0,
             labels,
         ));
         self.max_secs.push(gauge(
-            stat.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            f64::from(stat.max_duration_micros.unwrap_or(0.0)) / 1_000_000.0,
             labels,
         ));
         self.duration_histogram_secs.push(histogram(
@@ -295,7 +295,7 @@ impl OperationDurationMetricsBuilder {
             &stat
                 .duration_micros_histogram
                 .iter()
-                .map(|&(b, c)| (b as f64 / 1_000_000.0, c as u64))
+                .map(|&(b, c)| (f64::from(b) / 1_000_000.0, c as u64))
                 .collect::<Vec<_>>(),
             labels,
         ));

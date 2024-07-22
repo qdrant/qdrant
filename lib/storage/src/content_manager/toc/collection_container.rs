@@ -176,9 +176,8 @@ impl TableOfContent {
                     collections.insert(id.to_string(), collection);
                 }
 
-                let collection = match collections.get(id) {
-                    Some(collection) => collection,
-                    None => unreachable!(),
+                let Some(collection) = collections.get(id) else {
+                    unreachable!()
                 };
 
                 // Update collection state

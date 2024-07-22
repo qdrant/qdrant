@@ -125,7 +125,12 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     }
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
-        Cow::Owned(vector.iter().map(|&x| x as VectorElementType).collect_vec())
+        Cow::Owned(
+            vector
+                .iter()
+                .map(|&x| VectorElementType::from(x))
+                .collect_vec(),
+        )
     }
 
     fn quantization_preprocess<'a>(
@@ -137,11 +142,14 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
             Cow::from(
                 vector
                     .iter()
-                    .map(|&x| (x as VectorElementType) - 127.0)
+                    .map(|&x| VectorElementType::from(x) - 127.0)
                     .collect_vec(),
             )
         } else {
-            let vector = vector.iter().map(|&x| x as VectorElementType).collect_vec();
+            let vector = vector
+                .iter()
+                .map(|&x| VectorElementType::from(x))
+                .collect_vec();
             let preprocessed_vector = match distance {
                 Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vector),
                 Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vector),
@@ -182,7 +190,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                 .as_vec_ref()
                 .flattened_vectors
                 .iter()
-                .map(|&x| x as VectorElementType)
+                .map(|&x| VectorElementType::from(x))
                 .collect_vec(),
             multivector.as_vec_ref().dim,
         ))

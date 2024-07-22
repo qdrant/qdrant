@@ -81,7 +81,7 @@ where
         .create(true)
         .append(true)
         .open(log_file)
-        .with_context(|| format!("failed to open {} log-file", log_file))?;
+        .with_context(|| format!("failed to open {log_file} log-file"))?;
 
     let layer = fmt::Layer::default()
         .with_writer(Mutex::new(io::BufWriter::new(writer)))

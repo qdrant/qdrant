@@ -18,8 +18,8 @@ pub unsafe fn avx_manhattan_similarity_half(
 
     let n = v1.len();
     let m = n - (n % 32);
-    let mut ptr1: *const __m128i = v1.as_ptr() as *const __m128i;
-    let mut ptr2: *const __m128i = v2.as_ptr() as *const __m128i;
+    let mut ptr1: *const __m128i = v1.as_ptr().cast::<__m128i>();
+    let mut ptr2: *const __m128i = v2.as_ptr().cast::<__m128i>();
     let mut sum256_1: __m256 = _mm256_setzero_ps();
     let mut sum256_2: __m256 = _mm256_setzero_ps();
     let mut sum256_3: __m256 = _mm256_setzero_ps();
@@ -58,8 +58,8 @@ pub unsafe fn avx_manhattan_similarity_half(
         i += 32;
     }
 
-    let ptr1_f16: *const f16 = ptr1 as *const f16;
-    let ptr2_f16: *const f16 = ptr2 as *const f16;
+    let ptr1_f16: *const f16 = ptr1.cast::<f16>();
+    let ptr2_f16: *const f16 = ptr2.cast::<f16>();
 
     let mut result = hsum256_ps_avx(sum256_1)
         + hsum256_ps_avx(sum256_2)
