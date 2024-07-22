@@ -15,9 +15,10 @@ use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
 impl ShardHolder {
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
+            direction,
+            peer_id: _,
             shard_id,
             shard_key,
-            ..
         } = resharding_key;
 
         let ring = get_ring(&mut self.rings, shard_key)?;
@@ -36,6 +37,22 @@ impl ShardHolder {
                         "another resharding is in progress:\n{state:#?}"
                     )));
                 }
+            }
+        }
+
+        // Don't remove the last shard if resharding down
+        if matches!(direction, ReshardingDirection::Down) {
+            let shard_count = match shard_key {
+                Some(shard_key) => self
+                    .get_shard_key_to_ids_mapping()
+                    .get(shard_key)
+                    .map_or(0, |shards| shards.len()),
+                None => self.shards.len(),
+            };
+            if shard_count <= 1 {
+                return Err(CollectionError::bad_request(format!(
+                    "cannot remove shard {shard_id} by resharding down, it is the last shard",
+                )));
             }
         }
 
