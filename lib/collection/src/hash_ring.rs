@@ -59,7 +59,7 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
         match self {
             Self::Single(ring) => ring.add(shard),
             Self::Resharding { old, new } => {
-                if new.get(&shard).is_none() {
+                if !new.contains_shard(&shard) {
                     old.add(shard);
                     new.add(shard);
                 }
@@ -267,6 +267,17 @@ impl<T: Hash + Copy> HashRing<T> {
                 }
                 removed
             }
+        }
+    }
+
+    /// Check whether this hash ring contains the given shard.
+    pub fn contains_shard(&self, shard: &T) -> bool
+    where
+        T: std::cmp::PartialEq,
+    {
+        match self {
+            Inner::Raw(ring) => ring.clone().into_iter().any(|node| node == *shard),
+            Inner::Fair { ring, .. } => ring.clone().into_iter().any(|(node, _)| node == *shard),
         }
     }
 
