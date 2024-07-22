@@ -175,12 +175,11 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
-    ) -> OperationResult<()> {
+    ) {
         for (idx, point) in points.enumerate() {
             let vector = self.get_vector(point);
             callback(idx, point, vector);
         }
-        Ok(())
     }
 
     /// Reads vectors for the given ids and calls the callback for each vector.
@@ -198,7 +197,8 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
 
         #[cfg(not(target_os = "linux"))]
         {
-            self.process_points_simple(points, callback)
+            self.process_points_simple(points, callback);
+            Ok(())
         }
     }
 }
