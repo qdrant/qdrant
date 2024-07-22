@@ -166,7 +166,7 @@ fn binary() -> WithQuantization {
         let rng = StdRng::seed_from_u64(SEED);
         Box::new(
             rng.sample_iter(rand::distributions::Uniform::new_inclusive(-1.0, 1.0))
-                .map(|x| x as u8 as f32),
+                .map(|x| f32::from(x as u8)),
         )
     };
 

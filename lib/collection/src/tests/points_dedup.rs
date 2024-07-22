@@ -105,7 +105,7 @@ async fn fixture() -> Collection {
         let op = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
                 PointStruct {
-                    id: (*shard_id as u64).into(),
+                    id: u64::from(*shard_id).into(),
                     vector: VectorStruct::Single(
                         (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
                     ),
@@ -207,7 +207,7 @@ async fn test_retrieve_dedup() {
     let records = collection
         .retrieve(
             PointRequestInternal {
-                ids: (0..SHARD_COUNT as u64)
+                ids: (0..u64::from(SHARD_COUNT))
                     .map(ExtendedPointId::from)
                     .chain([DUPLICATE_POINT_ID])
                     .collect(),

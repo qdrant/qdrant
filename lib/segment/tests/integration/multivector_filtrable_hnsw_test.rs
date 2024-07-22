@@ -214,8 +214,8 @@ fn test_multi_filterable_hnsw(
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(left_range as f64),
-                lte: Some(right_range as f64),
+                gte: Some(f64::from(left_range)),
+                lte: Some(f64::from(right_range)),
             },
         )));
 

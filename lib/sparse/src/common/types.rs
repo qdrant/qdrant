@@ -84,13 +84,13 @@ impl Weight for u8 {
 
     #[inline]
     fn to_f32(self, _: ()) -> f32 {
-        self as f32
+        f32::from(self)
     }
 
     #[inline]
     fn into_f32_slice<'a>(_: (), weights: &'a [Self], buffer: &'a mut [f32]) -> &'a [f32] {
         for (i, &weight) in weights.iter().enumerate() {
-            buffer[i] = weight as f32;
+            buffer[i] = f32::from(weight);
         }
         buffer
     }
@@ -101,7 +101,7 @@ pub struct QuantizedU8(u8);
 
 impl From<QuantizedU8> for DimWeight {
     fn from(val: QuantizedU8) -> Self {
-        val.0 as f32
+        f32::from(val.0)
     }
 }
 
@@ -142,7 +142,7 @@ impl Weight for QuantizedU8 {
 
     #[inline]
     fn to_f32(self, params: QuantizedU8Params) -> f32 {
-        params.min + self.0 as f32 * params.diff256
+        params.min + f32::from(self.0) * params.diff256
     }
 
     #[inline]

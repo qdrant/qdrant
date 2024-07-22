@@ -428,13 +428,13 @@ where
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
             let point = points_map[&point_id];
-            res += upsert_with_payload(
+            res += usize::from(upsert_with_payload(
                 &mut write_segment,
                 op_num,
                 point_id,
                 point.get_vectors(),
                 point.payload.as_ref(),
-            )? as usize;
+            )?);
         }
         RwLockWriteGuard::unlock_fair(write_segment);
     };

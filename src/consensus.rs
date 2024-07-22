@@ -325,7 +325,7 @@ impl Consensus {
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
                     uri: current_uri,
-                    port: Some(p2p_port as u32),
+                    port: Some(u32::from(p2p_port)),
                     id: this_peer_id,
                 },
             ))

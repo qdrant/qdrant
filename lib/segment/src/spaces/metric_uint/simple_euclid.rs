@@ -62,7 +62,7 @@ pub fn euclid_similarity_bytes(
     -v1.iter()
         .zip(v2)
         .map(|(a, b)| {
-            let diff = *a as i32 - *b as i32;
+            let diff = i32::from(*a) - i32::from(*b);
             diff * diff
         })
         .sum::<i32>() as ScoreType

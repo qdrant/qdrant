@@ -401,7 +401,7 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&segment.get().read())?;
-            processed_segments += is_applied as usize;
+            processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
     }
@@ -415,7 +415,7 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&mut segment.get().write())?;
-            processed_segments += is_applied as usize;
+            processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
     }
@@ -452,7 +452,7 @@ impl<'s> SegmentHolder {
                 for point_id in segment_points {
                     let is_applied =
                         point_operation(point_id, *idx, &mut write_segment, &segment_data)?;
-                    applied_points += is_applied as usize;
+                    applied_points += usize::from(is_applied);
                 }
             }
         }
@@ -611,7 +611,7 @@ impl<'s> SegmentHolder {
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
                 let is_ok = f(point, &read_segment)?;
-                read_points += is_ok as usize;
+                read_points += usize::from(is_ok);
             }
         }
         Ok(read_points)

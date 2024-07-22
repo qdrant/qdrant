@@ -155,18 +155,18 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         }
 
         let header: PostingListFileHeader<W> = self.slice_part::<PostingListFileHeader<W>>(
-            *id as u64 * size_of::<PostingListFileHeader<W>>() as u64,
+            u64::from(*id) * size_of::<PostingListFileHeader<W>>() as u64,
             1u32,
         )[0]
         .clone();
 
         let remainders_start = header.ids_start
-            + header.ids_len as u64
-            + header.chunks_count as u64 * size_of::<CompressedPostingChunk<W>>() as u64;
+            + u64::from(header.ids_len)
+            + u64::from(header.chunks_count) * size_of::<CompressedPostingChunk<W>>() as u64;
 
         let remainders_end = if *id + 1 < self.file_header.posting_count as DimId {
             self.slice_part::<PostingListFileHeader<W>>(
-                (*id + 1) as u64 * size_of::<PostingListFileHeader<W>>() as u64,
+                u64::from(*id + 1) * size_of::<PostingListFileHeader<W>>() as u64,
                 1u32,
             )[0]
             .ids_start
@@ -186,7 +186,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         Some(CompressedPostingListView::new(
             self.slice_part(header.ids_start, header.ids_len),
             self.slice_part(
-                header.ids_start + header.ids_len as u64,
+                header.ids_start + u64::from(header.ids_len),
                 header.chunks_count,
             ),
             transmute_from_u8_to_slice(

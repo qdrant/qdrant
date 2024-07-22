@@ -1759,7 +1759,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         for point_id in self.read_filtered(None, None, Some(filter)) {
-            deleted_points += self.delete_point(op_num, point_id)? as usize;
+            deleted_points += usize::from(self.delete_point(op_num, point_id)?);
         }
 
         Ok(deleted_points)

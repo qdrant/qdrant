@@ -358,8 +358,8 @@ impl ShardHolder {
         let (mut incoming, mut outgoing) = (0, 0);
 
         for transfer in self.shard_transfers.read().iter() {
-            incoming += (transfer.to == *peer_id) as usize;
-            outgoing += (transfer.from == *peer_id) as usize;
+            incoming += usize::from(transfer.to == *peer_id);
+            outgoing += usize::from(transfer.from == *peer_id);
         }
 
         (incoming, outgoing)
