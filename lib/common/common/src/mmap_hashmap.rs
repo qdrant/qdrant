@@ -56,12 +56,15 @@ const PADDING_SIZE: usize = 4096;
 
 type BucketOffset = u64;
 
-impl<K: Key + ?Sized + 'static> MmapHashMap<K> {
+impl<K: Key + ?Sized> MmapHashMap<K> {
     /// Save `map` contents to `path`.
-    pub fn create<'a, 'b>(
-        path: &'a Path,
-        map: impl Iterator<Item = (&'b K, impl ExactSizeIterator<Item = PointOffsetType> + 'b)> + Clone,
-    ) -> io::Result<()> {
+    pub fn create<'a>(
+        path: &Path,
+        map: impl Iterator<Item = (&'a K, impl ExactSizeIterator<Item = PointOffsetType>)> + Clone,
+    ) -> io::Result<()>
+    where
+        K: 'a,
+    {
         let keys_vec = map.clone().map(|(k, _)| k).collect::<Vec<_>>();
         let keys_count = keys_vec.len();
         let phf = Function::from(keys_vec);
@@ -364,7 +367,7 @@ mod tests {
         test_mmap_hash_impl(|rng| rng.gen::<i64>(), |i| i);
     }
 
-    fn test_mmap_hash_impl<K: Key + ?Sized + 'static, K1: Ord + Hash>(
+    fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
         gen: impl Clone + Fn(&mut StdRng) -> K1,
         as_ref: impl Fn(&K1) -> &K,
     ) {
