@@ -585,16 +585,10 @@ pub async fn do_update_collection_cluster(
                             *counts.entry(*peer_id).or_insert(0) += 1;
                             counts
                         });
-                    consensus_state
-                        .persistent
-                        .read()
-                        .peer_address_by_id
-                        .read()
-                        .keys()
-                        .for_each(|peer_id| {
-                            // Add registered peers not holding any shard yet
-                            shards_on_peers.entry(*peer_id).or_insert(0);
-                        });
+                    for peer_id in get_all_peer_ids() {
+                        // Add registered peers not holding any shard yet
+                        shards_on_peers.entry(peer_id).or_insert(0);
+                    }
                     shards_on_peers
                         .into_iter()
                         .min_by_key(|(_, count)| *count)
