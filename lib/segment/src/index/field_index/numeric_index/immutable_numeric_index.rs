@@ -237,9 +237,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         self.histogram = histogram;
         self.points_count = points_count;
         self.max_values_per_point = max_values_per_point;
-
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
-
         Ok(true)
     }
 

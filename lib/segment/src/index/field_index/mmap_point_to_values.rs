@@ -23,6 +23,10 @@ pub trait MmapValue {
     fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>>;
 
     fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()>;
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self;
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_>;
 }
 
 impl MmapValue for IntPayloadType {
@@ -39,6 +43,14 @@ impl MmapValue for IntPayloadType {
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
     }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
+    }
 }
 
 impl MmapValue for FloatPayloadType {
@@ -54,6 +66,14 @@ impl MmapValue for FloatPayloadType {
 
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
     }
 }
 
@@ -79,6 +99,14 @@ impl MmapValue for GeoPoint {
             .get_mut(std::mem::size_of::<f64>()..)
             .and_then(|bytes| value.lat.write_to_prefix(bytes))
     }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        value.clone()
+    }
 }
 
 impl MmapValue for str {
@@ -101,6 +129,14 @@ impl MmapValue for str {
             .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
             .copy_from_slice(value.as_bytes());
         Some(())
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        value
     }
 }
 
