@@ -5489,6 +5489,7 @@ dependencies = [
  "uuid",
  "validator",
  "walkdir",
+ "zerocopy",
 ]
 
 [[package]]
