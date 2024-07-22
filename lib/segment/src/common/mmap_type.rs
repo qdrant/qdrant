@@ -386,7 +386,7 @@ where
         return Err(Error::SizeExact(mem::size_of::<T>(), bytes.len()));
     }
 
-    let ptr = bytes.as_mut_ptr() as *mut T;
+    let ptr = bytes.as_mut_ptr().cast::<T>();
     Ok(unsafe { &mut *ptr })
 }
 
@@ -445,7 +445,7 @@ where
 
     // Transmute slice types
     Ok(slice::from_raw_parts_mut(
-        bytes.as_mut_ptr() as *mut T,
+        bytes.as_mut_ptr().cast::<T>(),
         bytes.len().checked_div(size_t).unwrap_or(0),
     ))
 }

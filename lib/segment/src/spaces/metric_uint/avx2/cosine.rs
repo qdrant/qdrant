@@ -24,8 +24,8 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let len = v1.len();
     for _ in 0..len / 32 {
         // load 32 bytes
-        let p1 = _mm256_loadu_si256(ptr1 as *const __m256i);
-        let p2 = _mm256_loadu_si256(ptr2 as *const __m256i);
+        let p1 = _mm256_loadu_si256(ptr1.cast::<__m256i>());
+        let p2 = _mm256_loadu_si256(ptr2.cast::<__m256i>());
         ptr1 = ptr1.add(32);
         ptr2 = ptr2.add(32);
 
