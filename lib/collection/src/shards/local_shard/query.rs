@@ -20,7 +20,9 @@ use crate::operations::types::{
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, Source,
 };
-use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery, ShardQueryResponse};
+use crate::operations::universal_query::shard_query::{
+    Fusion, Sample, ScoringQuery, ShardQueryResponse,
+};
 
 pub enum FetchedSource {
     Search(usize),
@@ -278,6 +280,34 @@ impl LocalShard {
                     )
                 })
             }
+            ScoringQuery::Sample(sample) => match sample {
+                Sample::Random => {
+                    // create single scroll request for rescoring query
+                    let filter = filter_with_sources_ids(sources.into_iter());
+
+                    // Note: score_threshold is not used in this case, as all results will have same score and order_value
+                    let scroll_request = QueryScrollRequestInternal {
+                        limit,
+                        filter: Some(filter),
+                        with_payload,
+                        with_vector,
+                        scroll_order: ScrollOrder::Random,
+                    };
+
+                    self.query_scroll_batch(
+                        Arc::new(vec![scroll_request]),
+                        search_runtime_handle,
+                        timeout,
+                    )
+                    .await?
+                    .pop()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Rescoring with order-by query didn't return expected batch of results",
+                        )
+                    })
+                }
+            },
         }
     }
 

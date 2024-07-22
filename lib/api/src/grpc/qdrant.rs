@@ -4840,7 +4840,7 @@ pub struct ContextInput {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub variant: ::core::option::Option<query::Variant>,
 }
 /// Nested message and enum types in `Query`.
@@ -4867,6 +4867,9 @@ pub mod query {
         /// Fuse the results of multiple prefetches.
         #[prost(enumeration = "super::Fusion", tag = "6")]
         Fusion(i32),
+        /// Sample points from the collection.
+        #[prost(enumeration = "super::Sample", tag = "7")]
+        Sample(i32),
     }
 }
 #[derive(serde::Serialize)]
@@ -5998,6 +6001,35 @@ impl Fusion {
         match value {
             "RRF" => Some(Self::Rrf),
             "DBSF" => Some(Self::Dbsf),
+            _ => None,
+        }
+    }
+}
+/// / Sample points from the collection
+/// /
+/// / Available sampling methods:
+/// /
+/// / * `random` - Random sampling
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Sample {
+    Random = 0,
+}
+impl Sample {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Sample::Random => "RANDOM",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RANDOM" => Some(Self::Random),
             _ => None,
         }
     }
@@ -8737,7 +8769,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -8755,6 +8787,9 @@ pub mod query_shard_points {
             /// Order by a field
             #[prost(message, tag = "3")]
             OrderBy(super::super::OrderBy),
+            /// Sample points
+            #[prost(enumeration = "super::super::Sample", tag = "4")]
+            Sample(i32),
         }
     }
     #[derive(serde::Serialize)]

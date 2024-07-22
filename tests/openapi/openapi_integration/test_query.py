@@ -328,6 +328,30 @@ def test_basic_order_by():
         assert record.get("payload") == scored_point.get("payload")
 
 
+def test_basic_random_query():
+    ids_lists = set()
+    for _ in range(4):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/query",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "query": { "sample": "random" }
+            },
+        )
+        assert response.ok, response.text
+
+        points = response.json()["result"]["points"]
+        assert len(points) == 10
+        assert set(point["id"] for point in points) == set(range(1, 11))
+
+        ids = str([point["id"] for point in points])
+        ids_lists.add(ids)
+
+    # check the order of ids are different at least once
+    assert len(ids_lists) > 1
+
+
 def test_basic_rrf():
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",

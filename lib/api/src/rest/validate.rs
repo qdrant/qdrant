@@ -3,7 +3,8 @@ use validator::{Validate, ValidationError};
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
 use super::{
-    ContextInput, Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, VectorInput,
+    ContextInput, Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, Sample,
+    VectorInput,
 };
 use crate::rest::NamedVectorStruct;
 
@@ -72,6 +73,7 @@ impl Validate for Query {
             Query::Context(context) => context.context.validate(),
             Query::Fusion(fusion) => fusion.fusion.validate(),
             Query::OrderBy(order_by) => order_by.order_by.validate(),
+            Query::Sample(sample) => sample.sample.validate(),
         }
     }
 }
@@ -134,6 +136,14 @@ impl Validate for OrderByInterface {
         match self {
             OrderByInterface::Key(_key) => Ok(()), // validated during parsing
             OrderByInterface::Struct(order_by) => order_by.validate(),
+        }
+    }
+}
+
+impl Validate for Sample {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            Sample::Random => Ok(()),
         }
     }
 }

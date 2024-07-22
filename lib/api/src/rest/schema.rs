@@ -284,6 +284,9 @@ pub enum Query {
 
     /// Fuse the results of multiple prefetches.
     Fusion(FusionQuery),
+
+    /// Sample points from the collection, non-deterministically.
+    Sample(SampleQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -320,6 +323,12 @@ pub struct OrderByQuery {
 #[serde(rename_all = "snake_case")]
 pub struct FusionQuery {
     pub fusion: Fusion,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SampleQuery {
+    pub sample: Sample,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -432,6 +441,12 @@ impl ContextPair {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
         std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Sample {
+    Random,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
