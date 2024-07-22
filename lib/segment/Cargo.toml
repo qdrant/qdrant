@@ -12,7 +12,7 @@ edition = "2021"
 workspace = true
 
 [features]
-multiling-chinese = ["charabia/chinese"]
+multiling-chinese = ["charabia/chinese-segmentation", "charabia/chinese-normalization", "charabia/chinese-normalization-pinyin"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing"]
