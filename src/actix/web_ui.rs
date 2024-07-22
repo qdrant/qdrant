@@ -37,7 +37,7 @@ pub fn web_ui_folder(settings: &Settings) -> Option<String> {
     }
 }
 
-pub fn web_ui_factory(static_folder: &String) -> impl HttpServiceFactory {
+pub fn web_ui_factory(static_folder: &str) -> impl HttpServiceFactory {
     web::scope(WEB_UI_PATH)
         .wrap(DefaultHeaders::new().add(("X-Frame-Options", HeaderValue::from_static("DENY"))))
         .service(actix_files::Files::new("/", static_folder).index_file("index.html"))
@@ -71,7 +71,7 @@ mod tests {
             return;
         }
 
-        let static_folder = maybe_static_folder.to_owned().unwrap();
+        let static_folder = maybe_static_folder.unwrap();
         let srv = test::init_service(App::new().service(web_ui_factory(&static_folder))).await;
 
         // Index path (no trailing slash)

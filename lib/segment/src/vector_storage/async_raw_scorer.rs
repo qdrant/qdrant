@@ -23,7 +23,7 @@ pub fn new<'a>(
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    AsyncRawScorerBuilder::new(query, storage, point_deleted)?
+    AsyncRawScorerBuilder::new(query, storage, point_deleted)
         .with_is_stopped(is_stopped)
         .build()
 }
@@ -218,13 +218,13 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         query: QueryVector,
         storage: &'a MemmapDenseVectorStorage<VectorElementType>,
         point_deleted: &'a BitSlice,
-    ) -> OperationResult<Self> {
+    ) -> Self {
         let points_count = storage.total_vector_count() as _;
         let vec_deleted = storage.deleted_vector_bitslice();
 
         let distance = storage.distance();
 
-        let builder = Self {
+        Self {
             points_count,
             query,
             point_deleted,
@@ -232,9 +232,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             storage,
             distance,
             is_stopped: None,
-        };
-
-        Ok(builder)
+        }
     }
 
     pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {

@@ -325,7 +325,7 @@ impl Consensus {
             .add_peer_to_known(tonic::Request::new(
                 api::grpc::qdrant::AddPeerToKnownMessage {
                     uri: current_uri,
-                    port: Some(p2p_port as u32),
+                    port: Some(u32::from(p2p_port)),
                     id: this_peer_id,
                 },
             ))
@@ -523,9 +523,8 @@ impl Consensus {
             // Timeout defines how long can we wait for the next message.
             // Since this thread is sync, we can't wait indefinitely.
             // Timeout is set up to be about the time of tick.
-            let message = match self.recv_update(timeout_at) {
-                Ok(message) => message,
-                Err(_) => break,
+            let Ok(message) = self.recv_update(timeout_at) else {
+                break;
             };
 
             // Those messages should not be batched, so we interrupt the loop if we see them.

@@ -230,7 +230,7 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn merge(&mut self, other: NamedVectors<'a>) {
-        for (key, value) in other.into_iter() {
+        for (key, value) in other {
             self.map.insert(key, value);
         }
     }

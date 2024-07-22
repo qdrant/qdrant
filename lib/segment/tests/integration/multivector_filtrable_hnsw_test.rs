@@ -214,8 +214,8 @@ fn test_multi_filterable_hnsw(
             Range {
                 lt: None,
                 gt: None,
-                gte: Some(left_range as f64),
-                lte: Some(right_range as f64),
+                gte: Some(f64::from(left_range)),
+                lte: Some(f64::from(right_range)),
             },
         )));
 
@@ -253,10 +253,10 @@ fn test_multi_filterable_hnsw(
         if plain_result == index_result {
             hits += 1;
         } else {
-            eprintln!("Attempt {}/{}", i, attempts);
-            eprintln!("Different results for query {:?}", query);
-            eprintln!("plain_result = {:#?}", plain_result);
-            eprintln!("index_result = {:#?}", index_result);
+            eprintln!("Attempt {i}/{attempts}");
+            eprintln!("Different results for query {query:?}");
+            eprintln!("plain_result = {plain_result:#?}");
+            eprintln!("index_result = {index_result:#?}");
         }
     }
     assert!(

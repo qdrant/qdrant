@@ -536,8 +536,8 @@ pub async fn update_batch(
                     toc.clone(),
                     UpsertPoints {
                         collection_name,
-                        points,
                         wait,
+                        points,
                         ordering,
                         shard_key_selector,
                     },

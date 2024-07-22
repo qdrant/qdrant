@@ -207,13 +207,12 @@ impl ImmutableGeoMapIndex {
                 if values_count > 0 {
                     self.counts_per_hash[index].values = values_count - 1;
                 } else {
-                    debug_assert!(false, "Hash value count is already empty: {}", sub_geo_hash,);
+                    debug_assert!(false, "Hash value count is already empty: {sub_geo_hash}",);
                 }
             } else {
                 debug_assert!(
                     false,
-                    "Hash value count is not found for hash: {}",
-                    sub_geo_hash,
+                    "Hash value count is not found for hash: {sub_geo_hash}",
                 );
             }
         }
@@ -236,13 +235,12 @@ impl ImmutableGeoMapIndex {
                     if points_count > 0 {
                         self.counts_per_hash[index].points = points_count - 1;
                     } else {
-                        debug_assert!(false, "Hash point count is already empty: {}", sub_geo_hash,);
+                        debug_assert!(false, "Hash point count is already empty: {sub_geo_hash}",);
                     }
                 } else {
                     debug_assert!(
                         false,
-                        "Hash point count is not found for hash: {}",
-                        sub_geo_hash,
+                        "Hash point count is not found for hash: {sub_geo_hash}",
                     );
                 };
             }

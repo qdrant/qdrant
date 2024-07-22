@@ -151,8 +151,7 @@ impl AuthKeys {
     fn can_read(&self, key: &str) -> bool {
         self.read_only
             .as_ref()
-            .map(|ro_key| ct_eq(ro_key, key))
-            .unwrap_or_default()
+            .is_some_and(|ro_key| ct_eq(ro_key, key))
     }
 
     /// Check if a key is allowed to write
@@ -160,7 +159,6 @@ impl AuthKeys {
     fn can_write(&self, key: &str) -> bool {
         self.read_write
             .as_ref()
-            .map(|rw_key| ct_eq(rw_key, key))
-            .unwrap_or_default()
+            .is_some_and(|rw_key| ct_eq(rw_key, key))
     }
 }

@@ -537,7 +537,7 @@ impl PayloadConstraint {
     }
 
     fn make_payload(&self, collection_name: &str) -> Result<Payload, StorageError> {
-        // TODO: We need to construct a payload, then validate it against the claim
+        let _ = self; // TODO: We need to construct a payload, then validate it against the claim
         incompatible_with_payload_constraint(collection_name) // Reject as not implemented
     }
 }

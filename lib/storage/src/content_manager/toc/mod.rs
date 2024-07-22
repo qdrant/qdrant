@@ -392,13 +392,10 @@ impl TableOfContent {
     }
 
     pub fn request_snapshot(&self) -> Result<(), StorageError> {
-        let sender = match &self.consensus_proposal_sender {
-            Some(sender) => sender,
-            None => {
-                return Err(StorageError::service_error(
-                    "Qdrant is running in standalone mode",
-                ))
-            }
+        let Some(sender) = &self.consensus_proposal_sender else {
+            return Err(StorageError::service_error(
+                "Qdrant is running in standalone mode",
+            ));
         };
 
         sender.send(ConsensusOperations::request_snapshot())?;

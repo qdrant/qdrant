@@ -61,6 +61,6 @@ pub fn manhattan_similarity_bytes(
 ) -> ScoreType {
     -v1.iter()
         .zip(v2)
-        .map(|(a, b)| (*a as i32 - *b as i32).abs())
+        .map(|(a, b)| (i32::from(*a) - i32::from(*b)).abs())
         .sum::<i32>() as ScoreType
 }

@@ -387,7 +387,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Selects point ids, which is stored in this segment
-    fn segment_points(&self, ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
+    fn segment_points(ids: &[PointIdType], segment: &dyn SegmentEntry) -> Vec<PointIdType> {
         ids.iter()
             .cloned()
             .filter(|id| segment.has_point(*id))
@@ -401,7 +401,7 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&segment.get().read())?;
-            processed_segments += is_applied as usize;
+            processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
     }
@@ -415,7 +415,7 @@ impl<'s> SegmentHolder {
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
             let is_applied = f(&mut segment.get().write())?;
-            processed_segments += is_applied as usize;
+            processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)
     }
@@ -445,14 +445,14 @@ impl<'s> SegmentHolder {
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_arc = segment.get();
             let segment_lock = segment_arc.upgradable_read();
-            let segment_points = self.segment_points(ids, segment_lock.deref());
+            let segment_points = Self::segment_points(ids, segment_lock.deref());
             if !segment_points.is_empty() {
                 let mut write_segment = RwLockUpgradableReadGuard::upgrade(segment_lock);
                 let segment_data = segment_data(write_segment.deref());
                 for point_id in segment_points {
                     let is_applied =
                         point_operation(point_id, *idx, &mut write_segment, &segment_data)?;
-                    applied_points += is_applied as usize;
+                    applied_points += usize::from(is_applied);
                 }
             }
         }
@@ -461,10 +461,9 @@ impl<'s> SegmentHolder {
 
     /// Try to acquire read lock over the given segment with increasing wait time.
     /// Should prevent deadlock in case if multiple threads tries to lock segments sequentially.
-    fn aloha_lock_segment_read<'a>(
-        &'a self,
-        segment: &'a Arc<RwLock<dyn SegmentEntry>>,
-    ) -> RwLockReadGuard<dyn SegmentEntry> {
+    fn aloha_lock_segment_read(
+        segment: &'_ Arc<RwLock<dyn SegmentEntry>>,
+    ) -> RwLockReadGuard<'_, dyn SegmentEntry> {
         let mut interval = Duration::from_nanos(100);
         loop {
             if let Some(guard) = segment.try_read_for(interval) {
@@ -612,7 +611,7 @@ impl<'s> SegmentHolder {
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
                 let is_ok = f(point, &read_segment)?;
-                read_points += is_ok as usize;
+                read_points += usize::from(is_ok);
             }
         }
         Ok(read_points)
@@ -670,7 +669,7 @@ impl<'s> SegmentHolder {
         let mut segment_reads: Vec<_> = segments
             .iter()
             .rev()
-            .map(|segment| self.aloha_lock_segment_read(segment))
+            .map(|segment| Self::aloha_lock_segment_read(segment))
             .collect();
         segment_reads.reverse();
 
@@ -1143,7 +1142,7 @@ impl<'s> SegmentHolder {
     ///
     /// Deduplication works with plain segments only.
     pub fn deduplicate_points(&self) -> OperationResult<usize> {
-        let points_to_remove = self.find_duplicated_points()?;
+        let points_to_remove = self.find_duplicated_points();
 
         let mut removed_points = 0;
         for (segment_id, points) in points_to_remove {
@@ -1160,29 +1159,27 @@ impl<'s> SegmentHolder {
         Ok(removed_points)
     }
 
-    fn find_duplicated_points(&self) -> OperationResult<HashMap<SegmentId, Vec<PointIdType>>> {
+    fn find_duplicated_points(&self) -> HashMap<SegmentId, Vec<PointIdType>> {
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
             .collect::<Vec<_>>();
-        let locked_segments = BTreeMap::from_iter(
-            segments
-                .iter()
-                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read())),
-        );
-        let mut iterators = BTreeMap::from_iter(
-            locked_segments
-                .iter()
-                .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points())),
-        );
+        let locked_segments = segments
+            .iter()
+            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
+            .collect::<BTreeMap<_, _>>();
+        let mut iterators = locked_segments
+            .iter()
+            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points()))
+            .collect::<BTreeMap<_, _>>();
 
         // heap contains the current iterable point id from each segment
         let mut heap = iterators
             .iter_mut()
             .filter_map(|(&segment_id, iter)| {
                 iter.next().map(|point_id| DedupPoint {
-                    segment_id,
                     point_id,
+                    segment_id,
                 })
             })
             .collect::<BinaryHeap<_>>();
@@ -1236,7 +1233,7 @@ impl<'s> SegmentHolder {
             }
         }
 
-        Ok(points_to_remove)
+        points_to_remove
     }
 }
 

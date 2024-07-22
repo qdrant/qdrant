@@ -18,8 +18,8 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let len = v1.len();
     for _ in 0..len / 16 {
         // load 16 bytes
-        let p1 = _mm_loadu_si128(ptr1 as *const __m128i);
-        let p2 = _mm_loadu_si128(ptr2 as *const __m128i);
+        let p1 = _mm_loadu_si128(ptr1.cast::<__m128i>());
+        let p2 = _mm_loadu_si128(ptr2.cast::<__m128i>());
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
@@ -37,8 +37,8 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..len % 16 {
-            let v1 = *ptr1 as i32;
-            let v2 = *ptr2 as i32;
+            let v1 = i32::from(*ptr1);
+            let v2 = i32::from(*ptr2);
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
             remainder_score += (v1 - v2).abs();

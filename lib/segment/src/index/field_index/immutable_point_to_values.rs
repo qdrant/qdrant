@@ -34,9 +34,7 @@ impl<N: Default> ImmutablePointToValues<N> {
     }
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
-        let range = if let Some(range) = self.point_to_values.get(idx as usize).cloned() {
-            range
-        } else {
+        let Some(range) = self.point_to_values.get(idx as usize).cloned() else {
             return false;
         };
 

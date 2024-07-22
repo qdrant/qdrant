@@ -389,7 +389,7 @@ mod tests {
         }
 
         // Existing keys should return the correct values
-        for (k, v) in map.into_iter() {
+        for (k, v) in map {
             assert_eq!(
                 mmap.get(as_ref(&k)).unwrap().unwrap(),
                 &v.into_iter().collect::<Vec<_>>()

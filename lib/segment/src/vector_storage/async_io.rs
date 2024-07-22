@@ -137,7 +137,7 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
                 io_uring.submission().push(&read_e).map_err(|err| {
-                    OperationError::service_error(format!("Failed using io-uring: {}", err))
+                    OperationError::service_error(format!("Failed using io-uring: {err}"))
                 })?;
             }
         }
@@ -180,13 +180,11 @@ fn submit_and_read<T: PrimitiveVectorElement>(
         let result = entry.result();
         if result < 0 {
             return Err(OperationError::service_error(format!(
-                "io_uring operation failed with {} error",
-                result
+                "io_uring operation failed with {result} error"
             )));
         } else if (result as usize) != raw_size {
             return Err(OperationError::service_error(format!(
-                "io_uring operation returned {} bytes instead of {}",
-                result, raw_size
+                "io_uring operation returned {result} bytes instead of {raw_size}"
             )));
         }
 

@@ -473,7 +473,7 @@ impl Display for JsonPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let write_key = |f: &mut Formatter<'_>, key: &str| {
             if parse::key_needs_quoting(key) {
-                write!(f, "\"{}\"", key)
+                write!(f, "\"{key}\"")
             } else {
                 f.write_str(key)
             }
@@ -486,7 +486,7 @@ impl Display for JsonPath {
                     f.write_str(".")?;
                     write_key(f, key)?;
                 }
-                JsonPathItem::Index(index) => write!(f, "[{}]", index)?,
+                JsonPathItem::Index(index) => write!(f, "[{index}]")?,
                 JsonPathItem::WildcardIndex => f.write_str("[]")?,
             }
         }
@@ -1159,7 +1159,7 @@ mod tests {
             "#,
         );
 
-        JsonPath::value_set(Some(&JsonPath::new("a.b[1]")), &mut map, &json(r#"{}"#));
+        JsonPath::value_set(Some(&JsonPath::new("a.b[1]")), &mut map, &json("{}"));
 
         assert_eq!(
             map,
@@ -1183,7 +1183,7 @@ mod tests {
 
     #[test]
     fn test_set_value_to_json_with_empty_dest() {
-        let mut map = json(r#"{}"#);
+        let mut map = json("{}");
 
         JsonPath::value_set(None, &mut map, &json(r#"{"c": 1}"#));
 
@@ -1192,7 +1192,7 @@ mod tests {
 
     #[test]
     fn test_set_value_to_json_with_empty_dest_nested_key() {
-        let mut map = json(r#"{}"#);
+        let mut map = json("{}");
 
         JsonPath::value_set(
             Some(&JsonPath::new("key1.key2")),
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[test]
     fn test_expand_payload_with_non_existing_array() {
-        let mut map = json(r#"{}"#);
+        let mut map = json("{}");
 
         JsonPath::value_set(
             Some(&JsonPath::new("key1.key2[].key3")),

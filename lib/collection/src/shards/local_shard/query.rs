@@ -149,7 +149,7 @@ impl LocalShard {
             let mut sources = Vec::with_capacity(max_len);
 
             // We need to preserve the order of the sources for some fusion strategies
-            for source in merge_plan.sources.into_iter() {
+            for source in merge_plan.sources {
                 match source {
                     Source::SearchesIdx(idx) => {
                         sources.push(prefetch_holder.get(FetchedSource::Search(idx))?)

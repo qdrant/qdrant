@@ -71,7 +71,7 @@ pub trait ValueIndexer {
     /// Try to extract index-able values from payload `Value`, even if it is an array
     fn get_values(&self, value: &Value) -> Vec<Self::ValueType> {
         match value {
-            Value::Array(values) => values.iter().flat_map(|x| self.get_value(x)).collect(),
+            Value::Array(values) => values.iter().filter_map(|x| self.get_value(x)).collect(),
             _ => self.get_value(value).map(|x| vec![x]).unwrap_or_default(),
         }
     }
@@ -83,7 +83,7 @@ pub trait ValueIndexer {
         for value in payload.iter() {
             match value {
                 Value::Array(values) => {
-                    flatten_values.extend(values.iter().flat_map(|x| self.get_value(x)));
+                    flatten_values.extend(values.iter().filter_map(|x| self.get_value(x)));
                 }
                 _ => {
                     if let Some(x) = self.get_value(value) {

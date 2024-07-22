@@ -113,10 +113,9 @@ fn describe_error(
                 .to_string()
         }
         "min_line_length" => match (params.get("min_length"), params.get("length")) {
-            (Some(min_length), Some(length)) => format!(
-                "value invalid, the size must be at least {}, got {}",
-                min_length, length
-            ),
+            (Some(min_length), Some(length)) => {
+                format!("value invalid, the size must be at least {min_length}, got {length}")
+            }
             _ => err.to_string(),
         },
         // Undescribed error codes

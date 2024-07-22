@@ -612,7 +612,6 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::iter::FromIterator;
     use std::path::Path;
 
     use tempfile::Builder;
@@ -643,8 +642,8 @@ mod tests {
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<&N> =
-                HashSet::from_iter(index.get_values(idx as PointOffsetType).unwrap());
-            let check_values: HashSet<&N> = HashSet::from_iter(values.iter().map(|v| v.borrow()));
+                index.get_values(idx as PointOffsetType).unwrap().collect();
+            let check_values: HashSet<&N> = values.iter().map(|v| v.borrow()).collect();
             assert_eq!(index_values, check_values);
         }
 

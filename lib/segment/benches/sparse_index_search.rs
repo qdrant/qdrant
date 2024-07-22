@@ -63,7 +63,7 @@ fn sparse_vector_index_search_benchmark_impl(
     vectors: impl ExactSizeIterator<Item = SparseVector>,
     query_vectors: &[SparseVector],
 ) {
-    let mut group = c.benchmark_group(format!("sparse_vector_index_search/{}", group));
+    let mut group = c.benchmark_group(format!("sparse_vector_index_search/{group}"));
     group.sample_size(10);
 
     let vectors_len = vectors.len();

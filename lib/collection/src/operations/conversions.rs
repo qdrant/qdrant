@@ -74,8 +74,7 @@ pub fn sharding_method_from_proto(sharding_method: i32) -> Result<ShardingMethod
         x if x == api::grpc::qdrant::ShardingMethod::Auto as i32 => Ok(ShardingMethod::Auto),
         x if x == api::grpc::qdrant::ShardingMethod::Custom as i32 => Ok(ShardingMethod::Custom),
         _ => Err(Status::invalid_argument(format!(
-            "Cannot convert sharding method: {}",
-            sharding_method
+            "Cannot convert sharding method: {sharding_method}"
         ))),
     }
 }
@@ -571,8 +570,7 @@ fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>
             }
         } else {
             Err(Status::invalid_argument(format!(
-                "Cannot convert datatype: {}",
-                datatype_int
+                "Cannot convert datatype: {datatype_int}"
             )))
         }
     } else {
@@ -1209,11 +1207,8 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                         })
                     }
                     api::grpc::qdrant::query_enum::Query::Discover(query) => {
-                        let target = match query.target {
-                            Some(target) => target,
-                            None => {
-                                return Err(Status::invalid_argument("Target is not specified"))
-                            }
+                        let Some(target) = query.target else {
+                            return Err(Status::invalid_argument("Target is not specified"));
                         };
 
                         let pairs = query
@@ -1284,7 +1279,7 @@ impl TryFrom<i32> for ReplicaState {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         let replica_state = api::grpc::qdrant::ReplicaState::from_i32(value)
-            .ok_or_else(|| Status::invalid_argument(format!("Unknown replica state: {}", value)))?;
+            .ok_or_else(|| Status::invalid_argument(format!("Unknown replica state: {value}")))?;
         Ok(replica_state.into())
     }
 }
@@ -1699,14 +1694,14 @@ impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
                 .map(NonZeroU32::try_from)
                 .transpose()
                 .map_err(|err| {
-                    Status::invalid_argument(format!("Replication factor cannot be zero: {}", err))
+                    Status::invalid_argument(format!("Replication factor cannot be zero: {err}"))
                 })?,
             replication_factor: op
                 .shards_number
                 .map(NonZeroU32::try_from)
                 .transpose()
                 .map_err(|err| {
-                    Status::invalid_argument(format!("Replication factor cannot be zero: {}", err))
+                    Status::invalid_argument(format!("Replication factor cannot be zero: {err}"))
                 })?,
             placement: if op.placement.is_empty() {
                 None

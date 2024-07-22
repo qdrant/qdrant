@@ -60,36 +60,44 @@ fn is_localhost_ip(host: &str) -> bool {
 }
 
 /// Prints welcome message
-#[rustfmt::skip]
 pub fn welcome(settings: &Settings) {
-    if !stdout().is_terminal()  {
+    if !stdout().is_terminal() {
         colored::control::set_override(false);
     }
 
     let mut true_color = true;
 
     match env::var("COLORTERM") {
-        Ok(val) => if val != "24bit" && val != "truecolor" {
-            true_color = false;
-        },
+        Ok(val) => {
+            if val != "24bit" && val != "truecolor" {
+                true_color = false;
+            }
+        }
         Err(_) => true_color = false,
     }
 
-    println!("{}", paint_red(r#"           _                 _    "#, true_color));
-    println!("{}", paint_red(r#"  __ _  __| |_ __ __ _ _ __ | |_  "#, true_color));
-    println!("{}", paint_red(r#" / _` |/ _` | '__/ _` | '_ \| __| "#, true_color));
-    println!("{}", paint_red(r#"| (_| | (_| | | | (_| | | | | |_  "#, true_color));
-    println!("{}", paint_red(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
-    println!("{}", paint_red(r#"    |_|                           "#, true_color));
+    let title = [
+        r"           _                 _    ",
+        r"  __ _  __| |_ __ __ _ _ __ | |_  ",
+        r" / _` |/ _` | '__/ _` | '_ \| __| ",
+        r"| (_| | (_| | | | (_| | | | | |_  ",
+        r" \__, |\__,_|_|  \__,_|_| |_|\__| ",
+        r"    |_|                           ",
+    ];
+    for line in title {
+        println!("{}", paint_red(line, true_color));
+    }
     println!();
 
     // Print current version and, if available, first 8 characters of the git commit hash
     let git_commit_info = get_git_commit_id()
-        .map(|git_commit| format!(
-            ", {} {}",
-            paint_green("build:", true_color),
-            paint_blue(&git_commit[..min(8, git_commit.len())], true_color),
-        ))
+        .map(|git_commit| {
+            format!(
+                ", {} {}",
+                paint_green("build:", true_color),
+                paint_blue(&git_commit[..min(8, git_commit.len())], true_color),
+            )
+        })
         .unwrap_or_default();
 
     println!(

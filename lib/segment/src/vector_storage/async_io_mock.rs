@@ -11,6 +11,7 @@ pub struct UringReader<T: PrimitiveVectorElement> {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::unnecessary_wraps)] // Using the same type as the real implementation
 impl<T: PrimitiveVectorElement> UringReader<T> {
     pub fn new(_file: File, _raw_size: usize, _header_size: usize) -> OperationResult<Self> {
         Ok(Self {

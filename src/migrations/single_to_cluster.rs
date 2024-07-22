@@ -30,12 +30,11 @@ pub async fn handle_existing_collections(
 
     consensus_state.is_leader_established.await_ready();
     for collection_name in collections {
-        let collection_obj = match toc_arc
+        let Ok(collection_obj) = toc_arc
             .get_collection(&multipass.issue_pass(&collection_name))
             .await
-        {
-            Ok(collection_obj) => collection_obj,
-            Err(_) => break,
+        else {
+            break;
         };
 
         let collection_state = collection_obj.state().await;

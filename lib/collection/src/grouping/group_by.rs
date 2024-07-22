@@ -133,7 +133,7 @@ impl GroupRequest {
 
 impl QueryGroupRequest {
     /// Make `group_by` field selector work with as `with_payload`.
-    fn group_by_to_payload_selector(&self, group_by: &JsonPath) -> WithPayloadInterface {
+    fn group_by_to_payload_selector(group_by: &JsonPath) -> WithPayloadInterface {
         WithPayloadInterface::Fields(vec![group_by.strip_wildcard_suffix()])
     }
 
@@ -155,7 +155,7 @@ impl QueryGroupRequest {
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
         request.filter = Some(request.filter.unwrap_or_default().merge(&key_not_empty));
 
-        let with_group_by_payload = self.group_by_to_payload_selector(&self.group_by);
+        let with_group_by_payload = Self::group_by_to_payload_selector(&self.group_by);
 
         // We're enriching the final results at the end, so we'll keep this minimal
         request.with_payload = with_group_by_payload;

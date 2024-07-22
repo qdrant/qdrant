@@ -53,12 +53,10 @@ impl Collection {
         // Should be adjusted based on usage statistics.
         const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
-        let is_payload_required = request.searches.iter().all(|s| {
-            s.with_payload
-                .clone()
-                .map(|p| p.is_required())
-                .unwrap_or_default()
-        });
+        let is_payload_required = request
+            .searches
+            .iter()
+            .all(|s| s.with_payload.clone().is_some_and(|p| p.is_required()));
         let with_vectors = request.searches.iter().all(|s| {
             s.with_vector
                 .as_ref()

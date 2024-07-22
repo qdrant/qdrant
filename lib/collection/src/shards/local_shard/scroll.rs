@@ -288,8 +288,7 @@ impl LocalShard {
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to create weighted index for random scroll: {:?}",
-                err
+                "Failed to create weighted index for random scroll: {err:?}"
             ))
         })?;
 

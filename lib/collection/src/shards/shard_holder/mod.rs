@@ -358,8 +358,8 @@ impl ShardHolder {
         let (mut incoming, mut outgoing) = (0, 0);
 
         for transfer in self.shard_transfers.read().iter() {
-            incoming += (transfer.to == *peer_id) as usize;
-            outgoing += (transfer.from == *peer_id) as usize;
+            incoming += usize::from(transfer.to == *peer_id);
+            outgoing += usize::from(transfer.from == *peer_id);
         }
 
         (incoming, outgoing)
@@ -769,7 +769,7 @@ impl ShardHolder {
     ) -> CollectionResult<Vec<SnapshotDescription>> {
         self.assert_shard_is_local(shard_id).await?;
 
-        let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
+        let snapshots_path = Self::snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
 
         if !snapshots_path.exists() {
             return Ok(Vec::new());
@@ -870,7 +870,7 @@ impl ShardHolder {
         let temp_file = task_result??;
 
         let snapshot_path =
-            self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
+            Self::shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
 
         let snapshot_manager = shard.get_snapshots_storage_manager()?;
         let snapshot_description = snapshot_manager
@@ -993,24 +993,19 @@ impl ShardHolder {
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
         self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
-        self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
+        Self::shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
     }
 
-    fn snapshots_path_for_shard_unchecked(
-        &self,
-        snapshots_path: &Path,
-        shard_id: ShardId,
-    ) -> PathBuf {
+    fn snapshots_path_for_shard_unchecked(snapshots_path: &Path, shard_id: ShardId) -> PathBuf {
         snapshots_path.join(format!("shards/{shard_id}"))
     }
 
     fn shard_snapshot_path_unchecked(
-        &self,
         snapshots_path: &Path,
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
+        let snapshots_path = Self::snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
 
         let snapshot_file_name = snapshot_file_name.as_ref();
 

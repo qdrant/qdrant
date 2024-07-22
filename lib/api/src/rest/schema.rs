@@ -450,6 +450,7 @@ pub struct WithLookup {
     pub with_vectors: Option<WithVector>,
 }
 
+#[allow(clippy::unnecessary_wraps)] // Used as serde default
 const fn default_with_payload() -> Option<WithPayloadInterface> {
     Some(WithPayloadInterface::Bool(true))
 }

@@ -62,7 +62,7 @@ impl UnindexedField {
         }
 
         let endpoint = match Uri::builder()
-            .path_and_query(format!("/collections/{}/index", collection_name).as_str())
+            .path_and_query(format!("/collections/{collection_name}/index").as_str())
             .build()
         {
             Ok(uri) => uri,

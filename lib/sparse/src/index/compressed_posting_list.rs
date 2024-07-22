@@ -533,7 +533,7 @@ mod tests {
                         case.get(CASES[i]).map_or(PointOffsetType::MAX, |x| x.0) - 1,
                         &mut (),
                         |_, id, weight| {
-                            eprintln!("  {}", id);
+                            eprintln!("  {id}");
                             data.push((id, weight));
                             counter += 1;
                         },
@@ -547,7 +547,7 @@ mod tests {
                         case.get(CASES[j]).map_or(PointOffsetType::MAX, |x| x.0) - 1,
                         &mut (),
                         |_, id, weight| {
-                            eprintln!("  {}", id);
+                            eprintln!("  {id}");
                             data.push((id, weight));
                             counter += 1;
                         },

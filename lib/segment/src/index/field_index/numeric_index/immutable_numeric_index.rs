@@ -494,8 +494,7 @@ mod tests {
             .map(|k| (FloatPayloadType::encode_key(&k.key, k.idx), k.idx))
             .collect();
 
-        let mut set_byte: BTreeMap<Vec<u8>, PointOffsetType> =
-            BTreeMap::from_iter(encoded.iter().cloned());
+        let mut set_byte: BTreeMap<Vec<u8>, PointOffsetType> = encoded.iter().cloned().collect();
         let mut set_keys =
             NumericKeySortedVec::<FloatPayloadType>::from_btree_map(set_byte.clone());
 
@@ -541,9 +540,8 @@ mod tests {
             .map(|k| FloatPayloadType::encode_key(&k.key, k.idx))
             .collect();
 
-        let set_byte: BTreeSet<Vec<u8>> = BTreeSet::from_iter(encoded.iter().cloned());
-        let set_keys: BTreeSet<NumericIndexKey<FloatPayloadType>> =
-            BTreeSet::from_iter(pairs.iter().cloned());
+        let set_byte: BTreeSet<Vec<u8>> = encoded.iter().cloned().collect();
+        let set_keys: BTreeSet<NumericIndexKey<FloatPayloadType>> = pairs.iter().cloned().collect();
 
         for (b, k) in set_byte.iter().zip(set_keys.iter()) {
             let (decoded_id, decoded_float) = FloatPayloadType::decode_key(b.as_slice());

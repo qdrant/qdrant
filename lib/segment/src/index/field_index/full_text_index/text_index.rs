@@ -37,7 +37,7 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    fn serialize_document_tokens(&self, tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -154,7 +154,7 @@ impl ValueIndexer for FullTextIndex {
         self.inverted_index.index_document(idx, document)?;
 
         let db_idx = Self::store_key(&idx);
-        let db_document = self.serialize_document_tokens(tokens)?;
+        let db_document = Self::serialize_document_tokens(tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 

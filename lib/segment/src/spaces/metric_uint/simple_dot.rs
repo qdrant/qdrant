@@ -62,7 +62,7 @@ pub fn dot_similarity_bytes(
     let mut dot_product = 0;
 
     for (a, b) in v1.iter().zip(v2) {
-        dot_product += (*a as i32) * (*b as i32);
+        dot_product += i32::from(*a) * i32::from(*b);
     }
 
     dot_product as ScoreType

@@ -41,7 +41,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             let posting_list = mmap_inverted_index.get(&i).ok_or_else(|| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    format!("Posting list {} not found", i),
+                    format!("Posting list {i} not found"),
                 )
             })?;
             inverted_index.postings.push(posting_list.to_owned());

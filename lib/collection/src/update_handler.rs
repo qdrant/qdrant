@@ -284,21 +284,18 @@ impl UpdateHandler {
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = num_rayon_threads(max_indexing_threads);
-                let permit = match optimizer_cpu_budget.try_acquire(desired_cpus) {
-                    Some(permit) => permit,
+                let Some(permit) = optimizer_cpu_budget.try_acquire(desired_cpus) else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
-                    None => {
-                        log::trace!(
-                            "No available CPU permit for {} optimizer, postponing",
-                            optimizer.name(),
-                        );
-                        if handles.is_empty() {
-                            callback(false);
-                        }
-                        break 'outer;
+                    log::trace!(
+                        "No available CPU permit for {} optimizer, postponing",
+                        optimizer.name(),
+                    );
+                    if handles.is_empty() {
+                        callback(false);
                     }
+                    break 'outer;
                 };
                 log::trace!(
                     "Acquired {} CPU permit for {} optimizer",
@@ -634,8 +631,7 @@ impl UpdateHandler {
                     let flush_res = if wait {
                         wal.lock().flush().map_err(|err| {
                             CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {} - {}",
-                                op_num, err
+                                "Can't flush WAL before operation {op_num} - {err}"
                             ))
                         })
                     } else {

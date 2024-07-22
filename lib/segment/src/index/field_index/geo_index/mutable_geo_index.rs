@@ -133,7 +133,7 @@ impl MutableGeoMapIndex {
             self.points_values_count += 1;
         }
 
-        for (_idx, geo_hashes) in points_to_hashes.into_iter() {
+        for (_idx, geo_hashes) in points_to_hashes {
             self.max_values_per_point = max(self.max_values_per_point, geo_hashes.len());
             self.increment_hash_point_counts(&geo_hashes);
             for geo_hash in geo_hashes {
@@ -288,8 +288,7 @@ impl MutableGeoMapIndex {
                 None => {
                     debug_assert!(
                         false,
-                        "Hash value count is not found for hash: {}",
-                        sub_geo_hash
+                        "Hash value count is not found for hash: {sub_geo_hash}"
                     );
                     self.values_per_hash.insert(sub_geo_hash.into(), 0);
                 }
@@ -313,8 +312,7 @@ impl MutableGeoMapIndex {
                     None => {
                         debug_assert!(
                             false,
-                            "Hash point count is not found for hash: {}",
-                            sub_geo_hash
+                            "Hash point count is not found for hash: {sub_geo_hash}"
                         );
                         self.points_per_hash.insert(sub_geo_hash.into(), 0);
                     }

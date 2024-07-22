@@ -101,12 +101,10 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         value: &N,
         idx: PointOffsetType,
     ) {
-        let values = if let Some(values) =
+        let Some(values) =
             Self::get_mut_point_ids_slice(value_to_points, value_to_points_container, value)
-        {
-            values
-        } else {
-            debug_assert!(false, "value {} not found in value_to_points", value);
+        else {
+            debug_assert!(false, "value {value} not found in value_to_points");
             return;
         };
 

@@ -93,7 +93,7 @@ pub fn json_path_from_proto(a: &str) -> Result<JsonPath, Status> {
 
 pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {
     let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    for (k, v) in proto.into_iter() {
+    for (k, v) in proto {
         map.insert(k, proto_to_json(v)?);
     }
     Ok(map.into())
@@ -105,9 +105,8 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
         Some(kind) => match kind {
             Kind::NullValue(_) => Ok(serde_json::Value::Null),
             Kind::DoubleValue(n) => {
-                let v = match serde_json::Number::from_f64(n) {
-                    Some(f) => f,
-                    None => return Err(Status::invalid_argument("cannot convert to json number")),
+                let Some(v) = serde_json::Number::from_f64(n) else {
+                    return Err(Status::invalid_argument("cannot convert to json number"));
                 };
                 Ok(serde_json::Value::Number(v))
             }
@@ -116,14 +115,14 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
             Kind::BoolValue(b) => Ok(serde_json::Value::Bool(b)),
             Kind::StructValue(s) => {
                 let mut map = serde_json::Map::new();
-                for (k, v) in s.fields.into_iter() {
+                for (k, v) in s.fields {
                     map.insert(k, proto_to_json(v)?);
                 }
                 Ok(serde_json::Value::Object(map))
             }
             Kind::ListValue(l) => {
                 let mut list = Vec::new();
-                for v in l.values.into_iter() {
+                for v in l.values {
                     list.push(proto_to_json(v)?);
                 }
                 Ok(serde_json::Value::Array(list))
@@ -715,11 +714,10 @@ impl From<segment_vectors::VectorStructInternal> for Vectors {
             }
             segment_vectors::VectorStructInternal::Named(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
-                    vectors: HashMap::from_iter(
-                        vectors
-                            .into_iter()
-                            .map(|(name, vector)| (name, Vector::from(vector))),
-                    ),
+                    vectors: vectors
+                        .into_iter()
+                        .map(|(name, vector)| (name, Vector::from(vector)))
+                        .collect(),
                 })),
             },
         }
@@ -1832,7 +1830,7 @@ impl From<sparse::common::sparse_vector::SparseVector> for SparseVector {
     fn from(value: sparse::common::sparse_vector::SparseVector) -> Self {
         let sparse::common::sparse_vector::SparseVector { indices, values } = value;
 
-        Self { indices, values }
+        Self { values, indices }
     }
 }
 
@@ -1938,7 +1936,7 @@ impl TryFrom<i32> for crate::rest::RecommendStrategy {
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         let strategy = RecommendStrategy::from_i32(value).ok_or_else(|| {
-            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
+            Status::invalid_argument(format!("Unknown recommend strategy: {value}"))
         })?;
         Ok(strategy.into())
     }

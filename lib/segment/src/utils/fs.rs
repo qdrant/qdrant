@@ -87,16 +87,12 @@ fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> Ope
 
 /// Finds the first symlink in the directory tree and returns its path.
 pub fn find_symlink(directory: &Path) -> Option<PathBuf> {
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(_) => return None,
+    let Ok(entries) = fs::read_dir(directory) else {
+        return None;
     };
 
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
 
         let path = entry.path();
 

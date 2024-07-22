@@ -179,7 +179,7 @@ impl BinaryIndex {
     }
 
     fn storage_cf_name(field: &str) -> String {
-        format!("{}_binary", field)
+        format!("{field}_binary")
     }
 
     pub fn recreate(&self) -> OperationResult<()> {
@@ -197,7 +197,7 @@ impl BinaryIndex {
 
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         let binary_item = self.memory.get(point_id);
-        binary_item.has_true() as usize + binary_item.has_false() as usize
+        usize::from(binary_item.has_true()) + usize::from(binary_item.has_false())
     }
 
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {

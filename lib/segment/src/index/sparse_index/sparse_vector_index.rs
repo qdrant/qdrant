@@ -362,7 +362,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         filter: Option<&Filter>,
         top: usize,
         vector_query_context: &VectorQueryContext,
-    ) -> OperationResult<Vec<ScoredPointOffset>> {
+    ) -> Vec<ScoredPointOffset> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
         let deleted_point_bitslice = vector_query_context
@@ -393,9 +393,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
-                Ok(search_context.search(&matches_filter_condition))
+                search_context.search(&matches_filter_condition)
             }
-            None => Ok(search_context.search(&not_deleted_condition)),
+            None => search_context.search(&not_deleted_condition),
         }
     }
 
@@ -434,12 +434,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
-                    self.search_sparse(&vector, Some(filter), top, vector_query_context)
+                    Ok(self.search_sparse(&vector, Some(filter), top, vector_query_context))
                 }
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-                self.search_sparse(&vector, filter, top, vector_query_context)
+                Ok(self.search_sparse(&vector, filter, top, vector_query_context))
             }
         }
     }

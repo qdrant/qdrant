@@ -9,6 +9,9 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 testing = []
 

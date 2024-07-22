@@ -64,9 +64,9 @@ pub fn cosine_similarity_bytes(
     let mut norm2 = 0;
 
     for (a, b) in v1.iter().zip(v2) {
-        dot_product += (*a as i32) * (*b as i32);
-        norm1 += (*a as i32) * (*a as i32);
-        norm2 += (*b as i32) * (*b as i32);
+        dot_product += i32::from(*a) * i32::from(*b);
+        norm1 += i32::from(*a) * i32::from(*a);
+        norm2 += i32::from(*b) * i32::from(*b);
     }
 
     if norm1 == 0 || norm2 == 0 {

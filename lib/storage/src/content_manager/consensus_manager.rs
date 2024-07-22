@@ -302,9 +302,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         loop {
             let unapplied_index = self.persistent.read().current_unapplied_entry();
-            let entry_index = match unapplied_index {
-                Some(index) => index,
-                None => break,
+            let Some(entry_index) = unapplied_index else {
+                break;
             };
             log::debug!("Applying committed entry with index {entry_index}");
             let entry = self
@@ -730,21 +729,21 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn sync_local_state(&self) -> Result<(), StorageError> {
-        self.try_update_peer_metadata()?;
+        self.try_update_peer_metadata();
         self.toc.sync_local_state()
     }
 
     /// Try to update our peer metadata if it's outdated
     ///
     /// It rate limits updating to `CONSENSUS_PEER_METADATA_UPDATE_INTERVAL`.
-    fn try_update_peer_metadata(&self) -> Result<(), StorageError> {
+    fn try_update_peer_metadata(&self) {
         // Throttle updates to prevent spamming consensus
         if Instant::now() < *self.next_peer_metadata_update_attempt.lock() {
-            return Ok(());
+            return;
         }
 
         if !self.persistent.read().is_our_metadata_outdated() {
-            return Ok(());
+            return;
         }
 
         log::debug!("Proposing consensus peer metadata update for this peer");
@@ -759,8 +758,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
         *self.next_peer_metadata_update_attempt.lock() =
             Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL;
-
-        Ok(())
     }
 }
 

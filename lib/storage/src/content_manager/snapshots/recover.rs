@@ -194,17 +194,17 @@ async fn _do_recover_from_snapshot(
     for (shard_id, shard_info) in &state.shards {
         let shards = latest_shard_paths(tmp_collection_dir.path(), *shard_id).await?;
 
-        let snapshot_shard_path = shards
-            .into_iter()
-            .filter_map(
-                |(snapshot_shard_path, _version, shard_type)| match shard_type {
-                    ShardType::Local => Some(snapshot_shard_path),
-                    ShardType::ReplicaSet => Some(snapshot_shard_path),
-                    ShardType::Remote { .. } => None,
-                    ShardType::Temporary => None,
-                },
-            )
-            .next();
+        let snapshot_shard_path =
+            shards
+                .into_iter()
+                .find_map(
+                    |(snapshot_shard_path, _version, shard_type)| match shard_type {
+                        ShardType::Local => Some(snapshot_shard_path),
+                        ShardType::ReplicaSet => Some(snapshot_shard_path),
+                        ShardType::Remote { .. } => None,
+                        ShardType::Temporary => None,
+                    },
+                );
 
         if let Some(snapshot_shard_path) = snapshot_shard_path {
             log::debug!(
