@@ -69,7 +69,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -155,7 +155,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -248,7 +248,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -352,7 +352,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -407,7 +407,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -590,7 +590,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -646,7 +646,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -723,7 +723,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -780,7 +780,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -848,7 +848,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -932,7 +932,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1016,7 +1016,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1090,7 +1090,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1166,7 +1166,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1262,7 +1262,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1330,7 +1330,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1425,7 +1425,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1494,7 +1494,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1578,7 +1578,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1646,7 +1646,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1703,7 +1703,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1815,7 +1815,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -1923,7 +1923,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2012,7 +2012,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2091,7 +2091,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2198,7 +2198,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2337,7 +2337,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2406,7 +2406,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2503,7 +2503,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2696,7 +2696,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2813,7 +2813,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2911,7 +2911,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -2999,7 +2999,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3115,7 +3115,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3292,7 +3292,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3379,7 +3379,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3476,7 +3476,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3572,7 +3572,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3668,7 +3668,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3764,7 +3764,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3860,7 +3860,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -3954,7 +3954,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4050,7 +4050,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4146,7 +4146,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4242,7 +4242,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4332,7 +4332,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4429,7 +4429,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4529,7 +4529,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4632,7 +4632,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4729,7 +4729,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4829,7 +4829,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -4932,7 +4932,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5029,7 +5029,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5129,7 +5129,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5213,7 +5213,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5310,7 +5310,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5407,7 +5407,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -5507,7 +5507,7 @@
                       "type": "number",
                       "format": "float",
                       "description": "Time spent to process this request",
-                      "example": 1.25
+                      "example": 0.002
                     },
                     "status": {
                       "type": "string",
@@ -8135,7 +8135,7 @@
             },
             "example": [
               {
-                "id": 43,
+                "id": 40,
                 "order_value": 23,
                 "payload": {
                   "city": "London",
@@ -8149,7 +8149,7 @@
                 ]
               },
               {
-                "id": 44,
+                "id": 41,
                 "order_value": 23,
                 "payload": {
                   "city": "Paris",
@@ -9237,7 +9237,7 @@
         "example": {
           "checksum": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0",
           "creation_time": "2022-08-04T10:49:10",
-          "name": "prefix-cache",
+          "name": "my-collection-3766212330831337-2024-07-22-08-31-55.snapshot",
           "size": 1000000
         }
       },

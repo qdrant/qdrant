@@ -22,7 +22,7 @@ default:
             type: number
             format: float
             description: Time spent to process this request
-            example: 1.25
+            example: 0.002
           status:
             type: string
             example: ok
@@ -53,7 +53,7 @@ default:
             type: number
             format: float
             description: Time spent to process this request
-            example: 1.25
+            example: 0.002
           status:
             type: string
             example: ok

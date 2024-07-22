@@ -407,14 +407,14 @@ fn points_example() -> Vec<api::rest::Record> {
 
     vec![
         api::rest::Record {
-            id: PointIdType::NumId(43),
+            id: PointIdType::NumId(40),
             payload: Some(Payload(payload_map_1)),
             vector: Some(VectorStruct::Single(vec![0.875, 0.140625, 0.897_6])),
             shard_key: Some("region_1".into()),
             order_value: Some(23.into()),
         },
         api::rest::Record {
-            id: PointIdType::NumId(44),
+            id: PointIdType::NumId(41),
             payload: Some(Payload(payload_map_2)),
             vector: Some(VectorStruct::Single(vec![0.75, 0.640625, 0.8945])),
             shard_key: Some("region_1".into()),

@@ -84,7 +84,7 @@ pub struct SnapshotRecover {
 
 fn snapshot_description_example() -> SnapshotDescription {
     SnapshotDescription {
-        name: "prefix-cache".to_string(),
+        name: "my-collection-3766212330831337-2024-07-22-08-31-55.snapshot".to_string(),
         creation_time: Some(NaiveDateTime::from_str("2022-08-04T10:49:10").unwrap()),
         size: 1_000_000,
         checksum: Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0".to_string()),
