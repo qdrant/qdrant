@@ -43,6 +43,16 @@ def test_resharding(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
+    # We cannot reshard down now, because we only have one shard
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "start_resharding": {
+                "direction": "down"
+            }
+        })
+    assert r.status_code == 400
+    assert r.json()["status"]["error"] == "Bad request: cannot remove shard 0 by resharding down, it is the last shard"
+
     # Reshard up 3 times in sequence
     for shard_count in range(2, 5):
         # Start resharding
