@@ -272,7 +272,7 @@ where
     }
 
     /// Peeks each row, then maps IDs to the peeked rows in which each ID appears
-    fn heads_map(&mut self) -> HashMap<Id, Vec<usize>> {
+    fn heads_map(&mut self) -> HashMap<Id, TinyVec<[usize; EXPECTED_REPLICAS]>> {
         let capacity = self.resolved_iters.len();
         self.peek_heads()
             .fold(HashMap::with_capacity(capacity), |mut map, (row, id)| {
@@ -559,6 +559,10 @@ mod test {
         [1, 2, 3, 4, 6, 7]
     }
 
+    fn expected_5_all() -> [i32; 0] {
+        []
+    }
+
     #[test]
     fn resolve_0_all() {
         resolve_0(ResolveCondition::All);
@@ -627,6 +631,11 @@ mod test {
     #[test]
     fn resolve_5_majority() {
         test_resolve_simple(input_5(), expected_5_majority(), ResolveCondition::Majority);
+    }
+
+    #[test]
+    fn resolve_5_all() {
+        test_resolve_simple(input_5(), expected_5_all(), ResolveCondition::All);
     }
 
     fn test_resolve<T, E>(input: Vec<T>, expected: E, condition: ResolveCondition)
