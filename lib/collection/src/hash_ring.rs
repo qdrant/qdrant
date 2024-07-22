@@ -58,12 +58,24 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     pub fn add(&mut self, shard: T) {
         match self {
             Self::Single(ring) => ring.add(shard),
-            Self::Resharding { old, new } => {
-                if new.get(&shard).is_none() {
-                    old.add(shard);
+            Self::Resharding { new, old: _ } => {
+                if !new.contains_shard(&shard) {
+                    // The new shard is already added when switching to a resharding hash ring
+                    debug_assert!(
+                        false,
+                        "should never add new shard to hash ring during resharding",
+                    );
+
                     new.add(shard);
                 }
             }
+        }
+    }
+
+    pub fn remove(&mut self, shard: &T) -> bool {
+        match self {
+            Self::Single(ring) => ring.remove(shard),
+            Self::Resharding { old, new } => old.remove(shard) | new.remove(shard),
         }
     }
 
@@ -83,7 +95,8 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
             }
             ReshardingDirection::Down => {
                 assert!(new.len() > 1, "cannot remove last shard from hash ring");
-                new.remove(&shard);
+                let removed = new.remove(&shard);
+                debug_assert!(removed, "did not remove given shard from new hash ring");
             }
         }
     }
@@ -259,6 +272,17 @@ impl<T: Hash + Copy> Inner<T> {
                 }
                 removed
             }
+        }
+    }
+
+    /// Check whether this hash ring contains the given shard.
+    pub fn contains_shard(&self, shard: &T) -> bool
+    where
+        T: std::cmp::PartialEq,
+    {
+        match self {
+            Inner::Raw(ring) => ring.clone().into_iter().any(|node| node == *shard),
+            Inner::Fair { ring, .. } => ring.clone().into_iter().any(|(node, _)| node == *shard),
         }
     }
 
