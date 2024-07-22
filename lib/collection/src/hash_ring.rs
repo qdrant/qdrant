@@ -58,9 +58,14 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
     pub fn add(&mut self, shard: T) {
         match self {
             Self::Single(ring) => ring.add(shard),
-            Self::Resharding { old, new } => {
+            Self::Resharding { new, old: _ } => {
                 if !new.contains_shard(&shard) {
-                    old.add(shard);
+                    // The new shard is already added when switching to a resharding hash ring
+                    debug_assert!(
+                        false,
+                        "should never add new shard to hash ring during resharding",
+                    );
+
                     new.add(shard);
                 }
             }
