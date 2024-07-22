@@ -36,8 +36,8 @@ pub unsafe fn neon_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..len % 16 {
-            let v1 = *ptr1 as i32;
-            let v2 = *ptr2 as i32;
+            let v1 = i32::from(*ptr1);
+            let v2 = i32::from(*ptr2);
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
             remainder_score += (v1 - v2).abs();
