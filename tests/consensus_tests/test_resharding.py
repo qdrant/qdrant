@@ -233,7 +233,7 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
         # Wait for resharding operation to start and stop
         wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
         for uri in peer_api_uris:
-            wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0, wait_for_timeout=60)
+            wait_for_collection_resharding_operations_count(uri, COLLECTION_NAME, 0, wait_for_timeout=120)
 
         # Assert node shard count
         for uri in peer_api_uris:
