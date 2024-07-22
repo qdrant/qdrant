@@ -508,6 +508,15 @@ enum Fusion {
     DBSF = 1; // Distribution-Based Score Fusion
 }
 
+/// Sample points from the collection
+///
+/// Available sampling methods:
+///
+/// * `random` - Random sampling
+enum Sample {
+    RANDOM = 0;
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -516,6 +525,7 @@ message Query {
     ContextInput context = 4; // Return points that live in positive areas.
     OrderBy order_by = 5; // Order the points by a payload field.
     Fusion fusion = 6; // Fuse the results of multiple prefetches.
+    Sample sample = 7; // Sample points from the collection.
   }
 }
 

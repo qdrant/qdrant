@@ -242,6 +242,7 @@
     - [Fusion](#qdrant-Fusion)
     - [ReadConsistencyType](#qdrant-ReadConsistencyType)
     - [RecommendStrategy](#qdrant-RecommendStrategy)
+    - [Sample](#qdrant-Sample)
     - [UpdateStatus](#qdrant-UpdateStatus)
     - [WriteOrderingType](#qdrant-WriteOrderingType)
   
@@ -3163,6 +3164,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | context | [ContextInput](#qdrant-ContextInput) |  | Return points that live in positive areas. |
 | order_by | [OrderBy](#qdrant-OrderBy) |  | Order the points by a payload field. |
 | fusion | [Fusion](#qdrant-Fusion) |  | Fuse the results of multiple prefetches. |
+| sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
 
 
 
@@ -4196,6 +4198,21 @@ How to use positive and negative vectors to find the results, default is `Averag
 | ---- | ------ | ----------- |
 | AverageVector | 0 | Average positive and negative vectors and create a single query with the formula `query = avg_pos &#43; avg_pos - avg_neg`. Then performs normal search. |
 | BestScore | 1 | Uses custom search objective. Each candidate is compared against all examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. If the `max_neg_score` is chosen then it is squared and negated. |
+
+
+
+<a name="qdrant-Sample"></a>
+
+### Sample
+Sample points from the collection
+/
+/ Available sampling methods:
+/
+/ * `random` - Random sampling
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| RANDOM | 0 |  |
 
 
 

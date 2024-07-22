@@ -11991,6 +11991,9 @@
           },
           {
             "$ref": "#/components/schemas/FusionQuery"
+          },
+          {
+            "$ref": "#/components/schemas/SampleQuery"
           }
         ]
       },
@@ -12158,6 +12161,23 @@
         "enum": [
           "rrf",
           "dbsf"
+        ]
+      },
+      "SampleQuery": {
+        "type": "object",
+        "required": [
+          "sample"
+        ],
+        "properties": {
+          "sample": {
+            "$ref": "#/components/schemas/Sample"
+          }
+        }
+      },
+      "Sample": {
+        "type": "string",
+        "enum": [
+          "random"
         ]
       },
       "QueryRequestBatch": {

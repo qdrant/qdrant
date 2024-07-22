@@ -51,6 +51,11 @@ pub enum Fusion {
     Dbsf,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Sample {
+    Random,
+}
+
 /// Same as `Query`, but with the resolved vector references.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScoringQuery {
@@ -62,23 +67,26 @@ pub enum ScoringQuery {
 
     /// Order by a payload field
     OrderBy(OrderBy),
+
+    /// Sample points
+    Sample(Sample),
 }
 
 impl ScoringQuery {
     pub fn needs_intermediate_results(&self) -> bool {
         match self {
-            ScoringQuery::Fusion(fusion) => match fusion {
+            Self::Fusion(fusion) => match fusion {
                 Fusion::Rrf => true,
                 Fusion::Dbsf => true,
             },
-            ScoringQuery::Vector(_) | ScoringQuery::OrderBy(_) => false,
+            Self::Vector(_) | Self::OrderBy(_) | Self::Sample(_) => false,
         }
     }
 
     /// Get the vector name if it is scored against a vector
     pub fn get_vector_name(&self) -> Option<&str> {
         match self {
-            ScoringQuery::Vector(query) => Some(query.get_vector_name()),
+            Self::Vector(query) => Some(query.get_vector_name()),
             _ => None,
         }
     }
@@ -87,26 +95,30 @@ impl ScoringQuery {
     pub fn order(
         opt_self: Option<&Self>,
         collection_params: &CollectionParams,
-    ) -> CollectionResult<Order> {
+    ) -> CollectionResult<Option<Order>> {
         let order = match opt_self {
             Some(scoring_query) => match scoring_query {
                 ScoringQuery::Vector(query_enum) => {
                     if query_enum.is_distance_scored() {
-                        collection_params
-                            .get_distance(query_enum.get_vector_name())?
-                            .distance_order()
+                        Some(
+                            collection_params
+                                .get_distance(query_enum.get_vector_name())?
+                                .distance_order(),
+                        )
                     } else {
-                        Order::LargeBetter
+                        Some(Order::LargeBetter)
                     }
                 }
                 ScoringQuery::Fusion(fusion) => match fusion {
-                    Fusion::Rrf | Fusion::Dbsf => Order::LargeBetter,
+                    Fusion::Rrf | Fusion::Dbsf => Some(Order::LargeBetter),
                 },
-                ScoringQuery::OrderBy(order_by) => Order::from(order_by.direction()),
+                ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
+                // Random sample does not require ordering
+                ScoringQuery::Sample(Sample::Random) => None,
             },
             None => {
                 // Order by ID
-                Order::SmallBetter
+                Some(Order::SmallBetter)
             }
         };
         Ok(order)
@@ -285,10 +297,22 @@ impl TryFrom<i32> for Fusion {
 
     fn try_from(fusion: i32) -> Result<Self, Self::Error> {
         let fusion = api::grpc::qdrant::Fusion::from_i32(fusion).ok_or_else(|| {
-            tonic::Status::invalid_argument(format!("invalid read fusion type value {fusion}",))
+            tonic::Status::invalid_argument(format!("invalid fusion type value {fusion}",))
         })?;
 
         Ok(Fusion::from(fusion))
+    }
+}
+
+impl TryFrom<i32> for Sample {
+    type Error = tonic::Status;
+
+    fn try_from(sample: i32) -> Result<Self, Self::Error> {
+        let sample = api::grpc::qdrant::Sample::from_i32(sample).ok_or_else(|| {
+            tonic::Status::invalid_argument(format!("invalid sample type value {sample}",))
+        })?;
+
+        Ok(Sample::from(sample))
     }
 }
 
@@ -310,6 +334,22 @@ impl From<Fusion> for api::grpc::qdrant::Fusion {
     }
 }
 
+impl From<Sample> for api::grpc::qdrant::Sample {
+    fn from(value: Sample) -> Self {
+        match value {
+            Sample::Random => api::grpc::qdrant::Sample::Random,
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::Sample> for Sample {
+    fn from(value: api::grpc::qdrant::Sample) -> Self {
+        match value {
+            api::grpc::qdrant::Sample::Random => Sample::Random,
+        }
+    }
+}
+
 impl ScoringQuery {
     fn try_from_grpc_query(
         query: grpc::query_shard_points::Query,
@@ -327,6 +367,9 @@ impl ScoringQuery {
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
+            }
+            grpc::query_shard_points::query::Score::Sample(sample) => {
+                ScoringQuery::Sample(Sample::try_from(sample)?)
             }
         };
 
@@ -370,6 +413,9 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             },
             ScoringQuery::OrderBy(order_by) => Self {
                 score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
+            },
+            ScoringQuery::Sample(sample) => Self {
+                score: Some(Score::Sample(api::grpc::qdrant::Sample::from(sample) as i32)),
             },
         }
     }
