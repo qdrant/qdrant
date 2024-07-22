@@ -31,7 +31,7 @@ pub unsafe fn neon_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
             let v2 = *ptr2;
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
-            remainder_score += (v1 as i32) * (v2 as i32);
+            remainder_score += i32::from(v1) * i32::from(v2);
         }
         score += remainder_score as f32;
     }

@@ -40,6 +40,7 @@ impl DebuggerState {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(clippy::unused_self))]
     pub fn get_config(&self) -> DebuggerConfig {
         let pyroscope_config = {
             #[cfg(target_os = "linux")]
@@ -58,6 +59,7 @@ impl DebuggerState {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(clippy::unused_self))]
     pub fn apply_config_patch(&self, patch: DebugConfigPatch) -> bool {
         #[cfg(target_os = "linux")]
         {
