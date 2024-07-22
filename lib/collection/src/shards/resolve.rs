@@ -115,7 +115,7 @@ struct Resolver<'a, Item, Id, Ident, Cmp> {
 impl<'a, Item, Id, Ident, Cmp> Resolver<'a, Item, Id, Ident, Cmp>
 where
     Id: Eq + hash::Hash,
-    Ident: Fn(&Item) -> Id + Clone,
+    Ident: Fn(&Item) -> Id + Copy,
     Cmp: Fn(&Item, &Item) -> bool,
 {
     pub fn resolve(
@@ -129,8 +129,7 @@ where
             ResolveCondition::Majority => items.len() / 2 + 1,
         };
 
-        let mut resolver =
-            Resolver::new(items.first().map_or(0, Vec::len), identify.clone(), compare);
+        let mut resolver = Resolver::new(items.first().map_or(0, Vec::len), identify, compare);
         resolver.add_all(&items);
 
         // Select coordinates of accepted items, avoiding copying
