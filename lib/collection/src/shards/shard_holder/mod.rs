@@ -209,8 +209,7 @@ impl ShardHolder {
                 .add(*shard_id);
         }
 
-        // Restore resharding hash ring
-        // Only restore if sharding is active, and we haven't reached WriteHashRingCommitted yet
+        // Restore resharding hash ring if resharding is active and haven't reached WriteHashRingCommitted yet
         if let Some(state) = self.resharding_state.read().deref() {
             if state.stage < ReshardStage::WriteHashRingCommitted {
                 let ring = rings
@@ -704,11 +703,9 @@ impl ShardHolder {
             }
         }
 
-        // After loading shards, recover the resharding hash ring state
-        if let Some(state) = self.resharding_state.read().clone() {
-            self.rings
-                .entry(state.shard_key)
-                .and_modify(|ring| ring.start_resharding(state.shard_id, state.direction));
+        // If resharding, rebuild the hash rings because they'll be messed up
+        if self.resharding_state.read().is_some() {
+            self.rebuild_rings();
         }
     }
 
