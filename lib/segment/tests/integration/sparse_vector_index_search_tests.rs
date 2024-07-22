@@ -84,7 +84,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
 
     // compares results with and without filters
     // expects the filter to have no effect on the results because the filter matches everything
-    for query in query_vectors.into_iter() {
+    for query in query_vectors {
         let maximum_number_of_results = sparse_vector_index.max_result_count(&query);
         // get all results minus 10 to force a bit of pruning
         let top = max(1, maximum_number_of_results.saturating_sub(10));

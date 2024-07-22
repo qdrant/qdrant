@@ -270,7 +270,7 @@ impl GeoMapIndex {
 
         let mut current_region = GeoHash::default();
 
-        for (region, size) in large_regions.into_iter() {
+        for (region, size) in large_regions {
             if !current_region.starts_with(region.as_str()) {
                 current_region = region.clone();
                 edge_region.push((region, size));

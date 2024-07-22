@@ -127,6 +127,7 @@ tikv-jemallocator = "0.6"
 [workspace.lints.clippy]
 doc_link_with_quotes = "warn"
 enum_glob_use = "warn"
+explicit_into_iter_loop = "warn"
 filter_map_next = "warn"
 flat_map_option = "warn"
 from_iter_instead_of_collect = "warn"

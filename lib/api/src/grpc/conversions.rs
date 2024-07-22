@@ -93,7 +93,7 @@ pub fn json_path_from_proto(a: &str) -> Result<JsonPath, Status> {
 
 pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {
     let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    for (k, v) in proto.into_iter() {
+    for (k, v) in proto {
         map.insert(k, proto_to_json(v)?);
     }
     Ok(map.into())
@@ -115,14 +115,14 @@ fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
             Kind::BoolValue(b) => Ok(serde_json::Value::Bool(b)),
             Kind::StructValue(s) => {
                 let mut map = serde_json::Map::new();
-                for (k, v) in s.fields.into_iter() {
+                for (k, v) in s.fields {
                     map.insert(k, proto_to_json(v)?);
                 }
                 Ok(serde_json::Value::Object(map))
             }
             Kind::ListValue(l) => {
                 let mut list = Vec::new();
-                for v in l.values.into_iter() {
+                for v in l.values {
                     list.push(proto_to_json(v)?);
                 }
                 Ok(serde_json::Value::Array(list))

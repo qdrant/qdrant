@@ -320,7 +320,7 @@ mod test {
 
         let mut removed = Vec::new();
 
-        for action in actions.into_iter() {
+        for action in actions {
             let offset = removed
                 .iter()
                 .filter(|&&removed| removed <= action.index())

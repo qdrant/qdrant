@@ -814,7 +814,7 @@ impl SegmentEntry for ProxySegment {
 
         let mut vector_data = wrapped_info.vector_data;
 
-        for (key, info) in write_info.vector_data.into_iter() {
+        for (key, info) in write_info.vector_data {
             vector_data
                 .entry(key)
                 .and_modify(|wrapped_info| {

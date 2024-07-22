@@ -535,7 +535,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .unwrap();
 
     ///////// Test single-valued fields ///////////
-    for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY].into_iter() {
+    for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY] {
         let result_asc = collection
             .scroll_by(
                 ScrollRequestInternal {

@@ -202,7 +202,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
 
         let mut collections_names = Vec::new();
         let mut vector_retrieves = Vec::new();
-        for (collection_name, reference_vectors_ids) in self.ids_per_collection.into_iter() {
+        for (collection_name, reference_vectors_ids) in self.ids_per_collection {
             collections_names.push(collection_name);
             let points: Vec<_> = reference_vectors_ids.into_iter().collect();
             let vector_names: Vec<_> = self

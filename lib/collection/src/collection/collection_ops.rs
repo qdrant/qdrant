@@ -319,7 +319,7 @@ impl Collection {
                     shard_key: shard_to_key.get(&shard_id).cloned(),
                 })
             }
-            for (peer_id, state) in replica_set.peers().into_iter() {
+            for (peer_id, state) in replica_set.peers() {
                 if peer_id == replica_set.this_peer_id() {
                     continue;
                 }
