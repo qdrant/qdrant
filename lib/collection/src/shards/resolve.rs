@@ -290,7 +290,7 @@ where
         debug_assert!(row_ids.len() >= self.resolution_count);
 
         let mut merged_item = None;
-        for (position, row) in row_ids.into_iter().with_position() {
+        for (position, row) in row_ids.iter().with_position() {
             match position {
                 Position::First => {
                     // use this one to return
