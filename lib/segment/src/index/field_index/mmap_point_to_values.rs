@@ -225,24 +225,20 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         point_id: PointOffsetType,
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
     ) -> bool {
-        if point_id < self.header.points_count as PointOffsetType {
-            self.get_range(point_id)
-                .map(|range| {
-                    let mut value_offset = range.start as usize;
-                    for _ in 0..range.count {
-                        let bytes = self.mmap.get(value_offset..).unwrap();
-                        let value = T::read_from_mmap(bytes).unwrap();
-                        if check_fn(value.clone()) {
-                            return true;
-                        }
-                        value_offset += T::mmaped_size(value);
+        self.get_range(point_id)
+            .map(|range| {
+                let mut value_offset = range.start as usize;
+                for _ in 0..range.count {
+                    let bytes = self.mmap.get(value_offset..).unwrap();
+                    let value = T::read_from_mmap(bytes).unwrap();
+                    if check_fn(value.clone()) {
+                        return true;
                     }
-                    false
-                })
-                .unwrap_or(false)
-        } else {
-            false
-        }
+                    value_offset += T::mmaped_size(value);
+                }
+                false
+            })
+            .unwrap_or(false)
     }
 
     pub fn get_values<'a>(
