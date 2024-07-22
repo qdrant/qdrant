@@ -67,6 +67,13 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
         }
     }
 
+    pub fn remove(&mut self, shard: &T) -> bool {
+        match self {
+            Self::Single(ring) => ring.remove(shard),
+            Self::Resharding { old, new } => old.remove(shard) | new.remove(shard),
+        }
+    }
+
     pub fn start_resharding(&mut self, shard: T, direction: ReshardingDirection) {
         if let Self::Single(ring) = self {
             let (old, new) = (ring.clone(), ring.clone());
@@ -83,7 +90,8 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
             }
             ReshardingDirection::Down => {
                 assert!(new.len() > 1, "cannot remove last shard from hash ring");
-                new.remove(&shard);
+                let removed = new.remove(&shard);
+                debug_assert!(removed, "did not remove given shard from new hash ring");
             }
         }
     }

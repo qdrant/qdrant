@@ -1,6 +1,7 @@
 mod resharding;
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -206,6 +207,36 @@ impl ShardHolder {
                 .entry(shard_key)
                 .or_insert_with(HashRingRouter::single)
                 .add(*shard_id);
+        }
+
+        // Restore resharding hash ring
+        // Only restore if sharding is active, and we haven't reached WriteHashRingCommitted yet
+        if let Some(state) = self.resharding_state.read().deref() {
+            if state.stage < ReshardStage::WriteHashRingCommitted {
+                let ring = rings
+                    .get_mut(&state.shard_key)
+                    .expect("must have hash ring for current resharding shard key");
+                match state.direction {
+                    // Start resharding up on hash ring, restore to before resharding, then start
+                    // - from: Single { all shards }
+                    // - to:   Resharding { old: all except new shard, new: all shards }
+                    ReshardingDirection::Up => {
+                        let removed = ring.remove(&state.shard_id);
+                        debug_assert!(
+                            removed,
+                            "expected to remove resharding shard from rebuilt hash ring"
+                        );
+                        ring.start_resharding(state.shard_id, state.direction);
+                    }
+
+                    // Start resharding down on hash ring
+                    // - from: Single { all shards }
+                    // - to:   Resharding { old: all shards, new: all except old shard }
+                    ReshardingDirection::Down => {
+                        ring.start_resharding(state.shard_id, state.direction);
+                    }
+                }
+            }
         }
 
         self.rings = rings;
