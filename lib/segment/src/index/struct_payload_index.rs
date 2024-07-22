@@ -11,6 +11,8 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
+use super::field_index::index_selector::index_builder_selector;
+use super::field_index::FieldIndexBuilderTrait as _;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
@@ -175,19 +177,23 @@ impl StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone(), true);
-        for index in &field_indexes {
-            index.recreate()?;
+        let mut builders = index_builder_selector(field, &payload_schema, self.db.clone());
+        for index in &mut builders {
+            index.init()?;
         }
 
         payload_storage.iter(|point_id, point_payload| {
             let field_value = &point_payload.get_value(field);
-            for field_index in field_indexes.iter_mut() {
-                field_index.add_point(point_id, field_value)?;
+            for builder in builders.iter_mut() {
+                builder.add_point(point_id, field_value)?;
             }
             Ok(true)
         })?;
-        Ok(field_indexes)
+
+        builders
+            .into_iter()
+            .map(|builder| builder.finalize())
+            .collect()
     }
 
     fn build_and_save(

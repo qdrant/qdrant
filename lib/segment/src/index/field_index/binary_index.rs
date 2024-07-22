@@ -3,9 +3,13 @@ use std::sync::Arc;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
+use serde_json::Value;
 
 use self::memory::{BinaryItem, BinaryMemory};
-use super::{CardinalityEstimation, PayloadFieldIndex, PrimaryCondition, ValueIndexer};
+use super::{
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PrimaryCondition,
+    ValueIndexer,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -178,6 +182,10 @@ impl BinaryIndex {
         }
     }
 
+    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> BinaryIndexBuilder {
+        BinaryIndexBuilder(Self::new(db, field_name))
+    }
+
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_binary")
     }
@@ -212,6 +220,24 @@ impl BinaryIndex {
     /// Check if the point has a false value
     pub fn values_has_false(&self, point_id: PointOffsetType) -> bool {
         self.memory.get(point_id).has_false()
+    }
+}
+
+pub struct BinaryIndexBuilder(BinaryIndex);
+
+impl FieldIndexBuilderTrait for BinaryIndexBuilder {
+    type FieldIndexType = BinaryIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        self.0.recreate()
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
 
