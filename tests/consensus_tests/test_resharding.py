@@ -43,13 +43,7 @@ def test_resharding(shard_key, sharding_method, tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris,
     )
     if shard_key is not None:
-        create_shard_key(
-                peer_api_uris[0],
-                COLLECTION_NAME,
-                shard_key,
-                shard_number=1,
-                replication_factor=3,
-        )
+        create_shard_key(peer_api_uris[0], COLLECTION_NAME, shard_key, shard_number=1, replication_factor=3)
     upsert_random_points(peer_api_uris[0], num_points, shard_key=shard_key)
 
     sleep(1)
@@ -688,7 +682,15 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
 # On a static collection, this performs resharding. It kills and restarts the
 # driving peer at various stages. On restart, it should finish resharding as if
 # nothing happened.
-def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
+@pytest.mark.parametrize(
+    "shard_key,sharding_method", [
+        # Test with normal sharding
+        (None, None),
+        # Test with custom sharding
+        ("test", "custom"),
+    ],
+)
+def test_resharding_resume_on_restart(shard_key, sharding_method, tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 2500
@@ -707,12 +709,14 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
     first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
-    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3, sharding_method=sharding_method)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris,
     )
-    upsert_random_points(peer_api_uris[0], num_points)
+    if shard_key is not None:
+        create_shard_key(peer_api_uris[0], COLLECTION_NAME, shard_key, shard_number=1, replication_factor=3)
+    upsert_random_points(peer_api_uris[0], num_points, shard_key=shard_key)
 
     sleep(1)
 
@@ -726,7 +730,8 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
                 "direction": "up",
-                "peer_id": first_peer_id
+                "peer_id": first_peer_id,
+                "shard_key": shard_key,
             }
         })
     assert_http_ok(r)
@@ -764,6 +769,7 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
                 "limit": 999999999,
                 "with_vectors": True,
                 "with_payload": True,
+                "shard_key": shard_key,
             }
         )
         assert_http_ok(r)
