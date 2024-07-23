@@ -111,6 +111,25 @@ def drop_collection(peer_url, collection="test_collection", timeout=10, headers=
     assert_http_ok(r_delete)
 
 
+def create_shard_key(
+    peer_url,
+    collection,
+    shard_key,
+    shard_number=1,
+    replication_factor=1,
+    placement=None,
+    timeout=10
+):
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection}/shards?timeout={timeout}", json={
+            "shard_key": shard_key,
+            "shards_number": shard_number,
+            "replication_factor": replication_factor,
+            "placement": placement,
+        })
+    assert_http_ok(r_batch)
+
+
 def create_field_index(
     peer_url,
     collection="test_collection",
