@@ -800,7 +800,7 @@ def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
 def test_resharding_restart_on_remove_peer_during_replicate(tmp_path: pathlib.Path, peer_to_remove: str):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
-    # Wait for `stream_records` shard tranfer (during `replicate` resharding stage)
+    # Wait for `stream_records` shard transfer (during `replicate` resharding stage)
     info = wait_for_resharding_shard_transfer_info(peer_api_uris[0], 'replicate', 'stream_records')
 
     # Remove peer
