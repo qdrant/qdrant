@@ -100,10 +100,6 @@ impl FullTextIndex {
         }
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
@@ -149,7 +145,7 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
     type FieldIndexType = FullTextIndex;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.recreate()
+        self.0.db_wrapper.recreate_column_family()
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
@@ -309,9 +305,9 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = FullTextIndex::new(db, config.clone(), "text", true);
-
-            index.recreate().unwrap();
+            let mut index = FullTextIndex::builder(db, config.clone(), "text")
+                .make_empty()
+                .unwrap();
 
             for (idx, payload) in payloads.iter().enumerate() {
                 index.add_point(idx as PointOffsetType, &[payload]).unwrap();

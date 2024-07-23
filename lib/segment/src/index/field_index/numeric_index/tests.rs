@@ -17,7 +17,7 @@ fn get_index() -> (TempDir, NumericIndexInner<f64>) {
         .unwrap();
     let db = open_db_with_existing_cf(temp_dir.path()).unwrap();
     let index: NumericIndexInner<_> = NumericIndexInner::new(db, COLUMN_NAME, true);
-    index.recreate().unwrap();
+    index.get_db_wrapper().recreate_column_family().unwrap();
     (temp_dir, index)
 }
 

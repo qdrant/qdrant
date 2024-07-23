@@ -102,10 +102,6 @@ impl GeoMapIndex {
         format!("{field}_geo")
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper().recreate_column_family()
-    }
-
     fn encode_db_key(value: &str, idx: PointOffsetType) -> String {
         format!("{value}/{idx}")
     }
@@ -543,9 +539,9 @@ mod tests {
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
-        let mut index = GeoMapIndex::new(db.clone(), FIELD_NAME, true);
-
-        index.recreate().unwrap();
+        let mut index = GeoMapIndex::builder(db.clone(), FIELD_NAME)
+            .make_empty()
+            .unwrap();
 
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
@@ -889,9 +885,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-        let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
-
-        index.recreate().unwrap();
+        let mut index = GeoMapIndex::builder(db, FIELD_NAME).make_empty().unwrap();
 
         let r_meters = 100.0;
         let geo_values = json!([
@@ -973,9 +967,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-        let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
-
-        index.recreate().unwrap();
+        let mut index = GeoMapIndex::builder(db, FIELD_NAME).make_empty().unwrap();
 
         let geo_values = json!([
             {
@@ -1020,9 +1012,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
-
-            index.recreate().unwrap();
+            let mut index = GeoMapIndex::builder(db, FIELD_NAME).make_empty().unwrap();
 
             let geo_values = json!([
                 {
@@ -1067,8 +1057,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
-            index.recreate().unwrap();
+            let mut index = GeoMapIndex::builder(db, FIELD_NAME).make_empty().unwrap();
 
             let geo_values = json!([
                 {
@@ -1185,9 +1174,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
-
-            index.recreate().unwrap();
+            let mut index = GeoMapIndex::builder(db, FIELD_NAME).make_empty().unwrap();
 
             // Index BERLIN
             let geo_values = json!([
