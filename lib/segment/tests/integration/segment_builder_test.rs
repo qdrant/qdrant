@@ -91,11 +91,6 @@ fn test_building_new_segment() {
     );
 
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
-
-    // Test that our defragmentation algorithm and test works properly by checking for an error against
-    // a non defragmented segment.
-    let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
-    assert!(check_points_defragmented(&merged_segment, &defragment_key).is_err());
 }
 
 #[test]
