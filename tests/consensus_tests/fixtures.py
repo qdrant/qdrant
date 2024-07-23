@@ -130,6 +130,21 @@ def create_shard_key(
     assert_http_ok(r_batch)
 
 
+def delete_shard_key(
+    peer_url,
+    collection,
+    shard_key,
+    timeout=10
+):
+    r_batch = requests.post(
+        f"{peer_url}/collections/{collection}/shards/delete?timeout={timeout}",
+        json={
+            "shard_key": shard_key,
+        }
+    )
+    assert_http_ok(r_batch)
+
+
 def create_field_index(
     peer_url,
     collection="test_collection",
