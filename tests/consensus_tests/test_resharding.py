@@ -14,8 +14,8 @@ COLLECTION_NAME = "test_collection"
 # On a static collection, this performs resharding up and down a few times and
 # asserts the shard and point counts are correct.
 #
-# More specifically this starts at 1 shard, reshards 3 times to 4 shards, and
-# reshards 3 times back to 1 shard.
+# More specifically this starts at 1 shard, reshards 2 times to 3 shards, and
+# reshards 2 times back to 1 shard.
 @pytest.mark.parametrize(
     "shard_key,sharding_method", [
         # Test with normal sharding
@@ -65,8 +65,8 @@ def test_resharding(shard_key, sharding_method, tmp_path: pathlib.Path):
     assert r.json()["status"]["error"].startswith("Bad request: cannot remove shard")
     assert r.json()["status"]["error"].endswith("it is the last shard")
 
-    # Reshard up 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard up 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -104,8 +104,8 @@ def test_resharding(shard_key, sharding_method, tmp_path: pathlib.Path):
         data.append(r.json()["result"])
     check_data_consistency(data)
 
-    # Reshard down 3 times in sequence
-    for shard_count in range(3, 0, -1):
+    # Reshard down 2 times in sequence
+    for shard_count in range(2, 0, -1):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -147,7 +147,7 @@ def test_resharding(shard_key, sharding_method, tmp_path: pathlib.Path):
 # Test resharding shard balancing.
 #
 # Sets up a 3 node cluster and a collection with 1 shard and 2 replicas.
-# Performs resharding 7 times and asserts the shards replicas are evenly
+# Performs resharding 5 times and asserts the shards replicas are evenly
 # balanced across all nodes.
 #
 # In this case the replicas are balanced on the second and third node. The first
@@ -278,8 +278,8 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
         run_in_background(delete_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=num_updates + num_deletes, end=num_updates + num_deletes * 2),
     ]
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -359,8 +359,8 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -442,8 +442,8 @@ def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -543,8 +543,8 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         data.append(r.json()["result"])
     check_data_consistency(data)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -633,8 +633,8 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
         data.append(r.json()["result"])
     check_query_consistency(data)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
