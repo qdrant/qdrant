@@ -843,7 +843,7 @@ def test_resharding_restart_on_remove_src_shard_during_replicate(tmp_path: pathl
     resharding_restart_on_remove_shard_during_replicate(tmp_path, 'from')
 
 # Test that resharding is automatically restarted, when we remove new shard during replication
-@pytest.mark.skip(reason="resharding detects removing destination shard of replication shard transfer as successfull transfer")
+@pytest.mark.skip(reason="resharding detects removing destination shard of replication shard transfer as successful transfer")
 def test_resharding_restart_on_remove_dst_shard_during_replicate(tmp_path: pathlib.Path):
     resharding_restart_on_remove_shard_during_replicate(tmp_path, 'to')
 
