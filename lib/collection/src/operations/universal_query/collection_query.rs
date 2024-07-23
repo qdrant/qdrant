@@ -969,7 +969,9 @@ pub mod from_grpc {
             let reco_query = RecoQuery::new(positives, negatives);
 
             let strategy = strategy
-                .and_then(grpc::RecommendStrategy::from_i32)
+                .and_then(|x|
+                    // XXX: Invalid values silently converted to None
+                    grpc::RecommendStrategy::try_from(x).ok())
                 .map(RecommendStrategy::from)
                 .unwrap_or_default();
 

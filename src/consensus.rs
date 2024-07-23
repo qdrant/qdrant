@@ -15,7 +15,6 @@ use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_high_thread_priority;
 use common::defaults;
-use prost::Message as _;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
@@ -1120,7 +1119,8 @@ impl RaftMessageSender {
         let uri = self.uri(peer_id).await?;
 
         let mut bytes = Vec::new();
-        RaftMessage::encode(message, &mut bytes).context("failed to encode Raft message")?;
+        <RaftMessage as prost_for_raft::Message>::encode(message, &mut bytes)
+            .context("failed to encode Raft message")?;
         let grpc_message = GrpcRaftMessage { message: bytes };
 
         let timeout = Duration::from_millis(
