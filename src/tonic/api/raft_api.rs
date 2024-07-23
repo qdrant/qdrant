@@ -30,10 +30,11 @@ impl RaftService {
 #[async_trait]
 impl Raft for RaftService {
     async fn send(&self, mut request: Request<RaftMessageBytes>) -> Result<Response<()>, Status> {
-        let message = <RaftMessage as prost::Message>::decode(&request.get_mut().message[..])
-            .map_err(|err| {
-                Status::invalid_argument(format!("Failed to parse raft message: {err}"))
-            })?;
+        let message =
+            <RaftMessage as prost_for_raft::Message>::decode(&request.get_mut().message[..])
+                .map_err(|err| {
+                    Status::invalid_argument(format!("Failed to parse raft message: {err}"))
+                })?;
         self.message_sender
             .send(consensus::Message::FromPeer(Box::new(message)))
             .await

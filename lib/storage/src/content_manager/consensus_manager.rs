@@ -374,7 +374,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         entry: &RaftEntry,
         raw_node: &mut RawNode<T>,
     ) -> Result<bool, StorageError> {
-        let change: ConfChangeV2 = prost::Message::decode(entry.get_data())?;
+        let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {:?}", conf_state);
