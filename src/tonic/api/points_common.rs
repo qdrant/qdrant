@@ -752,7 +752,7 @@ fn convert_field_type(
     field_index_params: Option<PayloadIndexParams>,
 ) -> Result<Option<PayloadFieldSchema>, Status> {
     let field_type_parsed = field_type
-        .map(FieldType::from_i32)
+        .map(|x| FieldType::try_from(x).ok())
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
 
     let field_schema = match (field_type_parsed, field_index_params) {

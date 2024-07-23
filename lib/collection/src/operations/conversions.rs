@@ -95,14 +95,14 @@ pub fn write_ordering_from_proto(
     let ordering_parsed = match ordering {
         None => api::grpc::qdrant::WriteOrderingType::Weak,
         Some(write_ordering) => {
-            match api::grpc::qdrant::WriteOrderingType::from_i32(write_ordering.r#type) {
-                None => {
+            match api::grpc::qdrant::WriteOrderingType::try_from(write_ordering.r#type) {
+                Err(_) => {
                     return Err(Status::invalid_argument(format!(
                         "cannot convert ordering: {}",
                         write_ordering.r#type
                     )))
                 }
-                Some(res) => res,
+                Ok(res) => res,
             }
         }
     };
@@ -560,8 +560,8 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
 
 fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>, Status> {
     if let Some(datatype_int) = datatype {
-        let grpc_datatype = api::grpc::qdrant::Datatype::from_i32(datatype_int);
-        if let Some(grpc_datatype) = grpc_datatype {
+        let grpc_datatype = api::grpc::qdrant::Datatype::try_from(datatype_int);
+        if let Ok(grpc_datatype) = grpc_datatype {
             match grpc_datatype {
                 api::grpc::qdrant::Datatype::Uint8 => Ok(Some(Datatype::Uint8)),
                 api::grpc::qdrant::Datatype::Float32 => Ok(Some(Datatype::Float32)),
@@ -621,7 +621,9 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                 .transpose()?,
             modifier: sparse_vector_params
                 .modifier
-                .and_then(api::grpc::qdrant::Modifier::from_i32)
+                .and_then(|x|
+                    // XXX: Invalid values silently converted to None
+                    api::grpc::qdrant::Modifier::try_from(x).ok())
                 .map(Modifier::from),
         })
     }
@@ -970,8 +972,8 @@ impl TryFrom<i32> for UpdateStatus {
     type Error = Status;
 
     fn try_from(status: i32) -> Result<Self, Self::Error> {
-        let status = api::grpc::qdrant::UpdateStatus::from_i32(status)
-            .ok_or_else(|| Status::invalid_argument("Malformed UpdateStatus type"))?;
+        let status = api::grpc::qdrant::UpdateStatus::try_from(status)
+            .map_err(|_| Status::invalid_argument("Malformed UpdateStatus type"))?;
 
         let status = match status {
             api::grpc::qdrant::UpdateStatus::Acknowledged => Self::Acknowledged,
@@ -1278,8 +1280,8 @@ impl TryFrom<i32> for ReplicaState {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let replica_state = api::grpc::qdrant::ReplicaState::from_i32(value)
-            .ok_or_else(|| Status::invalid_argument(format!("Unknown replica state: {value}")))?;
+        let replica_state = api::grpc::qdrant::ReplicaState::try_from(value)
+            .map_err(|_| Status::invalid_argument(format!("Unknown replica state: {value}")))?;
         Ok(replica_state.into())
     }
 }
@@ -1657,9 +1659,9 @@ impl TryFrom<i32> for ShardTransferMethod {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        api::grpc::qdrant::ShardTransferMethod::from_i32(value)
+        api::grpc::qdrant::ShardTransferMethod::try_from(value)
             .map(Into::into)
-            .ok_or_else(|| {
+            .map_err(|_| {
                 Status::invalid_argument(format!("Unknown shard transfer method: {value}"))
             })
     }

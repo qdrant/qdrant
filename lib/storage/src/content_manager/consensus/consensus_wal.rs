@@ -2,7 +2,7 @@ use std::fs::create_dir_all;
 use std::path::Path;
 
 use itertools::Itertools;
-use prost::Message;
+use prost_for_raft::Message;
 use protobuf::Message as _;
 use raft::eraftpb::Entry as RaftEntry;
 use wal::Wal;
@@ -41,7 +41,7 @@ impl ConsensusOpWal {
         }
         // Due to snapshots there might be different offsets between wal index and raft entry index
         let offset = first_entry.index - self.0.first_index();
-        <RaftEntry as prost::Message>::decode(
+        <RaftEntry as prost_for_raft::Message>::decode(
             self.0
                 .entry(id - offset)
                 .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
@@ -106,7 +106,7 @@ impl ConsensusOpWal {
         let entry = self
             .0
             .entry(first_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
+            .map(|entry| <RaftEntry as prost_for_raft::Message>::decode(entry.as_ref()));
         Ok(entry.transpose()?)
     }
 
@@ -115,7 +115,7 @@ impl ConsensusOpWal {
         let entry = self
             .0
             .entry(last_index)
-            .map(|entry| <RaftEntry as prost::Message>::decode(entry.as_ref()));
+            .map(|entry| <RaftEntry as prost_for_raft::Message>::decode(entry.as_ref()));
         Ok(entry.transpose()?)
     }
 
