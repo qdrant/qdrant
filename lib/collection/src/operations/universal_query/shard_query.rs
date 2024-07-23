@@ -296,7 +296,7 @@ impl TryFrom<i32> for Fusion {
     type Error = tonic::Status;
 
     fn try_from(fusion: i32) -> Result<Self, Self::Error> {
-        let fusion = api::grpc::qdrant::Fusion::from_i32(fusion).ok_or_else(|| {
+        let fusion = api::grpc::qdrant::Fusion::try_from(fusion).map_err(|_| {
             tonic::Status::invalid_argument(format!("invalid fusion type value {fusion}",))
         })?;
 
@@ -308,7 +308,7 @@ impl TryFrom<i32> for Sample {
     type Error = tonic::Status;
 
     fn try_from(sample: i32) -> Result<Self, Self::Error> {
-        let sample = api::grpc::qdrant::Sample::from_i32(sample).ok_or_else(|| {
+        let sample = api::grpc::qdrant::Sample::try_from(sample).map_err(|_| {
             tonic::Status::invalid_argument(format!("invalid sample type value {sample}",))
         })?;
 
