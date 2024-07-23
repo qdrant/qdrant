@@ -70,13 +70,13 @@ pub trait ValueIndexer {
     ) -> OperationResult<()>;
 
     /// Extract index-able value from payload `Value`
-    fn get_value(&self, value: &Value) -> Option<Self::ValueType>;
+    fn get_value(value: &Value) -> Option<Self::ValueType>;
 
     /// Try to extract index-able values from payload `Value`, even if it is an array
-    fn get_values(&self, value: &Value) -> Vec<Self::ValueType> {
+    fn get_values(value: &Value) -> Vec<Self::ValueType> {
         match value {
-            Value::Array(values) => values.iter().filter_map(|x| self.get_value(x)).collect(),
-            _ => self.get_value(value).map(|x| vec![x]).unwrap_or_default(),
+            Value::Array(values) => values.iter().filter_map(|x| Self::get_value(x)).collect(),
+            _ => Self::get_value(value).map(|x| vec![x]).unwrap_or_default(),
         }
     }
 
@@ -87,10 +87,10 @@ pub trait ValueIndexer {
         for value in payload.iter() {
             match value {
                 Value::Array(values) => {
-                    flatten_values.extend(values.iter().filter_map(|x| self.get_value(x)));
+                    flatten_values.extend(values.iter().filter_map(|x| Self::get_value(x)));
                 }
                 _ => {
-                    if let Some(x) = self.get_value(value) {
+                    if let Some(x) = Self::get_value(value) {
                         flatten_values.push(x);
                     }
                 }
@@ -155,7 +155,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
                 Some(Match::Text(MatchText { text })) => {
                     let query = full_text_index.parse_query(text);
-                    for value in full_text_index.get_values(payload_value) {
+                    for value in FullTextIndex::get_values(payload_value) {
                         let document = full_text_index.parse_document(&value);
                         if query.check_match(&document) {
                             return Some(true);

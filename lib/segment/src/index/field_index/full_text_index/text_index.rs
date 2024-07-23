@@ -184,7 +184,7 @@ impl ValueIndexer for FullTextIndex {
         Ok(())
     }
 
-    fn get_value(&self, value: &Value) -> Option<String> {
+    fn get_value(value: &Value) -> Option<String> {
         if let Value::String(keyword) = value {
             return Some(keyword.to_owned());
         }

@@ -316,7 +316,7 @@ impl ValueIndexer for GeoMapIndex {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<GeoPoint> {
+    fn get_value(value: &Value) -> Option<GeoPoint> {
         match value {
             Value::Object(obj) => {
                 let lon_op = obj.get("lon").and_then(|x| x.as_f64());
