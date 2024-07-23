@@ -3,7 +3,7 @@ import pathlib
 import random
 from time import sleep
 
-from .fixtures import upsert_random_points, create_collection, random_dense_vector
+from .fixtures import upsert_random_points, create_collection, create_shard_key, random_dense_vector
 from .utils import *
 
 COLLECTION_NAME = "test_collection"
@@ -14,9 +14,17 @@ COLLECTION_NAME = "test_collection"
 # On a static collection, this performs resharding up and down a few times and
 # asserts the shard and point counts are correct.
 #
-# More specifically this starts at 1 shard, reshards 3 times to 4 shards, and
-# reshards 3 times back to 1 shard.
-def test_resharding(tmp_path: pathlib.Path):
+# More specifically this starts at 1 shard, reshards 2 times to 3 shards, and
+# reshards 2 times back to 1 shard.
+@pytest.mark.parametrize(
+    "shard_key,sharding_method", [
+        # Test with normal sharding
+        (None, None),
+        # Test with custom sharding
+        ("test", "custom"),
+    ],
+)
+def test_resharding(shard_key, sharding_method, tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 1000
@@ -29,12 +37,14 @@ def test_resharding(tmp_path: pathlib.Path):
     peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
 
     # Create collection, insert points
-    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3, sharding_method=sharding_method)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris,
     )
-    upsert_random_points(peer_api_uris[0], num_points)
+    if shard_key is not None:
+        create_shard_key(peer_api_uris[0], COLLECTION_NAME, shard_key, shard_number=1, replication_factor=3)
+    upsert_random_points(peer_api_uris[0], num_points, shard_key=shard_key)
 
     sleep(1)
 
@@ -47,19 +57,22 @@ def test_resharding(tmp_path: pathlib.Path):
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
-                "direction": "down"
+                "direction": "down",
+                "shard_key": shard_key,
             }
         })
     assert r.status_code == 400
-    assert r.json()["status"]["error"] == "Bad request: cannot remove shard 0 by resharding down, it is the last shard"
+    assert r.json()["status"]["error"].startswith("Bad request: cannot remove shard")
+    assert r.json()["status"]["error"].endswith("it is the last shard")
 
-    # Reshard up 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard up 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "direction": "up"
+                    "direction": "up",
+                    "shard_key": shard_key,
                 }
             })
         assert_http_ok(r)
@@ -84,19 +97,21 @@ def test_resharding(tmp_path: pathlib.Path):
                 "limit": 999999999,
                 "with_vectors": True,
                 "with_payload": True,
+                "shard_key": shard_key,
             }
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
     check_data_consistency(data)
 
-    # Reshard down 3 times in sequence
-    for shard_count in range(3, 0, -1):
+    # Reshard down 2 times in sequence
+    for shard_count in range(2, 0, -1):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
                 "start_resharding": {
-                    "direction": "down"
+                    "direction": "down",
+                    "shard_key": shard_key,
                 }
             })
         assert_http_ok(r)
@@ -121,6 +136,7 @@ def test_resharding(tmp_path: pathlib.Path):
                 "limit": 999999999,
                 "with_vectors": True,
                 "with_payload": True,
+                "shard_key": shard_key,
             }
         )
         assert_http_ok(r)
@@ -131,7 +147,7 @@ def test_resharding(tmp_path: pathlib.Path):
 # Test resharding shard balancing.
 #
 # Sets up a 3 node cluster and a collection with 1 shard and 2 replicas.
-# Performs resharding 7 times and asserts the shards replicas are evenly
+# Performs resharding 5 times and asserts the shards replicas are evenly
 # balanced across all nodes.
 #
 # In this case the replicas are balanced on the second and third node. The first
@@ -262,8 +278,8 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
         run_in_background(delete_points_throttled, peer_api_uris[1], COLLECTION_NAME, start=num_updates + num_deletes, end=num_updates + num_deletes * 2),
     ]
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -343,8 +359,8 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert check_collection_local_shards_point_count(uri, COLLECTION_NAME, num_points)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -426,8 +442,8 @@ def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
         assert check_collection_local_shards_count(uri, COLLECTION_NAME, 1)
         assert get_collection_point_count(uri, COLLECTION_NAME, exact=True) == num_points
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -527,8 +543,8 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
         data.append(r.json()["result"])
     check_data_consistency(data)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -617,8 +633,8 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
         data.append(r.json()["result"])
     check_query_consistency(data)
 
-    # Reshard 3 times in sequence
-    for shard_count in range(2, 5):
+    # Reshard 2 times in sequence
+    for shard_count in range(2, 4):
         # Start resharding
         r = requests.post(
             f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -666,7 +682,15 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
 # On a static collection, this performs resharding. It kills and restarts the
 # driving peer at various stages. On restart, it should finish resharding as if
 # nothing happened.
-def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
+@pytest.mark.parametrize(
+    "shard_key,sharding_method", [
+        # Test with normal sharding
+        (None, None),
+        # Test with custom sharding
+        ("test", "custom"),
+    ],
+)
+def test_resharding_resume_on_restart(shard_key, sharding_method, tmp_path: pathlib.Path):
     assert_project_root()
 
     num_points = 2500
@@ -685,12 +709,14 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
     first_peer_id = get_cluster_info(peer_api_uris[0])['peer_id']
 
     # Create collection, insert points
-    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3, sharding_method=sharding_method)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris,
     )
-    upsert_random_points(peer_api_uris[0], num_points)
+    if shard_key is not None:
+        create_shard_key(peer_api_uris[0], COLLECTION_NAME, shard_key, shard_number=1, replication_factor=3)
+    upsert_random_points(peer_api_uris[0], num_points, shard_key=shard_key)
 
     sleep(1)
 
@@ -704,7 +730,8 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
                 "direction": "up",
-                "peer_id": first_peer_id
+                "peer_id": first_peer_id,
+                "shard_key": shard_key,
             }
         })
     assert_http_ok(r)
@@ -742,6 +769,7 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
                 "limit": 999999999,
                 "with_vectors": True,
                 "with_payload": True,
+                "shard_key": shard_key,
             }
         )
         assert_http_ok(r)

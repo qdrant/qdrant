@@ -1,6 +1,7 @@
 import pathlib
 
 from .utils import *
+from .fixtures import create_shard_key, delete_shard_key
 
 N_PEERS = 3
 N_SHARDS = 1
@@ -32,39 +33,6 @@ def create_collection_with_custom_sharding(
     assert_http_ok(r_batch)
 
 
-def create_shard(
-        peer_url,
-        collection,
-        shard_key,
-        shard_number=1,
-        replication_factor=1,
-        placement=None,
-        timeout=10
-):
-    r_batch = requests.put(
-        f"{peer_url}/collections/{collection}/shards?timeout={timeout}", json={
-            "shard_key": shard_key,
-            "shards_number": shard_number,
-            "replication_factor": replication_factor,
-            "placement": placement,
-        })
-    assert_http_ok(r_batch)
-
-
-def delete_shard(
-        peer_url,
-        collection,
-        shard_key,
-        timeout=10
-):
-    r_batch = requests.post(
-        f"{peer_url}/collections/{collection}/shards/delete?timeout={timeout}",
-        json={
-            "shard_key": shard_key,
-        }
-    )
-    assert_http_ok(r_batch)
-
 def test_shard_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -74,7 +42,7 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
 
     # Create shards
-    create_shard(
+    create_shard_key(
         peer_api_uris[0],
         COLLECTION_NAME,
         shard_key="cats",
@@ -82,7 +50,7 @@ def test_shard_consistency(tmp_path: pathlib.Path):
         replication_factor=1
     )
 
-    create_shard(
+    create_shard_key(
         peer_api_uris[0],
         COLLECTION_NAME,
         shard_key="dogs",
@@ -177,13 +145,13 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     for point in result:
         assert point["shard_key"] in ["cats", "dogs"]
 
-    delete_shard(
+    delete_shard_key(
         peer_api_uris[0],
         COLLECTION_NAME,
         shard_key="cats",
     )
 
-    create_shard(
+    create_shard_key(
         peer_api_uris[0],
         COLLECTION_NAME,
         shard_key="birds",
