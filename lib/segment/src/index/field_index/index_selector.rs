@@ -5,6 +5,7 @@ use rocksdb::DB;
 
 use super::binary_index::BinaryIndex;
 use super::map_index::MapIndex;
+use super::uuid_index::UuidPayloadIndex;
 use super::FieldIndexBuilder;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
@@ -63,6 +64,13 @@ pub fn index_selector(
                 is_appendable,
             ))]
         }
+        PayloadSchemaParams::Uuid(_) => {
+            vec![FieldIndex::UuidIndex(UuidPayloadIndex::new(
+                db,
+                field,
+                is_appendable,
+            ))]
+        }
     }
 }
 
@@ -106,6 +114,11 @@ pub fn index_builder_selector(
         }
         PayloadSchemaParams::Datetime(_) => {
             vec![FieldIndexBuilder::DatetimeIndex(NumericIndex::builder(
+                db, field,
+            ))]
+        }
+        PayloadSchemaParams::Uuid(_) => {
+            vec![FieldIndexBuilder::UuidIndex(UuidPayloadIndex::builder(
                 db, field,
             ))]
         }

@@ -34,8 +34,8 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
-    encode_i64_key_ascending,
+    decode_f64_key_ascending, decode_i128_key_ascending, decode_i64_key_ascending,
+    encode_f64_key_ascending, encode_i128_key_ascending, encode_i64_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -68,6 +68,20 @@ impl Encodable for IntPayloadType {
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_i64_key_ascending(key)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp(other)
+    }
+}
+
+impl Encodable for i128 {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_i128_key_ascending(*self, id)
+    }
+
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        decode_i128_key_ascending(key)
     }
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
@@ -162,7 +176,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         }
     }
 
-    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+    pub(super) fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
             NumericIndexInner::Mutable(index) => index.get_db_wrapper(),
             NumericIndexInner::Immutable(index) => index.get_db_wrapper(),
@@ -254,7 +268,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
             }
         };
 
@@ -470,7 +484,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
             }
         }
         .as_index_key_bounds();
@@ -478,7 +492,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Some(Box::new(vec![].into_iter()));
+            return Some(Box::new(std::iter::empty()));
         }
 
         Some(match self {
@@ -661,7 +675,7 @@ where
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
             }
         };
         let (start_bound, end_bound) = range.as_index_key_bounds();

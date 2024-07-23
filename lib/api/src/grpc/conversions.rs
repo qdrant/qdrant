@@ -6,7 +6,7 @@ use chrono::{NaiveDateTime, Timelike};
 use itertools::Itertools;
 use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
-    KeywordIndexType, TextIndexType,
+    KeywordIndexType, TextIndexType, UuidIndexType,
 };
 use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
@@ -22,7 +22,7 @@ use super::qdrant::{
     DatetimeIndexParams, DatetimeRange, Direction, FieldType, FloatIndexParams, GeoIndexParams,
     GeoLineString, GroupId, KeywordIndexParams, LookupLocation, MultiVectorComparator,
     MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups,
-    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, WithLookup,
+    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -280,6 +280,16 @@ impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
     }
 }
 
+impl From<segment::data_types::index::UuidIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::index::UuidIndexParams) -> Self {
+        PayloadIndexParams {
+            index_params: Some(IndexParams::UuidIndexParams(UuidIndexParams {
+                is_tenant: params.is_tenant,
+            })),
+        }
+    }
+}
+
 impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParams {
     fn from(_params: segment::data_types::index::DatetimeIndexParams) -> Self {
         PayloadIndexParams {
@@ -308,6 +318,7 @@ impl From<segment::types::PayloadSchemaType> for PayloadSchemaType {
             segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
             segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
             segment::types::PayloadSchemaType::Datetime => PayloadSchemaType::Datetime,
+            segment::types::PayloadSchemaType::Uuid => PayloadSchemaType::Uuid,
         }
     }
 }
@@ -322,6 +333,7 @@ impl From<segment::types::PayloadSchemaType> for FieldType {
             segment::types::PayloadSchemaType::Text => FieldType::Text,
             segment::types::PayloadSchemaType::Bool => FieldType::Bool,
             segment::types::PayloadSchemaType::Datetime => FieldType::Datetime,
+            segment::types::PayloadSchemaType::Uuid => FieldType::Uuid,
         }
     }
 }
@@ -351,6 +363,7 @@ impl From<segment::types::PayloadSchemaParams> for PayloadIndexParams {
             segment::types::PayloadSchemaParams::Text(p) => p.into(),
             segment::types::PayloadSchemaParams::Bool(p) => p.into(),
             segment::types::PayloadSchemaParams::Datetime(p) => p.into(),
+            segment::types::PayloadSchemaParams::Uuid(p) => p.into(),
         }
     }
 }
@@ -428,6 +441,16 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
     }
 }
 
+impl TryFrom<UuidIndexParams> for segment::data_types::index::UuidIndexParams {
+    type Error = Status;
+    fn try_from(params: UuidIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::index::UuidIndexParams {
+            r#type: UuidIndexType::Uuid,
+            is_tenant: params.is_tenant,
+        })
+    }
+}
+
 impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
     type Error = Status;
 
@@ -453,6 +476,9 @@ impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
             }
             IndexParams::DatetimeIndexParams(p) => {
                 segment::types::PayloadSchemaParams::Datetime(p.try_into()?)
+            }
+            IndexParams::UuidIndexParams(p) => {
+                segment::types::PayloadSchemaParams::Uuid(p.try_into()?)
             }
         })
     }
@@ -481,6 +507,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
                         "Malformed payload schema".to_string(),
                     ));
                 }
+                PayloadSchemaType::Uuid => segment::types::PayloadSchemaType::Uuid,
             },
         };
         let params = match schema.params {

@@ -54,7 +54,7 @@ pub trait Numericable: Num + Signed + PartialEq + PartialOrd + Copy {
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
     fn from_f64(x: f64) -> Self;
-    fn from_i64(x: i64) -> Self;
+    fn from_i128(x: i128) -> Self;
     fn min(self, b: Self) -> Self {
         if self < b {
             self
@@ -91,8 +91,8 @@ impl Numericable for i64 {
     fn from_f64(x: f64) -> Self {
         x as Self
     }
-    fn from_i64(x: i64) -> Self {
-        x
+    fn from_i128(x: i128) -> Self {
+        x as i64
     }
     fn abs_diff(self, b: Self) -> Self {
         i64::abs_diff(self, b) as i64
@@ -112,8 +112,34 @@ impl Numericable for f64 {
     fn from_f64(x: f64) -> Self {
         x
     }
-    fn from_i64(x: i64) -> Self {
+    fn from_i128(x: i128) -> Self {
         x as Self
+    }
+}
+
+impl Numericable for i128 {
+    fn min_value() -> Self {
+        i128::MIN
+    }
+
+    fn max_value() -> Self {
+        i128::MAX
+    }
+
+    fn to_f64(self) -> f64 {
+        self as f64
+    }
+
+    fn from_f64(x: f64) -> Self {
+        x as i128
+    }
+
+    fn from_i128(x: i128) -> Self {
+        x as i128
+    }
+
+    fn abs_diff(self, b: Self) -> Self {
+        i128::abs_diff(self, b) as i128
     }
 }
 

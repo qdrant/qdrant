@@ -67,6 +67,39 @@ impl Default for IntegerIndexParams {
     }
 }
 
+// UUID
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UuidIndexType {
+    #[default]
+    Uuid,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct UuidIndexParams {
+    // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
+    pub r#type: UuidIndexType,
+
+    /// If true - used for tenant optimization.
+    pub is_tenant: Option<bool>,
+
+    /// If true, store the index on disk. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg(any())]
+    pub on_disk: Option<bool>,
+}
+
+impl Default for UuidIndexParams {
+    fn default() -> Self {
+        Self {
+            r#type: Default::default(),
+            is_tenant: None,
+        }
+    }
+}
+
 // Float
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]

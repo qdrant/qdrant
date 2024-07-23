@@ -174,6 +174,7 @@ enum FieldType {
   FieldTypeText = 4;
   FieldTypeBool = 5;
   FieldTypeDatetime = 6;
+  FieldTypeUuid = 7;
 }
 
 message CreateFieldIndexCollection {
@@ -266,7 +267,7 @@ message SearchParams {
   optional bool exact = 2;
 
   /*
-  If set to true, search will ignore quantized vector data 
+  If set to true, search will ignore quantized vector data
   */
   optional QuantizationSearchParams quantization = 3;
   /*
@@ -363,12 +364,12 @@ message ScrollPoints {
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`.
 enum RecommendStrategy {
-  // Average positive and negative vectors and create a single query with the formula 
+  // Average positive and negative vectors and create a single query with the formula
   // `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
   AverageVector = 0;
 
-  // Uses custom search objective. Each candidate is compared against all 
-  // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`. 
+  // Uses custom search objective. Each candidate is compared against all
+  // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
   // If the `max_neg_score` is chosen then it is squared and negated.
   BestScore = 1;
 }
@@ -434,7 +435,7 @@ message RecommendPointGroups {
 message TargetVector {
   oneof target {
     VectorExample single = 1;
-    
+
     // leaving extensibility for possibly adding multi-target
   }
 }
@@ -698,7 +699,7 @@ message GroupId {
 
 message PointGroup {
   GroupId id = 1; // Group id
-  repeated ScoredPoint hits = 2; // Points in the group 
+  repeated ScoredPoint hits = 2; // Points in the group
   RetrievedPoint lookup = 3; // Point(s) from the lookup collection that matches the group id
 }
 
@@ -807,12 +808,12 @@ message Filter {
   repeated Condition should = 1; // At least one of those conditions should match
   repeated Condition must = 2; // All conditions must match
   repeated Condition must_not = 3; // All conditions must NOT match
-  optional MinShould min_should = 4; // At least minimum amount of given conditions should match 
+  optional MinShould min_should = 4; // At least minimum amount of given conditions should match
 }
 
 message MinShould {
-  repeated Condition conditions = 1; 
-  uint64 min_count = 2; 
+  repeated Condition conditions = 1;
+  uint64 min_count = 2;
 }
 
 message Condition {

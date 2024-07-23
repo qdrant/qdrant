@@ -191,6 +191,14 @@ impl SegmentBuilder {
                     }
                     break;
                 }
+                FieldIndex::UuidIndex(index) => {
+                    if let Some(ids) = index.get_values(internal_id) {
+                        for id in ids {
+                            ordering = ordering.wrapping_add(id as u64);
+                        }
+                    }
+                    break;
+                }
                 FieldIndex::GeoIndex(_) => {}
                 FieldIndex::FullTextIndex(_) => {}
                 FieldIndex::BinaryIndex(_) => {}
