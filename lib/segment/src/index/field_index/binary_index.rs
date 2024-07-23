@@ -190,10 +190,6 @@ impl BinaryIndex {
         format!("{field}_binary")
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.db_wrapper.recreate_column_family()
-    }
-
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
@@ -229,7 +225,7 @@ impl FieldIndexBuilderTrait for BinaryIndexBuilder {
     type FieldIndexType = BinaryIndex;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.recreate()
+        self.0.db_wrapper.recreate_column_family()
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
@@ -386,7 +382,7 @@ mod tests {
 
     use super::BinaryIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+    use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;
 
     const FIELD_NAME: &str = "bool_field";
@@ -395,8 +391,7 @@ mod tests {
     fn new_binary_index() -> (TempDir, BinaryIndex) {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
-        let index = BinaryIndex::new(db, FIELD_NAME);
-        index.recreate().unwrap();
+        let index = BinaryIndex::builder(db, FIELD_NAME).make_empty().unwrap();
         (tmp_dir, index)
     }
 

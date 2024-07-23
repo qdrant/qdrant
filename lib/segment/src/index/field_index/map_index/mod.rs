@@ -154,10 +154,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         format!("{field}_map")
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.get_db_wrapper().recreate_column_family()
-    }
-
     fn flusher(&self) -> Flusher {
         self.get_db_wrapper().flusher()
     }
@@ -337,7 +333,7 @@ where
     type FieldIndexType = MapIndex<N>;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.recreate()
+        self.0.get_db_wrapper().recreate_column_family()
     }
 
     fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
@@ -647,10 +643,13 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path) {
-        let mut index =
-            MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
-        index.recreate().unwrap();
+    fn save_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path)
+    where
+        MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    {
+        let mut index = MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME)
+            .make_empty()
+            .unwrap();
         for (idx, values) in data.iter().enumerate() {
             match &mut index {
                 MapIndex::Mutable(index) => index

@@ -197,10 +197,6 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         format!("{field}_numeric")
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        self.get_db_wrapper().recreate_column_family()
-    }
-
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             NumericIndexInner::Mutable(index) => index.load(),
@@ -368,7 +364,6 @@ impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
             pub fn clear(self) -> OperationResult<()>;
             pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
             pub fn load(&mut self) -> OperationResult<bool>;
-            pub fn recreate(&self) -> OperationResult<()>;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;

@@ -207,19 +207,6 @@ impl FieldIndex {
         }
     }
 
-    pub fn recreate(&self) -> OperationResult<()> {
-        match self {
-            FieldIndex::IntIndex(index) => index.recreate(),
-            FieldIndex::DatetimeIndex(index) => index.recreate(),
-            FieldIndex::IntMapIndex(index) => index.recreate(),
-            FieldIndex::KeywordIndex(index) => index.recreate(),
-            FieldIndex::FloatIndex(index) => index.recreate(),
-            FieldIndex::GeoIndex(index) => index.recreate(),
-            FieldIndex::BinaryIndex(index) => index.recreate(),
-            FieldIndex::FullTextIndex(index) => index.recreate(),
-        }
-    }
-
     pub fn count_indexed_points(&self) -> usize {
         self.get_payload_field_index().count_indexed_points()
     }
@@ -347,15 +334,28 @@ impl FieldIndex {
     }
 }
 
+/// Common interface for all index builders.
 pub trait FieldIndexBuilderTrait {
-    /// The resulting type of the index
+    /// The resulting type of the index.
     type FieldIndexType;
 
+    /// Start building the index, e.g. create a database column or a directory.
+    /// Expected to be called exactly once before any other method.
     fn init(&mut self) -> OperationResult<()>;
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType>;
+
+    /// Create an empty index for testing purposes.
+    #[cfg(test)]
+    fn make_empty(mut self) -> OperationResult<Self::FieldIndexType>
+    where
+        Self: Sized,
+    {
+        self.init()?;
+        self.finalize()
+    }
 }
 
 /// Builders for all index types
