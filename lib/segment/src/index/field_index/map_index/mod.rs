@@ -648,7 +648,8 @@ mod tests {
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     {
         let mut index = MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME)
-            .make_empty();
+            .make_empty()
+            .unwrap();
         for (idx, values) in data.iter().enumerate() {
             match &mut index {
                 MapIndex::Mutable(index) => index

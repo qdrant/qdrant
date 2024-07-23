@@ -305,7 +305,9 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = FullTextIndex::builder(db, config.clone(), "text").make_empty();
+            let mut index = FullTextIndex::builder(db, config.clone(), "text")
+                .make_empty()
+                .unwrap();
 
             for (idx, payload) in payloads.iter().enumerate() {
                 index.add_point(idx as PointOffsetType, &[payload]).unwrap();

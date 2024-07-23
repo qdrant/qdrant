@@ -391,7 +391,7 @@ mod tests {
     fn new_binary_index() -> (TempDir, BinaryIndex) {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
-        let index = BinaryIndex::builder(db, FIELD_NAME).make_empty();
+        let index = BinaryIndex::builder(db, FIELD_NAME).make_empty().unwrap();
         (tmp_dir, index)
     }
 

@@ -164,7 +164,9 @@ fn test_prefix_search(#[case] immutable: bool) {
     };
 
     let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-    let mut index = FullTextIndex::builder(db.clone(), config.clone(), "text").make_empty();
+    let mut index = FullTextIndex::builder(db.clone(), config.clone(), "text")
+        .make_empty()
+        .unwrap();
 
     let texts = get_texts();
 

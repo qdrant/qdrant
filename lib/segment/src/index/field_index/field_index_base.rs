@@ -349,12 +349,12 @@ pub trait FieldIndexBuilderTrait {
 
     /// Create an empty index for testing purposes.
     #[cfg(test)]
-    fn make_empty(mut self) -> Self::FieldIndexType
+    fn make_empty(mut self) -> OperationResult<Self::FieldIndexType>
     where
         Self: Sized,
     {
-        self.init().unwrap();
-        self.finalize().unwrap()
+        self.init()?;
+        self.finalize()
     }
 }
 
