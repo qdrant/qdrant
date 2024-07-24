@@ -838,7 +838,7 @@ def test_resharding_try_abort_on_remove_shard_before_replicate(tmp_path: pathlib
     assert resp.status_code == 400
 
 # Test that resharding is automatically restarted, when we remove new shard during replication
-@pytest.mark.skip(reason="removing transfer source shard is broken at the moment (in generall, not just for resharding)")
+@pytest.mark.skip(reason="removing transfer source shard is broken at the moment (in general, not just for resharding)")
 def test_resharding_restart_on_remove_src_shard_during_replicate(tmp_path: pathlib.Path):
     resharding_restart_on_remove_shard_during_replicate(tmp_path, 'from')
 
