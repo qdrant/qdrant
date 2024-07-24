@@ -68,10 +68,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -152,10 +154,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -243,10 +247,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/TelemetryData"
@@ -345,10 +351,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/LocksOption"
@@ -398,10 +406,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/LocksOption"
@@ -579,10 +589,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/ClusterStatus"
@@ -633,10 +645,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -708,10 +722,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -763,10 +779,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsResponse"
@@ -829,10 +847,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionInfo"
@@ -911,10 +931,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -993,10 +1015,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1065,10 +1089,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1139,10 +1165,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1233,10 +1261,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -1299,10 +1329,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionExistence"
@@ -1392,10 +1424,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -1459,10 +1493,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionClusterInfo"
@@ -1541,10 +1577,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1607,10 +1645,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsAliasesResponse"
@@ -1662,10 +1702,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CollectionsAliasesResponse"
@@ -1772,10 +1814,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1878,10 +1922,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -1965,10 +2011,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -2042,10 +2090,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -2147,10 +2197,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -2284,10 +2336,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -2351,10 +2405,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -2446,10 +2502,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -2637,10 +2695,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -2752,10 +2812,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -2848,10 +2910,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -2934,10 +2998,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/SnapshotDescription"
@@ -3048,10 +3114,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "boolean"
@@ -3223,10 +3291,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/Record"
@@ -3308,10 +3378,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -3403,10 +3475,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3497,10 +3571,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3591,10 +3667,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3685,10 +3763,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3779,10 +3859,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3871,10 +3953,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -3965,10 +4049,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -4059,10 +4145,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/UpdateResult"
@@ -4153,10 +4241,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -4241,10 +4331,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/ScrollResult"
@@ -4336,10 +4428,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -4434,10 +4528,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -4535,10 +4631,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
@@ -4630,10 +4728,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -4728,10 +4828,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -4829,10 +4931,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
@@ -4924,10 +5028,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -5022,10 +5128,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -5104,10 +5212,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/CountResult"
@@ -5199,10 +5309,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/QueryResponse"
@@ -5294,10 +5406,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "type": "array",
@@ -5392,10 +5506,12 @@
                     "time": {
                       "type": "number",
                       "format": "float",
-                      "description": "Time spent to process this request"
+                      "description": "Time spent to process this request",
+                      "example": 0.002
                     },
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "result": {
                       "$ref": "#/components/schemas/GroupsResult"
@@ -5530,6 +5646,22 @@
               "$ref": "#/components/schemas/CollectionDescription"
             }
           }
+        },
+        "example": {
+          "collections": [
+            {
+              "name": "arivx-title"
+            },
+            {
+              "name": "arivx-abstract"
+            },
+            {
+              "name": "medium-title"
+            },
+            {
+              "name": "medium-text"
+            }
+          ]
         }
       },
       "CollectionDescription": {
@@ -8000,7 +8132,35 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Record"
-            }
+            },
+            "example": [
+              {
+                "id": 40,
+                "payload": {
+                  "city": "London",
+                  "color": "green"
+                },
+                "vector": [
+                  0.875,
+                  0.140625,
+                  0.897599995136261
+                ],
+                "shard_key": "region_1"
+              },
+              {
+                "id": 41,
+                "payload": {
+                  "city": "Paris",
+                  "color": "red"
+                },
+                "vector": [
+                  0.75,
+                  0.640625,
+                  0.8945000171661377
+                ],
+                "shard_key": "region_1"
+              }
+            ]
           },
           "next_page_offset": {
             "description": "Offset which should be used to retrieve a next page result",
@@ -9071,6 +9231,12 @@
             "type": "string",
             "nullable": true
           }
+        },
+        "example": {
+          "name": "my-collection-3766212330831337-2024-07-22-08-31-55.snapshot",
+          "creation_time": "2022-08-04T10:49:10",
+          "size": 1000000,
+          "checksum": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0"
         }
       },
       "CountRequest": {
@@ -10886,6 +11052,10 @@
           "collection_name": {
             "type": "string"
           }
+        },
+        "example": {
+          "alias_name": "blogs-title",
+          "collection_name": "arivx-title"
         }
       },
       "WriteOrdering": {

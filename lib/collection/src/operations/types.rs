@@ -9,7 +9,7 @@ use std::time::SystemTimeError;
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
     BaseGroupRequest, LookupLocation, OrderByInterface, RecommendStrategy,
-    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector,
+    SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStruct,
 };
 use common::defaults;
 use common::types::ScoreType;
@@ -33,7 +33,7 @@ use segment::types::{
 use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
-use serde_json::Error as JsonError;
+use serde_json::{Error as JsonError, Map, Value};
 use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
@@ -396,11 +396,39 @@ impl Default for ScrollRequestInternal {
     }
 }
 
+fn points_example() -> Vec<api::rest::Record> {
+    let mut payload_map_1 = Map::new();
+    payload_map_1.insert("city".to_string(), Value::String("London".to_string()));
+    payload_map_1.insert("color".to_string(), Value::String("green".to_string()));
+
+    let mut payload_map_2 = Map::new();
+    payload_map_2.insert("city".to_string(), Value::String("Paris".to_string()));
+    payload_map_2.insert("color".to_string(), Value::String("red".to_string()));
+
+    vec![
+        api::rest::Record {
+            id: PointIdType::NumId(40),
+            payload: Some(Payload(payload_map_1)),
+            vector: Some(VectorStruct::Single(vec![0.875, 0.140625, 0.897_6])),
+            shard_key: Some("region_1".into()),
+            order_value: None,
+        },
+        api::rest::Record {
+            id: PointIdType::NumId(41),
+            payload: Some(Payload(payload_map_2)),
+            vector: Some(VectorStruct::Single(vec![0.75, 0.640625, 0.8945])),
+            shard_key: Some("region_1".into()),
+            order_value: None,
+        },
+    ]
+}
+
 /// Result of the points read request
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollResult {
     /// List of retrieved points
+    #[schemars(example = "points_example")]
     pub points: Vec<api::rest::Record>,
     /// Offset which should be used to retrieve a next page result
     pub next_page_offset: Option<PointIdType>,
@@ -1717,8 +1745,16 @@ impl Validate for SparseVectorsConfig {
     }
 }
 
+fn alias_description_example() -> AliasDescription {
+    AliasDescription {
+        alias_name: "blogs-title".to_string(),
+        collection_name: "arivx-title".to_string(),
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "alias_description_example")]
 pub struct AliasDescription {
     pub alias_name: String,
     pub collection_name: String,
