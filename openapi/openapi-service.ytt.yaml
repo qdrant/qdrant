@@ -57,7 +57,7 @@ paths:
                 type: string
                 example: |
                   # HELP app_info information about qdrant server
-                  # TYPE app_info counter
+                  # TYPE app_info gauge
                   app_info{name="qdrant",version="0.11.1"} 1
                   # HELP cluster_enabled is cluster support enabled
                   # TYPE cluster_enabled gauge

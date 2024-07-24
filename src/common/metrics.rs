@@ -91,8 +91,8 @@ impl MetricsProvider for AppBuildTelemetry {
         metrics.push(metric_family(
             "app_info",
             "information about qdrant server",
-            MetricType::COUNTER,
-            vec![counter(
+            MetricType::GAUGE,
+            vec![gauge(
                 1.0,
                 &[("name", &self.name), ("version", &self.version)],
             )],
@@ -106,8 +106,8 @@ impl MetricsProvider for AppFeaturesTelemetry {
         metrics.push(metric_family(
             "app_status_recovery_mode",
             "features enabled in qdrant server",
-            MetricType::COUNTER,
-            vec![counter(if self.recovery_mode { 1.0 } else { 0.0 }, &[])],
+            MetricType::GAUGE,
+            vec![gauge(if self.recovery_mode { 1.0 } else { 0.0 }, &[])],
         ))
     }
 }
@@ -149,8 +149,8 @@ impl MetricsProvider for ClusterTelemetry {
         metrics.push(metric_family(
             "cluster_enabled",
             "is cluster support enabled",
-            MetricType::COUNTER,
-            vec![counter(if *enabled { 1.0 } else { 0.0 }, &[])],
+            MetricType::GAUGE,
+            vec![gauge(if *enabled { 1.0 } else { 0.0 }, &[])],
         ));
 
         if let Some(ref status) = status {
