@@ -585,7 +585,7 @@ impl ValueIndexer for MapIndex<str> {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<String> {
+    fn get_value(value: &Value) -> Option<String> {
         if let Value::String(keyword) = value {
             return Some(keyword.to_owned());
         }
@@ -616,7 +616,7 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
+    fn get_value(value: &Value) -> Option<IntPayloadType> {
         if let Value::Number(num) = value {
             return num.as_i64();
         }
