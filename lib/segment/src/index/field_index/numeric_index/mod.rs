@@ -177,7 +177,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         }
     }
 
-    pub(super) fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         match self {
             NumericIndexInner::Mutable(index) => index.get_db_wrapper(),
             NumericIndexInner::Immutable(index) => index.get_db_wrapper(),
@@ -540,20 +540,13 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
 
-                let contains = match &self {
-                    NumericIndexInner::Mutable(mutable) => mutable.contains_key(&key),
-                    NumericIndexInner::Immutable(immutable) => immutable.contains_key(&key),
+                let estimated_count = match &self {
+                    NumericIndexInner::Mutable(index) => index.estimate_points(&key),
+                    NumericIndexInner::Immutable(index) => index.estimate_points(&key),
                 };
 
-                if contains {
-                    let estimated_count = match &self {
-                        NumericIndexInner::Mutable(index) => index.estimate_points(&key),
-                        NumericIndexInner::Immutable(index) => index.estimate_points(&key),
-                    };
-
-                    return Some(CardinalityEstimation::exact(estimated_count)
-                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
-                }
+                return Some(CardinalityEstimation::exact(estimated_count)
+                    .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
             }
         }
 

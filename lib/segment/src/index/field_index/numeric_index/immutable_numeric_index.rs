@@ -215,17 +215,10 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         self.values_range(start, end)
     }
 
-    pub fn contains_key(&self, key: &T) -> bool {
-        self.values_by_key(key).next().is_some()
-    }
-
     /// Tries to estimate the amount of points for a given key.
     pub fn estimate_points(&self, key: &T) -> usize {
-        let start = Point::new(*key, PointOffsetType::MIN);
-        let end = Point::new(*key, PointOffsetType::MAX);
-
-        let start = Bound::Included(start);
-        let end = Bound::Included(end);
+        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
 
         let mut iter = self.map.values_range(start, end);
         let first = iter.next();
