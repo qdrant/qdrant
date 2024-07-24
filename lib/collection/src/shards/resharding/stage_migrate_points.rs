@@ -218,13 +218,13 @@ async fn drive_up(
             }
             // Transfer locally, within this peer
             None => {
-                migrate_local_up(
-                    reshard_key,
+                migrate_local(
                     shard_holder.clone(),
                     consensus,
                     channel_service.clone(),
                     collection_id,
                     source_shard_id,
+                    reshard_key.shard_id,
                 )
                 .await?;
             }
@@ -402,12 +402,12 @@ async fn drive_down(
             }
             // Transfer locally, within this peer
             None => {
-                migrate_local_down(
-                    reshard_key,
+                migrate_local(
                     shard_holder.clone(),
                     consensus,
                     channel_service.clone(),
                     collection_id,
+                    reshard_key.shard_id,
                     target_shard_id,
                 )
                 .await?;
@@ -434,22 +434,19 @@ async fn drive_down(
 /// same source and target node.
 // TODO(resharding): improve this, don't rely on shard transfers and remote shards, copy directly
 // between the two local shard replica
-async fn migrate_local_up(
-    reshard_key: &ReshardKey,
+async fn migrate_local(
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     channel_service: ChannelService,
     collection_id: &CollectionId,
     source_shard_id: ShardId,
+    target_shard_id: ShardId,
 ) -> CollectionResult<()> {
-    log::debug!(
-        "Migrating points of shard {source_shard_id} into shard {} locally for resharding",
-        reshard_key.shard_id,
-    );
+    log::debug!("Migrating points of shard {source_shard_id} into shard {target_shard_id} locally for resharding");
 
     // Target shard is on the same node, but has a different shard ID
     let target_shard = RemoteShard::new(
-        reshard_key.shard_id,
+        target_shard_id,
         collection_id.clone(),
         consensus.this_peer_id(),
         channel_service,
@@ -465,69 +462,15 @@ async fn migrate_local_up(
     )
     .await;
 
-    // Unproxify forward proxy on local shard we just transferred
+    // Unproxify forward proxy on local shard we just transferred from
     // Normally consensus takes care of this, but we don't use consensus here
     {
         let shard_holder = shard_holder.read().await;
         let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
             CollectionError::service_error(format!(
-                "Shard {source_shard_id} not found in the shard holder for resharding",
+                "Shard {source_shard_id} not found in the shard holder for resharding, cannot unproxify after local transfer",
             ))
         })?;
-        replica_set.un_proxify_local().await?;
-    }
-
-    result
-}
-
-/// Migrate a shard locally, within the same node.
-///
-/// This is a special case for migration transfers, because normal shard transfer don't support the
-/// same source and target node.
-async fn migrate_local_down(
-    reshard_key: &ReshardKey,
-    shard_holder: Arc<LockedShardHolder>,
-    consensus: &dyn ShardTransferConsensus,
-    channel_service: ChannelService,
-    collection_id: &CollectionId,
-    target_shard_id: ShardId,
-) -> CollectionResult<()> {
-    log::debug!(
-        "Migrating points of shard {} into shard {} locally for resharding",
-        reshard_key.shard_id,
-        target_shard_id,
-    );
-
-    // Target shard is on the same node, but has a different shard ID
-    let target_shard = RemoteShard::new(
-        target_shard_id,
-        collection_id.clone(),
-        consensus.this_peer_id(),
-        channel_service,
-    );
-
-    let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
-    let result = transfer_resharding_stream_records(
-        Arc::clone(&shard_holder),
-        progress,
-        reshard_key.shard_id,
-        target_shard,
-        collection_id,
-    )
-    .await;
-
-    // Unproxify forward proxy on local shard we just transferred
-    // Normally consensus takes care of this, but we don't use consensus here
-    {
-        let shard_holder = shard_holder.read().await;
-        let replica_set = shard_holder
-            .get_shard(&reshard_key.shard_id)
-            .ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Shard {} not found in the shard holder for resharding",
-                    reshard_key.shard_id,
-                ))
-            })?;
         replica_set.un_proxify_local().await?;
     }
 
