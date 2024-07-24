@@ -362,7 +362,7 @@ impl ValueIndexer for BinaryIndex {
         Ok(())
     }
 
-    fn get_value(&self, value: &serde_json::Value) -> Option<bool> {
+    fn get_value(value: &serde_json::Value) -> Option<bool> {
         value.as_bool()
     }
 

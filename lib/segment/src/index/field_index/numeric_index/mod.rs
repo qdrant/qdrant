@@ -551,7 +551,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
+    fn get_value(value: &Value) -> Option<IntPayloadType> {
         value.as_i64()
     }
 
@@ -578,7 +578,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<DateTimePayloadType> {
+    fn get_value(value: &Value) -> Option<DateTimePayloadType> {
         DateTimePayloadType::from_str(value.as_str()?).ok()
     }
 
@@ -603,7 +603,7 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<FloatPayloadType> {
+    fn get_value(value: &Value) -> Option<FloatPayloadType> {
         value.as_f64()
     }
 
