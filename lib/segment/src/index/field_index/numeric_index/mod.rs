@@ -41,7 +41,7 @@ use crate::index::key_encoding::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
-    PayloadKeyType, Range, RangeInterface, UuidPayloadKeyType, UuidPayloadType, ValueVariants,
+    PayloadKeyType, Range, RangeInterface, UuidIntType, UuidPayloadType, ValueVariants,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -487,7 +487,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
             let keyword = keyword.as_str();
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
-                let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
+                let key = T::from_i128(uuid.as_u128() as UuidIntType);
                 return match &self {
                     NumericIndexInner::Mutable(mutable) => {
                         Some(Box::new(mutable.values_by_key(&key)))
@@ -538,7 +538,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         {
             let keyword = keyword.as_str();
             if let Ok(uuid) = Uuid::from_str(keyword) {
-                let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
+                let key = T::from_i128(uuid.as_u128() as UuidIntType);
 
                 let estimated_count = match &self {
                     NumericIndexInner::Mutable(index) => index.estimate_points(&key),
@@ -708,7 +708,7 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
     }
 }
 
-impl ValueIndexer for NumericIndex<UuidPayloadKeyType, UuidPayloadType> {
+impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
     type ValueType = UuidPayloadType;
 
     fn add_many(
@@ -718,7 +718,7 @@ impl ValueIndexer for NumericIndex<UuidPayloadKeyType, UuidPayloadType> {
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
-                index.add_many_to_list(id, values.iter().map(|i| i.as_u128() as UuidPayloadKeyType))
+                index.add_many_to_list(id, values.iter().map(|i| i.as_u128() as UuidIntType))
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",

@@ -51,7 +51,7 @@ pub type DateTimePayloadType = DateTimeWrapper;
 /// Type of Uuid point payload
 pub type UuidPayloadType = Uuid;
 /// Type of Uuid point payload key
-pub type UuidPayloadKeyType = i128;
+pub type UuidIntType = i128;
 
 /// Name of the vector field
 pub type VectorName = String;
