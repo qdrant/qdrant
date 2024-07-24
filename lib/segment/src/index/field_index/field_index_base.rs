@@ -9,7 +9,6 @@ use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexBuilder};
 use super::numeric_index::{NumericIndex, NumericIndexBuilder, StreamRange};
-use super::uuid_index::{UuidPayloadIndex, UuidPayloadIndexBuilder};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
@@ -21,7 +20,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType, RangeInterface,
+    PayloadKeyType, RangeInterface, UuidPayloadKeyType, UuidPayloadType,
 };
 
 pub trait PayloadFieldIndex {
@@ -113,7 +112,7 @@ pub enum FieldIndex {
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
-    UuidIndex(UuidPayloadIndex),
+    UuidIndex(NumericIndex<UuidPayloadKeyType, UuidPayloadType>),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -180,7 +179,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
             FieldIndex::BinaryIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
-            FieldIndex::UuidIndex(payload_field_index) => payload_field_index,
+            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
         }
     }
 
@@ -381,7 +380,7 @@ pub enum FieldIndexBuilder {
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
-    UuidIndex(UuidPayloadIndexBuilder),
+    UuidIndex(NumericIndexBuilder<UuidPayloadKeyType, UuidPayloadType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {

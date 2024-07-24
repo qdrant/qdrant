@@ -15,7 +15,6 @@ pub mod map_index;
 mod mmap_point_to_values;
 pub mod numeric_index;
 mod stat_tools;
-pub mod uuid_index;
 
 pub mod binary_index;
 #[cfg(test)]

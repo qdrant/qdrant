@@ -20,6 +20,7 @@ use rocksdb::DB;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use uuid::Uuid;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::histogram::Point;
@@ -39,8 +40,8 @@ use crate::index::key_encoding::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
-    RangeInterface,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
+    PayloadKeyType, Range, RangeInterface, UuidPayloadKeyType, UuidPayloadType, ValueVariants,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -479,7 +480,30 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let range_cond = condition.range.as_ref()?;
+        if let Some(match_cond) = &condition.r#match {
+            if let Match::Value(MatchValue {
+                value: ValueVariants::Keyword(keyword),
+            }) = match_cond
+            {
+                let keyword = keyword.as_str();
+
+                if let Ok(uuid) = Uuid::from_str(keyword) {
+                    let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
+                    return match &self {
+                        NumericIndexInner::Mutable(mutable) => {
+                            Some(Box::new(mutable.values_by_key(&key)))
+                        }
+                        NumericIndexInner::Immutable(immutable) => {
+                            Some(Box::new(immutable.values_by_key(&key)))
+                        }
+                    };
+                }
+            }
+        }
+
+        let Some(range_cond) = condition.range.as_ref() else {
+            return None;
+        };
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
@@ -505,7 +529,36 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         })
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+    ) -> Option<CardinalityEstimation> {
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
+
+                let contains = match &self {
+                    NumericIndexInner::Mutable(mutable) => mutable.contains_key(&key),
+                    NumericIndexInner::Immutable(immutable) => immutable.contains_key(&key),
+                };
+
+                if contains {
+                    let estimated_count = match &self {
+                        NumericIndexInner::Mutable(index) => index.estimate_points(&key),
+                        NumericIndexInner::Immutable(index) => index.estimate_points(&key),
+                    };
+
+                    return Some(CardinalityEstimation::exact(estimated_count)
+                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
+                }
+            }
+        }
+
         condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
             cardinality
@@ -664,6 +717,33 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
     }
 }
 
+impl ValueIndexer for NumericIndex<UuidPayloadKeyType, UuidPayloadType> {
+    type ValueType = UuidPayloadType;
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> OperationResult<()> {
+        match &mut self.inner {
+            NumericIndexInner::Mutable(index) => {
+                index.add_many_to_list(id, values.iter().map(|i| i.as_u128() as UuidPayloadKeyType))
+            }
+            NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
+        }
+    }
+
+    fn get_value(value: &Value) -> Option<Self::ValueType> {
+        Uuid::parse_str(value.as_str()?).ok()
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.inner.remove_point(id)
+    }
+}
+
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
     T: Encodable + Numericable + Default,
@@ -683,7 +763,7 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         }
 
         match self {

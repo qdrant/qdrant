@@ -152,10 +152,10 @@ impl<T: Encodable + Numericable + Default> DynamicNumericIndex<T> {
     /// Tries to estimate the amount of points for a given key.
     pub fn estimate_points(&self, key: &T) -> usize {
         let key_min = key.encode_key(PointOffsetType::MIN);
-        let key_end = key.encode_key(PointOffsetType::MAX);
+        let key_max = key.encode_key(PointOffsetType::MAX);
 
         let start = Bound::Included(key_min);
-        let end = Bound::Included(key_end);
+        let end = Bound::Included(key_max);
 
         let mut iter = self.map.range((start, end));
         let first = iter.next();
