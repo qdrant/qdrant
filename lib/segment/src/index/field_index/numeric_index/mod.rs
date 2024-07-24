@@ -21,7 +21,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
-use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
+use self::immutable_numeric_index::ImmutableNumericIndex;
+use super::histogram::Point;
 use super::utils::check_boundaries;
 use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -122,20 +123,16 @@ impl Encodable for DateTimePayloadType {
 impl<T: Encodable + Numericable> Range<T> {
     pub(in crate::index::field_index::numeric_index) fn as_index_key_bounds(
         &self,
-    ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
+    ) -> (Bound<Point<T>>, Bound<Point<T>>) {
         let start_bound = match self {
-            Range { gt: Some(gt), .. } => Excluded(NumericIndexKey::new(*gt, PointOffsetType::MAX)),
-            Range { gte: Some(gte), .. } => {
-                Included(NumericIndexKey::new(*gte, PointOffsetType::MIN))
-            }
+            Range { gt: Some(gt), .. } => Excluded(Point::new(*gt, PointOffsetType::MAX)),
+            Range { gte: Some(gte), .. } => Included(Point::new(*gte, PointOffsetType::MIN)),
             _ => Unbounded,
         };
 
         let end_bound = match self {
-            Range { lt: Some(lt), .. } => Excluded(NumericIndexKey::new(*lt, PointOffsetType::MIN)),
-            Range { lte: Some(lte), .. } => {
-                Included(NumericIndexKey::new(*lte, PointOffsetType::MAX))
-            }
+            Range { lt: Some(lt), .. } => Excluded(Point::new(*lt, PointOffsetType::MIN)),
+            Range { lte: Some(lte), .. } => Included(Point::new(*lte, PointOffsetType::MAX)),
             _ => Unbounded,
         };
 
@@ -489,8 +486,8 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
 
         Ok(match self {
             NumericIndexInner::Mutable(index) => {
-                let start_bound = start_bound.map(|k| k.encode());
-                let end_bound = end_bound.map(|k| k.encode());
+                let start_bound = start_bound.map(|k| k.val.encode_key(k.idx));
+                let end_bound = end_bound.map(|k| k.val.encode_key(k.idx));
                 Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
@@ -689,8 +686,8 @@ where
 
         match self {
             NumericIndexInner::Mutable(index) => {
-                let start_bound = start_bound.map(|k| k.encode());
-                let end_bound = end_bound.map(|k| k.encode());
+                let start_bound = start_bound.map(|k| k.val.encode_key(k.idx));
+                let end_bound = end_bound.map(|k| k.val.encode_key(k.idx));
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
