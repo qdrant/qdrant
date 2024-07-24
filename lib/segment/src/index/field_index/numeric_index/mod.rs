@@ -486,8 +486,6 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
 
         Ok(match self {
             NumericIndexInner::Mutable(index) => {
-                let start_bound = start_bound.map(|k| k.val.encode_key(k.idx));
-                let end_bound = end_bound.map(|k| k.val.encode_key(k.idx));
                 Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
@@ -686,8 +684,6 @@ where
 
         match self {
             NumericIndexInner::Mutable(index) => {
-                let start_bound = start_bound.map(|k| k.val.encode_key(k.idx));
-                let end_bound = end_bound.map(|k| k.val.encode_key(k.idx));
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
