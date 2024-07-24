@@ -10,7 +10,7 @@ use super::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PrimaryCondition,
     ValueIndexer,
 };
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -280,10 +280,7 @@ impl PayloadFieldIndex for BinaryIndex {
         }
     }
 
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -297,11 +294,9 @@ impl PayloadFieldIndex for BinaryIndex {
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(condition.clone()));
 
-                Ok(estimation)
+                Some(estimation)
             }
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            _ => None,
         }
     }
 

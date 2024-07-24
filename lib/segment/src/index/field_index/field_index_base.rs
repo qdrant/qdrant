@@ -44,10 +44,7 @@ pub trait PayloadFieldIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return estimation of points amount which satisfy given condition
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<CardinalityEstimation>;
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -225,7 +222,7 @@ impl FieldIndex {
     pub fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-    ) -> OperationResult<CardinalityEstimation> {
+    ) -> Option<CardinalityEstimation> {
         self.get_payload_field_index()
             .estimate_cardinality(condition)
     }
