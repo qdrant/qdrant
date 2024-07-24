@@ -41,8 +41,10 @@ pub(super) struct DriverState {
     peers: HashMap<PeerId, Stage>,
     /// List of shard IDs that participate in the resharding process
     shard_ids: HashSet<ShardId>,
-    /// List of shard IDs successfully migrated to the new shard
+    /// When resharding up, list of shard IDs migrated to the new shard
     pub migrated_shards: Vec<ShardId>,
+    /// When resharding down, list of shard and peer IDs migrated to
+    pub migrated_replicas: Vec<(ShardId, PeerId)>,
     /// List of shard IDs in which we successfully deleted migrated points
     pub deleted_shards: Vec<ShardId>,
 }
@@ -57,6 +59,7 @@ impl DriverState {
                 .collect(),
             shard_ids,
             migrated_shards: vec![],
+            migrated_replicas: vec![],
             deleted_shards: vec![],
         }
     }
@@ -104,6 +107,40 @@ impl DriverState {
             // Exclude current resharding shard, and already migrated shards
             .filter(|shard_id| {
                 *shard_id != self.key.shard_id && !self.migrated_shards.contains(shard_id)
+            })
+    }
+
+    /// List the shard ID pairs we still need to migrate
+    ///
+    /// When scaling down this produces shard IDs to migrate, and peer IDs for a specific replica
+    /// to migrate to.
+    pub fn replicas_to_migrate(
+        &self,
+        shard_holder: Arc<LockedShardHolder>,
+    ) -> impl Iterator<Item = (ShardId, PeerId)> + '_ {
+        let shard_holder = tokio::runtime::Handle::current()
+            .block_on(async move { shard_holder.read_owned().await });
+
+        let target_shards_peers = self
+            .shards()
+            .flat_map(|shard_id| {
+                shard_holder
+                    .get_shard(&shard_id)
+                    .unwrap()
+                    .peers()
+                    .keys()
+                    .cloned()
+                    .map(|peer_id| (shard_id, peer_id))
+                    .collect::<Vec<(ShardId, PeerId)>>()
+            })
+            .collect::<Vec<_>>();
+
+        target_shards_peers
+            .into_iter()
+            // Exclude current resharding shard, and already migrated shards
+            .filter(|(shard_id, peer_id)| {
+                *shard_id != self.key.shard_id
+                    && !self.migrated_replicas.contains(&(*shard_id, *peer_id))
             })
     }
 
