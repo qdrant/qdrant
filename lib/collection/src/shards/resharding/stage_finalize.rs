@@ -14,7 +14,7 @@ pub(super) fn drive(
     consensus: &dyn ShardTransferConsensus,
 ) -> CollectionResult<()> {
     state.write(|data| {
-        data.complete_for_all_peers(Stage::S6_Finalize);
+        data.complete_for_all_peers(Stage::S7_Finalize);
         data.update(progress, consensus);
     })?;
 

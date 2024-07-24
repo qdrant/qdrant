@@ -1,7 +1,8 @@
 pub mod driver;
 pub mod tasks_pool;
 
-mod stage_commit_hashring;
+mod stage_commit_read_hashring;
+mod stage_commit_write_hashring;
 mod stage_finalize;
 mod stage_init;
 mod stage_migrate_points;
