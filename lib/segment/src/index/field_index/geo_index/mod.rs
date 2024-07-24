@@ -362,11 +362,11 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
-            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?;
+            let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_bounding_box.clone();
-            return Ok(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -376,9 +376,9 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
 
         if let Some(geo_radius) = &condition.geo_radius {
-            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?;
+            let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_radius.clone();
-            return Ok(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -388,9 +388,9 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
 
         if let Some(geo_polygon) = &condition.geo_polygon {
-            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?;
+            let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.convert();
-            return Ok(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.get_iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -399,7 +399,7 @@ impl PayloadFieldIndex for GeoMapIndex {
             )));
         }
 
-        Err(OperationError::service_error("failed to filter"))
+        None
     }
 
     fn estimate_cardinality(

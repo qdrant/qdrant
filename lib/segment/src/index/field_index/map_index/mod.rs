@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
+use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -365,13 +366,13 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
-            })) => Ok(self.get_iterator(keyword.as_str())),
+            })) => Some(self.get_iterator(keyword.as_str())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Keywords(keywords) => Ok(Box::new(
+                AnyVariants::Keywords(keywords) => Some(Box::new(
                     keywords
                         .iter()
                         .flat_map(|keyword| self.get_iterator(keyword.as_str()))
@@ -379,18 +380,16 @@ impl PayloadFieldIndex for MapIndex<str> {
                 )),
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
-                        Ok(Box::new(vec![].into_iter()))
+                        Some(Box::new(iter::empty()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_set(keywords)),
-            _ => Err(OperationError::service_error("failed to filter")),
+            })) => Some(self.except_set(keywords)),
+            _ => None,
         }
     }
 
@@ -479,22 +478,20 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
-            })) => Ok(self.get_iterator(integer)),
+            })) => Some(self.get_iterator(integer)),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Keywords(keywords) => {
                     if keywords.is_empty() {
-                        Ok(Box::new(vec![].into_iter()))
+                        Some(Box::new(vec![].into_iter()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
-                AnyVariants::Integers(integers) => Ok(Box::new(
+                AnyVariants::Integers(integers) => Some(Box::new(
                     integers
                         .iter()
                         .flat_map(|integer| self.get_iterator(integer))
@@ -503,8 +500,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Ok(self.except_set(integers)),
-            _ => Err(OperationError::service_error("failed to filter")),
+            })) => Some(self.except_set(integers)),
+            _ => None,
         }
     }
 
