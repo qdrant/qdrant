@@ -193,6 +193,8 @@ impl Collection {
 
         if !force {
             shard_holder.check_abort_resharding(&resharding_key)?;
+        } else {
+            log::warn!("Force-aborting resharding {resharding_key}");
         }
 
         let _ = self.stop_resharding_task(&resharding_key).await;
