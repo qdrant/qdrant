@@ -220,10 +220,15 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
 
         self.dynamic_index = DynamicNumericIndex::from_iter(
             self.db_wrapper.lock_db().iter()?.map(|(key, value)| {
-                let value_idx = u32::from_be_bytes(value.as_ref().try_into().unwrap());
+                let value_idx =
+                    u32::from_be_bytes(value.as_ref().try_into().map_err(|_| {
+                        OperationError::service_error("incorrect numeric index value")
+                    })?);
                 let (idx, value) = T::decode_key(&key);
                 if idx != value_idx {
-                    return Err(OperationError::service_error("incorrect key value"));
+                    return Err(OperationError::service_error(
+                        "incorrect numeric index key-value pair",
+                    ));
                 }
                 Ok((idx, value))
             }),
@@ -235,9 +240,8 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     pub fn add_many_to_list(
         &mut self,
         idx: PointOffsetType,
-        values: impl IntoIterator<Item = T>,
+        values: Vec<T>,
     ) -> OperationResult<()> {
-        let values: Vec<T> = values.into_iter().collect();
         for value in &values {
             let key = value.encode_key(idx);
             self.db_wrapper.put(&key, idx.to_be_bytes())?;
