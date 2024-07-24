@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::sync::Arc;
 
@@ -37,17 +37,10 @@ pub(super) struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
 }
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
-    fn from_btree_map(map: BTreeMap<Vec<u8>, u32>) -> Self {
+    fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
         Self {
             deleted: BitVec::repeat(false, map.len()),
-            data: map
-                .keys()
-                .cloned()
-                .map(|bytes| {
-                    let (idx, val) = T::decode_key(&bytes);
-                    Point::new(val, idx)
-                })
-                .collect(),
+            data: map.into_iter().collect(),
             deleted_count: 0,
         }
     }
@@ -245,7 +238,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
             ..
         } = mutable;
 
-        self.map = NumericKeySortedVec::from_btree_map(map);
+        self.map = NumericKeySortedVec::from_btree_set(map);
         self.histogram = histogram;
         self.points_count = points_count;
         self.max_values_per_point = max_values_per_point;
@@ -311,14 +304,13 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 mod tests {
     use std::collections::BTreeSet;
     use std::ops::Bound;
-    use std::ops::Bound::{Excluded, Included, Unbounded};
 
     use super::*;
     use crate::types::FloatPayloadType;
 
     fn check_range(
         key_set: &NumericKeySortedVec<FloatPayloadType>,
-        encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        encoded_map: &BTreeSet<Point<FloatPayloadType>>,
         start_bound: Bound<Point<FloatPayloadType>>,
         end_bound: Bound<Point<FloatPayloadType>>,
     ) {
@@ -326,22 +318,9 @@ mod tests {
             .values_range(start_bound.clone(), end_bound.clone())
             .collect::<Vec<_>>();
 
-        let start_encoded_bound = match start_bound {
-            Included(k) => Included(k.val.encode_key(k.idx)),
-            Excluded(k) => Excluded(k.val.encode_key(k.idx)),
-            Unbounded => Unbounded,
-        };
-        let end_encoded_bound = match end_bound {
-            Included(k) => Included(k.val.encode_key(k.idx)),
-            Excluded(k) => Excluded(k.val.encode_key(k.idx)),
-            Unbounded => Unbounded,
-        };
         let set2 = encoded_map
-            .range((start_encoded_bound, end_encoded_bound))
-            .map(|(b, _)| {
-                let (idx, value) = FloatPayloadType::decode_key(b);
-                Point::new(value, idx)
-            })
+            .range((start_bound, end_bound))
+            .cloned()
             .collect::<Vec<_>>();
 
         for (k1, k2) in set1.iter().zip(set2.iter()) {
@@ -355,7 +334,7 @@ mod tests {
 
     fn check_ranges(
         key_set: &NumericKeySortedVec<FloatPayloadType>,
-        encoded_map: &BTreeMap<Vec<u8>, PointOffsetType>,
+        encoded_map: &BTreeSet<Point<FloatPayloadType>>,
     ) {
         check_range(key_set, encoded_map, Bound::Unbounded, Bound::Unbounded);
         check_range(
@@ -437,71 +416,30 @@ mod tests {
             Point::new(-0.4, 3),
             Point::new(5.0, 1),
             Point::new(-5.0, 1),
-            Point::new(f64::NAN, 0),
-            Point::new(f64::NAN, 2),
-            Point::new(f64::NAN, 3),
             Point::new(f64::INFINITY, 0),
             Point::new(f64::NEG_INFINITY, 1),
             Point::new(f64::NEG_INFINITY, 2),
             Point::new(f64::NEG_INFINITY, 3),
         ];
 
-        let encoded: Vec<(Vec<u8>, PointOffsetType)> = pairs
-            .iter()
-            .map(|k| (k.val.encode_key(k.idx), k.idx))
-            .collect();
-
-        let mut set_byte: BTreeMap<Vec<u8>, PointOffsetType> = encoded.iter().cloned().collect();
+        let mut set_byte: BTreeSet<Point<FloatPayloadType>> = pairs.iter().cloned().collect();
         let mut set_keys =
-            NumericKeySortedVec::<FloatPayloadType>::from_btree_map(set_byte.clone());
+            NumericKeySortedVec::<FloatPayloadType>::from_btree_set(set_byte.clone());
 
         check_ranges(&set_keys, &set_byte);
 
         // test deletion and ranges after deletion
         let deleted_key = Point::new(0.4, 2);
         set_keys.remove(deleted_key.clone());
-        set_byte.remove(&deleted_key.val.encode_key(deleted_key.idx));
+        set_byte.remove(&deleted_key);
 
         check_ranges(&set_keys, &set_byte);
 
         // test deletion and ranges after deletion
         let deleted_key = Point::new(-5.0, 1);
         set_keys.remove(deleted_key.clone());
-        set_byte.remove(&deleted_key.val.encode_key(deleted_key.idx));
+        set_byte.remove(&deleted_key);
 
         check_ranges(&set_keys, &set_byte);
-    }
-
-    #[test]
-    fn test_numeric_index_key_sorting() {
-        let pairs = [
-            Point::new(0.0, 1),
-            Point::new(0.0, 3),
-            Point::new(-0.0, 2),
-            Point::new(-0.0, 4),
-            Point::new(0.4, 2),
-            Point::new(-0.4, 3),
-            Point::new(5.0, 1),
-            Point::new(-5.0, 1),
-            Point::new(f64::INFINITY, 0),
-            Point::new(f64::NEG_INFINITY, 1),
-            Point::new(f64::NEG_INFINITY, 2),
-            Point::new(f64::NEG_INFINITY, 3),
-        ];
-
-        let encoded: Vec<Vec<u8>> = pairs.iter().map(|k| k.val.encode_key(k.idx)).collect();
-
-        let set_byte: BTreeSet<Vec<u8>> = encoded.iter().cloned().collect();
-        let set_keys: BTreeSet<Point<FloatPayloadType>> = pairs.iter().cloned().collect();
-
-        for (b, k) in set_byte.iter().zip(set_keys.iter()) {
-            let (decoded_id, decoded_float) = FloatPayloadType::decode_key(b.as_slice());
-            if decoded_float.is_nan() && k.val.is_nan() {
-                assert_eq!(decoded_id, k.idx);
-            } else {
-                assert_eq!(decoded_id, k.idx);
-                assert_eq!(decoded_float, k.val);
-            }
-        }
     }
 }

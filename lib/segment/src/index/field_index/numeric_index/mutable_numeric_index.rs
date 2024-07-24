@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
-    pub(super) map: BTreeMap<Vec<u8>, PointOffsetType>,
+    pub(super) map: BTreeSet<Point<T>>,
     pub(super) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
@@ -30,7 +30,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             &store_cf_name,
         ));
         Self {
-            map: BTreeMap::new(),
+            map: BTreeSet::new(),
             db_wrapper,
             histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
             points_count: 0,
@@ -68,29 +68,28 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
 
     pub fn values_range(
         &self,
-        start_bound: Bound<Vec<u8>>,
-        end_bound: Bound<Vec<u8>>,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
+        self.map
+            .range((start_bound, end_bound))
+            .map(|point| point.idx)
     }
 
     pub fn orderable_values_range(
         &self,
-        start_bound: Bound<Vec<u8>>,
-        end_bound: Bound<Vec<u8>>,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
     ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
         self.map
             .range((start_bound, end_bound))
-            .map(|(encoded, idx)| {
-                let (_idx, value) = T::decode_key(encoded);
-                (value, *idx)
-            })
+            .map(|point| (point.val, point.idx))
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {
         let key = value.encode_key(id);
-        self.db_wrapper.put(&key, id.to_be_bytes())?;
-        Self::add_to_map(&mut self.map, &mut self.histogram, key, id);
+        self.db_wrapper.put(key, id.to_be_bytes())?;
+        Self::add_to_map(&mut self.map, &mut self.histogram, Point::new(value, id));
         Ok(())
     }
 
@@ -133,7 +132,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
 
             self.point_to_values[idx as usize].push(value);
 
-            Self::add_to_map(&mut self.map, &mut self.histogram, key.to_vec(), idx);
+            Self::add_to_map(&mut self.map, &mut self.histogram, Point::new(value, idx));
         }
         for values in &self.point_to_values {
             if !values.is_empty() {
@@ -154,7 +153,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         for value in &removed_values {
             let key = value.encode_key(idx);
             self.db_wrapper.remove(&key)?;
-            Self::remove_from_map(&mut self.map, &mut self.histogram, key);
+            Self::remove_from_map(&mut self.map, &mut self.histogram, Point::new(*value, idx));
         }
 
         if !removed_values.is_empty() {
@@ -164,65 +163,36 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         Ok(())
     }
 
-    fn add_to_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-        id: PointOffsetType,
-    ) {
-        let existed_value = map.insert(key.clone(), id);
+    fn add_to_map(map: &mut BTreeSet<Point<T>>, histogram: &mut Histogram<T>, key: Point<T>) {
+        let was_added = map.insert(key.clone());
         // Histogram works with unique values (idx + value) only, so we need to
         // make sure that we don't add the same value twice.
         // key is a combination of value + idx, so we can use it to ensure than the pair is unique
-        if existed_value.is_none() {
+        if was_added {
             histogram.insert(
-                Self::key_to_histogram_point(&key),
-                |x| Self::get_histogram_left_neighbor(map, x),
-                |x| Self::get_histogram_right_neighbor(map, x),
+                key,
+                |x| Self::get_histogram_left_neighbor(map, x.clone()),
+                |x| Self::get_histogram_right_neighbor(map, x.clone()),
             );
         }
     }
 
-    fn remove_from_map(
-        map: &mut BTreeMap<Vec<u8>, PointOffsetType>,
-        histogram: &mut Histogram<T>,
-        key: Vec<u8>,
-    ) {
-        let existed_val = map.remove(&key);
-        if existed_val.is_some() {
+    fn remove_from_map(map: &mut BTreeSet<Point<T>>, histogram: &mut Histogram<T>, key: Point<T>) {
+        let was_removed = map.remove(&key);
+        if was_removed {
             histogram.remove(
-                &Self::key_to_histogram_point(&key),
-                |x| Self::get_histogram_left_neighbor(map, x),
-                |x| Self::get_histogram_right_neighbor(map, x),
+                &key,
+                |x| Self::get_histogram_left_neighbor(map, x.clone()),
+                |x| Self::get_histogram_right_neighbor(map, x.clone()),
             );
         }
     }
 
-    fn key_to_histogram_point(key: &[u8]) -> Point<T> {
-        let (decoded_idx, decoded_val) = T::decode_key(key);
-        Point {
-            val: decoded_val,
-            idx: decoded_idx,
-        }
+    fn get_histogram_left_neighbor(map: &BTreeSet<Point<T>>, key: Point<T>) -> Option<Point<T>> {
+        map.range((Unbounded, Excluded(key))).next_back().cloned()
     }
 
-    fn get_histogram_left_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Unbounded, Excluded(key)))
-            .next_back()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
-    }
-
-    fn get_histogram_right_neighbor(
-        map: &BTreeMap<Vec<u8>, PointOffsetType>,
-        point: &Point<T>,
-    ) -> Option<Point<T>> {
-        let key = point.val.encode_key(point.idx as PointOffsetType);
-        map.range((Excluded(key), Unbounded))
-            .next()
-            .map(|(key, _)| Self::key_to_histogram_point(key))
+    fn get_histogram_right_neighbor(map: &BTreeSet<Point<T>>, key: Point<T>) -> Option<Point<T>> {
+        map.range((Excluded(key), Unbounded)).next().cloned()
     }
 }
