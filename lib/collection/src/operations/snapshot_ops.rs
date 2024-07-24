@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::SystemTime;
 
 use api::grpc::conversions::naive_date_time_to_proto;
@@ -81,7 +82,17 @@ pub struct SnapshotRecover {
     pub api_key: Option<String>,
 }
 
+fn snapshot_description_example() -> SnapshotDescription {
+    SnapshotDescription {
+        name: "my-collection-3766212330831337-2024-07-22-08-31-55.snapshot".to_string(),
+        creation_time: Some(NaiveDateTime::from_str("2022-08-04T10:49:10").unwrap()),
+        size: 1_000_000,
+        checksum: Some("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0".to_string()),
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[schemars(example = "snapshot_description_example")]
 pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,

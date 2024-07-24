@@ -51,8 +51,28 @@ pub struct CollectionDescription {
     pub name: String,
 }
 
+fn example_collectios_response() -> CollectionsResponse {
+    CollectionsResponse {
+        collections: vec![
+            CollectionDescription {
+                name: "arivx-title".to_string(),
+            },
+            CollectionDescription {
+                name: "arivx-abstract".to_string(),
+            },
+            CollectionDescription {
+                name: "medium-title".to_string(),
+            },
+            CollectionDescription {
+                name: "medium-text".to_string(),
+            },
+        ],
+    }
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(example = "example_collectios_response")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,
 }
