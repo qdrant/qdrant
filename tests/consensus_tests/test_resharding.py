@@ -737,7 +737,15 @@ def test_resharding_try_abort_after_write_hash_ring_committed(tmp_path: pathlib.
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
     # Wait for `propagate deletes` resharding stage
-    wait_for_collection_resharding_operation_stage(peer_api_uris[0], COLLECTION_NAME, "propagate deletes")
+    wait_for_one_of_resharding_operation_stages(
+        peer_api_uris[0],
+        [
+            'commit write hash ring',
+            'propagate deletes',
+            'finalize',
+        ],
+        wait_for_interval=0.125,
+    )
 
     # Try to abort resharding
     resp = requests.post(
@@ -952,6 +960,28 @@ def bootstrap_cluster(
     sleep(1)
 
     return (peer_api_uris, peer_ids)
+
+def wait_for_one_of_resharding_operation_stages(peer_uri: str, expected_stages: list[str], **kwargs):
+    def resharding_operation_stages():
+        requests.post(f"{peer_uri}/collections/{COLLECTION_NAME}/points/scroll")
+
+        info = get_collection_cluster_info(peer_uri, COLLECTION_NAME)
+
+        if 'resharding_operations' not in info:
+            return False
+
+        for resharding in info['resharding_operations']:
+            if not 'comment' in resharding:
+                continue
+
+            stage, *_ = resharding['comment'].split(':', maxsplit=1)
+
+            if stage in expected_stages:
+                return True
+
+        return False
+
+    wait_for(resharding_operation_stages, **kwargs)
 
 def wait_for_resharding_shard_transfer_info(peer_uri: str, expected_stage: str | None, expected_method: str):
     if expected_stage is not None:
