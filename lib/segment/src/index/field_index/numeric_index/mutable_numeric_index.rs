@@ -202,7 +202,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         let (decoded_idx, decoded_val) = T::decode_key(key);
         Point {
             val: decoded_val,
-            idx: decoded_idx as usize,
+            idx: decoded_idx,
         }
     }
 

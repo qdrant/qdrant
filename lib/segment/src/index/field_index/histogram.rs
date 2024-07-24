@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
 use std::path::Path;
 
+use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_bin, atomic_save_json, read_bin, read_json};
 use itertools::Itertools;
 use num_traits::{Num, Signed};
@@ -24,16 +24,23 @@ pub struct Counts {
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Point<T> {
     pub val: T,
-    pub idx: usize,
+    pub idx: PointOffsetType,
+}
+
+impl<T> Point<T> {
+    pub fn new(val: T, idx: PointOffsetType) -> Self {
+        Self { val, idx }
+    }
 }
 
 impl<T: PartialEq> Eq for Point<T> {}
 
 #[allow(clippy::derive_ord_xor_partial_ord)]
 impl<T: PartialOrd + Copy> Ord for Point<T> {
-    fn cmp(&self, other: &Point<T>) -> Ordering {
+    fn cmp(&self, other: &Point<T>) -> std::cmp::Ordering {
         (self.val, self.idx)
             .partial_cmp(&(other.val, other.idx))
             .unwrap()
@@ -204,11 +211,11 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         let from_ = match from {
             Included(val) => Included(Point {
                 val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Excluded(val) => Excluded(Point {
                 val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Unbounded => Unbounded,
         };
@@ -231,11 +238,11 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         let from_ = match &from {
             Included(val) => Included(Point {
                 val: *val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Excluded(val) => Excluded(Point {
                 val: *val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Unbounded => Unbounded,
         };
@@ -243,11 +250,11 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         let to_ = match &to {
             Included(val) => Included(Point {
                 val: *val,
-                idx: usize::MAX,
+                idx: PointOffsetType::MAX,
             }),
             Excluded(val) => Excluded(Point {
                 val: *val,
-                idx: usize::MIN,
+                idx: PointOffsetType::MIN,
             }),
             Unbounded => Unbounded,
         };
