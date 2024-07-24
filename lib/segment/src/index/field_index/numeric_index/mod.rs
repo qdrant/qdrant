@@ -171,14 +171,14 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
 
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
-            NumericIndexInner::Mutable(index) => &index.histogram,
+            NumericIndexInner::Mutable(index) => index.get_histogram(),
             NumericIndexInner::Immutable(index) => &index.histogram,
         }
     }
 
     fn get_points_count(&self) -> usize {
         match self {
-            NumericIndexInner::Mutable(index) => index.points_count,
+            NumericIndexInner::Mutable(index) => index.get_points_count(),
             NumericIndexInner::Immutable(index) => index.points_count,
         }
     }
@@ -240,7 +240,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
     /// Zero if the index is empty.
     pub fn max_values_per_point(&self) -> usize {
         match self {
-            NumericIndexInner::Mutable(index) => index.max_values_per_point,
+            NumericIndexInner::Mutable(index) => index.get_max_values_per_point(),
             NumericIndexInner::Immutable(index) => index.max_values_per_point,
         }
     }
@@ -618,7 +618,7 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
-                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp()))
+                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp()).collect())
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
