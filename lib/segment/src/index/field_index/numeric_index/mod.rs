@@ -480,24 +480,22 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        if let Some(match_cond) = &condition.r#match {
-            if let Match::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
-            }) = match_cond
-            {
-                let keyword = keyword.as_str();
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
 
-                if let Ok(uuid) = Uuid::from_str(keyword) {
-                    let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
-                    return match &self {
-                        NumericIndexInner::Mutable(mutable) => {
-                            Some(Box::new(mutable.values_by_key(&key)))
-                        }
-                        NumericIndexInner::Immutable(immutable) => {
-                            Some(Box::new(immutable.values_by_key(&key)))
-                        }
-                    };
-                }
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                let key = T::from_i128(uuid.as_u128() as UuidPayloadKeyType);
+                return match &self {
+                    NumericIndexInner::Mutable(mutable) => {
+                        Some(Box::new(mutable.values_by_key(&key)))
+                    }
+                    NumericIndexInner::Immutable(immutable) => {
+                        Some(Box::new(immutable.values_by_key(&key)))
+                    }
+                };
             }
         }
 

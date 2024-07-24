@@ -210,8 +210,8 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     }
 
     pub fn values_by_key(&self, key: &T) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let start = Bound::Included(NumericIndexKey::new(*key, PointOffsetType::MIN));
-        let end = Bound::Included(NumericIndexKey::new(*key, PointOffsetType::MAX));
+        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
         self.values_range(start, end)
     }
 
@@ -221,8 +221,8 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
     /// Tries to estimate the amount of points for a given key.
     pub fn estimate_points(&self, key: &T) -> usize {
-        let start = NumericIndexKey::new(*key, PointOffsetType::MIN);
-        let end = NumericIndexKey::new(*key, PointOffsetType::MAX);
+        let start = Point::new(*key, PointOffsetType::MIN);
+        let end = Point::new(*key, PointOffsetType::MAX);
 
         let start = Bound::Included(start);
         let end = Bound::Included(end);
