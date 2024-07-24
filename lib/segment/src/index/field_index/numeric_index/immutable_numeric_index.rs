@@ -143,7 +143,7 @@ impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVec
             let deleted = self
                 .set
                 .deleted
-                .get(self.start_index)
+                .get(self.end_index - 1)
                 .as_deref()
                 .copied()
                 .unwrap_or(true);
