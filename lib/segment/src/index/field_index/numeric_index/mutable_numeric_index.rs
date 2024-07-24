@@ -159,7 +159,7 @@ impl<T: Encodable + Numericable + Default> DynamicNumericIndex<T> {
 
         let mut iter = self.map.range((start, end));
         let first = iter.next();
-        let last = iter.rev().next();
+        let last = iter.next_back();
 
         match (first, last) {
             (Some(_), None) => 1,

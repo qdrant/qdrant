@@ -76,7 +76,7 @@ pub enum UuidIndexType {
     Uuid,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct UuidIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -89,15 +89,6 @@ pub struct UuidIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg(any())]
     pub on_disk: Option<bool>,
-}
-
-impl Default for UuidIndexParams {
-    fn default() -> Self {
-        Self {
-            r#type: Default::default(),
-            is_tenant: None,
-        }
-    }
 }
 
 // Float

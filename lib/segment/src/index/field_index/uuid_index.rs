@@ -73,28 +73,23 @@ impl PayloadFieldIndex for UuidPayloadIndex {
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        if let Some(match_cond) = &condition.r#match {
-            match match_cond {
-                Match::Value(MatchValue {
-                    value: ValueVariants::Keyword(keyword),
-                }) => {
-                    let keyword = keyword.as_str();
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
 
-                    if let Some(uuid) = UuidPayloadType::from_str(keyword).ok() {
-                        let key =
-                            UuidPayloadKeyType::from_i128(uuid.to_u128_le() as UuidPayloadKeyType);
-                        return match &self.index {
-                            NumericIndexInner::Mutable(mutable) => {
-                                Ok(Box::new(mutable.values_by_key(&key)))
-                            }
-                            NumericIndexInner::Immutable(immutable) => {
-                                Ok(Box::new(immutable.values_by_key(&key)))
-                            }
-                        };
+            if let Ok(uuid) = UuidPayloadType::from_str(keyword) {
+                let key = UuidPayloadKeyType::from_i128(uuid.to_u128_le() as UuidPayloadKeyType);
+                return match &self.index {
+                    NumericIndexInner::Mutable(mutable) => {
+                        Ok(Box::new(mutable.values_by_key(&key)))
                     }
-                }
-                _ => (),
-            };
+                    NumericIndexInner::Immutable(immutable) => {
+                        Ok(Box::new(immutable.values_by_key(&key)))
+                    }
+                };
+            }
         }
 
         Err(OperationError::service_error(
@@ -106,37 +101,29 @@ impl PayloadFieldIndex for UuidPayloadIndex {
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<CardinalityEstimation> {
-        if let Some(match_cond) = &condition.r#match {
-            match match_cond {
-                Match::Value(MatchValue {
-                    value: ValueVariants::Keyword(keyword),
-                }) => {
-                    let keyword = keyword.as_str();
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+            if let Ok(uuid) = UuidPayloadType::from_str(keyword) {
+                let key = UuidPayloadKeyType::from_i128(uuid.to_u128_le() as UuidPayloadKeyType);
 
-                    if let Some(uuid) = UuidPayloadType::from_str(keyword).ok() {
-                        let key =
-                            UuidPayloadKeyType::from_i128(uuid.to_u128_le() as UuidPayloadKeyType);
+                let contains = match &self.index {
+                    NumericIndexInner::Mutable(mutable) => mutable.contains_key(&key),
+                    NumericIndexInner::Immutable(immutable) => immutable.contains_key(&key),
+                };
 
-                        let contains = match &self.index {
-                            NumericIndexInner::Mutable(mutable) => mutable.contains_key(&key),
-                            NumericIndexInner::Immutable(immutable) => immutable.contains_key(&key),
-                        };
+                if contains {
+                    let estimated_count = match &self.index {
+                        NumericIndexInner::Mutable(index) => index.estimate_points(&key),
+                        NumericIndexInner::Immutable(index) => index.estimate_points(&key),
+                    };
 
-                        if contains {
-                            let expct_count = match &self.index {
-                                NumericIndexInner::Mutable(index) => index.estimate_points(&key),
-                                NumericIndexInner::Immutable(index) => index.estimate_points(&key),
-                            };
-
-                            return Ok(CardinalityEstimation::exact(expct_count)
-                                .with_primary_clause(PrimaryCondition::Condition(
-                                    condition.clone(),
-                                )));
-                        }
-                    }
+                    return Ok(CardinalityEstimation::exact(estimated_count)
+                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
                 }
-                _ => (),
-            };
+            }
         }
 
         Err(OperationError::service_error(

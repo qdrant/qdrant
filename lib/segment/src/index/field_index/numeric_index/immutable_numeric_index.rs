@@ -229,7 +229,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
         let mut iter = self.map.values_range(start, end);
         let first = iter.next();
-        let last = iter.rev().next();
+        let last = iter.next_back();
 
         match (first, last) {
             (Some(_), None) => 1,

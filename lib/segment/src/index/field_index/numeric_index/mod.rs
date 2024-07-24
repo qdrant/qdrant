@@ -268,7 +268,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
+                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
             }
         };
 
@@ -484,7 +484,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
+                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
             }
         }
         .as_index_key_bounds();
@@ -675,7 +675,7 @@ where
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(dt.timestamp() as i128))
+                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
             }
         };
         let (start_bound, end_bound) = range.as_index_key_bounds();

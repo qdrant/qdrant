@@ -135,7 +135,7 @@ impl Numericable for i128 {
     }
 
     fn from_i128(x: i128) -> Self {
-        x as i128
+        x
     }
 
     fn abs_diff(self, b: Self) -> Self {
