@@ -221,7 +221,7 @@ impl ShardHolder {
                     return Err(CollectionError::bad_request(format!(
                         "can't abort resharding {resharding_key}, \
                          because write hash ring has been committed already, \
-                         resharding have to be driven to completion",
+                         resharding must be completed",
                     )));
                 }
 
