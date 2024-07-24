@@ -171,7 +171,7 @@ impl ValueIndexer for UuidPayloadIndex {
         }
     }
 
-    fn get_value(&self, value: &Value) -> Option<Self::ValueType> {
+    fn get_value(value: &Value) -> Option<Self::ValueType> {
         let value = value.as_str()?;
         UuidPayloadType::from_str(value).ok()
     }
