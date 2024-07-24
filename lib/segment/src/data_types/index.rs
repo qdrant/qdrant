@@ -21,7 +21,6 @@ pub struct KeywordIndexParams {
     pub is_tenant: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
-    #[cfg(any())]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
 }
@@ -52,7 +51,6 @@ pub struct IntegerIndexParams {
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg(any())]
     pub on_disk: Option<bool>,
 }
 
@@ -63,6 +61,7 @@ impl Default for IntegerIndexParams {
             lookup: true,
             range: true,
             is_tenant: None,
+            on_disk: None,
         }
     }
 }
@@ -84,7 +83,6 @@ pub struct FloatIndexParams {
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg(any())]
     pub on_disk: Option<bool>,
 }
 
@@ -186,6 +184,5 @@ pub struct DatetimeIndexParams {
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg(any())]
     pub on_disk: Option<bool>,
 }
