@@ -350,6 +350,18 @@ impl<T: Encodable + Numericable + Default, P> NumericIndex<T, P> {
         NumericIndexBuilder(Self::new(db, field, true))
     }
 
+    #[cfg(test)]
+    pub fn builder_immutable(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexImmutableBuilder<T, P>
+    where
+        Self: ValueIndexer<ValueType = P>,
+    {
+        NumericIndexImmutableBuilder {
+            index: Self::new(db.clone(), field, true),
+            field: field.to_owned(),
+            db,
+        }
+    }
+
     pub fn inner(&self) -> &NumericIndexInner<T> {
         &self.inner
     }
@@ -391,6 +403,47 @@ where
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(self.0)
+    }
+}
+
+#[cfg(test)]
+pub struct NumericIndexImmutableBuilder<T: Encodable + Numericable + Default, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+{
+    index: NumericIndex<T, P>,
+    field: String,
+    db: Arc<RwLock<DB>>,
+}
+
+#[cfg(test)]
+impl<T: Encodable + Numericable + Default, P> FieldIndexBuilderTrait
+    for NumericIndexImmutableBuilder<T, P>
+where
+    NumericIndex<T, P>: ValueIndexer<ValueType = P>,
+{
+    type FieldIndexType = NumericIndex<T, P>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        match &mut self.index.inner {
+            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Immutable(_) => unreachable!(),
+        }
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.index.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        self.index.inner.flusher()()?;
+        drop(self.index);
+        let mut inner: NumericIndexInner<T> = NumericIndexInner::new(self.db, &self.field, false);
+        inner.load()?;
+        Ok(NumericIndex {
+            inner,
+            _phantom: PhantomData,
+        })
     }
 }
 
