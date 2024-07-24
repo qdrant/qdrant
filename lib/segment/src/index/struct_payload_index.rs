@@ -12,14 +12,15 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
-use super::field_index::index_selector::index_builder_selector;
+use super::field_index::index_selector::{
+    IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
+};
 use super::field_index::FieldIndexBuilderTrait as _;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
 use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::index_selector::index_selector;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -54,6 +55,7 @@ pub struct StructPayloadIndex {
     /// Used to select unique point ids
     visited_pool: VisitedPool,
     db: Arc<RwLock<DB>>,
+    is_appendable: bool,
 }
 
 impl StructPayloadIndex {
@@ -100,11 +102,11 @@ impl StructPayloadIndex {
         self.config.save(&config_path)
     }
 
-    fn load_all_fields(&mut self, is_appendable: bool) -> OperationResult<()> {
+    fn load_all_fields(&mut self) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema.to_owned(), is_appendable)?;
+            let field_index = self.load_from_db(field, payload_schema.to_owned())?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -115,9 +117,10 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
-        is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = index_selector(field, &payload_schema, self.db.clone(), is_appendable);
+        let mut indexes = self
+            .selector(&payload_schema)
+            .new_index(field, &payload_schema)?;
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -160,6 +163,7 @@ impl StructPayloadIndex {
             path: path.to_owned(),
             visited_pool: Default::default(),
             db,
+            is_appendable,
         };
 
         if !index.config_path().exists() {
@@ -167,7 +171,7 @@ impl StructPayloadIndex {
             index.save_config()?;
         }
 
-        index.load_all_fields(is_appendable)?;
+        index.load_all_fields()?;
 
         Ok(index)
     }
@@ -178,7 +182,10 @@ impl StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut builders = index_builder_selector(field, &payload_schema, self.db.clone());
+        let mut builders = self
+            .selector(&payload_schema)
+            .index_builder(field, &payload_schema)?;
+
         for index in &mut builders {
             index.init()?;
         }
@@ -393,6 +400,17 @@ impl StructPayloadIndex {
                 .filter(move |&i| struct_filtered_context.check(i));
 
             Either::Right(iter)
+        }
+    }
+
+    fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
+        if !self.is_appendable && payload_schema.is_on_disk() {
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir: &self.path })
+        } else {
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db: &self.db,
+                is_appendable: self.is_appendable,
+            })
         }
     }
 }
