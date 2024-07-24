@@ -43,7 +43,8 @@ pub trait PayloadFieldIndex {
         condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
-    /// Return estimation of points amount which satisfy given condition
+    /// Return estimation of amount of points which satisfy given condition.
+    /// Returns `None` if the condition does not match the index type
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
