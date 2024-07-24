@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::mutable_numeric_index::MutableNumericIndex;
+use super::mutable_numeric_index::{DynamicNumericIndex, MutableNumericIndex};
 use super::{Encodable, NumericIndexInner, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
@@ -220,23 +220,16 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     }
 
     pub(super) fn load(&mut self) -> OperationResult<bool> {
-        let mut mutable = MutableNumericIndex::<T> {
-            map: Default::default(),
-            db_wrapper: self.db_wrapper.clone(),
-            histogram: Histogram::new(HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION),
-            points_count: 0,
-            max_values_per_point: 0,
-            point_to_values: Default::default(),
-        };
+        let mut mutable = MutableNumericIndex::<T>::new_from_db_wrapper(self.db_wrapper.clone());
         mutable.load()?;
-        let MutableNumericIndex {
+        let DynamicNumericIndex {
             map,
             histogram,
             points_count,
             max_values_per_point,
             point_to_values,
             ..
-        } = mutable;
+        } = mutable.into_dynamic_index();
 
         self.map = NumericKeySortedVec::from_btree_set(map);
         self.histogram = histogram;
