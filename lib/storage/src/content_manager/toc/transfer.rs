@@ -146,6 +146,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     async fn set_shard_replica_set_state(
         &self,
         collection_id: CollectionId,
+        peer_id: Option<PeerId>,
         shard_id: ShardId,
         state: ReplicaState,
         from_state: Option<ReplicaState>,
@@ -153,7 +154,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         let operation = ConsensusOperations::set_replica_state(
             collection_id,
             shard_id,
-            self.this_peer_id(),
+            peer_id.unwrap_or_else(|| self.this_peer_id()),
             state,
             from_state,
         );

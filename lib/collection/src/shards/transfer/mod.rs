@@ -406,6 +406,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn set_shard_replica_set_state(
         &self,
         collection_id: CollectionId,
+        peer_id: Option<PeerId>,
         shard_id: ShardId,
         state: ReplicaState,
         from_state: Option<ReplicaState>,
@@ -418,6 +419,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn set_shard_replica_set_state_confirm_and_retry(
         &self,
         collection_id: &CollectionId,
+        peer_id: Option<PeerId>,
         shard_id: ShardId,
         state: ReplicaState,
         from_state: Option<ReplicaState>,
@@ -434,7 +436,13 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             log::trace!("Propose and confirm set shard replica set state");
             result = self
-                .set_shard_replica_set_state(collection_id.clone(), shard_id, state, from_state)
+                .set_shard_replica_set_state(
+                    collection_id.clone(),
+                    peer_id,
+                    shard_id,
+                    state,
+                    from_state,
+                )
                 .await;
 
             match &result {

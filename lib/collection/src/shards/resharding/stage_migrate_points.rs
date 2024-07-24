@@ -244,6 +244,7 @@ async fn drive_up(
     consensus
         .set_shard_replica_set_state_confirm_and_retry(
             collection_id,
+            None,
             reshard_key.shard_id,
             ReplicaState::Active,
             Some(ReplicaState::Resharding),
@@ -387,6 +388,17 @@ async fn drive_down(
                         reshard_key.shard_id,
                     ))
                 })?;
+
+                // Switch target replica back into active state
+                consensus
+                    .set_shard_replica_set_state_confirm_and_retry(
+                        collection_id,
+                        Some(target_peer_id),
+                        target_shard_id,
+                        ReplicaState::Active,
+                        Some(ReplicaState::Resharding),
+                    )
+                    .await?;
             }
             // Transfer locally, within this peer
             None => {
