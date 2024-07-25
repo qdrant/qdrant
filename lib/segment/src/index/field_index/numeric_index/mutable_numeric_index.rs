@@ -139,28 +139,6 @@ impl<T: Encodable + Numericable + Default> DynamicNumericIndex<T> {
         }
     }
 
-    pub fn values_by_key(&self, key: &T) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let key_min = Point::new(*key, PointOffsetType::MIN);
-        let key_max = Point::new(*key, PointOffsetType::MAX);
-        self.values_range(Bound::Included(key_min), Bound::Included(key_max))
-    }
-
-    /// Tries to estimate the amount of points for a given key.
-    pub fn estimate_points(&self, key: &T) -> usize {
-        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
-        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
-
-        let mut iter = self.map.range((start, end));
-        let first = iter.next();
-        let last = iter.next_back();
-
-        match (first, last) {
-            (Some(_), None) => 1,
-            (Some(start), Some(end)) => (start.idx..end.idx).len(),
-            (None, _) => 0,
-        }
-    }
-
     fn add_to_map(map: &mut BTreeSet<Point<T>>, histogram: &mut Histogram<T>, key: Point<T>) {
         let was_added = map.insert(key.clone());
         // Histogram works with unique values (idx + value) only, so we need to

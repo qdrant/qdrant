@@ -16,7 +16,7 @@ use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
-    map: NumericKeySortedVec<T>,
+    pub(super) map: NumericKeySortedVec<T>,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     pub(super) histogram: Histogram<T>,
     pub(super) points_count: usize,
@@ -24,7 +24,7 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
     point_to_values: ImmutablePointToValues<T>,
 }
 
-struct NumericKeySortedVec<T: Encodable + Numericable> {
+pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
     data: Vec<Point<T>>,
     deleted: BitVec,
     deleted_count: usize,
@@ -76,7 +76,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_start_index(&self, bound: Bound<Point<T>>) -> usize {
+    pub(super) fn find_start_index(&self, bound: Bound<Point<T>>) -> usize {
         match bound {
             Bound::Included(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
             Bound::Excluded(bound) => match self.data.binary_search(&bound) {
@@ -87,7 +87,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_end_index(&self, start: usize, bound: Bound<Point<T>>) -> usize {
+    pub(super) fn find_end_index(&self, start: usize, bound: Bound<Point<T>>) -> usize {
         if start >= self.data.len() {
             // the range `end` should never be less than `start`
             return start;
@@ -207,28 +207,6 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         self.map
             .values_range(start_bound, end_bound)
             .map(|Point { idx, .. }| idx)
-    }
-
-    pub fn values_by_key(&self, key: &T) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
-        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
-        self.values_range(start, end)
-    }
-
-    /// Tries to estimate the amount of points for a given key.
-    pub fn estimate_points(&self, key: &T) -> usize {
-        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
-        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
-
-        let mut iter = self.map.values_range(start, end);
-        let first = iter.next();
-        let last = iter.next_back();
-
-        match (first, last) {
-            (Some(_), None) => 1,
-            (Some(start), Some(end)) => (start.idx..end.idx).len(),
-            (None, _) => 0,
-        }
     }
 
     pub(super) fn orderable_values_range(

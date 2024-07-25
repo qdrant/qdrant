@@ -340,6 +340,43 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx) == 0
     }
+
+    pub fn values_by_key(&self, key: &T) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
+        match &self {
+            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
+        }
+    }
+
+    /// Tries to estimate the amount of points for a given key.
+    pub fn estimate_points(&self, key: &T) -> usize {
+        let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
+
+        match &self {
+            NumericIndexInner::Mutable(mutable) => {
+                let mut iter = mutable.map.range((start, end));
+                let first = iter.next();
+                let last = iter.next_back();
+
+                match (first, last) {
+                    (Some(_), None) => 1,
+                    (Some(start), Some(end)) => (start.idx..end.idx).len(),
+                    (None, _) => 0,
+                }
+            }
+            NumericIndexInner::Immutable(immutable) => {
+                let start_index = immutable.map.find_start_index(start);
+                let end_index = immutable.map.find_end_index(start_index, end);
+                let range_size = end_index - start_index;
+                let avg_values_per_point =
+                    self.total_unique_values_count() as f32 / self.get_points_count() as f32;
+                (range_size as f32 / avg_values_per_point).round() as usize
+            }
+        }
+    }
 }
 
 pub struct NumericIndex<T: Encodable + Numericable + Default, P> {
@@ -488,14 +525,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_i128(uuid.as_u128() as UuidIntType);
-                return match &self {
-                    NumericIndexInner::Mutable(mutable) => {
-                        Some(Box::new(mutable.values_by_key(&key)))
-                    }
-                    NumericIndexInner::Immutable(immutable) => {
-                        Some(Box::new(immutable.values_by_key(&key)))
-                    }
-                };
+                return Some(self.values_by_key(&key));
             }
         }
 
@@ -540,11 +570,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_i128(uuid.as_u128() as UuidIntType);
 
-                let estimated_count = match &self {
-                    NumericIndexInner::Mutable(index) => index.estimate_points(&key),
-                    NumericIndexInner::Immutable(index) => index.estimate_points(&key),
-                };
-
+                let estimated_count = self.estimate_points(&key);
                 return Some(CardinalityEstimation::exact(estimated_count)
                     .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
             }
