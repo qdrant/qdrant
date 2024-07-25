@@ -357,7 +357,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
 
         match &self {
             NumericIndexInner::Mutable(mutable) => {
-                let mut iter = mutable.map.range((start, end));
+                let mut iter = mutable.map().range((start, end));
                 let first = iter.next();
                 let last = iter.next_back();
 
@@ -744,7 +744,8 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
-                index.add_many_to_list(id, values.iter().map(|i| i.as_u128() as UuidIntType))
+                let values: Vec<i128> = values.iter().map(|i| i.as_u128() as UuidIntType).collect();
+                index.add_many_to_list(id, values)
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
