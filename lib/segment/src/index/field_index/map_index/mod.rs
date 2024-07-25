@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
+use std::iter;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -365,13 +366,13 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
-            })) => Ok(self.get_iterator(keyword.as_str())),
+            })) => Some(self.get_iterator(keyword.as_str())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Keywords(keywords) => Ok(Box::new(
+                AnyVariants::Keywords(keywords) => Some(Box::new(
                     keywords
                         .iter()
                         .flat_map(|keyword| self.get_iterator(keyword.as_str()))
@@ -379,25 +380,20 @@ impl PayloadFieldIndex for MapIndex<str> {
                 )),
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
-                        Ok(Box::new(vec![].into_iter()))
+                        Some(Box::new(iter::empty()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_set(keywords)),
-            _ => Err(OperationError::service_error("failed to filter")),
+            })) => Some(self.except_set(keywords)),
+            _ => None,
         }
     }
 
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
@@ -406,7 +402,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
-                Ok(estimation)
+                Some(estimation)
             }
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Keywords(keywords) => {
@@ -419,26 +415,27 @@ impl PayloadFieldIndex for MapIndex<str> {
                     } else {
                         combine_should_estimations(&estimations, self.get_indexed_points())
                     };
-                    Ok(estimation
-                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
+                    Some(
+                        estimation
+                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                    )
                 }
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
-                        Ok(CardinalityEstimation::exact(0)
-                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
+                        Some(
+                            CardinalityEstimation::exact(0).with_primary_clause(
+                                PrimaryCondition::Condition(condition.clone()),
+                            ),
+                        )
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_cardinality(keywords.iter().map(|k| k.as_str()))),
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            })) => Some(self.except_cardinality(keywords.iter().map(|k| k.as_str()))),
+            _ => None,
         }
     }
 
@@ -479,22 +476,20 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
-            })) => Ok(self.get_iterator(integer)),
+            })) => Some(self.get_iterator(integer)),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Keywords(keywords) => {
                     if keywords.is_empty() {
-                        Ok(Box::new(vec![].into_iter()))
+                        Some(Box::new(vec![].into_iter()))
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
-                AnyVariants::Integers(integers) => Ok(Box::new(
+                AnyVariants::Integers(integers) => Some(Box::new(
                     integers
                         .iter()
                         .flat_map(|integer| self.get_iterator(integer))
@@ -503,15 +498,12 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Ok(self.except_set(integers)),
-            _ => Err(OperationError::service_error("failed to filter")),
+            })) => Some(self.except_set(integers)),
+            _ => None,
         }
     }
 
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
@@ -520,17 +512,18 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
-                Ok(estimation)
+                Some(estimation)
             }
             Some(Match::Any(MatchAny { any: any_variants })) => match any_variants {
                 AnyVariants::Keywords(keywords) => {
                     if keywords.is_empty() {
-                        Ok(CardinalityEstimation::exact(0)
-                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
+                        Some(
+                            CardinalityEstimation::exact(0).with_primary_clause(
+                                PrimaryCondition::Condition(condition.clone()),
+                            ),
+                        )
                     } else {
-                        Err(OperationError::service_error(
-                            "failed to estimate cardinality",
-                        ))
+                        None
                     }
                 }
                 AnyVariants::Integers(integers) => {
@@ -543,16 +536,16 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     } else {
                         combine_should_estimations(&estimations, self.get_indexed_points())
                     };
-                    Ok(estimation
-                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())))
+                    Some(
+                        estimation
+                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                    )
                 }
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Ok(self.except_cardinality(integers.iter())),
-            _ => Err(OperationError::service_error(
-                "failed to estimate cardinality",
-            )),
+            })) => Some(self.except_cardinality(integers.iter())),
+            _ => None,
         }
     }
 
