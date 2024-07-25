@@ -71,7 +71,7 @@ impl StructPayloadIndex {
 
             indexes
                 .iter()
-                .find_map(|index| index.estimate_cardinality(&full_path_condition).ok())
+                .find_map(|index| index.estimate_cardinality(&full_path_condition))
         })
     }
 
@@ -85,7 +85,7 @@ impl StructPayloadIndex {
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition).ok())
+                    .find_map(|field_index| field_index.filter(field_condition))
             });
         indexes
     }
