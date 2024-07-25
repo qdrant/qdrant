@@ -523,6 +523,7 @@ impl<'s> SegmentHolder {
     /// Moving is not performed in the following cases:
     /// - The segment containing the point is appendable.
     /// - The `update_nonappendable` function returns true for the segment.
+    ///
     /// Otherwise, the operation is applied to the containing segment in place.
     ///
     /// Rationale: non-appendable segments may contain immutable indexes that could be left in an

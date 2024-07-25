@@ -13,8 +13,9 @@ edition = "2021"
 rust-version = "1.77"
 default-run = "qdrant"
 
-[lints]
-workspace = true
+# https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [features]
 default = ["web", "parking_lot"]
