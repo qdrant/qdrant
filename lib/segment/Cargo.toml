@@ -42,7 +42,7 @@ tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = "1.10.0"
 itertools = { workspace = true }
-rocksdb = { version = "0.22.0", default-features = false, features = ["snappy"] }
+rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4"] }
 uuid = { workspace = true }
 bincode = "1.3"
 serde = { workspace = true }
