@@ -7,6 +7,7 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
+use segment::data_types::facets::{merge_facet_hits, FacetRequest, FacetValueHit};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -14,6 +15,7 @@ use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::json_path::JsonPath;
+use segment::spaces::tools::peek_top_largest_iterable;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
@@ -701,6 +703,32 @@ impl SegmentEntry for ProxySegment {
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points
+    }
+
+    fn facet(
+        &self,
+        request: &segment::data_types::facets::FacetRequest,
+    ) -> OperationResult<Vec<FacetValueHit>> {
+        let deleted_points = self.deleted_points.read();
+        let read_segment_hits = if deleted_points.is_empty() {
+            self.wrapped_segment.get().read().facet(request)?
+        } else {
+            let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                request.filter.as_ref(),
+                &deleted_points,
+            );
+            let new_request = FacetRequest {
+                key: request.key.clone(),
+                limit: request.limit,
+                filter: Some(wrapped_filter),
+            };
+            self.wrapped_segment.get().read().facet(&new_request)?
+        };
+        let write_segment_hits = self.write_segment.get().read().facet(request)?;
+
+        let hits_iter = merge_facet_hits(read_segment_hits, write_segment_hits);
+        let hits = peek_top_largest_iterable(hits_iter, request.limit);
+        Ok(hits)
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {

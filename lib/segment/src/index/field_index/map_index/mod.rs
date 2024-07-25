@@ -34,6 +34,8 @@ use crate::types::{
 pub mod immutable_map_index;
 pub mod mutable_map_index;
 
+pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
+
 pub trait MapIndexKey: Key + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
 
@@ -130,24 +132,38 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn get_points_with_value_count(&self, value: &N) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         match self {
-            MapIndex::Mutable(index) => index.get_points_with_value_count(value),
-            MapIndex::Immutable(index) => index.get_points_with_value_count(value),
+            MapIndex::Mutable(index) => index.get_count_for_value(value),
+            MapIndex::Immutable(index) => index.get_count_for_value(value),
         }
     }
 
-    fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value),
             MapIndex::Immutable(index) => index.get_iterator(value),
         }
     }
 
-    fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+    fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         match self {
-            MapIndex::Mutable(index) => index.get_values_iterator(),
-            MapIndex::Immutable(index) => index.get_values_iterator(),
+            MapIndex::Mutable(index) => index.iter_values(),
+            MapIndex::Immutable(index) => index.iter_values(),
+        }
+    }
+
+    pub fn iter_counts_per_value(&self) -> Box<dyn Iterator<Item = (&N, usize)> + '_> {
+        match self {
+            MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value()),
+            MapIndex::Immutable(index) => Box::new(index.iter_counts_per_value()),
+        }
+    }
+
+    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdRefIter<'_>)> + '_> {
+        match self {
+            MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
+            MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
         }
     }
 
@@ -160,7 +176,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     }
 
     fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
-        let values_count = self.get_points_with_value_count(value).unwrap_or(0);
+        let values_count = self.get_count_for_value(value).unwrap_or(0);
 
         CardinalityEstimation::exact(values_count)
     }
@@ -254,7 +270,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         // max = min(60, 20) = 20
 
         let excluded_value_counts: Vec<_> = excluded
-            .map(|val| self.get_points_with_value_count(val.borrow()).unwrap_or(0))
+            .map(|val| self.get_count_for_value(val.borrow()).unwrap_or(0))
             .collect();
         let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
@@ -317,9 +333,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         K: Borrow<N> + Hash + Eq,
     {
         Box::new(
-            self.get_values_iterator()
+            self.iter_values()
                 .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(|key| self.get_iterator(key.borrow()))
+                .flat_map(|key| self.get_iterator(key.borrow()).copied())
                 .unique(),
         )
     }
@@ -370,12 +386,12 @@ impl PayloadFieldIndex for MapIndex<str> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Keyword(keyword),
-            })) => Some(self.get_iterator(keyword.as_str())),
+            })) => Some(Box::new(self.get_iterator(keyword.as_str()).copied())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Keywords(keywords) => Some(Box::new(
                     keywords
                         .iter()
-                        .flat_map(|keyword| self.get_iterator(keyword.as_str()))
+                        .flat_map(|keyword| self.get_iterator(keyword.as_str()).copied())
                         .unique(),
                 )),
                 AnyVariants::Integers(integers) => {
@@ -445,8 +461,8 @@ impl PayloadFieldIndex for MapIndex<str> {
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
-            self.get_values_iterator()
-                .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
+            self.iter_values()
+                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
                 .filter(move |(_value, count)| *count > threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
@@ -480,7 +496,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Integer(integer),
-            })) => Some(self.get_iterator(integer)),
+            })) => Some(Box::new(self.get_iterator(integer).copied())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Keywords(keywords) => {
                     if keywords.is_empty() {
@@ -492,7 +508,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 AnyVariants::Integers(integers) => Some(Box::new(
                     integers
                         .iter()
-                        .flat_map(|integer| self.get_iterator(integer))
+                        .flat_map(|integer| self.get_iterator(integer).copied())
                         .unique(),
                 )),
             },
@@ -555,8 +571,8 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
-            self.get_values_iterator()
-                .map(|value| (value, self.get_points_with_value_count(value).unwrap_or(0)))
+            self.iter_values()
+                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
                 .filter(move |(_value, count)| *count >= threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), (*value).into()),

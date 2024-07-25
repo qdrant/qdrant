@@ -25,17 +25,20 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
+use crate::data_types::facets::{FacetRequest, FacetValueHit};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::map_index::IdRefIter;
 use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::json_path::JsonPath;
+use crate::payload_storage::FilterContext;
 use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -1490,6 +1493,33 @@ impl SegmentEntry for Segment {
                 payload_index.estimate_cardinality(filter)
             }
         }
+    }
+
+    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetValueHit>> {
+        let payload_index = self.payload_index.borrow();
+
+        let map_index = payload_index
+            .field_indexes
+            .get(&request.key)
+            .and_then(|index| index.iter().find_map(|index| index.as_map_index()))
+            .ok_or_else(|| OperationError::MissingMapIndexForFacet {
+                key: request.key.to_string(),
+            })?;
+
+        let hits = if let Some(filter) = &request.filter {
+            let struct_filter_context = payload_index.struct_filtered_context(filter);
+            let check_counter = |iter: IdRefIter| {
+                iter.filter(|point_id| struct_filter_context.check(**point_id))
+                    .count()
+            };
+            let hits_iter = map_index.iter_values_map(&check_counter);
+            peek_top_largest_iterable(hits_iter, request.limit)
+        } else {
+            let hits_iter = map_index.iter_counts_per_value();
+            peek_top_largest_iterable(hits_iter, request.limit)
+        };
+
+        Ok(hits)
     }
 
     fn segment_type(&self) -> SegmentType {

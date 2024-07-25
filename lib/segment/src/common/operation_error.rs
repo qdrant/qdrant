@@ -58,6 +58,8 @@ pub enum OperationError {
     WrongPayloadKey { description: String },
     #[error("No range index for `order_by` key: `{key}`. Please create one to use `order_by`. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Range conditions")]
     MissingRangeIndexForOrderBy { key: String },
+    #[error("No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions")]
+    MissingMapIndexForFacet { key: String },
 }
 
 impl OperationError {

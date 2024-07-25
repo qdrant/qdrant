@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_map_index::MutableMapIndex;
-use super::{MapIndex, MapIndexKey};
+use super::{IdRefIter, MapIndex, MapIndexKey};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -216,20 +216,36 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         self.value_to_points.len()
     }
 
-    pub fn get_points_with_value_count(&self, value: &N) -> Option<usize> {
+    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.value_to_points.get(value).map(|p| p.len())
     }
 
-    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
+        self.value_to_points
+            .iter()
+            .map(|(k, v)| (k.borrow(), v.len()))
+    }
+
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
+        self.value_to_points.keys().map(|k| {
+            (
+                k.borrow(),
+                Box::new(self.get_iterator(k.borrow()))
+                    as Box<dyn Iterator<Item = &PointOffsetType>>,
+            )
+        })
+    }
+
+    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
         if let Some(range) = self.value_to_points.get(value) {
             let range = range.start as usize..range.end as usize;
-            Box::new(self.value_to_points_container[range].iter().cloned())
+            Box::new(self.value_to_points_container[range].iter())
         } else {
-            Box::new(iter::empty::<PointOffsetType>())
+            Box::new(iter::empty::<&PointOffsetType>())
         }
     }
 
-    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.value_to_points.keys().map(|v| v.borrow()))
     }
 }

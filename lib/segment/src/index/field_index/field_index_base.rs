@@ -7,10 +7,11 @@ use serde_json::Value;
 use super::binary_index::BinaryIndexBuilder;
 use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
-use super::map_index::{MapIndex, MapIndexBuilder};
+use super::map_index::{IdRefIter, MapIndex, MapIndexBuilder};
 use super::numeric_index::{NumericIndex, NumericIndexBuilder, StreamRange};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::data_types::facets::{FacetValue, FacetValueHit};
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
@@ -344,6 +345,20 @@ impl FieldIndex {
             | FieldIndex::FullTextIndex(_) => None,
         }
     }
+
+    pub fn as_map_index(&self) -> Option<MapIndexEnum> {
+        match self {
+            FieldIndex::KeywordIndex(index) => Some(MapIndexEnum::KeywordIndex(index)),
+            FieldIndex::IntMapIndex(_) // TODO: use int map index too
+            | FieldIndex::UuidIndex(_) // TODO: use uuid index too
+            | FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BinaryIndex(_)
+            | FieldIndex::FullTextIndex(_) => None,
+        }
+    }
 }
 
 /// Common interface for all index builders.
@@ -463,6 +478,43 @@ impl<'a> NumericFieldIndex<'a> {
                     .flatten()
                     .map(OrderValue::Float),
             ),
+        }
+    }
+}
+
+pub enum MapIndexEnum<'a> {
+    KeywordIndex(&'a MapIndex<str>),
+}
+
+impl<'a> MapIndexEnum<'a> {
+    pub fn iter_values_map<F>(&'a self, f: &'a F) -> Box<dyn Iterator<Item = FacetValueHit> + '_>
+    where
+        F: Fn(IdRefIter<'a>) -> usize + 'a,
+    {
+        match self {
+            MapIndexEnum::KeywordIndex(index) => {
+                let iter =
+                    index
+                        .iter_values_map()
+                        .map(|(value, internal_ids_iter)| FacetValueHit {
+                            value: FacetValue::Keyword(value.to_string()),
+                            count: f(internal_ids_iter),
+                        });
+                Box::new(iter)
+            }
+        }
+    }
+    pub fn iter_counts_per_value(&'a self) -> Box<dyn Iterator<Item = FacetValueHit> + 'a> {
+        match self {
+            MapIndexEnum::KeywordIndex(index) => {
+                let iter = index
+                    .iter_counts_per_value()
+                    .map(|(value, count)| FacetValueHit {
+                        value: FacetValue::Keyword(value.to_string()),
+                        count,
+                    });
+                Box::new(iter)
+            }
         }
     }
 }

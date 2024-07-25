@@ -213,7 +213,7 @@ impl StructPayloadIndex {
         self.id_tracker.borrow().available_point_count()
     }
 
-    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+    pub fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
         let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
         let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
