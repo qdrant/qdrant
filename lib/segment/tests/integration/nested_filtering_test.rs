@@ -71,26 +71,57 @@ fn test_filtering_context_consistency() {
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
-    let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
+    let is_appendable = true;
+
+    let mut index = StructPayloadIndex::open(
+        wrapped_payload_storage,
+        id_tracker,
+        dir.path(),
+        is_appendable,
+    )
+    .unwrap();
 
     index
-        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("f"),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].a"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].a"),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].b"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].b"),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].c"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].c"),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].d"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].d"),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].text"), PayloadSchemaType::Text)
+        .set_indexed(
+            &JsonPath::new("arr1[].text"),
+            PayloadSchemaType::Text,
+            is_appendable,
+        )
         .unwrap();
 
     {

@@ -71,6 +71,7 @@ pub fn index_builder_selector(
     field: &JsonPath,
     payload_schema: &PayloadFieldSchema,
     db: Arc<RwLock<DB>>,
+    _is_appendable: bool,
 ) -> Vec<FieldIndexBuilder> {
     let field: String = field.to_string();
     let field = field.as_str();

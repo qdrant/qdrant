@@ -238,30 +238,57 @@ pub fn create_struct_payload_index(
     num_points: usize,
     seed: u64,
 ) -> StructPayloadIndex {
+    let is_appendable = true;
+
     let payload_storage = Arc::new(AtomicRefCell::new(
         create_payload_storage_fixture(num_points, seed).into(),
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
+    let mut index =
+        StructPayloadIndex::open(payload_storage, id_tracker, path, is_appendable).unwrap();
 
     index
-        .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
+        .set_indexed(
+            &STR_KEY.parse().unwrap(),
+            PayloadSchemaType::Keyword,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
+        .set_indexed(
+            &INT_KEY.parse().unwrap(),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
+        .set_indexed(
+            &FLT_KEY.parse().unwrap(),
+            PayloadSchemaType::Float,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&GEO_KEY.parse().unwrap(), PayloadSchemaType::Geo)
+        .set_indexed(
+            &GEO_KEY.parse().unwrap(),
+            PayloadSchemaType::Geo,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&TEXT_KEY.parse().unwrap(), PayloadSchemaType::Text)
+        .set_indexed(
+            &TEXT_KEY.parse().unwrap(),
+            PayloadSchemaType::Text,
+            is_appendable,
+        )
         .unwrap();
     index
-        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Bool)
+        .set_indexed(
+            &BOOL_KEY.parse().unwrap(),
+            PayloadSchemaType::Bool,
+            is_appendable,
+        )
         .unwrap();
 
     index

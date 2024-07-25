@@ -87,6 +87,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
+        _is_appendable: bool,
     ) -> OperationResult<()> {
         let payload_schema = payload_schema.into();
 

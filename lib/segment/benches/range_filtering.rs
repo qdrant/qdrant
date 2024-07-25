@@ -68,14 +68,24 @@ fn range_filtering(c: &mut Criterion) {
     )
     .unwrap();
 
+    let is_appendable = true;
+
     // add numeric float index
     index
-        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
+        .set_indexed(
+            &FLT_KEY.parse().unwrap(),
+            PayloadSchemaType::Float,
+            is_appendable,
+        )
         .unwrap();
 
     // add numeric integer index
     index
-        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
+        .set_indexed(
+            &INT_KEY.parse().unwrap(),
+            PayloadSchemaType::Integer,
+            is_appendable,
+        )
         .unwrap();
 
     // make sure all points are indexed

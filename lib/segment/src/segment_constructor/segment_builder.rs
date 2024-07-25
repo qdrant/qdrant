@@ -417,7 +417,7 @@ impl SegmentBuilder {
             )?;
 
             for (field, payload_schema) in indexed_fields {
-                payload_index.set_indexed(&field, payload_schema)?;
+                payload_index.set_indexed(&field, payload_schema, appendable_flag)?;
                 check_process_stopped(stopped)?;
             }
 

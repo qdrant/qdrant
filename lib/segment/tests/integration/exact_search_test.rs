@@ -90,7 +90,7 @@ fn exact_search_test() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer, true)
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index

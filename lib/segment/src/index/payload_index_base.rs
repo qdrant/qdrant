@@ -22,6 +22,7 @@ pub trait PayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
+        is_appendable: bool,
     ) -> OperationResult<()>;
 
     /// Remove index

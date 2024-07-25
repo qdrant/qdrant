@@ -95,7 +95,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
-        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
+        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Keyword, true)
         .unwrap();
 
     let mut group = c.benchmark_group("boolean-query-points");

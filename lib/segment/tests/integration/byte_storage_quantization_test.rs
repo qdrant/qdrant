@@ -293,7 +293,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer, true)
         .unwrap();
 
     let quantization_config = match quantization_variant {

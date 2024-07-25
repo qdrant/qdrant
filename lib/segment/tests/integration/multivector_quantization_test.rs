@@ -257,7 +257,7 @@ fn test_multivector_quantization_hnsw(
     segment
         .payload_index
         .borrow_mut()
-        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer, true)
         .unwrap();
 
     let quantization_config = match quantization_variant {
