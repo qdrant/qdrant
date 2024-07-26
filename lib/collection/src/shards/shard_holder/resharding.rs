@@ -286,7 +286,21 @@ impl ShardHolder {
 
             if shard.peers().is_empty() {
                 log::debug!("removing {shard_id} replica set, because replica set is empty");
+
+                if let Some(shard_key) = shard_key {
+                    self.key_mapping.write_optional(|key_mapping| {
+                        if !key_mapping.contains_key(shard_key) {
+                            return None;
+                        }
+
+                        let mut key_mapping = key_mapping.clone();
+                        key_mapping.get_mut(shard_key).unwrap().remove(&shard_id);
+                        Some(key_mapping)
+                    })?;
+                }
+
                 self.drop_and_remove_shard(shard_id).await?;
+                self.shard_id_to_key_mapping.remove(&shard_id);
             }
         } else {
             log::warn!(
