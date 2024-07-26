@@ -12,6 +12,7 @@ use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use parking_lot::RwLock;
+use uuid::Uuid;
 
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
@@ -187,6 +188,28 @@ impl SegmentBuilder {
                     if let Some(dates) = index.get_values(internal_id) {
                         for date in dates {
                             ordering = ordering.wrapping_add(date as u64);
+                        }
+                    }
+                    break;
+                }
+                FieldIndex::UuidIndex(index) => {
+                    if let Some(ids) = index.get_values(internal_id) {
+                        for id in ids {
+                            let uuid = Uuid::from_u128(id);
+
+                            // Not all Uuid versions hold timestamp data. The most common version, v4 for example is completely
+                            // random and can't be sorted. To still allow defragmentation, we assume that usually the same
+                            // version gets used for a payload key and implement an alternative sorting criteria, that just
+                            // takes the Uuids bytes to group equal Uuids together.
+                            if let Some(timestamp) = uuid.get_timestamp() {
+                                ordering = ordering.wrapping_add(timestamp.to_gregorian().0);
+                            } else {
+                                // First part of u128
+                                ordering = ordering.wrapping_add((id >> 64) as u64);
+
+                                // Second part of u128
+                                ordering = ordering.wrapping_add(id as u64);
+                            }
                         }
                     }
                     break;

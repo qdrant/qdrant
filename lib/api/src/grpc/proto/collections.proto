@@ -129,6 +129,7 @@ enum PayloadSchemaType {
   Text = 5;
   Bool = 6;
   Datetime = 7;
+  Uuid = 8;
 }
 
 enum QuantizationType {
@@ -418,6 +419,10 @@ message DatetimeIndexParams {
   optional bool on_disk = 1; // If true - store index on disk.
 }
 
+message UuidIndexParams {
+  optional bool is_tenant = 1; // If true - used for tenant optimization.
+}
+
 message PayloadIndexParams {
   oneof index_params {
     KeywordIndexParams keyword_index_params = 3; // Parameters for keyword index
@@ -427,6 +432,7 @@ message PayloadIndexParams {
     TextIndexParams text_index_params = 1; // Parameters for text index
     BoolIndexParams bool_index_params = 6; // Parameters for bool index
     DatetimeIndexParams datetime_index_params = 7; // Parameters for datetime index
+    UuidIndexParams uuid_index_params = 8; // Parameters for uuid index
   }
 }
 

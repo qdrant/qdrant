@@ -73,6 +73,7 @@
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
     - [UpdateCollectionClusterSetupResponse](#qdrant-UpdateCollectionClusterSetupResponse)
+    - [UuidIndexParams](#qdrant-UuidIndexParams)
     - [VectorParams](#qdrant-VectorParams)
     - [VectorParamsDiff](#qdrant-VectorParamsDiff)
     - [VectorParamsDiffMap](#qdrant-VectorParamsDiffMap)
@@ -1085,6 +1086,7 @@ Note: 1kB = 1 vector of size 256. |
 | text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
 | bool_index_params | [BoolIndexParams](#qdrant-BoolIndexParams) |  | Parameters for bool index |
 | datetime_index_params | [DatetimeIndexParams](#qdrant-DatetimeIndexParams) |  | Parameters for datetime index |
+| uuid_index_params | [UuidIndexParams](#qdrant-UuidIndexParams) |  | Parameters for uuid index |
 
 
 
@@ -1458,6 +1460,21 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-UuidIndexParams"></a>
+
+### UuidIndexParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+
+
+
+
+
+
 <a name="qdrant-VectorParams"></a>
 
 ### VectorParams
@@ -1705,6 +1722,7 @@ Note: 1kB = 1 vector of size 256. |
 | Text | 5 |  |
 | Bool | 6 |  |
 | Datetime | 7 |  |
+| Uuid | 8 |  |
 
 
 
@@ -4173,6 +4191,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | FieldTypeText | 4 |  |
 | FieldTypeBool | 5 |  |
 | FieldTypeDatetime | 6 |  |
+| FieldTypeUuid | 7 |  |
 
 
 

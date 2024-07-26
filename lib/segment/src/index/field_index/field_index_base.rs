@@ -20,7 +20,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType, RangeInterface,
+    PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
 };
 
 pub trait PayloadFieldIndex {
@@ -112,6 +112,7 @@ pub enum FieldIndex {
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
+    UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -125,6 +126,7 @@ impl std::fmt::Debug for FieldIndex {
             FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),
             FieldIndex::BinaryIndex(_index) => write!(f, "BinaryIndex"),
             FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
+            FieldIndex::UuidIndex(_index) => write!(f, "UuidIndex"),
         }
     }
 }
@@ -163,6 +165,7 @@ impl FieldIndex {
                 }
                 _ => None,
             },
+            FieldIndex::UuidIndex(_) => None,
         }
     }
 
@@ -176,6 +179,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
             FieldIndex::BinaryIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
+            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
         }
     }
 
@@ -189,6 +193,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::BinaryIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::UuidIndex(ref mut payload_field_index) => payload_field_index.load(),
         }
     }
 
@@ -202,6 +207,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.clear(),
             FieldIndex::BinaryIndex(index) => index.clear(),
             FieldIndex::FullTextIndex(index) => index.clear(),
+            FieldIndex::UuidIndex(index) => index.clear(),
         }
     }
 
@@ -263,6 +269,9 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::UuidIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
         }
     }
 
@@ -276,6 +285,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
             FieldIndex::BinaryIndex(index) => index.remove_point(point_id),
             FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
+            FieldIndex::UuidIndex(index) => index.remove_point(point_id),
         }
     }
 
@@ -289,6 +299,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
             FieldIndex::BinaryIndex(index) => index.get_telemetry_data(),
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
+            FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
         }
     }
 
@@ -302,6 +313,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.values_count(point_id),
             FieldIndex::BinaryIndex(index) => index.values_count(point_id),
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
+            FieldIndex::UuidIndex(index) => index.values_count(point_id),
         }
     }
 
@@ -315,6 +327,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
             FieldIndex::BinaryIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -327,6 +340,7 @@ impl FieldIndex {
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BinaryIndex(_)
+            | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_) => None,
         }
     }
@@ -366,6 +380,7 @@ pub enum FieldIndexBuilder {
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
+    UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -381,6 +396,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => index,
             Self::BinaryIndex(index) => index,
             Self::FullTextIndex(index) => index,
+            Self::UuidIndex(index) => index,
         } {
             fn init(&mut self) -> OperationResult<()>;
             fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
@@ -397,6 +413,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
+            Self::UuidIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
         })
     }
 }

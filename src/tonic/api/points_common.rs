@@ -783,6 +783,7 @@ fn convert_field_type(
             FieldType::Text => Some(PayloadSchemaType::Text.into()),
             FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
             FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
+            FieldType::Uuid => Some(PayloadSchemaType::Uuid.into()),
         },
         // Parameterized index with mismatching types
         (

@@ -20,6 +20,7 @@ use rocksdb::DB;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use uuid::Uuid;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::histogram::Point;
@@ -33,13 +34,13 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i64_key_ascending, encode_f64_key_ascending,
-    encode_i64_key_ascending,
+    decode_f64_key_ascending, decode_i64_key_ascending, decode_u128_key_ascending,
+    encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
-    RangeInterface,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchValue,
+    PayloadKeyType, Range, RangeInterface, UuidIntType, UuidPayloadType, ValueVariants,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -67,6 +68,20 @@ impl Encodable for IntPayloadType {
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         decode_i64_key_ascending(key)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp(other)
+    }
+}
+
+impl Encodable for u128 {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_u128_key_ascending(*self, id)
+    }
+
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        decode_u128_key_ascending(key)
     }
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
@@ -237,7 +252,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         };
 
@@ -307,6 +322,46 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
 
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx) == 0
+    }
+
+    pub fn point_ids_by_value(&self, value: &T) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
+        match &self {
+            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
+        }
+    }
+
+    /// Tries to estimate the amount of points for a given key.
+    pub fn estimate_points(&self, value: &T) -> usize {
+        let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
+        let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
+
+        match &self {
+            NumericIndexInner::Mutable(mutable) => {
+                let mut iter = mutable.map().range((start, end));
+                let first = iter.next();
+                let last = iter.next_back();
+
+                match (first, last) {
+                    (Some(_), None) => 1,
+                    (Some(start), Some(end)) => (start.idx..end.idx).len(),
+                    (None, _) => 0,
+                }
+            }
+            NumericIndexInner::Immutable(immutable) => {
+                let start_index = immutable.map.find_start_index(start);
+                let end_index = immutable.map.find_end_index(start_index, end);
+                let range_size = end_index - start_index;
+                if range_size == 0 {
+                    return 0;
+                }
+                let avg_values_per_point =
+                    self.total_unique_values_count() as f32 / self.get_points_count() as f32;
+                (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
+            }
+        }
     }
 }
 
@@ -455,12 +510,24 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         &self,
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                let value = T::from_u128(uuid.as_u128());
+                return Some(self.point_ids_by_value(&value));
+            }
+        }
+
         let range_cond = condition.range.as_ref()?;
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         }
         .as_index_key_bounds();
@@ -468,7 +535,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Some(Box::new(vec![].into_iter()));
+            return Some(Box::new(std::iter::empty()));
         }
 
         Some(match self {
@@ -482,6 +549,22 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                let key = T::from_u128(uuid.as_u128());
+
+                let estimated_count = self.estimate_points(&key);
+                return Some(
+                    CardinalityEstimation::exact(estimated_count)
+                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                );
+            }
+        }
+
         condition.range.as_ref().map(|range| {
             let mut cardinality = self.range_cardinality(range);
             cardinality
@@ -640,6 +723,34 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
     }
 }
 
+impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
+    type ValueType = UuidPayloadType;
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> OperationResult<()> {
+        match &mut self.inner {
+            NumericIndexInner::Mutable(index) => {
+                let values: Vec<u128> = values.iter().map(|i| i.as_u128()).collect();
+                index.add_many_to_list(id, values)
+            }
+            NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
+        }
+    }
+
+    fn get_value(value: &Value) -> Option<Self::ValueType> {
+        Uuid::parse_str(value.as_str()?).ok()
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.inner.remove_point(id)
+    }
+}
+
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
     T: Encodable + Numericable + Default,
@@ -651,7 +762,7 @@ where
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         };
         let (start_bound, end_bound) = range.as_index_key_bounds();
@@ -659,7 +770,7 @@ where
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
         if !check_boundaries(&start_bound, &end_bound) {
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         }
 
         match self {
