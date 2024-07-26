@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 use crate::json_path::JsonPath;
@@ -9,7 +10,7 @@ pub struct FacetRequest {
     pub filter: Option<Filter>,
 }
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Debug)]
 pub enum FacetValue {
     Keyword(String),
     // other types to add?
@@ -18,7 +19,7 @@ pub enum FacetValue {
     // FloatRange(FloatRange),
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct FacetValueHit {
     pub value: FacetValue,
     pub count: usize,
@@ -28,7 +29,8 @@ impl Ord for FacetValueHit {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.count
             .cmp(&other.count)
-            .then_with(|| self.value.cmp(&other.value))
+            // Reverse so that descending order has ascending values when having the same count
+            .then_with(|| Reverse(&self.value).cmp(&Reverse(&other.value)))
     }
 }
 
