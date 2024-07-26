@@ -6,7 +6,7 @@ use std::path::Path;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_bin, atomic_save_json, read_bin, read_json};
 use itertools::Itertools;
-use num_traits::{Num, Signed};
+use num_traits::Num;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -49,12 +49,12 @@ impl<T: PartialOrd + Copy> Ord for Point<T> {
 
 /// A trait that should represent common properties of integer and floating point types.
 /// In particular, i64 and f64.
-pub trait Numericable: Num + Signed + PartialEq + PartialOrd + Copy {
+pub trait Numericable: Num + PartialEq + PartialOrd + Copy {
     fn min_value() -> Self;
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
     fn from_f64(x: f64) -> Self;
-    fn from_i128(x: i128) -> Self;
+    fn from_u128(x: u128) -> Self;
     fn min(self, b: Self) -> Self {
         if self < b {
             self
@@ -91,7 +91,7 @@ impl Numericable for i64 {
     fn from_f64(x: f64) -> Self {
         x as Self
     }
-    fn from_i128(x: i128) -> Self {
+    fn from_u128(x: u128) -> Self {
         x as i64
     }
     fn abs_diff(self, b: Self) -> Self {
@@ -112,18 +112,18 @@ impl Numericable for f64 {
     fn from_f64(x: f64) -> Self {
         x
     }
-    fn from_i128(x: i128) -> Self {
+    fn from_u128(x: u128) -> Self {
         x as Self
     }
 }
 
-impl Numericable for i128 {
+impl Numericable for u128 {
     fn min_value() -> Self {
-        i128::MIN
+        u128::MIN
     }
 
     fn max_value() -> Self {
-        i128::MAX
+        u128::MAX
     }
 
     fn to_f64(self) -> f64 {
@@ -131,15 +131,15 @@ impl Numericable for i128 {
     }
 
     fn from_f64(x: f64) -> Self {
-        x as i128
+        x as u128
     }
 
-    fn from_i128(x: i128) -> Self {
+    fn from_u128(x: u128) -> Self {
         x
     }
 
     fn abs_diff(self, b: Self) -> Self {
-        i128::abs_diff(self, b) as i128
+        u128::abs_diff(self, b)
     }
 }
 

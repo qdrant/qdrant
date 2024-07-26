@@ -12,6 +12,7 @@ use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use parking_lot::RwLock;
+use uuid::Uuid;
 
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
@@ -194,7 +195,14 @@ impl SegmentBuilder {
                 FieldIndex::UuidIndex(index) => {
                     if let Some(ids) = index.get_values(internal_id) {
                         for id in ids {
-                            ordering = ordering.wrapping_add(id as u64);
+                            let uuid = Uuid::from_u128(id);
+
+                            // Not all UUID versions hold timestamp data. The most common version, v4 for example is completely
+                            // random and can't be sorted. To prevent spending time on sorting, we return 0 for
+                            // unsortable UUIDs which makes sorting faster.
+                            if let Some(timestamp) = uuid.get_timestamp() {
+                                ordering = ordering.wrapping_add(timestamp.to_gregorian().0);
+                            }
                         }
                     }
                     break;

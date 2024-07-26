@@ -5,7 +5,7 @@ const FLOAT_POS: u8 = 0x03;
 
 const F64_KEY_LEN: usize = 13;
 const I64_KEY_LEN: usize = 12;
-const I128_KEY_LEN: usize = 20;
+const U128_KEY_LEN: usize = 20;
 
 /// Encode a f64 into `buf`
 ///
@@ -156,19 +156,7 @@ pub fn decode_i64_key_ascending(buf: &[u8]) -> (u32, i64) {
     )
 }
 
-/// Encode a i128 into `buf` so that is sorts ascending.
-pub fn encode_i128_ascending(val: i128, buf: &mut Vec<u8>) {
-    let i = val ^ i128::MIN;
-    buf.extend(i.to_be_bytes());
-}
-
-/// Decode a i128 from a slice
-pub fn decode_i128_ascending(buf: &[u8]) -> i128 {
-    let i = i128::from_be_bytes(buf[0..16].try_into().expect("cannot decode i128"));
-    i ^ i128::MIN
-}
-
-/// Encodes a i128 key so that it sort in ascending order.
+/// Encodes a u128 key so that it sort in ascending order.
 ///
 /// The key is compound by the numeric value of the key plus a u32 representing
 /// the payload offset within the payload store.
@@ -179,25 +167,25 @@ pub fn decode_i128_ascending(buf: &[u8]) -> i128 {
 ///
 /// 0                     16            20
 /// ┌─────────────────────┬──────────────┐
-/// │ key_val ^ i128::MIN │ point_offset │
+/// │       key_val       │ point_offset │
 /// │    (big-endian)     │ (big-endian) │
 /// └─────────────────────┴──────────────┘
 ///```
-pub fn encode_i128_key_ascending(key_val: i128, point_offset: u32) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(I128_KEY_LEN);
-    encode_i128_ascending(key_val, &mut buf);
+pub fn encode_u128_key_ascending(key_val: u128, point_offset: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(U128_KEY_LEN);
+    buf.extend(key_val.to_be_bytes());
     buf.extend(point_offset.to_be_bytes());
     buf
 }
 
-pub fn decode_i128_key_ascending(buf: &[u8]) -> (u32, i128) {
+pub fn decode_u128_key_ascending(buf: &[u8]) -> (u32, u128) {
     (
         u32::from_be_bytes(
-            (&buf[I128_KEY_LEN - std::mem::size_of::<u32>()..])
+            (&buf[U128_KEY_LEN - std::mem::size_of::<u32>()..])
                 .try_into()
                 .unwrap(),
         ),
-        decode_i128_ascending(buf),
+        u128::from_be_bytes(buf[0..16].try_into().expect("cannot decode u128")),
     )
 }
 

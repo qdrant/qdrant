@@ -35,8 +35,8 @@ use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
 };
 use crate::index::key_encoding::{
-    decode_f64_key_ascending, decode_i128_key_ascending, decode_i64_key_ascending,
-    encode_f64_key_ascending, encode_i128_key_ascending, encode_i64_key_ascending,
+    decode_f64_key_ascending, decode_i64_key_ascending, decode_u128_key_ascending,
+    encode_f64_key_ascending, encode_i64_key_ascending, encode_u128_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -76,13 +76,13 @@ impl Encodable for IntPayloadType {
     }
 }
 
-impl Encodable for i128 {
+impl Encodable for u128 {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i128_key_ascending(*self, id)
+        encode_u128_key_ascending(*self, id)
     }
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
-        decode_i128_key_ascending(key)
+        decode_u128_key_ascending(key)
     }
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
@@ -269,7 +269,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         };
 
@@ -527,7 +527,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
             let keyword = keyword.as_str();
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
-                let value = T::from_i128(uuid.as_u128() as UuidIntType);
+                let value = T::from_u128(uuid.as_u128());
                 return Some(self.point_ids_by_value(&value));
             }
         }
@@ -537,7 +537,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         }
         .as_index_key_bounds();
@@ -565,7 +565,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         {
             let keyword = keyword.as_str();
             if let Ok(uuid) = Uuid::from_str(keyword) {
-                let key = T::from_i128(uuid.as_u128() as UuidIntType);
+                let key = T::from_u128(uuid.as_u128());
 
                 let estimated_count = self.estimate_points(&key);
                 return Some(
@@ -743,7 +743,7 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
-                let values: Vec<i128> = values.iter().map(|i| i.as_u128() as UuidIntType).collect();
+                let values: Vec<u128> = values.iter().map(|i| i.as_u128()).collect();
                 index.add_many_to_list(id, values)
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
@@ -772,7 +772,7 @@ where
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i128(i128::from(dt.timestamp())))
+                datetime_range.map(|dt| T::from_u128(dt.timestamp() as u128))
             }
         };
         let (start_bound, end_bound) = range.as_index_key_bounds();
