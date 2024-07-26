@@ -926,6 +926,7 @@ def bootstrap_resharding(
     resp = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "start_resharding": {
+                "direction": "up",
                 "peer_id": peer_ids[replication_peer_idx],
                 "shard_key": resharding_shard_key,
             }
