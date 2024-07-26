@@ -148,7 +148,7 @@ impl SegmentBuilder {
                 FieldIndex::IntMapIndex(index) => {
                     if let Some(numbers) = index.get_values(internal_id) {
                         for number in numbers {
-                            ordering = ordering.wrapping_add(*number as u64);
+                            ordering = ordering.wrapping_add(number as u64);
                         }
                     }
                     break;

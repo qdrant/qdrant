@@ -2,13 +2,16 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
 use std::iter;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use ahash::HashMap;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use mmap_map_index::MmapMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -16,9 +19,9 @@ use smol_str::SmolStr;
 
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
+use super::mmap_point_to_values::MmapValue;
 use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
@@ -32,14 +35,17 @@ use crate::types::{
 };
 
 pub mod immutable_map_index;
+pub mod mmap_map_index;
 pub mod mutable_map_index;
 
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 
-pub trait MapIndexKey: Key + Eq + Display + Debug {
+pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
 
     fn to_owned(&self) -> Self::Owned;
+
+    fn from_owned(owned: &Self::Owned) -> &Self;
 }
 
 impl MapIndexKey for str {
@@ -47,6 +53,10 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> Self::Owned {
         SmolStr::from(self)
+    }
+
+    fn from_owned(owned: &Self::Owned) -> &Self {
+        owned
     }
 }
 
@@ -56,14 +66,19 @@ impl MapIndexKey for IntPayloadType {
     fn to_owned(&self) -> Self::Owned {
         *self
     }
+
+    fn from_owned(owned: &Self::Owned) -> &Self {
+        owned
+    }
 }
 
-pub enum MapIndex<N: MapIndexKey + ?Sized> {
+pub enum MapIndex<N: MapIndexKey + MmapValue + ?Sized> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
+    Mmap(Box<MmapMapIndex<N>>),
 }
 
-impl<N: MapIndexKey + ?Sized> MapIndex<N> {
+impl<N: MapIndexKey + MmapValue + ?Sized> MapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
@@ -72,14 +87,19 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
+    pub fn new_mmap(path: &Path) -> OperationResult<Self> {
+        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::load(path)?)))
+    }
+
     pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
         MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
     }
 
-    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper(),
-            MapIndex::Immutable(index) => index.get_db_wrapper(),
+    pub fn mmap_builder(path: &Path) -> MapIndexMmapBuilder<N> {
+        MapIndexMmapBuilder {
+            path: path.to_owned(),
+            point_to_values: Default::default(),
+            values_to_points: Default::default(),
         }
     }
 
@@ -87,6 +107,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.load_from_db(),
             MapIndex::Immutable(index) => index.load_from_db(),
+            // mmap index is always loaded
+            MapIndex::Mmap(_) => Ok(true),
         }
     }
 
@@ -94,13 +116,22 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
+            MapIndex::Mmap(index) => index.check_values_any(idx, check_fn),
         }
     }
 
-    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = &N> + '_>> {
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = N::Referenced<'_>> + '_>> {
         match self {
-            MapIndex::Mutable(index) => Some(Box::new(index.get_values(idx)?)),
-            MapIndex::Immutable(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::Mutable(index) => Some(Box::new(
+                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+            )),
+            MapIndex::Immutable(index) => Some(Box::new(
+                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+            )),
+            MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
         }
     }
 
@@ -108,6 +139,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
             MapIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
+            MapIndex::Mmap(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -115,6 +147,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.get_indexed_points(),
             MapIndex::Immutable(index) => index.get_indexed_points(),
+            MapIndex::Mmap(index) => index.get_indexed_points(),
         }
     }
 
@@ -122,6 +155,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.get_values_count(),
             MapIndex::Immutable(index) => index.get_values_count(),
+            MapIndex::Mmap(index) => index.get_values_count(),
         }
     }
 
@@ -129,6 +163,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.get_unique_values_count(),
             MapIndex::Immutable(index) => index.get_unique_values_count(),
+            MapIndex::Mmap(index) => index.get_unique_values_count(),
         }
     }
 
@@ -136,6 +171,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.get_count_for_value(value),
             MapIndex::Immutable(index) => index.get_count_for_value(value),
+            MapIndex::Mmap(index) => index.get_count_for_value(value),
         }
     }
 
@@ -143,6 +179,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.get_iterator(value),
             MapIndex::Immutable(index) => index.get_iterator(value),
+            MapIndex::Mmap(index) => index.get_iterator(value),
         }
     }
 
@@ -150,6 +187,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.iter_values(),
             MapIndex::Immutable(index) => index.iter_values(),
+            MapIndex::Mmap(index) => index.iter_values(),
         }
     }
 
@@ -157,6 +195,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value()),
             MapIndex::Immutable(index) => Box::new(index.iter_counts_per_value()),
+            MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value()),
         }
     }
 
@@ -164,6 +203,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
+            MapIndex::Mmap(index) => Box::new(index.iter_values_map()),
         }
     }
 
@@ -172,7 +212,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     }
 
     fn flusher(&self) -> Flusher {
-        self.get_db_wrapper().flusher()
+        match self {
+            MapIndex::Mutable(index) => index.get_db_wrapper().flusher(),
+            MapIndex::Immutable(index) => index.get_db_wrapper().flusher(),
+            MapIndex::Mmap(index) => index.flusher(),
+        }
     }
 
     fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
@@ -350,7 +394,11 @@ where
     type FieldIndexType = MapIndex<N>;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.get_db_wrapper().recreate_column_family()
+        match &mut self.0 {
+            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Immutable(_) => unreachable!(),
+            MapIndex::Mmap(_) => unreachable!(),
+        }
     }
 
     fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
@@ -359,6 +407,42 @@ where
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(self.0)
+    }
+}
+
+pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
+    path: PathBuf,
+    point_to_values: Vec<Vec<N::Owned>>,
+    values_to_points: HashMap<N::Owned, Vec<PointOffsetType>>,
+}
+
+impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
+where
+    MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+{
+    type FieldIndexType = MapIndex<N>;
+
+    fn init(&mut self) -> OperationResult<()> {
+        Ok(())
+    }
+
+    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+        for value in values {
+            let value = N::Owned::from_str(value.as_str().unwrap())
+                .map_err(|_| OperationError::service_error("Can't parse value"))?;
+            self.point_to_values.resize_with(id as usize + 1, Vec::new);
+            self.point_to_values[id as usize].push(value.clone());
+            self.values_to_points.entry(value).or_default().push(id);
+        }
+        Ok(())
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::build(
+            &self.path,
+            self.point_to_values,
+            self.values_to_points,
+        )?)))
     }
 }
 
@@ -372,7 +456,11 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.get_db_wrapper().recreate_column_family()
+        match self {
+            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Mmap(index) => index.clear(),
+        }
     }
 
     fn flusher(&self) -> Flusher {
@@ -482,7 +570,11 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.get_db_wrapper().recreate_column_family()
+        match self {
+            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Mmap(index) => index.clear(),
+        }
     }
 
     fn flusher(&self) -> Flusher {
@@ -591,6 +683,9 @@ impl ValueIndexer for MapIndex<str> {
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
+            MapIndex::Mmap(_) => Err(OperationError::service_error(
+                "Can't add values to mmap map index",
+            )),
         }
     }
 
@@ -605,6 +700,10 @@ impl ValueIndexer for MapIndex<str> {
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
             MapIndex::Immutable(index) => index.remove_point(id),
+            MapIndex::Mmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
         }
     }
 }
@@ -622,6 +721,9 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
+            MapIndex::Mmap(_) => Err(OperationError::service_error(
+                "Can't add values to mmap map index",
+            )),
         }
     }
 
@@ -636,6 +738,10 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
             MapIndex::Immutable(index) => index.remove_point(id),
+            MapIndex::Mmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
         }
     }
 }
@@ -652,7 +758,7 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path)
+    fn save_map_index<N: MapIndexKey + MmapValue + ?Sized>(data: &[Vec<N::Owned>], path: &Path)
     where
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     {
@@ -670,13 +776,20 @@ mod tests {
         index.flusher()().unwrap();
     }
 
-    fn load_map_index<N: MapIndexKey + ?Sized>(data: &[Vec<N::Owned>], path: &Path) -> MapIndex<N> {
+    fn load_map_index<N: MapIndexKey + MmapValue + ?Sized>(
+        data: &[Vec<N::Owned>],
+        path: &Path,
+    ) -> MapIndex<N> {
         let mut index =
             MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
-            let index_values: HashSet<&N> =
-                index.get_values(idx as PointOffsetType).unwrap().collect();
+            let index_values: HashSet<N::Owned> = index
+                .get_values(idx as PointOffsetType)
+                .unwrap()
+                .map(|v| N::to_owned(N::from_referenced(&v)))
+                .collect();
+            let index_values: HashSet<&N> = index_values.iter().map(|v| N::from_owned(v)).collect();
             let check_values: HashSet<&N> = values.iter().map(|v| v.borrow()).collect();
             assert_eq!(index_values, check_values);
         }
