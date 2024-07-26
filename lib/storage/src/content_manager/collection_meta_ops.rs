@@ -114,6 +114,7 @@ pub struct CreateCollection {
     /// Number of shards in collection.
     ///  - Default is 1 for standalone, otherwise equal to the number of nodes
     ///  - Minimum is 1
+    ///
     /// For custom sharding:
     /// Number of shards in collection per shard group.
     ///  - Default is 1, meaning that each shard key will be mapped to a single shard
