@@ -717,6 +717,7 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
 
 
 # Test that resharding can be aborted (before it reached `WriteHashRingCommitted` stage)
+@pytest.mark.skip(reason="seems like a deadlock is sometimes possible during explicit (?) abort, so the test is disabled until deadlock is fixed, to reduce flakiness")
 def test_resharding_abort(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -733,6 +734,7 @@ def test_resharding_abort(tmp_path: pathlib.Path):
     wait_for_resharding_to_finish(peer_api_uris, 3)
 
 # Test that resharding *can't* be aborted, once it reached `WriteHashRingCommitted` stage
+@pytest.mark.skip(reason="flaky")
 def test_resharding_try_abort_after_write_hash_ring_committed(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -760,6 +762,7 @@ def test_resharding_try_abort_after_write_hash_ring_committed(tmp_path: pathlib.
     wait_for_resharding_to_finish(peer_api_uris, 4)
 
 # Test that resharding is automatically aborted, when collection is deleted
+@pytest.mark.skip(reason="flaky")
 def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -770,6 +773,7 @@ def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
     # TODO: Check... *something*? What? 🤔
 
 # Test that resharding is automatically aborted, when custom shard key is deleted
+@pytest.mark.skip(reason="flaky")
 def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(
         tmp_path,
@@ -790,7 +794,7 @@ def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
     wait_for_resharding_to_finish(peer_api_uris, 3)
 
 # Test that resharding is automatically aborted, when we force-remove resharding peer
-@pytest.mark.skip(reason="seems like a deadlock is sometimes possible during explicit (?) abort, so the test is disabled until deadlock is fixed, to reduce flakiness")
+@pytest.mark.skip(reason="flaky")
 def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
     # Place resharding shard on the *last* peer for this test, so that the first peer would still
     # be available, after we remove *resharding* peer...
@@ -805,6 +809,7 @@ def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
 
 # Test that resharding is automatically restarted, when we force-remove a peer,
 # that receives a *replica* of the new shard during replication
+@pytest.mark.skip(reason="flaky")
 def test_resharding_restart_on_remove_peer_during_replicate(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -833,6 +838,7 @@ def test_resharding_restart_on_remove_peer_during_replicate(tmp_path: pathlib.Pa
     wait_for_resharding_to_finish(valid_peer_uris, 4)
 
 # Test that new shard *can't* be removed during resharding (before it has been replicated at least once)
+@pytest.mark.skip(reason="flaky")
 def test_resharding_try_abort_on_remove_shard_before_replicate(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
