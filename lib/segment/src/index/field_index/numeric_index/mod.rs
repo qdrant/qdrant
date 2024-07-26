@@ -371,9 +371,12 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
                 let start_index = immutable.map.find_start_index(start);
                 let end_index = immutable.map.find_end_index(start_index, end);
                 let range_size = end_index - start_index;
+                if range_size == 0 {
+                    return 0;
+                }
                 let avg_values_per_point =
                     self.total_unique_values_count() as f32 / self.get_points_count() as f32;
-                (range_size as f32 / avg_values_per_point).round() as usize
+                (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
             }
         }
     }
