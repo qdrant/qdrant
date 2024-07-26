@@ -515,7 +515,7 @@ enum Fusion {
 ///
 /// * `random` - Random sampling
 enum Sample {
-    RANDOM = 0;
+    Random = 0;
 }
 
 message Query {
