@@ -147,6 +147,10 @@ unnecessary_wraps = "warn"
 unused_self = "warn"
 used_underscore_binding = "warn"
 
+[workspace.lints.rust]
+# https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
 data-encoding = { version = "2.6.0" }
