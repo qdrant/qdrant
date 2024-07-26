@@ -252,7 +252,7 @@ impl ImmutableIdTracker {
         })
     }
 
-    pub(super) fn new(
+    pub fn new(
         path: &Path,
         internal_to_version: &[SeqNumberType],
         mappings: PointMappings,
