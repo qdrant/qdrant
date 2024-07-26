@@ -95,7 +95,7 @@ impl DriverState {
             .for_each(|peer_stage| *peer_stage = next_stage.max(*peer_stage));
     }
 
-    /// List the shard ID pairs we still need to migrate
+    /// List the shard IDs we still need to migrate
     ///
     /// When scaling up this produces shard IDs to migrate points from. When scaling down this
     /// produces shard IDs to migrate points into.

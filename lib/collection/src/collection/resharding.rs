@@ -42,16 +42,18 @@ impl Collection {
             shard_holder.check_start_resharding(&resharding_key)?;
 
             // If scaling up, create a new replica set
-            let replica_set = match resharding_key.direction {
-                ReshardingDirection::Up => Some(
-                    self.create_replica_set(
+            let replica_set = if resharding_key.direction == ReshardingDirection::Up {
+                let replica_set = self
+                    .create_replica_set(
                         resharding_key.shard_id,
                         &[resharding_key.peer_id],
                         Some(ReplicaState::Resharding),
                     )
-                    .await?,
-                ),
-                ReshardingDirection::Down => None,
+                    .await?;
+
+                Some(replica_set)
+            } else {
+                None
             };
 
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;

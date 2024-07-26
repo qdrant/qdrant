@@ -547,7 +547,7 @@ pub async fn do_update_collection_cluster(
                         .keys()
                         .copied()
                         .max()
-                        .expect("no shards in collection")
+                        .expect("collection must contain shards")
                         + 1
                 }
                 // When scaling down without shard keys, pick the last shard ID
@@ -556,7 +556,7 @@ pub async fn do_update_collection_cluster(
                     .keys()
                     .copied()
                     .max()
-                    .expect("no shards in collection"),
+                    .expect("collection must contain shards"),
                 // When scaling down with shard keys, pick the last shard ID of that key
                 (ReshardingDirection::Down, Some(shard_key)) => collection_state
                     .shards_key_mapping
@@ -565,7 +565,7 @@ pub async fn do_update_collection_cluster(
                     .iter()
                     .copied()
                     .max()
-                    .expect("no shards in collection"),
+                    .expect("collection must contain shards"),
             };
 
             let peer_id = match (peer_id, direction) {

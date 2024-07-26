@@ -115,7 +115,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
             ReshardingDirection::Down => {
                 old.add(shard);
                 new.add(shard);
-                (true, true)
+                (false, true)
             }
         };
 
