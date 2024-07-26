@@ -529,9 +529,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
             }
         }
 
-        let Some(range_cond) = condition.range.as_ref() else {
-            return None;
-        };
+        let range_cond = condition.range.as_ref()?;
 
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
@@ -557,11 +555,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
         })
     }
 
-
-    fn estimate_cardinality(
-        &self,
-        condition: &FieldCondition,
-    ) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::Keyword(keyword),
         })) = &condition.r#match
@@ -571,8 +565,10 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
                 let key = T::from_i128(uuid.as_u128() as UuidIntType);
 
                 let estimated_count = self.estimate_points(&key);
-                return Some(CardinalityEstimation::exact(estimated_count)
-                    .with_primary_clause(PrimaryCondition::Condition(condition.clone())));
+                return Some(
+                    CardinalityEstimation::exact(estimated_count)
+                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                );
             }
         }
 
