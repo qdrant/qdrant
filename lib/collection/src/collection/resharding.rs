@@ -184,7 +184,19 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn abort_resharding(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub async fn abort_resharding(
+        &self,
+        resharding_key: ReshardKey,
+        force: bool,
+    ) -> CollectionResult<()> {
+        let mut shard_holder = self.shards_holder.write().await;
+
+        if !force {
+            shard_holder.check_abort_resharding(&resharding_key)?;
+        } else {
+            log::warn!("Force-aborting resharding {resharding_key}");
+        }
+
         let _ = self.stop_resharding_task(&resharding_key).await;
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
@@ -200,21 +212,18 @@ impl Collection {
 
             config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
                 .expect("cannot have zero shards after aborting resharding");
+
             if let Err(err) = config.save(&self.path) {
                 log::error!("Failed to update and save collection config during resharding: {err}");
             }
         }
 
-        self.shards_holder
-            .write()
-            .await
-            .abort_resharding(resharding_key)
-            .await?;
+        shard_holder.abort_resharding(resharding_key, force).await?;
 
         Ok(())
     }
 
-    async fn stop_resharding_task(
+    pub(super) async fn stop_resharding_task(
         &self,
         resharding_key: &ReshardKey,
     ) -> Option<resharding::tasks_pool::TaskResult> {

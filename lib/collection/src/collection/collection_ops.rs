@@ -216,6 +216,13 @@ impl Collection {
                         .await?;
                 }
             }
+
+            // We can't remove the last repilca of a shard, so this should prevent removing
+            // resharding shard, because it's always the *only* replica.
+            //
+            // And if we remove some other shard, that is currently doing resharding transfer,
+            // the transfer should be cancelled (see the block right above this comment),
+            // so no special handling is needed.
         }
         Ok(())
     }
