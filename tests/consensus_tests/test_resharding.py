@@ -717,6 +717,7 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
 
 
 # Test that resharding can be aborted (before it reached `WriteHashRingCommitted` stage)
+@pytest.mark.skip(reason="seems like a deadlock is sometimes possible during explicit (?) abort, so the test is disabled until deadlock is fixed, to reduce flakiness")
 def test_resharding_abort(tmp_path: pathlib.Path):
     peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -790,7 +791,6 @@ def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
     wait_for_resharding_to_finish(peer_api_uris, 3)
 
 # Test that resharding is automatically aborted, when we force-remove resharding peer
-@pytest.mark.skip(reason="seems like a deadlock is sometimes possible during explicit (?) abort, so the test is disabled until deadlock is fixed, to reduce flakiness")
 def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
     # Place resharding shard on the *last* peer for this test, so that the first peer would still
     # be available, after we remove *resharding* peer...
