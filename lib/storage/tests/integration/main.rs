@@ -1,2 +1,1 @@
-#[cfg(test)]
-pub mod alias_tests;
+mod alias_tests;
