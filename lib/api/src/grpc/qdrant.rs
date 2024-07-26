@@ -6002,13 +6002,13 @@ impl Sample {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Sample::Random => "RANDOM",
+            Sample::Random => "Random",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "RANDOM" => Some(Self::Random),
+            "Random" => Some(Self::Random),
             _ => None,
         }
     }
