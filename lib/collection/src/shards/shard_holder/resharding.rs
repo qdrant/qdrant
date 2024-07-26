@@ -176,7 +176,39 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub async fn abort_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub fn check_abort_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        let state = self.resharding_state.read();
+
+        // `abort_resharding` designed to be self-healing, so...
+        //
+        // - it's safe to run, if resharding is *not* in progress
+        let Some(state) = state.deref() else {
+            return Ok(());
+        };
+
+        // - it's safe to run, if *another* resharding is in progress
+        if !state.matches(resharding_key) {
+            return Ok(());
+        }
+
+        // - it's safe to run, if write hash ring was not committed yet
+        if state.stage < ReshardStage::WriteHashRingCommitted {
+            return Ok(());
+        }
+
+        // - but resharding can't be aborted, after write hash ring has been committed
+        Err(CollectionError::bad_request(format!(
+            "can't abort resharding {resharding_key}, \
+             because write hash ring has been committed already, \
+             resharding must be completed",
+        )))
+    }
+
+    pub async fn abort_resharding(
+        &mut self,
+        resharding_key: ReshardKey,
+        force: bool,
+    ) -> CollectionResult<()> {
         let ReshardKey {
             peer_id,
             shard_id,
@@ -184,7 +216,17 @@ impl ShardHolder {
         } = resharding_key;
 
         let is_in_progress = match self.resharding_state.read().deref() {
-            Some(state) if state.matches(&resharding_key) => true,
+            Some(state) if state.matches(&resharding_key) => {
+                if !force && state.stage >= ReshardStage::WriteHashRingCommitted {
+                    return Err(CollectionError::bad_request(format!(
+                        "can't abort resharding {resharding_key}, \
+                         because write hash ring has been committed already, \
+                         resharding must be completed",
+                    )));
+                }
+
+                true
+            }
 
             Some(state) => {
                 log::warn!(

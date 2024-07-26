@@ -297,24 +297,24 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
-        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
-            return Err(CollectionError::bad_request(format!(
-                "Shard {} doesn't exist",
-                transfer_key.shard_id,
-            )));
-        };
-
         let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
             return Ok(());
         };
 
-        if replica_set.peer_state(&transfer.to).is_some() {
-            if transfer.sync {
-                replica_set.set_replica_state(&transfer.to, ReplicaState::Dead)?;
-            } else {
-                replica_set.remove_peer(transfer.to).await?;
+        let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
+
+        if let Some(replica_set) = shard_holder.get_shard(&shard_id) {
+            if replica_set.peer_state(&transfer.to).is_some() {
+                if transfer.sync {
+                    replica_set.set_replica_state(&transfer.to, ReplicaState::Dead)?;
+                } else {
+                    replica_set.remove_peer(transfer.to).await?;
+                }
             }
+        } else {
+            log::warn!(
+                "Aborting shard transfer {transfer_key:?}, but shard {shard_id} does not exist"
+            );
         }
 
         if transfer.from == self.this_peer_id {

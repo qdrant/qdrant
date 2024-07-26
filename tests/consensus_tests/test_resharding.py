@@ -3,6 +3,8 @@ import pathlib
 import random
 from time import sleep
 
+from .test_dummy_shard import assert_http_response
+
 from .fixtures import upsert_random_points, create_collection, random_dense_vector
 from .utils import *
 
@@ -712,6 +714,299 @@ def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
         assert_http_ok(r)
         data.append(r.json()["result"])
     check_data_consistency(data)
+
+
+# Test that resharding can be aborted (before it reached `WriteHashRingCommitted` stage)
+def test_resharding_abort(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Abort resharding
+    resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "abort_resharding": {}
+        }
+    )
+
+    assert_http_ok(resp)
+
+    # Wait for resharding to abort
+    wait_for_resharding_to_finish(peer_api_uris, 3)
+
+# Test that resharding *can't* be aborted, once it reached `WriteHashRingCommitted` stage
+def test_resharding_try_abort_after_write_hash_ring_committed(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Wait for `propagate deletes` resharding stage
+    wait_for_one_of_resharding_operation_stages(
+        peer_api_uris[0],
+        [
+            'commit write hash ring',
+            'propagate deletes',
+            'finalize',
+        ],
+        wait_for_interval=0.125,
+    )
+
+    # Try to abort resharding
+    resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "abort_resharding": {}
+        }
+    )
+
+    assert resp.status_code == 400
+
+    # Wait for resharding to finish successfully
+    wait_for_resharding_to_finish(peer_api_uris, 4)
+
+# Test that resharding is automatically aborted, when collection is deleted
+def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Delete collection
+    resp = requests.delete(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}")
+    assert_http_ok(resp)
+
+    # TODO: Check... *something*? What? 🤔
+
+# Test that resharding is automatically aborted, when custom shard key is deleted
+def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(
+        tmp_path,
+        shard_keys=["custom_shard_key_1", "custom_shard_key_2"],
+        resharding_shard_key="custom_shard_key_2",
+    )
+
+    # Delete shard key
+    resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/shards/delete", json={
+            "shard_key": "custom_shard_key_2",
+        }
+    )
+
+    assert_http_ok(resp)
+
+    # Wait for resharding to abort (!?)
+    wait_for_resharding_to_finish(peer_api_uris, 3)
+
+# Test that resharding is automatically aborted, when we force-remove resharding peer
+@pytest.mark.skip(reason="seems like a deadlock is sometimes possible during explicit (?) abort, so the test is disabled until deadlock is fixed, to reduce flakiness")
+def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
+    # Place resharding shard on the *last* peer for this test, so that the first peer would still
+    # be available, after we remove *resharding* peer...
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path, replication_peer_idx=-1)
+
+    # Remove peer
+    resp = requests.delete(f"{peer_api_uris[0]}/cluster/peer/{peer_ids[-1]}?force=true")
+    assert_http_ok(resp)
+
+    # Wait for resharding to abort
+    wait_for_resharding_to_finish(peer_api_uris[:-1], 3)
+
+# Test that resharding is automatically restarted, when we force-remove a peer,
+# that receives a *replica* of the new shard during replication
+def test_resharding_restart_on_remove_peer_during_replicate(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Wait for `stream_records` shard transfer (during `replicate` resharding stage)
+    info = wait_for_resharding_shard_transfer_info(peer_api_uris[0], 'replicate', 'stream_records')
+
+    # Select peer to remove
+    peer_to_remove = info['to']
+
+    # Remove peer
+    resp = requests.delete(f"{peer_api_uris[0]}/cluster/peer/{info['to']}?force=true")
+    assert_http_ok(resp)
+
+    # Wait for resharding to restart
+    wait_for_collection_resharding_operation_stage(peer_api_uris[0], COLLECTION_NAME, 'migrate points')
+
+    # Select peers that weren't removed
+    valid_peer_uris=[]
+    for peer_idx in range(0, len(peer_api_uris)):
+        if peer_ids[peer_idx] == peer_to_remove:
+            continue
+
+        valid_peer_uris.append(peer_api_uris[peer_idx])
+
+    # Wait for resharding to finish successfully
+    wait_for_resharding_to_finish(valid_peer_uris, 4)
+
+# Test that new shard *can't* be removed during resharding (before it has been replicated at least once)
+def test_resharding_try_abort_on_remove_shard_before_replicate(tmp_path: pathlib.Path):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Try to remove new shard (before it has been replicated at least once)
+    resp = requests.post(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+        "drop_replica": {
+            "peer_id": peer_ids[0],
+            "shard_id": 3,
+        }
+    })
+
+    assert resp.status_code == 400
+
+# Test that resharding is automatically restarted, when we remove new shard during replication
+@pytest.mark.skip(reason="removing transfer source shard is broken at the moment (in general, not just for resharding)")
+def test_resharding_restart_on_remove_src_shard_during_replicate(tmp_path: pathlib.Path):
+    resharding_restart_on_remove_shard_during_replicate(tmp_path, 'from')
+
+# Test that resharding is automatically restarted, when we remove new shard during replication
+@pytest.mark.skip(reason="resharding detects removing destination shard of replication shard transfer as successful transfer")
+def test_resharding_restart_on_remove_dst_shard_during_replicate(tmp_path: pathlib.Path):
+    resharding_restart_on_remove_shard_during_replicate(tmp_path, 'to')
+
+def resharding_restart_on_remove_shard_during_replicate(tmp_path: pathlib.Path, shard_to_remove: str):
+    peer_api_uris, peer_ids = bootstrap_resharding(tmp_path)
+
+    # Wait for `stream_records` shard transfer (during `replicate` resharding stage)
+    info = wait_for_resharding_shard_transfer_info(peer_api_uris[0], 'replicate', 'stream_records')
+
+    # Remove replica of the new shard
+    resp = requests.post(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+        "drop_replica": {
+            "peer_id": info[shard_to_remove],
+            "shard_id": 3,
+        }
+    })
+
+    assert_http_ok(resp)
+
+    # Wait for resharding to restart and finish successfully
+    wait_for_collection_resharding_operation_stage(peer_api_uris[0], COLLECTION_NAME, 'migrate points')
+    wait_for_resharding_to_finish(peer_api_uris, 4)
+
+
+def bootstrap_resharding(
+    tmp_path: pathlib.Path,
+    shard_keys: list[str] | str | None = None,
+    shard_number: int = 3,
+    replication_factor: int = 2,
+    replication_peer_idx: int = 0,
+    resharding_shard_key: str | None = None,
+):
+    peer_api_uris, peer_ids = bootstrap_cluster(tmp_path, shard_keys=shard_keys)
+
+    # Start resharding
+    resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "start_resharding": {
+                "peer_id": peer_ids[replication_peer_idx],
+                "shard_key": resharding_shard_key,
+            }
+        })
+
+    assert_http_ok(resp)
+
+    # Wait for resharding to start
+    wait_for_collection_resharding_operations_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
+    return (peer_api_uris, peer_ids)
+
+def bootstrap_cluster(
+    tmp_path: pathlib.Path,
+    shard_keys: list[str] | str | None = None,
+    shard_number: int = 3,
+    replication_factor: int = 2,
+) -> tuple[list[str], list[str]]:
+    assert_project_root()
+
+    num_points = 10000
+
+    # Prevent optimizers messing with point counts
+    env={
+        "QDRANT__STORAGE__OPTIMIZERS__INDEXING_THRESHOLD_KB": "0",
+    }
+
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, None, extra_env=env)
+
+    peer_ids = []
+    for peer_uri in peer_api_uris:
+        peer_ids.append(get_cluster_info(peer_uri)['peer_id'])
+
+    # Create collection
+    create_collection(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_number,
+        replication_factor,
+        sharding_method='auto' if shard_keys is None else 'custom',
+    )
+
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
+    )
+
+    # Create custom shard keys (if required), and upload points to collection
+    if type(shard_keys) is not list:
+        shard_keys: list[str | None] = [shard_keys]
+
+    for shard_key in shard_keys:
+        # Create custom shard key (if required)
+        if shard_key is not None:
+            resp = requests.put(
+                f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/shards", json={
+                    "shard_key": shard_key,
+                    "shards_number": shard_number,
+                    "replication_factor": replication_factor,
+                }
+            )
+
+            assert_http_ok(resp)
+
+        # Upsert points to collection
+        upsert_random_points(peer_api_uris[0], num_points, shard_key=shard_key)
+
+    sleep(1)
+
+    return (peer_api_uris, peer_ids)
+
+def wait_for_one_of_resharding_operation_stages(peer_uri: str, expected_stages: list[str], **kwargs):
+    def resharding_operation_stages():
+        requests.post(f"{peer_uri}/collections/{COLLECTION_NAME}/points/scroll")
+
+        info = get_collection_cluster_info(peer_uri, COLLECTION_NAME)
+
+        if 'resharding_operations' not in info:
+            return False
+
+        for resharding in info['resharding_operations']:
+            if not 'comment' in resharding:
+                continue
+
+            stage, *_ = resharding['comment'].split(':', maxsplit=1)
+
+            if stage in expected_stages:
+                return True
+
+        return False
+
+    wait_for(resharding_operation_stages, **kwargs)
+
+def wait_for_resharding_shard_transfer_info(peer_uri: str, expected_stage: str | None, expected_method: str):
+    if expected_stage is not None:
+        wait_for_collection_resharding_operation_stage(peer_uri, COLLECTION_NAME, expected_stage)
+
+    wait_for_collection_shard_transfer_method(peer_uri, COLLECTION_NAME, expected_method)
+
+    info = get_collection_cluster_info(peer_uri, COLLECTION_NAME)
+    return info['shard_transfers'][0]
+
+def wait_for_resharding_to_finish(peer_uris: list[str], expected_shard_number: int):
+    # Wait for resharding to finish
+    for peer_uri in peer_uris:
+        wait_for_collection_resharding_operations_count(
+            peer_uri,
+            COLLECTION_NAME,
+            0,
+            wait_for_timeout=60,
+        )
+
+    # Check number of shards in the collection
+    for peer_uri in peer_uris:
+        resp = get_collection_cluster_info(peer_uri, COLLECTION_NAME)
+        assert resp['shard_count'] == expected_shard_number
 
 
 def run_in_background(run, *args, **kwargs):

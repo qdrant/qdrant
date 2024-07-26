@@ -20,7 +20,7 @@ const DELETE_BATCH_SIZE: usize = 500;
 /// Check whether migrated points still need to be deleted in their old shards.
 pub(super) fn is_completed(state: &PersistedState) -> bool {
     let state_read = state.read();
-    state_read.all_peers_completed(Stage::S5_PropagateDeletes)
+    state_read.all_peers_completed(Stage::S6_PropagateDeletes)
         && state_read.shards_to_delete().next().is_none()
 }
 
@@ -109,7 +109,7 @@ pub(super) async fn drive(
     }
 
     state.write(|data| {
-        data.complete_for_all_peers(Stage::S5_PropagateDeletes);
+        data.complete_for_all_peers(Stage::S6_PropagateDeletes);
         data.update(progress, consensus);
     })?;
 

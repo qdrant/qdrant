@@ -8,14 +8,16 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::transfer::ShardTransferConsensus;
 use crate::shards::{await_consensus_sync, CollectionId};
 
-/// Stage 4: commit new hashring
+/// Stage 4: commit read hashring
 ///
 /// Check whether the new hashring still needs to be committed.
 pub(super) fn is_completed(state: &PersistedState) -> bool {
-    state.read().all_peers_completed(Stage::S4_CommitHashring)
+    state
+        .read()
+        .all_peers_completed(Stage::S4_CommitReadHashring)
 }
 
-/// Stage 4: commit new hashring
+/// Stage 4: commit read hashring
 ///
 /// Do commit the new hashring.
 pub(super) async fn drive(
@@ -42,24 +44,8 @@ pub(super) async fn drive(
     ));
     await_consensus_sync(consensus, channel_service).await;
 
-    // Commit write hashring
-    progress
-        .lock()
-        .description
-        .replace(format!("{} (switching write)", state.read().describe()));
-    consensus
-        .commit_write_hashring_confirm_and_retry(collection_id, reshard_key)
-        .await?;
-
-    // Sync cluster
-    progress.lock().description.replace(format!(
-        "{} (await cluster sync for write)",
-        state.read().describe(),
-    ));
-    await_consensus_sync(consensus, channel_service).await;
-
     state.write(|data| {
-        data.complete_for_all_peers(Stage::S4_CommitHashring);
+        data.complete_for_all_peers(Stage::S4_CommitReadHashring);
         data.update(progress, consensus);
     })?;
 

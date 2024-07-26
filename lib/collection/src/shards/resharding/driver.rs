@@ -17,8 +17,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::resharding::{
-    stage_commit_hashring, stage_finalize, stage_init, stage_migrate_points,
-    stage_propagate_deletes, stage_replicate,
+    stage_commit_read_hashring, stage_commit_write_hashring, stage_finalize, stage_init,
+    stage_migrate_points, stage_propagate_deletes, stage_replicate,
 };
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
@@ -125,12 +125,13 @@ impl DriverState {
                 self.key.shard_id,
             ),
             Stage::S3_Replicate => "replicate: replicate new shard to other peers".into(),
-            Stage::S4_CommitHashring => "commit hash ring: switching reads and writes".into(),
-            Stage::S5_PropagateDeletes => format!(
+            Stage::S4_CommitReadHashring => "commit read hash ring: switching reads".into(),
+            Stage::S5_CommitWriteHashring => "commit write hash ring: switching writes".into(),
+            Stage::S6_PropagateDeletes => format!(
                 "propagate deletes: deleting migrated points from shards {:?}",
                 self.shards_to_delete().collect::<Vec<_>>(),
             ),
-            Stage::S6_Finalize => "finalize".into(),
+            Stage::S7_Finalize => "finalize".into(),
             Stage::Finished => "finished".into(),
         }
     }
@@ -152,12 +153,14 @@ pub(super) enum Stage {
     S2_MigratePoints,
     #[serde(rename = "replicate")]
     S3_Replicate,
-    #[serde(rename = "commit_hash_ring")]
-    S4_CommitHashring,
+    #[serde(rename = "commit_read_hash_ring")]
+    S4_CommitReadHashring,
+    #[serde(rename = "commit_write_hash_ring")]
+    S5_CommitWriteHashring,
     #[serde(rename = "propagate_deletes")]
-    S5_PropagateDeletes,
+    S6_PropagateDeletes,
     #[serde(rename = "finalize")]
-    S6_Finalize,
+    S7_Finalize,
     #[serde(rename = "finished")]
     Finished,
 }
@@ -167,10 +170,11 @@ impl Stage {
         match self {
             Self::S1_Init => Self::S2_MigratePoints,
             Self::S2_MigratePoints => Self::S3_Replicate,
-            Self::S3_Replicate => Self::S4_CommitHashring,
-            Self::S4_CommitHashring => Self::S5_PropagateDeletes,
-            Self::S5_PropagateDeletes => Self::S6_Finalize,
-            Self::S6_Finalize => Self::Finished,
+            Self::S3_Replicate => Self::S4_CommitReadHashring,
+            Self::S4_CommitReadHashring => Self::S5_CommitWriteHashring,
+            Self::S5_CommitWriteHashring => Self::S6_PropagateDeletes,
+            Self::S6_PropagateDeletes => Self::S7_Finalize,
+            Self::S7_Finalize => Self::Finished,
             Self::Finished => unreachable!(),
         }
     }
@@ -269,10 +273,10 @@ pub async fn drive_resharding(
         .await?;
     }
 
-    // Stage 4: commit new hashring
-    if !stage_commit_hashring::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit hashring");
-        stage_commit_hashring::drive(
+    // Stage 4: commit read hashring
+    if !stage_commit_read_hashring::is_completed(&state) {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit read hashring");
+        stage_commit_read_hashring::drive(
             &reshard_key,
             &state,
             &progress,
@@ -283,7 +287,21 @@ pub async fn drive_resharding(
         .await?;
     }
 
-    // Stage 5: propagate deletes
+    // Stage 5: commit write hashring
+    if !stage_commit_write_hashring::is_completed(&state) {
+        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit write hashring");
+        stage_commit_write_hashring::drive(
+            &reshard_key,
+            &state,
+            &progress,
+            consensus,
+            &channel_service,
+            &collection_id,
+        )
+        .await?;
+    }
+
+    // Stage 6: propagate deletes
     if !stage_propagate_deletes::is_completed(&state) {
         log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
         stage_propagate_deletes::drive(
@@ -296,7 +314,7 @@ pub async fn drive_resharding(
         .await?;
     }
 
-    // Stage 6: finalize
+    // Stage 7: finalize
     log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
     stage_finalize::drive(&state, &progress, consensus)?;
 
