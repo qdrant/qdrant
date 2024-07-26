@@ -13,9 +13,8 @@ edition = "2021"
 rust-version = "1.77"
 default-run = "qdrant"
 
-# https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+[lints]
+workspace = true
 
 [features]
 default = ["web", "parking_lot"]
@@ -147,6 +146,10 @@ uninlined_format_args = "warn"
 unnecessary_wraps = "warn"
 unused_self = "warn"
 used_underscore_binding = "warn"
+
+[workspace.lints.rust]
+# https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [workspace.dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
