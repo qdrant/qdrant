@@ -197,11 +197,18 @@ impl SegmentBuilder {
                         for id in ids {
                             let uuid = Uuid::from_u128(id);
 
-                            // Not all UUID versions hold timestamp data. The most common version, v4 for example is completely
-                            // random and can't be sorted. To prevent spending time on sorting, we return 0 for
-                            // unsortable UUIDs which makes sorting faster.
+                            // Not all Uuid versions hold timestamp data. The most common version, v4 for example is completely
+                            // random and can't be sorted. To still allow defragmentation, we assume that usually the same
+                            // version gets used for a payload key and implement an alternative sorting criteria, that just
+                            // takes the Uuids bytes to group equal Uuids together.
                             if let Some(timestamp) = uuid.get_timestamp() {
                                 ordering = ordering.wrapping_add(timestamp.to_gregorian().0);
+                            } else {
+                                // First part of u128
+                                ordering = ordering.wrapping_add((id >> 64) as u64);
+
+                                // Second part of u128
+                                ordering = ordering.wrapping_add(id as u64);
                             }
                         }
                     }
