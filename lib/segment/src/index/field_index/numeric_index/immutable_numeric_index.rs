@@ -18,7 +18,7 @@ use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
-    map: NumericKeySortedVec<T>,
+    pub(super) map: NumericKeySortedVec<T>,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     histogram: Histogram<T>,
     points_count: usize,
@@ -26,7 +26,7 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
     point_to_values: ImmutablePointToValues<T>,
 }
 
-struct NumericKeySortedVec<T: Encodable + Numericable> {
+pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
     data: Vec<Point<T>>,
     deleted: BitVec,
     deleted_count: usize,
@@ -78,7 +78,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_start_index(&self, bound: Bound<Point<T>>) -> usize {
+    pub(super) fn find_start_index(&self, bound: Bound<Point<T>>) -> usize {
         match bound {
             Bound::Included(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
             Bound::Excluded(bound) => match self.data.binary_search(&bound) {
@@ -89,7 +89,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_end_index(&self, start: usize, bound: Bound<Point<T>>) -> usize {
+    pub(super) fn find_end_index(&self, start: usize, bound: Bound<Point<T>>) -> usize {
         if start >= self.data.len() {
             // the range `end` should never be less than `start`
             return start;

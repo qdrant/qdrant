@@ -691,8 +691,19 @@ pub struct DatetimeIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UuidIndexParams {
+    /// If true - used for tenant optimization.
+    #[prost(bool, optional, tag = "1")]
+    pub is_tenant: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIndexParams {
-    #[prost(oneof = "payload_index_params::IndexParams", tags = "3, 2, 4, 5, 1, 6, 7")]
+    #[prost(
+        oneof = "payload_index_params::IndexParams",
+        tags = "3, 2, 4, 5, 1, 6, 7, 8"
+    )]
     pub index_params: ::core::option::Option<payload_index_params::IndexParams>,
 }
 /// Nested message and enum types in `PayloadIndexParams`.
@@ -722,6 +733,9 @@ pub mod payload_index_params {
         /// Parameters for datetime index
         #[prost(message, tag = "7")]
         DatetimeIndexParams(super::DatetimeIndexParams),
+        /// Parameters for uuid index
+        #[prost(message, tag = "8")]
+        UuidIndexParams(super::UuidIndexParams),
     }
 }
 #[derive(serde::Serialize)]
@@ -1344,6 +1358,7 @@ pub enum PayloadSchemaType {
     Text = 5,
     Bool = 6,
     Datetime = 7,
+    Uuid = 8,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1360,6 +1375,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Text => "Text",
             PayloadSchemaType::Bool => "Bool",
             PayloadSchemaType::Datetime => "Datetime",
+            PayloadSchemaType::Uuid => "Uuid",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1373,6 +1389,7 @@ impl PayloadSchemaType {
             "Text" => Some(Self::Text),
             "Bool" => Some(Self::Bool),
             "Datetime" => Some(Self::Datetime),
+            "Uuid" => Some(Self::Uuid),
             _ => None,
         }
     }
@@ -5844,6 +5861,7 @@ pub enum FieldType {
     Text = 4,
     Bool = 5,
     Datetime = 6,
+    Uuid = 7,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5859,6 +5877,7 @@ impl FieldType {
             FieldType::Text => "FieldTypeText",
             FieldType::Bool => "FieldTypeBool",
             FieldType::Datetime => "FieldTypeDatetime",
+            FieldType::Uuid => "FieldTypeUuid",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5871,6 +5890,7 @@ impl FieldType {
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
             "FieldTypeDatetime" => Some(Self::Datetime),
+            "FieldTypeUuid" => Some(Self::Uuid),
             _ => None,
         }
     }

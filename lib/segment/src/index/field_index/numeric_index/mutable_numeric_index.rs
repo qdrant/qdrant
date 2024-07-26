@@ -266,6 +266,10 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         Ok(())
     }
 
+    pub fn map(&self) -> &BTreeSet<Point<T>> {
+        &self.dynamic_index.map
+    }
+
     delegate! {
         to self.dynamic_index {
             pub fn total_unique_values_count(&self) -> usize;

@@ -28,7 +28,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::index::{
     BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
-    KeywordIndexParams, TextIndexParams,
+    KeywordIndexParams, TextIndexParams, UuidIndexParams,
 };
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::vectors::VectorStructInternal;
@@ -48,6 +48,10 @@ pub type FloatPayloadType = f64;
 pub type IntPayloadType = i64;
 /// Type of datetime point payload
 pub type DateTimePayloadType = DateTimeWrapper;
+/// Type of Uuid point payload
+pub type UuidPayloadType = Uuid;
+/// Type of Uuid point payload key
+pub type UuidIntType = u128;
 
 /// Name of the vector field
 pub type VectorName = String;
@@ -1125,6 +1129,7 @@ pub enum PayloadSchemaType {
     Text,
     Bool,
     Datetime,
+    Uuid,
 }
 
 impl PayloadSchemaType {
@@ -1142,6 +1147,7 @@ impl PayloadSchemaType {
             Self::Text => PayloadSchemaParams::Text(TextIndexParams::default()),
             Self::Bool => PayloadSchemaParams::Bool(BoolIndexParams::default()),
             Self::Datetime => PayloadSchemaParams::Datetime(DatetimeIndexParams::default()),
+            Self::Uuid => PayloadSchemaParams::Uuid(UuidIndexParams::default()),
         }
     }
 }
@@ -1157,6 +1163,7 @@ pub enum PayloadSchemaParams {
     Text(TextIndexParams),
     Bool(BoolIndexParams),
     Datetime(DatetimeIndexParams),
+    Uuid(UuidIndexParams),
 }
 
 impl PayloadSchemaParams {
@@ -1174,6 +1181,7 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Text(_) => PayloadSchemaType::Text,
             PayloadSchemaParams::Bool(_) => PayloadSchemaType::Bool,
             PayloadSchemaParams::Datetime(_) => PayloadSchemaType::Datetime,
+            PayloadSchemaParams::Uuid(_) => PayloadSchemaType::Uuid,
         }
     }
 

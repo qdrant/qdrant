@@ -63,6 +63,13 @@ pub fn index_selector(
                 is_appendable,
             ))]
         }
+        PayloadSchemaParams::Uuid(_) => {
+            vec![FieldIndex::UuidIndex(NumericIndex::new(
+                db,
+                field,
+                is_appendable,
+            ))]
+        }
     }
 }
 
@@ -106,6 +113,11 @@ pub fn index_builder_selector(
         }
         PayloadSchemaParams::Datetime(_) => {
             vec![FieldIndexBuilder::DatetimeIndex(NumericIndex::builder(
+                db, field,
+            ))]
+        }
+        PayloadSchemaParams::Uuid(_) => {
+            vec![FieldIndexBuilder::UuidIndex(NumericIndex::builder(
                 db, field,
             ))]
         }

@@ -6379,7 +6379,8 @@
           "geo",
           "text",
           "bool",
-          "datetime"
+          "datetime",
+          "uuid"
         ]
       },
       "PayloadSchemaParams": {
@@ -6405,6 +6406,9 @@
           },
           {
             "$ref": "#/components/schemas/DatetimeIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/UuidIndexParams"
           }
         ]
       },
@@ -6594,6 +6598,28 @@
         "type": "string",
         "enum": [
           "datetime"
+        ]
+      },
+      "UuidIndexParams": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/UuidIndexType"
+          },
+          "is_tenant": {
+            "description": "If true - used for tenant optimization.",
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "UuidIndexType": {
+        "type": "string",
+        "enum": [
+          "uuid"
         ]
       },
       "PointRequest": {
