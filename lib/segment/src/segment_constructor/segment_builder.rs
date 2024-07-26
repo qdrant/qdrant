@@ -23,6 +23,8 @@ use super::{
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
+use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
+use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
@@ -70,8 +72,11 @@ impl SegmentBuilder {
 
         let database = open_segment_db(&temp_path, segment_config)?;
 
-        let id_tracker =
-            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?);
+        let id_tracker = if segment_config.is_appendable() {
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?)
+        } else {
+            IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
+        };
 
         let payload_storage = create_payload_storage(database.clone(), segment_config)?;
 
@@ -401,9 +406,6 @@ impl SegmentBuilder {
             }
         }
 
-        self.id_tracker.mapping_flusher()()?;
-        self.id_tracker.versions_flusher()()?;
-
         Ok(true)
     }
 
@@ -425,6 +427,19 @@ impl SegmentBuilder {
 
             payload_storage.flusher()()?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
+
+            let id_tracker = match id_tracker {
+                IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
+                    let (versions, mappings) = in_memory_id_tracker.into_internal();
+                    let immutable_id_tracker =
+                        ImmutableIdTracker::new(&temp_path, &versions, mappings)?;
+                    IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
+                }
+                IdTrackerEnum::MutableIdTracker(_) => id_tracker,
+                IdTrackerEnum::ImmutableIdTracker(_) => {
+                    unreachable!("ImmutableIdTracker should not be used for building segment")
+                }
+            };
 
             id_tracker.mapping_flusher()()?;
             id_tracker.versions_flusher()()?;
@@ -509,16 +524,6 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
             }
-
-            // TODO: uncomment when releasing the next version! Also in segment_constructor_base.rs:403
-            // Make the IdTracker immutable if segment is not appendable.
-            /*
-            if !appendable_flag {
-                if let IdTrackerEnum::MutableIdTracker(mutable) = &*id_tracker_arc.borrow() {
-                    mutable.make_immutable(&temp_path)?;
-                }
-            }
-             */
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(
