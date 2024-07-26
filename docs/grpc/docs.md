@@ -4243,7 +4243,7 @@ Sample points from the collection
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| RANDOM | 0 |  |
+| Random | 0 |  |
 
 
 
