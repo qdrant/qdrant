@@ -8,7 +8,9 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_numeric_index::{DynamicNumericIndex, MutableNumericIndex};
-use super::{Encodable, NumericIndexInner, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::{
+    numeric_index_storage_cf_name, Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION,
+};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -18,9 +20,9 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
     map: NumericKeySortedVec<T>,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-    pub(super) histogram: Histogram<T>,
-    pub(super) points_count: usize,
-    pub(super) max_values_per_point: usize,
+    histogram: Histogram<T>,
+    points_count: usize,
+    max_values_per_point: usize,
     point_to_values: ImmutablePointToValues<T>,
 }
 
@@ -152,7 +154,7 @@ impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVec
 
 impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     pub(super) fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        let store_cf_name = NumericIndexInner::<T>::storage_cf_name(field);
+        let store_cf_name = numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
@@ -262,6 +264,18 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         Ok(())
     }
 
+    pub(super) fn get_histogram(&self) -> &Histogram<T> {
+        &self.histogram
+    }
+
+    pub(super) fn get_points_count(&self) -> usize {
+        self.points_count
+    }
+
+    pub(super) fn get_max_values_per_point(&self) -> usize {
+        self.max_values_per_point
+    }
+
     fn remove_from_map(
         map: &mut NumericKeySortedVec<T>,
         histogram: &mut Histogram<T>,
@@ -295,7 +309,6 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
     use std::ops::Bound;
 
     use super::*;
@@ -317,11 +330,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         for (k1, k2) in set1.iter().zip(set2.iter()) {
-            if k1.val.is_nan() && k2.val.is_nan() {
-                assert_eq!(k1.idx, k2.idx);
-            } else {
-                assert_eq!(k1, k2);
-            }
+            assert_eq!(k1, k2);
         }
     }
 
