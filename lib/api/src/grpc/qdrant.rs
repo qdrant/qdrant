@@ -626,6 +626,9 @@ pub struct KeywordIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "3")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "4")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -640,11 +643,18 @@ pub struct IntegerIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "3")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "4")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FloatIndexParams {}
+pub struct FloatIndexParams {
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "1")]
+    pub on_disk: ::core::option::Option<bool>,
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -673,7 +683,11 @@ pub struct BoolIndexParams {}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DatetimeIndexParams {}
+pub struct DatetimeIndexParams {
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "1")]
+    pub on_disk: ::core::option::Option<bool>,
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

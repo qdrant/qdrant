@@ -688,6 +688,11 @@
 
 
 
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. |
+
+
 
 
 
@@ -786,6 +791,11 @@
 
 
 
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. |
+
+
 
 
 
@@ -862,6 +872,7 @@
 | lookup | [bool](#bool) |  | If true - support direct lookups. |
 | range | [bool](#bool) |  | If true - support ranges filters. |
 | is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. |
 
 
 
@@ -877,6 +888,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. |
 
 
 

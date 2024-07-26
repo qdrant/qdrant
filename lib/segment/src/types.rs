@@ -1184,6 +1184,16 @@ impl PayloadSchemaParams {
             _ => false,
         }
     }
+
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            PayloadSchemaParams::Keyword(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Integer(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
@@ -1213,6 +1223,13 @@ impl PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
             PayloadFieldSchema::FieldParams(params) => params.is_tenant(),
+        }
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(_) => false,
+            PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
         }
     }
 }
