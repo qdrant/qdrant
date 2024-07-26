@@ -111,6 +111,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
                     lookup: true,
                     range: false,
                     is_tenant: None,
+                    on_disk: None,
                 },
             ))),
         )
@@ -125,6 +126,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
                     lookup: false,
                     range: true,
                     is_tenant: None,
+                    on_disk: None,
                 },
             ))),
         )

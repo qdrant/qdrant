@@ -387,15 +387,18 @@ enum TokenizerType {
 
 message KeywordIndexParams {
     optional bool is_tenant = 3; // If true - used for tenant optimization.
+    optional bool on_disk = 4; // If true - store index on disk.
 }
 
 message IntegerIndexParams {
   bool lookup = 1; // If true - support direct lookups.
   bool range = 2; // If true - support ranges filters.
   optional bool is_tenant = 3; // If true - used for tenant optimization.
+  optional bool on_disk = 4; // If true - store index on disk.
 }
 
 message FloatIndexParams {
+  optional bool on_disk = 1; // If true - store index on disk.
 }
 
 message GeoIndexParams {
@@ -412,6 +415,7 @@ message BoolIndexParams {
 }
 
 message DatetimeIndexParams {
+  optional bool on_disk = 1; // If true - store index on disk.
 }
 
 message PayloadIndexParams {

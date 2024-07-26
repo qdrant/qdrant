@@ -225,6 +225,7 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
         PayloadIndexParams {
             index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {
                 is_tenant: params.is_tenant,
+                on_disk: params.on_disk,
             })),
         }
     }
@@ -237,15 +238,18 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
                 lookup: params.lookup,
                 range: params.range,
                 is_tenant: params.is_tenant,
+                on_disk: params.on_disk,
             })),
         }
     }
 }
 
 impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
-    fn from(_params: segment::data_types::index::FloatIndexParams) -> Self {
+    fn from(params: segment::data_types::index::FloatIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {})),
+            index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {
+                on_disk: params.on_disk,
+            })),
         }
     }
 }
@@ -281,9 +285,11 @@ impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
 }
 
 impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParams {
-    fn from(_params: segment::data_types::index::DatetimeIndexParams) -> Self {
+    fn from(params: segment::data_types::index::DatetimeIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {})),
+            index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {
+                on_disk: params.on_disk,
+            })),
         }
     }
 }
@@ -361,6 +367,7 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
             is_tenant: params.is_tenant,
+            on_disk: params.on_disk,
         })
     }
 }
@@ -373,15 +380,17 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             lookup: params.lookup,
             range: params.range,
             is_tenant: params.is_tenant,
+            on_disk: params.on_disk,
         })
     }
 }
 
 impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams {
     type Error = Status;
-    fn try_from(_params: FloatIndexParams) -> Result<Self, Self::Error> {
+    fn try_from(params: FloatIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::index::FloatIndexParams {
             r#type: FloatIndexType::Float,
+            on_disk: params.on_disk,
         })
     }
 }
@@ -421,9 +430,10 @@ impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
 
 impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexParams {
     type Error = Status;
-    fn try_from(_params: DatetimeIndexParams) -> Result<Self, Self::Error> {
+    fn try_from(params: DatetimeIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::index::DatetimeIndexParams {
             r#type: DatetimeIndexType::Datetime,
+            on_disk: params.on_disk,
         })
     }
 }
