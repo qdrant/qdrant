@@ -341,7 +341,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         self.values_count(idx) == 0
     }
 
-    pub fn values_by_key(&self, key: &T) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn point_ids_by_value(&self, key: &T) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let start = Bound::Included(Point::new(*key, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(*key, PointOffsetType::MAX));
         match &self {
@@ -528,7 +528,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_i128(uuid.as_u128() as UuidIntType);
-                return Some(self.values_by_key(&key));
+                return Some(self.point_ids_by_value(&key));
             }
         }
 
