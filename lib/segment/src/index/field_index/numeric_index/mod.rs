@@ -26,7 +26,6 @@ use super::histogram::Point;
 use super::utils::check_boundaries;
 use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -154,32 +153,17 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         }
     }
 
-    #[cfg(test)]
-    pub fn wrap<P>(self) -> NumericIndex<T, P> {
-        NumericIndex {
-            inner: self,
-            _phantom: PhantomData,
-        }
-    }
-
-    fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        match self {
-            NumericIndexInner::Mutable(index) => index.get_db_wrapper(),
-            NumericIndexInner::Immutable(index) => index.get_db_wrapper(),
-        }
-    }
-
     fn get_histogram(&self) -> &Histogram<T> {
         match self {
             NumericIndexInner::Mutable(index) => index.get_histogram(),
-            NumericIndexInner::Immutable(index) => &index.histogram,
+            NumericIndexInner::Immutable(index) => index.get_histogram(),
         }
     }
 
     fn get_points_count(&self) -> usize {
         match self {
             NumericIndexInner::Mutable(index) => index.get_points_count(),
-            NumericIndexInner::Immutable(index) => index.points_count,
+            NumericIndexInner::Immutable(index) => index.get_points_count(),
         }
     }
 
@@ -190,10 +174,6 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
         }
     }
 
-    fn storage_cf_name(field: &str) -> String {
-        format!("{field}_numeric")
-    }
-
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             NumericIndexInner::Mutable(index) => index.load(),
@@ -202,7 +182,10 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
     }
 
     pub fn flusher(&self) -> Flusher {
-        self.get_db_wrapper().flusher()
+        match self {
+            NumericIndexInner::Mutable(index) => index.get_db_wrapper().flusher(),
+            NumericIndexInner::Immutable(index) => index.get_db_wrapper().flusher(),
+        }
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
@@ -241,7 +224,7 @@ impl<T: Encodable + Numericable + Default> NumericIndexInner<T> {
     pub fn max_values_per_point(&self) -> usize {
         match self {
             NumericIndexInner::Mutable(index) => index.get_max_values_per_point(),
-            NumericIndexInner::Immutable(index) => index.max_values_per_point,
+            NumericIndexInner::Immutable(index) => index.get_max_values_per_point(),
         }
     }
 
@@ -391,7 +374,10 @@ where
     type FieldIndexType = NumericIndex<T, P>;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.inner.get_db_wrapper().recreate_column_family()
+        match &mut self.0.inner {
+            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Immutable(_) => unreachable!(),
+        }
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
@@ -399,6 +385,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        self.0.inner.flusher()()?;
         Ok(self.0)
     }
 }
@@ -454,7 +441,10 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndexInn
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.get_db_wrapper().recreate_column_family()
+        match self {
+            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+        }
     }
 
     fn flusher(&self) -> Flusher {
@@ -681,4 +671,8 @@ where
             }
         }
     }
+}
+
+fn numeric_index_storage_cf_name(field: &str) -> String {
+    format!("{field}_numeric")
 }

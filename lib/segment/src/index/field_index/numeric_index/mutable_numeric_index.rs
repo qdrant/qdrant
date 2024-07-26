@@ -8,7 +8,9 @@ use delegate::delegate;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::{Encodable, NumericIndexInner, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION};
+use super::{
+    numeric_index_storage_cf_name, Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -202,7 +204,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     }
 
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        let store_cf_name = NumericIndexInner::<T>::storage_cf_name(field);
+        let store_cf_name = numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
