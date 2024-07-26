@@ -349,8 +349,8 @@ impl FieldIndex {
     pub fn as_map_index(&self) -> Option<MapIndexEnum> {
         match self {
             FieldIndex::KeywordIndex(index) => Some(MapIndexEnum::KeywordIndex(index)),
-            FieldIndex::IntMapIndex(_) // TODO: use int map index too
-            | FieldIndex::UuidIndex(_) // TODO: use uuid index too
+            FieldIndex::IntMapIndex(_) // TODO(facets): use int map index too
+            | FieldIndex::UuidIndex(_) // TODO(facets): use uuid index too
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)

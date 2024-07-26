@@ -46,8 +46,7 @@ pub fn merge_facet_hits(
 ) -> impl Iterator<Item = FacetValueHit> {
     this.into_iter()
         .chain(other)
-        .map(|hit| (hit.value, hit.count))
-        .fold(HashMap::new(), |mut map, (value, count)| {
+        .fold(HashMap::new(), |mut map, FacetValueHit { value, count }| {
             match map.get_mut(&value) {
                 Some(existing_count) => *existing_count += count,
                 None => {
