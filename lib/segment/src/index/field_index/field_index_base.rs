@@ -1,4 +1,5 @@
 use std::fmt::Formatter;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use delegate::delegate;
@@ -38,6 +39,8 @@ pub trait PayloadFieldIndex {
 
     /// Return function that flushes all pending updates to disk.
     fn flusher(&self) -> Flusher;
+
+    fn files(&self) -> Vec<PathBuf>;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
@@ -220,6 +223,10 @@ impl FieldIndex {
 
     pub fn flusher(&self) -> Flusher {
         self.get_payload_field_index().flusher()
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.get_payload_field_index().files()
     }
 
     pub fn filter<'a>(
