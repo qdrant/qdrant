@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
-use crate::data_types::facets::{FacetRequest, FacetValueHit};
+use crate::data_types::facets::{FacetHit, FacetRequest, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -133,7 +133,7 @@ pub trait SegmentEntry {
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
 
     /// Return the largest counts for the given facet request.
-    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetValueHit>>;
+    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetHit<FacetValue>>>;
 
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
