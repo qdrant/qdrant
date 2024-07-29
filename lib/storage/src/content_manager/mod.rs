@@ -282,10 +282,10 @@ mod test {
 
     fn serde_json_value_compatible_with_cbor(input: serde_json::Value) {
         let cbor = serde_cbor::to_vec(&input)
-            .expect(&format!("JSON value {input} can be serialized to CBOR"));
+            .unwrap_or_else(|_| panic!("JSON value {input} can be serialized to CBOR"));
 
         let output: serde_json::Value = serde_cbor::from_slice(&cbor)
-            .expect(&format!("JSON value {input} can be deserialized from CBOR"));
+            .unwrap_or_else(|_| panic!("JSON value {input} can be deserialized from CBOR"));
 
         assert_eq!(input, output);
     }
