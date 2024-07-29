@@ -264,6 +264,15 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.max_values_per_point
     }
 
+    pub(super) fn values_range_size(
+        &self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+    ) -> usize {
+        let iterator = self.values_range_iterator(start_bound, end_bound);
+        iterator.end_index - iterator.start_index
+    }
+
     // get iterator
     fn values_range_iterator(
         &self,

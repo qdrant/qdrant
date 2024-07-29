@@ -18,7 +18,7 @@ use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 
 pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
-    pub(super) map: NumericKeySortedVec<T>,
+    map: NumericKeySortedVec<T>,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     histogram: Histogram<T>,
     points_count: usize,
@@ -199,6 +199,15 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
 
     pub(super) fn total_unique_values_count(&self) -> usize {
         self.map.len()
+    }
+
+    pub(super) fn values_range_size(
+        &self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+    ) -> usize {
+        let iterator = self.map.values_range(start_bound, end_bound);
+        iterator.end_index - iterator.start_index
     }
 
     pub(super) fn values_range(

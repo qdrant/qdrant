@@ -6,7 +6,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType};
+use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
@@ -54,6 +54,30 @@ impl MmapValue for IntPayloadType {
 }
 
 impl MmapValue for FloatPayloadType {
+    type Referenced<'a> = Self;
+
+    fn mmaped_size(_value: Self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
+        Self::read_from_prefix(bytes)
+    }
+
+    fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
+        value.write_to_prefix(bytes)
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
+    }
+}
+
+impl MmapValue for UuidIntType {
     type Referenced<'a> = Self;
 
     fn mmaped_size(_value: Self) -> usize {
