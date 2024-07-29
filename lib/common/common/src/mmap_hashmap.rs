@@ -4,7 +4,7 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{self, Cursor, Write};
 use std::marker::PhantomData;
-use std::mem::size_of;
+use std::mem::{align_of, size_of};
 use std::path::Path;
 use std::str;
 
@@ -79,7 +79,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         file_size += phf.write_bytes();
 
         // 3. Padding
-        let padding_len = (PADDING_SIZE - (file_size % PADDING_SIZE)) % PADDING_SIZE;
+        let padding_len = file_size.next_multiple_of(PADDING_SIZE) - file_size;
         file_size += padding_len;
 
         // 4. Buckets
@@ -88,8 +88,9 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         // 5. Data
         let mut buckets = vec![0 as BucketOffset; keys_count];
-        let mut last_bucket = 0;
+        let mut last_bucket = 0usize;
         for (k, v) in map.clone() {
+            last_bucket = last_bucket.next_multiple_of(K::ALIGN);
             buckets[phf.get(k).expect("Key not found in phf") as usize] =
                 last_bucket as BucketOffset;
             last_bucket += Self::entry_bytes(k, v.len()).0;
@@ -105,7 +106,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         // 1. Header
         let header = Header {
-            key_type: K::name(),
+            key_type: K::NAME,
             buckets_pos: buckets_pos as u64,
             buckets_count: keys_count as u64,
         };
@@ -121,8 +122,14 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         bufw.write_all(buckets.as_bytes())?;
 
         // 5. Data
-        let mut pos = 0;
+        let mut pos = 0usize;
         for (key, values) in map {
+            let next_pos = pos.next_multiple_of(K::ALIGN);
+            if next_pos > pos {
+                bufw.write_all(zeroes(next_pos - pos))?;
+                pos = next_pos;
+            }
+
             buckets.push(pos as BucketOffset);
 
             let (entry_size, padding) = Self::entry_bytes(key, values.len());
@@ -161,7 +168,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         let header = Header::read_from_prefix(mmap.as_ref()).ok_or(io::ErrorKind::InvalidData)?;
 
-        if header.key_type != K::name() {
+        if header.key_type != K::NAME {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Key type mismatch",
@@ -186,31 +193,20 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         self.header.buckets_count as usize
     }
 
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        (0..self.keys_count()).filter_map(|i| {
+            let entry = self.get_entry(i).ok()?;
+            K::from_bytes(entry)
+        })
+    }
+
     /// Get the values associated with the `key`.
     pub fn get(&self, key: &K) -> io::Result<Option<&[PointOffsetType]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
         };
 
-        let bucket_val = self
-            .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    ..self.header.buckets_pos as usize
-                        + self.header.buckets_count as usize * size_of::<BucketOffset>(),
-            )
-            .and_then(BucketOffset::slice_from)
-            .and_then(|buckets| buckets.get(hash as usize).copied())
-            .ok_or(io::ErrorKind::InvalidData)?;
-
-        let entry = self
-            .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    + self.header.buckets_count as usize * size_of::<BucketOffset>()
-                    + bucket_val as usize..,
-            )
-            .ok_or(io::ErrorKind::InvalidData)?;
+        let entry = self.get_entry(hash as usize)?;
         let entry_start = entry.as_ptr() as usize;
 
         if !key.matches(entry) {
@@ -235,11 +231,35 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         let result = PointOffsetType::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
         Ok(Some(result))
     }
+
+    fn get_entry(&self, index: usize) -> io::Result<&[u8]> {
+        let bucket_val = self
+            .mmap
+            .get(
+                self.header.buckets_pos as usize
+                    ..self.header.buckets_pos as usize
+                        + self.header.buckets_count as usize * size_of::<BucketOffset>(),
+            )
+            .and_then(BucketOffset::slice_from)
+            .and_then(|buckets| buckets.get(index).copied())
+            .ok_or(io::ErrorKind::InvalidData)?;
+
+        Ok(self
+            .mmap
+            .get(
+                self.header.buckets_pos as usize
+                    + self.header.buckets_count as usize * size_of::<BucketOffset>()
+                    + bucket_val as usize..,
+            )
+            .ok_or(io::ErrorKind::InvalidData)?)
+    }
 }
 
 /// A key that can be stored in the hash map.
 pub trait Key: Sync + Hash {
-    fn name() -> [u8; 8];
+    const ALIGN: usize;
+
+    const NAME: [u8; 8];
 
     /// Returns number of bytes which `write` will write.
     fn write_bytes(&self) -> usize;
@@ -249,12 +269,15 @@ pub trait Key: Sync + Hash {
 
     /// Check whether the first [`Key::write_bytes()`] of `buf` match the key.
     fn matches(&self, buf: &[u8]) -> bool;
+
+    /// Try to read the key from `buf`.
+    fn from_bytes(buf: &[u8]) -> Option<&Self>;
 }
 
 impl Key for str {
-    fn name() -> [u8; 8] {
-        *b"str\0\0\0\0\0"
-    }
+    const ALIGN: usize = align_of::<u8>();
+
+    const NAME: [u8; 8] = *b"str\0\0\0\0\0";
 
     fn write_bytes(&self) -> usize {
         self.len() + 1
@@ -294,15 +317,17 @@ impl Key for str {
         //    validity of `str`/`String` types.
         buf.get(..self.len()) == Some(AsBytes::as_bytes(self)) && buf.get(self.len()) == Some(&0xFF)
     }
+
+    fn from_bytes(buf: &[u8]) -> Option<&Self> {
+        let len = buf.iter().position(|&b| b == 0xFF)?;
+        str::from_utf8(&buf[..len]).ok()
+    }
 }
 
 impl Key for i64 {
-    fn name() -> [u8; 8] {
-        let name = stringify!(i64).as_bytes();
-        let mut result = [0; 8];
-        result[..name.len()].copy_from_slice(name);
-        result
-    }
+    const ALIGN: usize = align_of::<i64>();
+
+    const NAME: [u8; 8] = *b"i64\0\0\0\0\0";
 
     fn write_bytes(&self) -> usize {
         size_of::<i64>()
@@ -314,6 +339,10 @@ impl Key for i64 {
 
     fn matches(&self, buf: &[u8]) -> bool {
         buf.get(..size_of::<i64>()) == Some(AsBytes::as_bytes(self))
+    }
+
+    fn from_bytes(buf: &[u8]) -> Option<&Self> {
+        buf.get(..size_of::<i64>()).and_then(FromBytes::ref_from)
     }
 }
 
@@ -363,13 +392,14 @@ mod tests {
 
     #[test]
     fn test_mmap_hash() {
-        test_mmap_hash_impl(gen_ident, |s| s.as_str());
-        test_mmap_hash_impl(|rng| rng.gen::<i64>(), |i| i);
+        test_mmap_hash_impl(gen_ident, |s| s.as_str(), |s| s.to_owned());
+        test_mmap_hash_impl(|rng| rng.gen::<i64>(), |i| i, |i| *i);
     }
 
     fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
         gen: impl Clone + Fn(&mut StdRng) -> K1,
         as_ref: impl Fn(&K1) -> &K,
+        from_ref: impl Fn(&K) -> K1,
     ) {
         let mut rng = StdRng::seed_from_u64(42);
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
@@ -387,6 +417,14 @@ mod tests {
             let key = repeat_until(|| gen(&mut rng), |key| !map.contains_key(key));
             assert!(mmap.get(as_ref(&key)).unwrap().is_none());
         }
+
+        // check keys iterator
+        for key in mmap.keys() {
+            let key = from_ref(key);
+            assert!(map.contains_key(&key));
+        }
+        assert_eq!(mmap.keys_count(), map.len());
+        assert_eq!(mmap.keys().count(), map.len());
 
         // Existing keys should return the correct values
         for (k, v) in map {
