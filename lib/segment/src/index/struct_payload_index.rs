@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use atomic_refcell::{AtomicRef, AtomicRefCell};
+use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -356,7 +356,7 @@ impl StructPayloadIndex {
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
-        id_tracker: &'a AtomicRef<IdTrackerSS>,
+        id_tracker: &'a IdTrackerSS,
         query_cardinality: &'a CardinalityEstimation,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
@@ -464,7 +464,7 @@ impl PayloadIndex for StructPayloadIndex {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(query);
         let id_tracker = self.id_tracker.borrow();
-        self.iter_filtered_points(query, &id_tracker, &query_cardinality)
+        self.iter_filtered_points(query, &*id_tracker, &query_cardinality)
             .collect()
     }
 

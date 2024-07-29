@@ -1509,7 +1509,7 @@ impl SegmentEntry for Segment {
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
             let hits_map = payload_index
-                .iter_filtered_points(filter, &id_tracker, &filter_cardinality)
+                .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
                 .fold(HashMap::new(), |mut map, point_id| {
                     for value in facet_index.get_values(point_id) {
                         if let Some(counter) = map.get_mut(&value) {
