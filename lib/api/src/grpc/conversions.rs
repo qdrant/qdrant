@@ -249,6 +249,7 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
         PayloadIndexParams {
             index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {
                 on_disk: params.on_disk,
+                is_tenant: params.is_tenant,
             })),
         }
     }
@@ -299,6 +300,7 @@ impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParam
         PayloadIndexParams {
             index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {
                 on_disk: params.on_disk,
+                is_tenant: params.is_tenant,
             })),
         }
     }
@@ -404,6 +406,7 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
         Ok(segment::data_types::index::FloatIndexParams {
             r#type: FloatIndexType::Float,
             on_disk: params.on_disk,
+            is_tenant: params.is_tenant,
         })
     }
 }
@@ -447,6 +450,7 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
         Ok(segment::data_types::index::DatetimeIndexParams {
             r#type: DatetimeIndexType::Datetime,
             on_disk: params.on_disk,
+            is_tenant: params.is_tenant,
         })
     }
 }

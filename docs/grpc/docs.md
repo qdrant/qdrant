@@ -692,6 +692,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
+| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
 
 
 
@@ -795,6 +796,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
+| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
 
 
 
