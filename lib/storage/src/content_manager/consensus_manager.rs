@@ -472,6 +472,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 Ok(true)
             }
 
+            ConsensusOperations::UpdateClusterMetadata { key, value } => {
+                self.persistent.write().update_cluster_metadata(key, value);
+                Ok(true)
+            }
+
             ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {
                 unreachable!()
             }
