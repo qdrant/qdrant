@@ -11,7 +11,7 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::{StorageVersion, VERSION_FILE};
-use itertools::Either;
+use itertools::{Either, Itertools};
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -1508,21 +1508,23 @@ impl SegmentEntry for Segment {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let hits_map = payload_index
+            let hits_iter = payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
+                .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(HashMap::new(), |mut map, point_id| {
-                    for value in facet_index.get_values(point_id) {
+                    facet_index.get_values(point_id).unique().for_each(|value| {
                         if let Some(counter) = map.get_mut(&value) {
                             *counter += 1;
                         } else {
                             map.insert(value, 1);
                         }
-                    }
+                    });
                     map
                 })
                 .into_iter()
                 .map(|(value, count)| FacetHit { value, count });
-            peek_top_largest_iterable(hits_map, request.limit)
+
+            peek_top_largest_iterable(hits_iter, request.limit)
         } else {
             let hits_iter = facet_index.iter_counts_per_value();
             peek_top_largest_iterable(hits_iter, request.limit)

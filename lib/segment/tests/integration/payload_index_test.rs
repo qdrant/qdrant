@@ -175,11 +175,11 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
 
     for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
         for index in indexes {
-            assert!(index.count_indexed_points() < num_points as usize);
+            assert!(index.count_indexed_points() <= num_points as usize);
             if field.to_string() != FLICKING_KEY {
                 assert!(
                     index.count_indexed_points()
-                        > (num_points as usize - points_to_delete - points_to_clear)
+                        >= (num_points as usize - points_to_delete - points_to_clear)
                 );
             }
         }

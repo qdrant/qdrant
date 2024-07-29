@@ -359,8 +359,6 @@ impl StructPayloadIndex {
         id_tracker: &'a IdTrackerSS,
         query_cardinality: &'a CardinalityEstimation,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        // Assume query is already estimated to be small enough so we can iterate over all matched ids
-
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
 
@@ -374,7 +372,6 @@ impl StructPayloadIndex {
             let struct_filtered_context = self.struct_filtered_context(filter);
 
             // CPU-optimized strategy here: points are made unique before applying other filters.
-            // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
             let iter = query_cardinality
