@@ -1189,7 +1189,12 @@ impl PayloadSchemaParams {
         match self {
             PayloadSchemaParams::Keyword(keyword) => keyword.is_tenant.unwrap_or_default(),
             PayloadSchemaParams::Integer(integer) => integer.is_tenant.unwrap_or_default(),
-            _ => false,
+            PayloadSchemaParams::Float(float) => float.is_tenant.unwrap_or_default(),
+            PayloadSchemaParams::Datetime(datetime) => datetime.is_tenant.unwrap_or_default(),
+            PayloadSchemaParams::Uuid(uuid) => uuid.is_tenant.unwrap_or_default(),
+            PayloadSchemaParams::Geo(_)
+            | PayloadSchemaParams::Text(_)
+            | PayloadSchemaParams::Bool(_) => false,
         }
     }
 
