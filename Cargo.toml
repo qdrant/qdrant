@@ -185,7 +185,7 @@ serde_json = {version = "~1.0", features = ["preserve_order"]}
 strum = { version = "0.26.3", features = ["derive"] }
 tar = "0.4.41"
 tempfile = "3.10.1"
-tokio = { version = "1.38.1", features = ["full"] }
+tokio = { version = "1.39.2", features = ["full"] }
 tokio-util = "0.7"
 tonic = { version = "0.10.2", features = ["gzip", "tls"] }
 tonic-build = { version = "0.10.2", features = ["prost"] }
