@@ -106,12 +106,34 @@ impl ShardHolder {
         self.key_mapping.read().clone()
     }
 
-    async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> Result<(), CollectionError> {
+    pub async fn drop_and_remove_shard(
+        &mut self,
+        shard_id: ShardId,
+    ) -> Result<(), CollectionError> {
         if let Some(replica_set) = self.shards.remove(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             drop(replica_set);
             tokio::fs::remove_dir_all(shard_path).await?;
         }
+        Ok(())
+    }
+
+    pub fn remove_shard_from_key_mapping(
+        &mut self,
+        shard_id: &ShardId,
+        shard_key: &ShardKey,
+    ) -> Result<(), CollectionError> {
+        self.key_mapping.write_optional(|key_mapping| {
+            if !key_mapping.contains_key(shard_key) {
+                return None;
+            }
+
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.get_mut(shard_key).unwrap().remove(shard_id);
+            Some(key_mapping)
+        })?;
+        self.shard_id_to_key_mapping.remove(shard_id);
+
         Ok(())
     }
 
@@ -405,6 +427,7 @@ impl ShardHolder {
             resharding_operations.push(ReshardingInfo {
                 shard_id: resharding_state.shard_id,
                 peer_id: resharding_state.peer_id,
+                direction: resharding_state.direction,
                 shard_key: resharding_state.shard_key.clone(),
                 comment: status.map(|p| p.comment),
             });
@@ -650,7 +673,7 @@ impl ShardHolder {
         if let Some(state) = self.resharding_state.read().clone() {
             self.rings
                 .entry(state.shard_key)
-                .and_modify(|ring| ring.add_resharding(state.shard_id));
+                .and_modify(|ring| ring.start_resharding(state.shard_id, state.direction));
         }
     }
 

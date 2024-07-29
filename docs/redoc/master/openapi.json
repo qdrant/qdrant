@@ -9547,10 +9547,14 @@
       "ReshardingInfo": {
         "type": "object",
         "required": [
+          "direction",
           "peer_id",
           "shard_id"
         ],
         "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/ReshardingDirection"
+          },
           "shard_id": {
             "type": "integer",
             "format": "uint32",
@@ -9577,6 +9581,25 @@
             "nullable": true
           }
         }
+      },
+      "ReshardingDirection": {
+        "description": "Resharding direction, scale up or down in number of shards",
+        "oneOf": [
+          {
+            "description": "Scale up, add a new shard",
+            "type": "string",
+            "enum": [
+              "up"
+            ]
+          },
+          {
+            "description": "Scale down, remove a shard",
+            "type": "string",
+            "enum": [
+              "down"
+            ]
+          }
+        ]
       },
       "TelemetryData": {
         "type": "object",

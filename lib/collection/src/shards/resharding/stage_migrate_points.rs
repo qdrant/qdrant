@@ -9,8 +9,13 @@ use tokio::time::sleep;
 use super::driver::{PersistedState, Stage};
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
+use crate::operations::cluster_ops::ReshardingDirection;
+use crate::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
+};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::CollectionUpdateOperations;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
@@ -22,10 +27,13 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::resharding_stream_records::transfer_resharding_stream_records;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 /// Maximum time a point migration transfer might take.
 const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Batch size for migrating points between shards on scale down.
+const MIGRATE_BATCH_SIZE: usize = 100;
 
 /// Stage 2: migrate points
 ///
@@ -43,6 +51,52 @@ pub(super) fn is_completed(state: &PersistedState) -> bool {
 /// migrated to the target shard.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn drive(
+    reshard_key: &ReshardKey,
+    state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
+    shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    collection_id: &CollectionId,
+    shared_storage_config: &SharedStorageConfig,
+) -> CollectionResult<()> {
+    match reshard_key.direction {
+        ReshardingDirection::Up => {
+            drive_up(
+                reshard_key,
+                state,
+                progress,
+                shard_holder,
+                consensus,
+                channel_service,
+                collection_id,
+                shared_storage_config,
+            )
+            .await?;
+        }
+        ReshardingDirection::Down => {
+            drive_down(
+                reshard_key,
+                state,
+                progress,
+                shard_holder,
+                consensus,
+                channel_service,
+            )
+            .await?;
+        }
+    }
+
+    state.write(|data| {
+        data.complete_for_all_peers(Stage::S2_MigratePoints);
+        data.update(progress, consensus);
+    })?;
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn drive_up(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     progress: &Mutex<ReshardTaskProgress>,
@@ -202,10 +256,119 @@ pub(super) async fn drive(
         )
         .await?;
 
-    state.write(|data| {
-        data.complete_for_all_peers(Stage::S2_MigratePoints);
-        data.update(progress, consensus);
-    })?;
+    Ok(())
+}
+
+async fn drive_down(
+    reshard_key: &ReshardKey,
+    state: &PersistedState,
+    progress: &Mutex<ReshardTaskProgress>,
+    shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+) -> CollectionResult<()> {
+    // Sync cluster
+    // We move points without a proxy, so all peers must have the updated hash ring to also forward
+    // updates to the new shard
+    progress
+        .lock()
+        .description
+        .replace(format!("{} (await cluster sync)", state.read().describe()));
+    await_consensus_sync(consensus, channel_service).await;
+    progress.lock().description.replace(state.read().describe());
+
+    let hashring = {
+        let shard_holder = shard_holder.read().await;
+        let shard_key = shard_holder
+            .get_shard_id_to_key_mapping()
+            .get(&reshard_key.shard_id)
+            .cloned();
+        shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Cannot delete migrated points while resharding shard {}, failed to get shard hash ring",
+                reshard_key.shard_id,
+            ))
+        })?
+    };
+
+    while let Some(target_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
+        let mut offset = None;
+
+        loop {
+            let shard_holder = shard_holder.read().await;
+
+            let source_replica_set =
+                shard_holder
+                    .get_shard(&reshard_key.shard_id)
+                    .ok_or_else(|| {
+                        CollectionError::service_error(format!(
+                            "Shard {} not found in the shard holder for resharding",
+                            reshard_key.shard_id,
+                        ))
+                    })?;
+            let target_replica_set = shard_holder.get_shard(&target_shard_id).ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Shard {target_shard_id} not found in the shard holder for resharding",
+                ))
+            })?;
+
+            // Take batch of points, if full, pop the last entry as next batch offset
+            let mut points = source_replica_set
+                .scroll_by(
+                    offset,
+                    MIGRATE_BATCH_SIZE + 1,
+                    &true.into(),
+                    &true.into(),
+                    // TODO(resharding): directly apply hash ring filter here?
+                    None,
+                    None,
+                    false,
+                    None,
+                )
+                .await?;
+
+            offset = if points.len() > MIGRATE_BATCH_SIZE {
+                points.pop().map(|point| point.id)
+            } else {
+                None
+            };
+
+            let points: Result<Vec<_>, _> = points
+                .into_iter()
+                .filter(|point| hashring.is_in_shard(&point.id, target_shard_id))
+                .map(PointStruct::try_from)
+                .collect();
+            let points = points.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to migrate points from shard {target_shard_id} to {} for resharding: {err}",
+                    reshard_key.shard_id,
+                ))
+            })?;
+
+            let operation = CollectionUpdateOperations::PointOperation(
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points)),
+            );
+
+            // Wait on all updates here, not just the last batch
+            // If we don't wait on all updates it somehow results in inconsistent results
+            target_replica_set
+                .update_with_consistency(operation, true, WriteOrdering::Weak)
+                .await?;
+
+            if offset.is_none() {
+                break;
+            }
+        }
+
+        state.write(|data| {
+            data.migrated_shards.push(target_shard_id);
+            data.update(progress, consensus);
+        })?;
+        log::debug!(
+            "Points of shard {} successfully migrated into shard {target_shard_id} for resharding",
+            reshard_key.shard_id,
+        );
+    }
 
     Ok(())
 }

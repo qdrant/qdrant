@@ -11,6 +11,7 @@ use super::driver::{PersistedState, Stage};
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::config::CollectionConfig;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::resharding::driver::{
@@ -174,6 +175,11 @@ async fn has_enough_replicas(
     shard_holder: &Arc<LockedShardHolder>,
     collection_config: &Arc<RwLock<CollectionConfig>>,
 ) -> CollectionResult<bool> {
+    // We don't need to replicate when scaling down
+    if reshard_key.direction == ReshardingDirection::Down {
+        return Ok(true);
+    }
+
     let desired_replication_factor = collection_config
         .read()
         .await
