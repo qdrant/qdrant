@@ -88,8 +88,9 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         // 5. Data
         let mut buckets = vec![0 as BucketOffset; keys_count];
-        let mut last_bucket = 0;
+        let mut last_bucket = 0usize;
         for (k, v) in map.clone() {
+            last_bucket = last_bucket.next_multiple_of(K::align());
             buckets[phf.get(k).expect("Key not found in phf") as usize] =
                 last_bucket as BucketOffset;
             last_bucket += Self::entry_bytes(k, v.len()).0;
@@ -121,8 +122,14 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         bufw.write_all(buckets.as_bytes())?;
 
         // 5. Data
-        let mut pos = 0;
+        let mut pos = 0usize;
         for (key, values) in map {
+            let next_pos = pos.next_multiple_of(K::align());
+            if next_pos > pos {
+                bufw.write_all(zeroes(next_pos - pos))?;
+                pos = next_pos;
+            }
+
             buckets.push(pos as BucketOffset);
 
             let (entry_size, padding) = Self::entry_bytes(key, values.len());
