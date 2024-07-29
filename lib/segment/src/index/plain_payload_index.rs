@@ -289,7 +289,12 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let filtered_ids_vec = payload_index.query_points(filter);
+                let cardinality_estimation = payload_index.estimate_cardinality(filter);
+                let mut filtered_ids_iter = payload_index.iter_filtered_points(
+                    filter,
+                    &*id_tracker,
+                    &cardinality_estimation,
+                );
                 let deleted_points = query_context
                     .deleted_points()
                     .unwrap_or(id_tracker.deleted_point_bitslice());
@@ -302,9 +307,7 @@ impl VectorIndex for PlainIndex {
                             deleted_points,
                             &is_stopped,
                         )
-                        .map(|scorer| {
-                            scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
-                        })
+                        .map(|scorer| scorer.peek_top_iter(&mut filtered_ids_iter, top))
                     })
                     .collect()
             }
