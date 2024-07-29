@@ -105,6 +105,9 @@ pub struct FloatIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: FloatIndexType,
 
+    /// If true - used for tenant optimization.
+    pub is_tenant: Option<bool>,
+
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
@@ -205,6 +208,9 @@ pub enum DatetimeIndexType {
 pub struct DatetimeIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: DatetimeIndexType,
+
+    /// If true - used for tenant optimization.
+    pub is_tenant: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
