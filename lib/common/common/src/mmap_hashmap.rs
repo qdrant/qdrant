@@ -90,7 +90,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         let mut buckets = vec![0 as BucketOffset; keys_count];
         let mut last_bucket = 0usize;
         for (k, v) in map.clone() {
-            last_bucket = last_bucket.next_multiple_of(K::align());
+            last_bucket = last_bucket.next_multiple_of(K::ALIGN);
             buckets[phf.get(k).expect("Key not found in phf") as usize] =
                 last_bucket as BucketOffset;
             last_bucket += Self::entry_bytes(k, v.len()).0;
@@ -106,7 +106,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         // 1. Header
         let header = Header {
-            key_type: K::name(),
+            key_type: K::NAME,
             buckets_pos: buckets_pos as u64,
             buckets_count: keys_count as u64,
         };
@@ -124,7 +124,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         // 5. Data
         let mut pos = 0usize;
         for (key, values) in map {
-            let next_pos = pos.next_multiple_of(K::align());
+            let next_pos = pos.next_multiple_of(K::ALIGN);
             if next_pos > pos {
                 bufw.write_all(zeroes(next_pos - pos))?;
                 pos = next_pos;
@@ -168,7 +168,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
         let header = Header::read_from_prefix(mmap.as_ref()).ok_or(io::ErrorKind::InvalidData)?;
 
-        if header.key_type != K::name() {
+        if header.key_type != K::NAME {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Key type mismatch",
@@ -257,7 +257,9 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
 
 /// A key that can be stored in the hash map.
 pub trait Key: Sync + Hash {
-    fn name() -> [u8; 8];
+    const ALIGN: usize;
+
+    const NAME: [u8; 8];
 
     /// Returns number of bytes which `write` will write.
     fn write_bytes(&self) -> usize;
@@ -268,17 +270,14 @@ pub trait Key: Sync + Hash {
     /// Check whether the first [`Key::write_bytes()`] of `buf` match the key.
     fn matches(&self, buf: &[u8]) -> bool;
 
-    /// Returns the alignment of the key.
-    fn align() -> usize;
-
     /// Try to read the key from `buf`.
     fn from_bytes(buf: &[u8]) -> Option<&Self>;
 }
 
 impl Key for str {
-    fn name() -> [u8; 8] {
-        *b"str\0\0\0\0\0"
-    }
+    const ALIGN: usize = align_of::<u8>();
+
+    const NAME: [u8; 8] = *b"str\0\0\0\0\0";
 
     fn write_bytes(&self) -> usize {
         self.len() + 1
@@ -319,10 +318,6 @@ impl Key for str {
         buf.get(..self.len()) == Some(AsBytes::as_bytes(self)) && buf.get(self.len()) == Some(&0xFF)
     }
 
-    fn align() -> usize {
-        align_of::<u8>()
-    }
-
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
         let len = buf.iter().position(|&b| b == 0xFF)?;
         str::from_utf8(&buf[..len]).ok()
@@ -330,12 +325,9 @@ impl Key for str {
 }
 
 impl Key for i64 {
-    fn name() -> [u8; 8] {
-        let name = stringify!(i64).as_bytes();
-        let mut result = [0; 8];
-        result[..name.len()].copy_from_slice(name);
-        result
-    }
+    const ALIGN: usize = align_of::<i64>();
+
+    const NAME: [u8; 8] = *b"i64\0\0\0\0\0";
 
     fn write_bytes(&self) -> usize {
         size_of::<i64>()
@@ -347,10 +339,6 @@ impl Key for i64 {
 
     fn matches(&self, buf: &[u8]) -> bool {
         buf.get(..size_of::<i64>()) == Some(AsBytes::as_bytes(self))
-    }
-
-    fn align() -> usize {
-        align_of::<i64>()
     }
 
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
