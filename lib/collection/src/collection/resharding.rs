@@ -7,6 +7,7 @@ use segment::types::Filter;
 
 use super::Collection;
 use crate::config::ShardingMethod;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::tasks_pool::{ReshardTaskItem, ReshardTaskProgress};
@@ -40,33 +41,43 @@ impl Collection {
 
             shard_holder.check_start_resharding(&resharding_key)?;
 
-            let replica_set = self
-                .create_replica_set(
-                    resharding_key.shard_id,
-                    &[resharding_key.peer_id],
-                    Some(ReplicaState::Resharding),
-                )
-                .await?;
+            // If scaling up, create a new replica set
+            let replica_set = if resharding_key.direction == ReshardingDirection::Up {
+                let replica_set = self
+                    .create_replica_set(
+                        resharding_key.shard_id,
+                        &[resharding_key.peer_id],
+                        Some(ReplicaState::Resharding),
+                    )
+                    .await?;
+
+                Some(replica_set)
+            } else {
+                None
+            };
 
             shard_holder.start_resharding_unchecked(resharding_key.clone(), replica_set)?;
 
-            // Increase the persisted shard count, loads new shard on restart
-            {
+            if resharding_key.direction == ReshardingDirection::Up {
                 let mut config = self.collection_config.write().await;
+                match config.params.sharding_method.unwrap_or_default() {
+                    // If adding a shard, increase persisted count so we load it on restart
+                    ShardingMethod::Auto => {
+                        debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
 
-                if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                    debug_assert_eq!(config.params.shard_number.get(), resharding_key.shard_id);
-                }
-
-                config.params.shard_number = config
-                    .params
-                    .shard_number
-                    .checked_add(1)
-                    .expect("cannot have more than u32::MAX shards after resharding");
-                if let Err(err) = config.save(&self.path) {
-                    log::error!(
-                        "Failed to update and save collection config during resharding: {err}",
-                    );
+                        config.params.shard_number = config
+                            .params
+                            .shard_number
+                            .checked_add(1)
+                            .expect("cannot have more than u32::MAX shards after resharding");
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}",
+                            );
+                        }
+                    }
+                    // Custom shards don't use the persisted count, we don't change it
+                    ShardingMethod::Custom => {}
                 }
             }
         }
@@ -181,6 +192,40 @@ impl Collection {
         let _ = self.stop_resharding_task(&resharding_key).await;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
+        if resharding_key.direction == ReshardingDirection::Down {
+            // Remove the shard we've now migrated all points out of
+            if let Some(shard_key) = &resharding_key.shard_key {
+                shard_holder.remove_shard_from_key_mapping(&resharding_key.shard_id, shard_key)?;
+            }
+            shard_holder
+                .drop_and_remove_shard(resharding_key.shard_id)
+                .await?;
+
+            {
+                let mut config = self.collection_config.write().await;
+                match config.params.sharding_method.unwrap_or_default() {
+                    // If removing a shard, decrease persisted count so we don't load it on restart
+                    ShardingMethod::Auto => {
+                        debug_assert_eq!(
+                            config.params.shard_number.get() - 1,
+                            resharding_key.shard_id,
+                        );
+
+                        config.params.shard_number =
+                            NonZeroU32::new(config.params.shard_number.get() - 1)
+                                .expect("cannot have zero shards after finishing resharding");
+                        if let Err(err) = config.save(&self.path) {
+                            log::error!(
+                                "Failed to update and save collection config during resharding: {err}"
+                            );
+                        }
+                    }
+                    // Custom shards don't use the persisted count, we don't change it
+                    ShardingMethod::Custom => {}
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -200,21 +245,28 @@ impl Collection {
         let _ = self.stop_resharding_task(&resharding_key).await;
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
-        {
+        if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
+            match config.params.sharding_method.unwrap_or_default() {
+                // If removing a shard, decrease persisted count so we don't load it on restart
+                ShardingMethod::Auto => {
+                    debug_assert_eq!(
+                        config.params.shard_number.get() - 1,
+                        resharding_key.shard_id,
+                    );
 
-            if config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto {
-                debug_assert_eq!(
-                    config.params.shard_number.get() - 1,
-                    resharding_key.shard_id,
-                );
-            }
+                    config.params.shard_number =
+                        NonZeroU32::new(config.params.shard_number.get() - 1)
+                            .expect("cannot have zero shards after aborting resharding");
 
-            config.params.shard_number = NonZeroU32::new(config.params.shard_number.get() - 1)
-                .expect("cannot have zero shards after aborting resharding");
-
-            if let Err(err) = config.save(&self.path) {
-                log::error!("Failed to update and save collection config during resharding: {err}");
+                    if let Err(err) = config.save(&self.path) {
+                        log::error!(
+                            "Failed to update and save collection config during resharding: {err}"
+                        );
+                    }
+                }
+                // Custom shards don't use the persisted count, we don't change it
+                ShardingMethod::Custom => {}
             }
         }
 

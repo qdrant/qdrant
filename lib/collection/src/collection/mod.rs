@@ -27,6 +27,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -427,6 +428,8 @@ impl Collection {
 
             self.abort_resharding(
                 ReshardKey {
+                    // Always up when setting resharding replica set state
+                    direction: ReshardingDirection::Up,
                     peer_id,
                     shard_id,
                     shard_key,

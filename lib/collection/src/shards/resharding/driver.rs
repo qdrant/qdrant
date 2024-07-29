@@ -12,6 +12,7 @@ use tokio::time::sleep;
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::config::CollectionConfig;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
@@ -38,8 +39,8 @@ pub(super) struct DriverState {
     key: ReshardKey,
     /// Stage each peer is currently in
     peers: HashMap<PeerId, Stage>,
-    /// List of shard IDs that must be migrated into the new shard
-    source_shard_ids: HashSet<ShardId>,
+    /// List of shard IDs that participate in the resharding process
+    shard_ids: HashSet<ShardId>,
     /// List of shard IDs successfully migrated to the new shard
     pub migrated_shards: Vec<ShardId>,
     /// List of shard IDs in which we successfully deleted migrated points
@@ -47,14 +48,14 @@ pub(super) struct DriverState {
 }
 
 impl DriverState {
-    pub fn new(key: ReshardKey, source_shard_ids: HashSet<ShardId>, peers: &[PeerId]) -> Self {
+    pub fn new(key: ReshardKey, shard_ids: HashSet<ShardId>, peers: &[PeerId]) -> Self {
         Self {
             key,
             peers: peers
                 .iter()
                 .map(|peer_id| (*peer_id, Stage::default()))
                 .collect(),
-            source_shard_ids,
+            shard_ids,
             migrated_shards: vec![],
             deleted_shards: vec![],
         }
@@ -94,21 +95,41 @@ impl DriverState {
             .for_each(|peer_stage| *peer_stage = next_stage.max(*peer_stage));
     }
 
-    /// List the shard IDs we still need to migrate.
+    /// List the shard IDs we still need to migrate
+    ///
+    /// When scaling up this produces shard IDs to migrate points from. When scaling down this
+    /// produces shard IDs to migrate points into.
     pub fn shards_to_migrate(&self) -> impl Iterator<Item = ShardId> + '_ {
-        self.source_shards()
-            .filter(|shard_id| !self.migrated_shards.contains(shard_id))
+        self.shards()
+            // Exclude current resharding shard, and already migrated shards
+            .filter(|shard_id| {
+                *shard_id != self.key.shard_id && !self.migrated_shards.contains(shard_id)
+            })
     }
 
-    /// List the shard IDs in which we still need to propagate point deletions.
-    pub fn shards_to_delete(&self) -> impl Iterator<Item = ShardId> + '_ {
-        self.source_shards()
-            .filter(|shard_id| !self.deleted_shards.contains(shard_id))
+    /// List the shard IDs in which we still need to propagate point deletions
+    ///
+    /// This is only relevant for resharding up.
+    pub fn shards_to_delete(&self) -> Box<dyn Iterator<Item = ShardId> + '_> {
+        // If sharding down we don't delete points, we just drop the shard
+        if self.key.direction == ReshardingDirection::Down {
+            return Box::new(std::iter::empty());
+        }
+
+        Box::new(
+            self.shards()
+                // Exclude current resharding shard, and already deleted shards
+                .filter(|shard_id| {
+                    *shard_id != self.key.shard_id && !self.deleted_shards.contains(shard_id)
+                }),
+        )
     }
 
-    /// Get all the shard IDs which points are sourced from.
-    pub fn source_shards(&self) -> impl Iterator<Item = ShardId> + '_ {
-        self.source_shard_ids.iter().copied()
+    /// Get all shard IDs which are participating in this resharding process.
+    ///
+    /// Includes the newly added or to be removed shard.
+    fn shards(&self) -> impl Iterator<Item = ShardId> + '_ {
+        self.shard_ids.iter().copied()
     }
 
     /// Describe the current stage and state in a human readable string.
@@ -117,22 +138,27 @@ impl DriverState {
             return "unknown: no known peers".into();
         };
 
-        match lowest_stage {
-            Stage::S1_Init => "initialize".into(),
-            Stage::S2_MigratePoints => format!(
+        match (lowest_stage, self.key.direction) {
+            (Stage::S1_Init, _) => "initialize".into(),
+            (Stage::S2_MigratePoints, ReshardingDirection::Up) => format!(
                 "migrate points: migrating points from shards {:?} to {}",
                 self.shards_to_migrate().collect::<Vec<_>>(),
                 self.key.shard_id,
             ),
-            Stage::S3_Replicate => "replicate: replicate new shard to other peers".into(),
-            Stage::S4_CommitReadHashring => "commit read hash ring: switching reads".into(),
-            Stage::S5_CommitWriteHashring => "commit write hash ring: switching writes".into(),
-            Stage::S6_PropagateDeletes => format!(
+            (Stage::S2_MigratePoints, ReshardingDirection::Down) => format!(
+                "migrate points: migrating points from shard {} to shards {:?}",
+                self.key.shard_id,
+                self.shards_to_migrate().collect::<Vec<_>>(),
+            ),
+            (Stage::S3_Replicate, _) => "replicate: replicate new shard to other peers".into(),
+            (Stage::S4_CommitReadHashring, _) => "commit read hash ring: switching reads".into(),
+            (Stage::S5_CommitWriteHashring, _) => "commit write hash ring: switching writes".into(),
+            (Stage::S6_PropagateDeletes, _) => format!(
                 "propagate deletes: deleting migrated points from shards {:?}",
                 self.shards_to_delete().collect::<Vec<_>>(),
             ),
-            Stage::S7_Finalize => "finalize".into(),
-            Stage::Finished => "finished".into(),
+            (Stage::S7_Finalize, _) => "finalize".into(),
+            (Stage::Finished, _) => "finished".into(),
         }
     }
 }
@@ -203,7 +229,7 @@ pub async fn drive_resharding(
     channel_service: ChannelService,
     can_resume: bool,
 ) -> CollectionResult<bool> {
-    let to_shard_id = reshard_key.shard_id;
+    let shard_id = reshard_key.shard_id;
     let hash_ring = shard_holder
         .read()
         .await
@@ -215,9 +241,7 @@ pub async fn drive_resharding(
 
     // Load or initialize resharding state
     let init_state = || {
-        let mut shard_ids = hash_ring.unique_nodes();
-        shard_ids.remove(&reshard_key.shard_id);
-
+        let shard_ids = hash_ring.unique_nodes();
         DriverState::new(reshard_key.clone(), shard_ids, &consensus.peers())
     };
     let state: PersistedState = if can_resume {
@@ -229,19 +253,23 @@ pub async fn drive_resharding(
     progress.lock().description.replace(state.read().describe());
 
     log::debug!(
-        "Resharding {collection_id}:{to_shard_id} from shards {:?}",
-        state.read().source_shards().collect::<Vec<_>>(),
+        "Resharding {collection_id}:{shard_id} with shards {:?}",
+        state
+            .read()
+            .shards()
+            .filter(|id| shard_id != *id)
+            .collect::<Vec<_>>(),
     );
 
     // Stage 1: init
     if !stage_init::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: init");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: init");
         stage_init::drive(&state, &progress, consensus)?;
     }
 
     // Stage 2: migrate points
     if !stage_migrate_points::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: migrate points");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: migrate points");
         stage_migrate_points::drive(
             &reshard_key,
             &state,
@@ -259,7 +287,7 @@ pub async fn drive_resharding(
     if !stage_replicate::is_completed(&reshard_key, &state, &shard_holder, &collection_config)
         .await?
     {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: replicate");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: replicate");
         stage_replicate::drive(
             &reshard_key,
             &state,
@@ -275,7 +303,7 @@ pub async fn drive_resharding(
 
     // Stage 4: commit read hashring
     if !stage_commit_read_hashring::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit read hashring");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: commit read hashring");
         stage_commit_read_hashring::drive(
             &reshard_key,
             &state,
@@ -289,7 +317,7 @@ pub async fn drive_resharding(
 
     // Stage 5: commit write hashring
     if !stage_commit_write_hashring::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: commit write hashring");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: commit write hashring");
         stage_commit_write_hashring::drive(
             &reshard_key,
             &state,
@@ -303,7 +331,7 @@ pub async fn drive_resharding(
 
     // Stage 6: propagate deletes
     if !stage_propagate_deletes::is_completed(&state) {
-        log::debug!("Resharding {collection_id}:{to_shard_id} stage: propagate deletes");
+        log::debug!("Resharding {collection_id}:{shard_id} stage: propagate deletes");
         stage_propagate_deletes::drive(
             &reshard_key,
             &state,
@@ -315,7 +343,7 @@ pub async fn drive_resharding(
     }
 
     // Stage 7: finalize
-    log::debug!("Resharding {collection_id}:{to_shard_id} stage: finalize");
+    log::debug!("Resharding {collection_id}:{shard_id} stage: finalize");
     stage_finalize::drive(&state, &progress, consensus)?;
 
     // Delete the state file after successful resharding
@@ -329,7 +357,11 @@ pub async fn drive_resharding(
 }
 
 fn resharding_state_path(reshard_key: &ReshardKey, collection_path: &Path) -> PathBuf {
-    collection_path.join(format!("resharding_state_{}.json", reshard_key.shard_id))
+    let up_down = serde_variant::to_variant_name(&reshard_key.direction).unwrap_or_default();
+    collection_path.join(format!(
+        "resharding_state_{up_down}_{}.json",
+        reshard_key.shard_id,
+    ))
 }
 
 /// Await for a resharding shard transfer to succeed.
