@@ -337,6 +337,14 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         self.get_range(point_id).map(|range| range.count as usize)
     }
 
+    pub fn len(&self) -> usize {
+        self.header.points_count as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.header.points_count == 0
+    }
+
     fn get_range(&self, point_id: PointOffsetType) -> Option<MmapRange> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)

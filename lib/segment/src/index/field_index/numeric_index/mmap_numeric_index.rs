@@ -1,7 +1,6 @@
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
-use bitvec::slice::BitSlice;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::mutable_numeric_index::DynamicNumericIndex;
 use super::Encodable;
+use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -22,24 +22,23 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + 'static> {
     path: PathBuf,
-    deleted: MmapBitSlice,
+    deleted: MmapBitSliceBufferedUpdateWrapper,
     // sorted pairs (id + value), sorted by value (by id if values are equal)
     pairs: MmapSlice<Point<T>>,
     histogram: Histogram<T>,
-    indexed_points_count: usize,
+    deleted_count: usize,
     max_values_per_point: usize,
     point_to_values: MmapPointToValues<T>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MmapNumericIndexConfig {
-    indexed_points_count: usize,
     max_values_per_point: usize,
 }
 
 pub(super) struct NumericIndexPairsIterator<'a, T: Encodable + Numericable> {
     pairs: &'a [Point<T>],
-    deleted: &'a BitSlice,
+    deleted: &'a MmapBitSliceBufferedUpdateWrapper,
     start_index: usize,
     end_index: usize,
 }
@@ -50,12 +49,7 @@ impl<'a, T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'a, 
     fn next(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.pairs[self.start_index].clone();
-            let deleted = self
-                .deleted
-                .get(key.idx as usize)
-                .as_deref()
-                .copied()
-                .unwrap_or(true);
+            let deleted = self.deleted.get(key.idx as usize).unwrap_or(true);
             self.start_index += 1;
             if deleted {
                 continue;
@@ -70,12 +64,7 @@ impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIt
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.pairs[self.end_index - 1].clone();
-            let deleted = self
-                .deleted
-                .get(key.idx as usize)
-                .as_deref()
-                .copied()
-                .unwrap_or(true);
+            let deleted = self.deleted.get(key.idx as usize).unwrap_or(true);
             self.end_index -= 1;
             if deleted {
                 continue;
@@ -95,7 +84,6 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         atomic_save_json(
             &config_path,
             &MmapNumericIndexConfig {
-                indexed_points_count: dynamic_index.points_count,
                 max_values_per_point: dynamic_index.max_values_per_point,
             },
         )?;
@@ -139,6 +127,13 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             )?;
             let mut deleted_mmap = unsafe { MmapMut::map_mut(&deleted_file)? };
             deleted_mmap.fill(0);
+            let mut deleted_bitflags = MmapBitSlice::from(deleted_mmap, 0);
+            for (idx, values) in dynamic_index.point_to_values.iter().enumerate() {
+                if values.is_empty() {
+                    deleted_bitflags.set(idx, true);
+                }
+            }
+            deleted_bitflags.flusher()()?;
         }
 
         Self::load(path)
@@ -153,15 +148,16 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
         let deleted = mmap_ops::open_write_mmap(&deleted_path)?;
         let deleted = MmapBitSlice::from(deleted, 0);
+        let deleted_count = deleted.count_ones();
         let map = unsafe { MmapSlice::try_from(mmap_ops::open_write_mmap(&pairs_path)?)? };
         let point_to_values = MmapPointToValues::open(path)?;
 
         Ok(Self {
             pairs: map,
-            deleted,
+            deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
             path: path.to_path_buf(),
             histogram,
-            indexed_points_count: config.indexed_points_count,
+            deleted_count,
             max_values_per_point: config.max_values_per_point,
             point_to_values,
         })
@@ -196,7 +192,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
     ) -> bool {
-        if self.deleted.get(idx as usize).as_deref() == Some(&false) {
+        if self.deleted.get(idx as usize) == Some(false) {
             self.point_to_values
                 .check_values_any(idx, |v| check_fn(T::from_referenced(&v)))
         } else {
@@ -205,7 +201,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
-        if self.deleted.get(idx as usize).as_deref() == Some(&false) {
+        if self.deleted.get(idx as usize) == Some(false) {
             Some(Box::new(
                 self.point_to_values
                     .get_values(idx)?
@@ -217,13 +213,15 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        if self.deleted.get(idx as usize).as_deref() == Some(&false) {
+        if self.deleted.get(idx as usize) == Some(false) {
             self.point_to_values.get_values_count(idx)
         } else {
             None
         }
     }
 
+    /// Returns the number of key-value pairs in the index.
+    /// Note that is doesn't count deleted pairs.
     pub(super) fn total_unique_values_count(&self) -> usize {
         self.pairs.len()
     }
@@ -247,8 +245,9 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub(super) fn remove_point(&mut self, idx: PointOffsetType) {
-        if let Some(mut deleted) = self.deleted.get_mut(idx as usize) {
-            *deleted = true;
+        let idx = idx as usize;
+        if idx < self.deleted.len() {
+            self.deleted.set(idx, true);
         }
     }
 
@@ -257,7 +256,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     }
 
     pub(super) fn get_points_count(&self) -> usize {
-        self.indexed_points_count
+        self.point_to_values.len() - self.deleted_count
     }
 
     pub(super) fn get_max_values_per_point(&self) -> usize {
