@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
+use itertools::Either;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -213,7 +214,7 @@ impl StructPayloadIndex {
         self.id_tracker.borrow().available_point_count()
     }
 
-    fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+    pub fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
         let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
         let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
@@ -351,6 +352,49 @@ impl StructPayloadIndex {
     pub fn config(&self) -> &PayloadConfig {
         &self.config
     }
+
+    pub fn iter_filtered_points<'a>(
+        &'a self,
+        filter: &'a Filter,
+        id_tracker: &'a IdTrackerSS,
+        query_cardinality: &'a CardinalityEstimation,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        if query_cardinality.primary_clauses.is_empty() {
+            let full_scan_iterator = id_tracker.iter_ids();
+
+            let struct_filtered_context = self.struct_filtered_context(filter);
+            // Worst case: query expected to return few matches, but index can't be used
+            let matched_points =
+                full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
+
+            Either::Left(matched_points)
+        } else {
+            let struct_filtered_context = self.struct_filtered_context(filter);
+
+            // CPU-optimized strategy here: points are made unique before applying other filters.
+            let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
+
+            let iter = query_cardinality
+                .primary_clauses
+                .iter()
+                .flat_map(|clause| {
+                    match clause {
+                        PrimaryCondition::Condition(field_condition) => {
+                            self.query_field(field_condition).unwrap_or_else(
+                                || id_tracker.iter_ids(), /* index is not built */
+                            )
+                        }
+                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
+                        PrimaryCondition::IsEmpty(_) => id_tracker.iter_ids(), /* there are no fast index for IsEmpty */
+                        PrimaryCondition::IsNull(_) => id_tracker.iter_ids(),  /* no fast index for IsNull too */
+                    }
+                })
+                .filter(move |&id| !visited_list.check_and_update_visited(id))
+                .filter(move |&i| struct_filtered_context.check(i));
+
+            Either::Right(iter)
+        }
+    }
 }
 
 impl PayloadIndex for StructPayloadIndex {
@@ -415,49 +459,10 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-
         let query_cardinality = self.estimate_cardinality(query);
-
-        if query_cardinality.primary_clauses.is_empty() {
-            let id_tracker = self.id_tracker.borrow();
-            let full_scan_iterator = id_tracker.iter_ids();
-
-            let struct_filtered_context = self.struct_filtered_context(query);
-            // Worst case: query expected to return few matches, but index can't be used
-            let matched_points =
-                full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
-
-            matched_points.collect()
-        } else {
-            let points_iterator_ref = self.id_tracker.borrow();
-            let struct_filtered_context = self.struct_filtered_context(query);
-
-            // CPU-optimized strategy here: points are made unique before applying other filters.
-            // TODO: Implement iterator which holds the `visited_pool` and borrowed `vector_storage_ref` to prevent `preselected` array creation
-            let mut visited_list = self
-                .visited_pool
-                .get(points_iterator_ref.total_point_count());
-
-            let preselected: Vec<PointOffsetType> = query_cardinality
-                .primary_clauses
-                .iter()
-                .flat_map(|clause| {
-                    match clause {
-                        PrimaryCondition::Condition(field_condition) => {
-                            self.query_field(field_condition).unwrap_or_else(
-                                || points_iterator_ref.iter_ids(), /* index is not built */
-                            )
-                        }
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => points_iterator_ref.iter_ids(), /* there are no fast index for IsEmpty */
-                        PrimaryCondition::IsNull(_) => points_iterator_ref.iter_ids(),  /* no fast index for IsNull too */
-                    }
-                })
-                .filter(|&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| struct_filtered_context.check(i))
-                .collect();
-            preselected
-        }
+        let id_tracker = self.id_tracker.borrow();
+        self.iter_filtered_points(query, &*id_tracker, &query_cardinality)
+            .collect()
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize {

@@ -11,7 +11,7 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::{StorageVersion, VERSION_FILE};
-use itertools::Either;
+use itertools::{Either, Itertools};
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -25,6 +25,7 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
+use crate::data_types::facets::{FacetHit, FacetRequest, FacetValueHit};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -1490,6 +1491,50 @@ impl SegmentEntry for Segment {
                 payload_index.estimate_cardinality(filter)
             }
         }
+    }
+
+    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetValueHit>> {
+        let payload_index = self.payload_index.borrow();
+
+        let facet_index = payload_index
+            .field_indexes
+            .get(&request.key)
+            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
+            .ok_or_else(|| OperationError::MissingMapIndexForFacet {
+                key: request.key.to_string(),
+            })?;
+
+        let hits = if let Some(filter) = &request.filter {
+            let id_tracker = self.id_tracker.borrow();
+            let filter_cardinality = payload_index.estimate_cardinality(filter);
+
+            let hits_iter = payload_index
+                .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
+                .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
+                .fold(HashMap::new(), |mut map, point_id| {
+                    facet_index.get_values(point_id).unique().for_each(|value| {
+                        *map.entry(value).or_insert(0) += 1;
+                    });
+                    map
+                })
+                .into_iter()
+                .map(|(value, count)| FacetHit { value, count });
+
+            peek_top_largest_iterable(hits_iter, request.limit)
+        } else {
+            let hits_iter = facet_index.iter_counts_per_value();
+            peek_top_largest_iterable(hits_iter, request.limit)
+        };
+
+        let hits = hits
+            .into_iter()
+            .map(|hit| FacetHit {
+                value: hit.value.to_owned(),
+                count: hit.count,
+            })
+            .collect();
+
+        Ok(hits)
     }
 
     fn segment_type(&self) -> SegmentType {

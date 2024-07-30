@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::{MapIndex, MapIndexKey};
+use super::{IdRefIter, MapIndex, MapIndexKey};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -150,18 +150,31 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         self.map.len()
     }
 
-    pub fn get_points_with_value_count(&self, value: &N) -> Option<usize> {
+    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.map.get(value).map(|p| p.len())
     }
 
-    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        self.map
-            .get(value)
-            .map(|ids| Box::new(ids.iter().copied()) as Box<dyn Iterator<Item = PointOffsetType>>)
-            .unwrap_or_else(|| Box::new(iter::empty::<PointOffsetType>()))
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
+        self.map.iter().map(|(k, v)| (k.borrow(), v.len()))
     }
 
-    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
+        self.map.iter().map(|(k, v)| {
+            (
+                k.borrow(),
+                Box::new(v.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>,
+            )
+        })
+    }
+
+    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
+        self.map
+            .get(value)
+            .map(|ids| Box::new(ids.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>)
+            .unwrap_or_else(|| Box::new(iter::empty::<&PointOffsetType>()))
+    }
+
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.map.keys().map(|v| v.borrow()))
     }
 }
