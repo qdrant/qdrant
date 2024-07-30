@@ -133,7 +133,6 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
                     deleted_bitflags.set(idx, true);
                 }
             }
-            deleted_bitflags.flusher()()?;
         }
 
         Self::load(path)
