@@ -1,3 +1,4 @@
+pub mod facets;
 pub mod groups;
 pub mod index;
 pub mod named_vectors;

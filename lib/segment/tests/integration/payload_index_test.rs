@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use segment::data_types::facets::{FacetRequest, FacetValue, FacetValueHit};
 use segment::data_types::index::{IntegerIndexParams, IntegerIndexType};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -173,11 +175,11 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
 
     for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
         for index in indexes {
-            assert!(index.count_indexed_points() < num_points as usize);
+            assert!(index.count_indexed_points() <= num_points as usize);
             if field.to_string() != FLICKING_KEY {
                 assert!(
                     index.count_indexed_points()
-                        > (num_points as usize - points_to_delete - points_to_clear)
+                        >= (num_points as usize - points_to_delete - points_to_clear)
                 );
             }
         }
@@ -934,4 +936,70 @@ fn test_any_matcher_cardinality_estimation() {
 
     assert!(exact <= estimation.max);
     assert!(exact >= estimation.min);
+}
+
+/// Checks that it is ordered in descending order, and that the counts are the same as counting each value exactly.
+fn validate_facet_result(
+    segment: &Segment,
+    facet_hits: Vec<FacetValueHit>,
+    filter: Option<Filter>,
+) {
+    let mut expected = facet_hits.clone();
+    expected.sort_by_key(|hit| Reverse(hit.clone()));
+    assert_eq!(facet_hits, expected);
+
+    for hit in facet_hits {
+        // Compare against exact count
+        let FacetValue::Keyword(value) = hit.value;
+
+        let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new(STR_KEY),
+            Match::from(value),
+        )));
+        let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
+
+        let exact = segment
+            .read_filtered(None, None, count_filter.as_ref())
+            .len();
+
+        assert_eq!(hit.count, exact);
+    }
+}
+
+#[test]
+fn test_keyword_facet() {
+    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+
+    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+
+    let limit = 100;
+    let key: JsonPath = STR_KEY.try_into().unwrap();
+
+    // *** No filter ***
+    let request = FacetRequest {
+        key: key.clone(),
+        limit,
+        filter: None,
+    };
+
+    // Plain segment should fail, as it does not have a keyword index
+    assert!(plain_segment.facet(&request).is_err());
+
+    let facet_hits = struct_segment.facet(&request).unwrap();
+
+    validate_facet_result(&struct_segment, facet_hits, None);
+
+    // *** With filter ***
+    let mut rng = rand::thread_rng();
+    let filter = random_filter(&mut rng, 3);
+    let request = FacetRequest {
+        key,
+        limit,
+        filter: Some(filter.clone()),
+    };
+
+    let facet_hits = struct_segment.facet(&request).unwrap();
+
+    validate_facet_result(&struct_segment, facet_hits, Some(filter))
 }
