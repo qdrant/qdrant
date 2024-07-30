@@ -61,21 +61,12 @@ impl<T: FacetValueTrait> PartialOrd for FacetHit<T> {
     }
 }
 
-pub fn merge_facet_hits<T: FacetValueTrait>(
-    this: impl IntoIterator<Item = FacetHit<T>>,
-    other: impl IntoIterator<Item = FacetHit<T>>,
-) -> impl Iterator<Item = FacetHit<T>> {
-    this.into_iter()
-        .chain(other)
+pub fn aggregate_facet_hits<T: FacetValueTrait>(
+    hits: impl IntoIterator<Item = FacetHit<T>>,
+) -> HashMap<T, usize> {
+    hits.into_iter()
         .fold(HashMap::new(), |mut map, FacetHit { value, count }| {
-            match map.get_mut(&value) {
-                Some(existing_count) => *existing_count += count,
-                None => {
-                    map.insert(value, count);
-                }
-            }
+            *map.entry(value).or_insert(0) += count;
             map
         })
-        .into_iter()
-        .map(|(value, count)| FacetHit { value, count })
 }
