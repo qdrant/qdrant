@@ -1513,11 +1513,7 @@ impl SegmentEntry for Segment {
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(HashMap::new(), |mut map, point_id| {
                     facet_index.get_values(point_id).unique().for_each(|value| {
-                        if let Some(counter) = map.get_mut(&value) {
-                            *counter += 1;
-                        } else {
-                            map.insert(value, 1);
-                        }
+                        *map.entry(value).or_insert(0) += 1;
                     });
                     map
                 })
