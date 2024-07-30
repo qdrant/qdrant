@@ -9,7 +9,7 @@ use memmap2::MmapMut;
 use memory::mmap_ops::{self, create_and_ensure_length};
 use serde::{Deserialize, Serialize};
 
-use super::MapIndexKey;
+use super::{IdRefIter, MapIndexKey};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
@@ -199,15 +199,28 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             .map(|p| p.len())
     }
 
-    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
         if let Some(slice) = self.value_to_points.get(value).ok().flatten() {
-            Box::new(slice.iter().copied())
+            Box::new(slice.iter())
         } else {
             Box::new(iter::empty())
         }
     }
 
-    pub fn get_values_iterator(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         Box::new(self.value_to_points.keys())
+    }
+
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
+        self.value_to_points.iter().map(|(k, v)| (k, v.len()))
+    }
+
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
+        self.value_to_points.iter().map(|(k, v)| {
+            (
+                k,
+                Box::new(v.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>,
+            )
+        })
     }
 }
