@@ -392,13 +392,19 @@ impl TableOfContent {
     }
 
     pub fn request_snapshot(&self) -> Result<(), StorageError> {
-        let Some(sender) = &self.consensus_proposal_sender else {
-            return Err(StorageError::service_error(
-                "Qdrant is running in standalone mode",
-            ));
-        };
+        self.get_consensus_proposal_sender()?
+            .send(ConsensusOperations::request_snapshot())?;
 
-        sender.send(ConsensusOperations::request_snapshot())?;
+        Ok(())
+    }
+
+    pub fn update_cluster_metadata(
+        &self,
+        key: String,
+        value: serde_json::Value,
+    ) -> Result<(), StorageError> {
+        self.get_consensus_proposal_sender()?
+            .send(ConsensusOperations::UpdateClusterMetadata { key, value })?;
 
         Ok(())
     }
@@ -595,6 +601,12 @@ impl TableOfContent {
         Path::new(&self.storage_config.storage_path)
             .join(COLLECTIONS_DIR)
             .join(collection_name)
+    }
+
+    fn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {
+        self.consensus_proposal_sender
+            .as_ref()
+            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))
     }
 
     /// Insert dispatcher into table of contents for shard transfer.

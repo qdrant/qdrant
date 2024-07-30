@@ -473,7 +473,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
 
             ConsensusOperations::UpdateClusterMetadata { key, value } => {
-                self.persistent.write().update_cluster_metadata(key, value);
+                self.persistent
+                    .write()
+                    .update_cluster_metadata_key(key, value);
                 Ok(true)
             }
 

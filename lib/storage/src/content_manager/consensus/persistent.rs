@@ -177,7 +177,18 @@ impl Persistent {
         self.save()
     }
 
-    pub fn update_cluster_metadata(&mut self, key: String, value: serde_json::Value) {
+    pub fn get_cluster_metadata_keys(&self) -> Vec<String> {
+        self.cluster_metadata.keys().cloned().collect()
+    }
+
+    pub fn get_cluster_metadata_key(&self, key: &str) -> serde_json::Value {
+        self.cluster_metadata
+            .get(key)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    }
+
+    pub fn update_cluster_metadata_key(&mut self, key: String, value: serde_json::Value) {
         if !value.is_null() {
             self.cluster_metadata.insert(key, value);
         } else {
