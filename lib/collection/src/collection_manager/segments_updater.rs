@@ -610,8 +610,6 @@ pub(crate) fn delete_points_by_filter(
             return Ok(false);
         }
 
-        let batch_size = curr_points.len().min(DELETION_BATCH_SIZE);
-
         let mut deleted_in_batch = 0;
 
         while let Some(point) = curr_points.pop() {
@@ -620,7 +618,7 @@ pub(crate) fn delete_points_by_filter(
                 total_deleted += 1;
             }
 
-            if deleted_in_batch >= batch_size {
+            if deleted_in_batch >= DELETION_BATCH_SIZE {
                 break;
             }
         }
