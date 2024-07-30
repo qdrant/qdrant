@@ -243,10 +243,11 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             .map(|Point { val, idx }| (val, idx))
     }
 
-    pub(super) fn remove_point(&mut self, idx: PointOffsetType) {
+    pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
-        if idx < self.deleted.len() {
+        if idx < self.deleted.len() && !self.deleted.get(idx).unwrap_or(true) {
             self.deleted.set(idx, true);
+            self.deleted_count += 1;
         }
     }
 
