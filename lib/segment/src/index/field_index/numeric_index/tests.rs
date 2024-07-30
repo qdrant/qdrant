@@ -14,11 +14,13 @@ const COLUMN_NAME: &str = "test";
 enum IndexType {
     Mutable,
     Immutable,
+    Mmap,
 }
 
 enum IndexBuilder {
     Mutable(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     Immutable(NumericIndexImmutableBuilder<FloatPayloadType, FloatPayloadType>),
+    Mmap(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
 }
 
 impl IndexBuilder {
@@ -26,6 +28,7 @@ impl IndexBuilder {
         match self {
             IndexBuilder::Mutable(builder) => builder.finalize(),
             IndexBuilder::Immutable(builder) => builder.finalize(),
+            IndexBuilder::Mmap(builder) => builder.finalize(),
         }
     }
 
@@ -33,6 +36,7 @@ impl IndexBuilder {
         match self {
             IndexBuilder::Mutable(builder) => builder.add_point(id, payload),
             IndexBuilder::Immutable(builder) => builder.add_point(id, payload),
+            IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
         }
     }
 }
@@ -54,10 +58,14 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         >::builder_immutable(
             db, COLUMN_NAME
         )),
+        IndexType::Mmap => IndexBuilder::Mmap(
+            NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_mmap(temp_dir.path()),
+        ),
     };
     match &mut builder {
         IndexBuilder::Mutable(builder) => builder.init().unwrap(),
         IndexBuilder::Immutable(builder) => builder.init().unwrap(),
+        IndexBuilder::Mmap(builder) => builder.init().unwrap(),
     }
     (temp_dir, builder)
 }
@@ -127,6 +135,7 @@ fn test_set_empty_payload() {
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_cardinality_exp(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 1, index_type);
 
@@ -193,6 +202,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 2, index_type);
     let threshold = 100;
@@ -231,6 +241,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_payload_blocks_small(#[case] index_type: IndexType) {
     let (_temp_dir, mut index_builder) = get_index_builder(index_type);
     let threshold = 4;
@@ -265,8 +276,9 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
-    let (_temp_dir, mut index_builder) = get_index_builder(index_type);
+    let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
     let values = vec![
         vec![1.0],
@@ -292,6 +304,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let db = match index.inner() {
         NumericIndexInner::Mutable(index) => Some(index.get_db_wrapper().get_database()),
         NumericIndexInner::Immutable(index) => Some(index.get_db_wrapper().get_database()),
+        NumericIndexInner::Mmap(_) => None,
     };
     drop(index);
 
@@ -301,6 +314,9 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         }
         IndexType::Immutable => {
             NumericIndexInner::<FloatPayloadType>::new(db.unwrap(), COLUMN_NAME, true)
+        }
+        IndexType::Mmap => {
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path()).unwrap()
         }
     };
     new_index.load().unwrap();
@@ -320,6 +336,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_numeric_index(#[case] index_type: IndexType) {
     let (_temp_dir, mut index_builder) = get_index_builder(index_type);
 
@@ -400,7 +417,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
     );
 }
 
-fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + Default>(
+fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Default + 'static>(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,
@@ -414,6 +431,7 @@ fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + Default>(
 #[rstest]
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
+#[case(IndexType::Mmap)]
 fn test_empty_cardinality(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(0, 1, index_type);
     cardinality_request(
