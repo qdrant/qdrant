@@ -36,6 +36,25 @@ impl MmapBitSliceBufferedUpdateWrapper {
         self.pending_updates.lock().insert(index, value);
     }
 
+    pub fn get(&self, index: usize) -> Option<bool> {
+        if index >= self.len {
+            return None;
+        }
+        if let Some(value) = self.pending_updates.lock().get(&index) {
+            Some(*value)
+        } else {
+            self.bitslice.read().get(index).as_deref().copied()
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn flusher(&self) -> Flusher {
         let pending_updates = mem::take(&mut *self.pending_updates.lock());
         let bitslice = self.bitslice.clone();

@@ -6,7 +6,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType};
+use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
@@ -23,6 +23,10 @@ pub trait MmapValue {
     fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>>;
 
     fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()>;
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self;
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_>;
 }
 
 impl MmapValue for IntPayloadType {
@@ -39,6 +43,14 @@ impl MmapValue for IntPayloadType {
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
     }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
+    }
 }
 
 impl MmapValue for FloatPayloadType {
@@ -54,6 +66,38 @@ impl MmapValue for FloatPayloadType {
 
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
+    }
+}
+
+impl MmapValue for UuidIntType {
+    type Referenced<'a> = Self;
+
+    fn mmaped_size(_value: Self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
+        Self::read_from_prefix(bytes)
+    }
+
+    fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
+        value.write_to_prefix(bytes)
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        *value
     }
 }
 
@@ -79,6 +123,14 @@ impl MmapValue for GeoPoint {
             .get_mut(std::mem::size_of::<f64>()..)
             .and_then(|bytes| value.lat.write_to_prefix(bytes))
     }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        value.clone()
+    }
 }
 
 impl MmapValue for str {
@@ -101,6 +153,14 @@ impl MmapValue for str {
             .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
             .copy_from_slice(value.as_bytes());
         Some(())
+    }
+
+    fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
+        value
+    }
+
+    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
+        value
     }
 }
 
@@ -275,6 +335,14 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
 
     pub fn get_values_count(&self, point_id: PointOffsetType) -> Option<usize> {
         self.get_range(point_id).map(|range| range.count as usize)
+    }
+
+    pub fn len(&self) -> usize {
+        self.header.points_count as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.header.points_count == 0
     }
 
     fn get_range(&self, point_id: PointOffsetType) -> Option<MmapRange> {

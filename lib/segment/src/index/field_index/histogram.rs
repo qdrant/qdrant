@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::Bound::{Excluded, Included, Unbounded};
 use std::ops::Bound;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_bin, atomic_save_json, read_bin, read_json};
@@ -207,6 +207,10 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
             .collect();
         atomic_save_bin(&borders_path, &borders)?;
         Ok(())
+    }
+
+    pub fn files(path: &Path) -> Vec<PathBuf> {
+        vec![path.join(CONFIG_PATH), path.join(BORDERS_PATH)]
     }
 
     #[cfg(test)]
