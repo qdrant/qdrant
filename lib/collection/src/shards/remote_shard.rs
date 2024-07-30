@@ -24,6 +24,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -896,5 +897,13 @@ impl ShardOperation for RemoteShard {
         timer.set_success(true);
 
         Ok(result)
+    }
+
+    async fn facet(
+        &self,
+        _request: Arc<FacetRequest>,
+        _search_runtime_handle: &Handle,
+    ) -> CollectionResult<FacetResponse> {
+        todo!()
     }
 }
