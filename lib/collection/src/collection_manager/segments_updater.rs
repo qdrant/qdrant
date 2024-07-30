@@ -609,7 +609,8 @@ pub(crate) fn delete_points_by_filter(
         }
 
         let batch_size = curr_points.len().min(DELETION_BATCH_SIZE);
-        for point in curr_points.drain(0..batch_size) {
+        for _ in 0..batch_size {
+            let point = curr_points.pop().unwrap();
             if s.delete_point(op_num, point)? {
                 total_deleted += 1;
             }
