@@ -419,6 +419,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
 where
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+    <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
 {
     type FieldIndexType = MapIndex<N>;
 
@@ -426,12 +427,16 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
-        for value in values {
-            let value = N::Owned::from_str(value.as_str().unwrap())
-                .map_err(|_| OperationError::service_error("Can't parse value"))?;
-            self.point_to_values.resize_with(id as usize + 1, Vec::new);
-            self.point_to_values[id as usize].push(value.clone());
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        let mut flatten_values: Vec<_> = vec![];
+        for value in payload.iter() {
+            let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
+            flatten_values.extend(payload_values);
+        }
+        let flatten_values: Vec<N::Owned> = flatten_values.into_iter().map(Into::into).collect();
+        self.point_to_values.resize_with(id as usize + 1, Vec::new);
+        self.point_to_values[id as usize].extend(flatten_values.clone());
+        for value in flatten_values {
             self.values_to_points.entry(value).or_default().push(id);
         }
         Ok(())
@@ -751,6 +756,7 @@ mod tests {
     use std::collections::HashSet;
     use std::path::Path;
 
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -758,30 +764,64 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn save_map_index<N: MapIndexKey + MmapValue + ?Sized>(data: &[Vec<N::Owned>], path: &Path)
-    where
+    #[derive(Clone, Copy)]
+    enum IndexType {
+        Mutable,
+        Immutable,
+        Mmap,
+    }
+
+    fn save_map_index<N>(
+        data: &[Vec<N::Owned>],
+        path: &Path,
+        index_type: IndexType,
+        into_value: impl Fn(&N::Owned) -> Value,
+    ) where
+        N: MapIndexKey + MmapValue + ?Sized,
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
+        <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
-        let mut index = MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME)
-            .make_empty()
-            .unwrap();
-        for (idx, values) in data.iter().enumerate() {
-            match &mut index {
-                MapIndex::Mutable(index) => index
-                    .add_many_to_map(idx as PointOffsetType, values.clone())
-                    .unwrap(),
-                _ => panic!("Wrong index type"),
+        match index_type {
+            IndexType::Mutable | IndexType::Immutable => {
+                let mut builder =
+                    MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+                builder.init().unwrap();
+                for (idx, values) in data.iter().enumerate() {
+                    let values: Vec<Value> = values.iter().map(&into_value).collect();
+                    let values: Vec<_> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                let index = builder.finalize().unwrap();
+                index.flusher()().unwrap();
+            }
+            IndexType::Mmap => {
+                let mut builder = MapIndex::<N>::mmap_builder(path);
+                builder.init().unwrap();
+                for (idx, values) in data.iter().enumerate() {
+                    let values: Vec<Value> = values.iter().map(&into_value).collect();
+                    let values: Vec<_> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                let index = builder.finalize().unwrap();
+                index.flusher()().unwrap();
             }
         }
-        index.flusher()().unwrap();
     }
 
     fn load_map_index<N: MapIndexKey + MmapValue + ?Sized>(
         data: &[Vec<N::Owned>],
         path: &Path,
+        index_type: IndexType,
     ) -> MapIndex<N> {
-        let mut index =
-            MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true);
+        let mut index = match index_type {
+            IndexType::Mutable => {
+                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
+            }
+            IndexType::Immutable => {
+                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, false)
+            }
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path).unwrap(),
+        };
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N::Owned> = index
@@ -797,8 +837,11 @@ mod tests {
         index
     }
 
-    #[test]
-    fn test_int_disk_map_index() {
+    #[rstest]
+    #[case(IndexType::Mutable)]
+    #[case(IndexType::Immutable)]
+    #[case(IndexType::Mmap)]
+    fn test_int_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![1, 2, 3, 4, 5, 6],
             vec![1, 2, 3, 4, 5, 6],
@@ -808,8 +851,8 @@ mod tests {
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index::<IntPayloadType>(&data, temp_dir.path());
-        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path());
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| v.clone().into());
+        let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is non zero
         assert!(!index
@@ -817,8 +860,11 @@ mod tests {
             .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 
-    #[test]
-    fn test_string_disk_map_index() {
+    #[rstest]
+    #[case(IndexType::Mutable)]
+    #[case(IndexType::Immutable)]
+    #[case(IndexType::Mmap)]
+    fn test_string_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![
                 SmolStr::from("AABB"),
@@ -844,8 +890,8 @@ mod tests {
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index::<str>(&data, temp_dir.path());
-        let index = load_map_index::<str>(&data, temp_dir.path());
+        save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+        let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is non zero
         assert!(!index
@@ -853,13 +899,16 @@ mod tests {
             .equals_min_exp_max(&CardinalityEstimation::exact(0)));
     }
 
-    #[test]
-    fn test_empty_index() {
+    #[rstest]
+    #[case(IndexType::Mutable)]
+    #[case(IndexType::Immutable)]
+    #[case(IndexType::Mmap)]
+    fn test_empty_index(#[case] index_type: IndexType) {
         let data: Vec<Vec<SmolStr>> = vec![];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index::<str>(&data, temp_dir.path());
-        let index = load_map_index::<str>(&data, temp_dir.path());
+        save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+        let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is zero
         assert!(index
