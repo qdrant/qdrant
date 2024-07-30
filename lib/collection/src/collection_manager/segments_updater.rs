@@ -602,7 +602,7 @@ pub(crate) fn delete_points_by_filter(
         .collect();
 
     segments.apply_segments_batched(|s, index| {
-        let Some(curr_points) = &mut points_to_delete.get(&index) else {
+        let Some(curr_points) = &mut points_to_delete.get_mut(&index) else {
             return Ok(false);
         };
 
