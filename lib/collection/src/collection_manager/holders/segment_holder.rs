@@ -422,34 +422,23 @@ impl<'s> SegmentHolder {
 
     pub fn apply_segments_batched<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>, usize) -> OperationResult<bool>,
+        F: FnMut(
+            &mut RwLockWriteGuard<dyn SegmentEntry + 'static>,
+            SegmentId,
+        ) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
 
         let mut processed_segments = 0;
 
-        loop {
-            let mut did_apply = false;
-
-            for (pos, (_id, segment)) in self.iter().enumerate() {
-                let is_applied = f(&mut segment.get().write(), pos)?;
-
-                if !is_applied {
-                    continue;
-                }
-
-                did_apply = true;
-
-                // We want the count of segments that have been modified in total. If a segment doesn't
-                // return `true` in the first iteration, we know it won't do so in any other iteration.
-                if pos == 0 {
-                    processed_segments += 1;
-                }
+        for (segment_id, segment) in self.iter() {
+            let mut applied_to_segment = false;
+            while f(&mut segment.get().write(), *segment_id)? {
+                applied_to_segment = true;
             }
 
-            // No segment update => we're done
-            if !did_apply {
-                break;
+            if applied_to_segment {
+                processed_segments += 1;
             }
         }
 

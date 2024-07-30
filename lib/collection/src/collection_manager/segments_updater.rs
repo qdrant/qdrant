@@ -591,28 +591,37 @@ pub(crate) fn delete_points_by_filter(
 ) -> CollectionResult<usize> {
     let mut total_deleted = 0;
 
-    let mut points_to_delete: Vec<_> = segments
+    let mut points_to_delete: HashMap<_, _> = segments
         .iter()
-        .map(|segment| {
-            segment
-                .1
-                .get()
-                .read()
-                .read_filtered(None, None, Some(filter))
+        .map(|(segment_id, segment)| {
+            (
+                *segment_id,
+                segment.get().read().read_filtered(None, None, Some(filter)),
+            )
         })
         .collect();
 
     segments.apply_segments_batched(|s, index| {
-        let curr_points = &mut points_to_delete[index];
+        let Some(curr_points) = &mut points_to_delete.get(&index) else {
+            return Ok(false);
+        };
+
         if curr_points.is_empty() {
             return Ok(false);
         }
 
         let batch_size = curr_points.len().min(DELETION_BATCH_SIZE);
-        for _ in 0..batch_size {
-            let point = curr_points.pop().unwrap();
+
+        let mut deleted_in_batch = 0;
+
+        while let Some(point) = curr_points.pop() {
             if s.delete_point(op_num, point)? {
+                deleted_in_batch += 1;
                 total_deleted += 1;
+            }
+
+            if deleted_in_batch >= batch_size {
+                break;
             }
         }
 
