@@ -174,6 +174,9 @@ fn points_by_filter(
     Ok(affected_points)
 }
 
+/// Batch size of setting payload by filter.
+const SET_PAYLOAD_BATCH_SIZE: usize = 512;
+
 pub(crate) fn set_payload_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
@@ -182,7 +185,14 @@ pub(crate) fn set_payload_by_filter(
     key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
     let affected_points = points_by_filter(segments, filter)?;
-    set_payload(segments, op_num, payload, &affected_points, key)
+
+    let mut total = 0;
+
+    for batch in affected_points.chunks(SET_PAYLOAD_BATCH_SIZE) {
+        total += set_payload(segments, op_num, payload, batch, key)?;
+    }
+
+    Ok(total)
 }
 
 pub(crate) fn delete_payload(
