@@ -46,6 +46,10 @@ pub mod consensus_ops {
             peer_id: PeerId,
             metadata: PeerMetadata,
         },
+        UpdateClusterMetadata {
+            key: String,
+            value: serde_json::Value,
+        },
         RequestSnapshot,
         ReportSnapshot {
             peer_id: PeerId,
@@ -214,4 +218,88 @@ pub trait CollectionContainer {
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
     fn sync_local_state(&self) -> Result<(), StorageError>;
+}
+
+#[cfg(test)]
+mod test {
+    use serde_json::json;
+
+    // Consensus messages are serialized to CBOR when sent over network and written into WAL.
+    //
+    // We are using `serde_json::Value` in `ConsensusOperations::UpdateClusterMetadata`,
+    // but the way `serde` works, it is not *strictly* guaranteed that all possible JSON values
+    // can be serialized to CBOR, there might be some minor inconsistencies between formats.
+    //
+    // These tests check that `serde_json::Value` can be serialized to (and deserialized from) CBOR.
+
+    #[test]
+    fn serde_json_null_combatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!(null));
+    }
+
+    #[test]
+    fn serde_json_integer_combatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!(1337));
+    }
+
+    #[test]
+    fn serde_json_float_combatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!(42.69));
+    }
+
+    #[test]
+    fn serde_json_string_compatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!(
+            "Qdrant is the best vector search engine on the market 💪😎👍"
+        ));
+    }
+
+    #[test]
+    fn serde_json_basic_array_compatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json_array());
+    }
+
+    #[test]
+    fn serde_json_basic_object_compatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json_object());
+    }
+
+    #[test]
+    fn serde_json_nested_array_compatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!([
+            json!([json_array(), json_object()]),
+            json!({ "array": json_array(), "object": json_object() }),
+        ]));
+    }
+
+    #[test]
+    fn serde_json_nested_object_compatible_with_cbor() {
+        serde_json_value_compatible_with_cbor(json!({
+            "array": json!([ json_array(), json_object() ]),
+            "object": json!({ "array": json_array(), "object": json_object() }),
+        }))
+    }
+
+    fn serde_json_value_compatible_with_cbor(input: serde_json::Value) {
+        let cbor = serde_cbor::to_vec(&input)
+            .unwrap_or_else(|_| panic!("JSON value {input} can be serialized to CBOR"));
+
+        let output: serde_json::Value = serde_cbor::from_slice(&cbor)
+            .unwrap_or_else(|_| panic!("JSON value {input} can be deserialized from CBOR"));
+
+        assert_eq!(input, output);
+    }
+
+    fn json_array() -> serde_json::Value {
+        json!([null, 1337, 42.69, "string"])
+    }
+
+    fn json_object() -> serde_json::Value {
+        json!({
+            "null": null,
+            "integer": 1337,
+            "float": 42.69,
+            "string": "string",
+        })
+    }
 }

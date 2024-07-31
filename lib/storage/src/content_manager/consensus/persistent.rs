@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
@@ -42,6 +43,8 @@ pub struct Persistent {
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
     #[serde(default)]
     pub peer_metadata_by_id: Arc<RwLock<PeerMetadataById>>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub cluster_metadata: HashMap<String, serde_json::Value>,
     pub this_peer_id: PeerId,
     #[serde(skip)]
     pub path: PathBuf,
@@ -174,6 +177,25 @@ impl Persistent {
         self.save()
     }
 
+    pub fn get_cluster_metadata_keys(&self) -> Vec<String> {
+        self.cluster_metadata.keys().cloned().collect()
+    }
+
+    pub fn get_cluster_metadata_key(&self, key: &str) -> serde_json::Value {
+        self.cluster_metadata
+            .get(key)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    }
+
+    pub fn update_cluster_metadata_key(&mut self, key: String, value: serde_json::Value) {
+        if !value.is_null() {
+            self.cluster_metadata.insert(key, value);
+        } else {
+            self.cluster_metadata.remove(&key);
+        }
+    }
+
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.apply_progress_queue.get_last_applied()
     }
@@ -224,6 +246,7 @@ impl Persistent {
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
             peer_metadata_by_id: Default::default(),
+            cluster_metadata: Default::default(),
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),

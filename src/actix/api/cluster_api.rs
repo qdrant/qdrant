@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use actix_web::{delete, get, post, web, HttpResponse};
+use actix_web::{delete, get, post, put, web, HttpResponse};
 use actix_web_validator::Query;
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
@@ -81,9 +81,87 @@ fn remove_peer(
     })
 }
 
+#[get("/cluster/metadata/keys")]
+async fn get_cluster_metadata_keys(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+) -> HttpResponse {
+    helpers::time(async move {
+        access.check_global_access(AccessRequirements::new())?;
+
+        let keys = dispatcher
+            .consensus_state()
+            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .persistent
+            .read()
+            .get_cluster_metadata_keys();
+
+        Ok(keys)
+    })
+    .await
+}
+
+#[get("/cluster/metadata/keys/{key}")]
+async fn get_cluster_metadata_key(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+    key: web::Path<String>,
+) -> HttpResponse {
+    helpers::time(async move {
+        access.check_global_access(AccessRequirements::new())?;
+
+        let value = dispatcher
+            .consensus_state()
+            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .persistent
+            .read()
+            .get_cluster_metadata_key(key.as_ref());
+
+        Ok(value)
+    })
+    .await
+}
+
+#[put("/cluster/metadata/keys/{key}")]
+async fn update_cluster_metadata_key(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+    key: web::Path<String>,
+    value: web::Json<serde_json::Value>,
+) -> HttpResponse {
+    helpers::time(async move {
+        let toc = dispatcher.toc(&access);
+        access.check_global_access(AccessRequirements::new().write())?;
+
+        toc.update_cluster_metadata(key.into_inner(), value.into_inner())?;
+        Ok(true)
+    })
+    .await
+}
+
+#[delete("/cluster/metadata/keys/{key}")]
+async fn delete_cluster_metadata_key(
+    dispatcher: web::Data<Dispatcher>,
+    ActixAccess(access): ActixAccess,
+    key: web::Path<String>,
+) -> HttpResponse {
+    helpers::time(async move {
+        let toc = dispatcher.toc(&access);
+        access.check_global_access(AccessRequirements::new().write())?;
+
+        toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null)?;
+        Ok(true)
+    })
+    .await
+}
+
 // Configure services
 pub fn config_cluster_api(cfg: &mut web::ServiceConfig) {
     cfg.service(cluster_status)
         .service(remove_peer)
-        .service(recover_current_peer);
+        .service(recover_current_peer)
+        .service(get_cluster_metadata_keys)
+        .service(get_cluster_metadata_key)
+        .service(update_cluster_metadata_key)
+        .service(delete_cluster_metadata_key);
 }
