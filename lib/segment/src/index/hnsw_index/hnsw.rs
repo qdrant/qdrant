@@ -431,9 +431,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
+        let cardinality_estimation = payload_index.estimate_cardinality(&filter);
+
         let points_to_index: Vec<_> = payload_index
-            .query_points(&filter)
-            .into_iter()
+            .iter_filtered_points(&filter, id_tracker, &cardinality_estimation)
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
