@@ -756,7 +756,33 @@ fn convert_field_type(
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
 
     let field_schema = match (field_type_parsed, field_index_params) {
-        // Parameterized text type
+        // Parameterized Datetime type
+        (
+            Some(FieldType::Datetime),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::DatetimeIndexParams(datetime_index_params)),
+            }),
+        ) => Some(PayloadFieldSchema::FieldParams(
+            PayloadSchemaParams::Datetime(datetime_index_params.try_into()?),
+        )),
+        // Parameterized Uuid type
+        (
+            Some(FieldType::Uuid),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::UuidIndexParams(uuid_index_params)),
+            }),
+        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Uuid(
+            uuid_index_params.try_into()?,
+        ))),
+        // Parameterized keyword type
+        (
+            Some(FieldType::Keyword),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::KeywordIndexParams(keyword_index_params)),
+            }),
+        ) => Some(PayloadFieldSchema::FieldParams(
+            PayloadSchemaParams::Keyword(keyword_index_params.try_into()?),
+        )), // Parameterized text type
         (
             Some(FieldType::Text),
             Some(PayloadIndexParams {
@@ -764,6 +790,15 @@ fn convert_field_type(
             }),
         ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
             text_index_params.try_into()?,
+        ))),
+        // Parameterized float type
+        (
+            Some(FieldType::Float),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::FloatIndexParams(float_params)),
+            }),
+        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Float(
+            float_params.try_into()?,
         ))),
         // Parameterized integer type
         (
