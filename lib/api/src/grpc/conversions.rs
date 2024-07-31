@@ -20,9 +20,10 @@ use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
     DatetimeIndexParams, DatetimeRange, Direction, FieldType, FloatIndexParams, GeoIndexParams,
-    GeoLineString, GroupId, KeywordIndexParams, LookupLocation, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups,
-    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, WithLookup,
+    GeoLineString, GroupId, HashRing, HashRingCondition, KeywordIndexParams, LookupLocation,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    UuidIndexParams, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1216,6 +1217,9 @@ impl TryFrom<Condition> for segment::types::Condition {
                 ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
                     segment::types::NestedCondition::new(nested.try_into()?),
                 )),
+                ConditionOneOf::HashRing(hash_ring) => {
+                    Ok(segment::types::Condition::HashRing(hash_ring.try_into()?))
+                }
             };
         }
         Err(Status::invalid_argument("Malformed Condition type"))
@@ -1231,13 +1235,12 @@ impl From<segment::types::Condition> for Condition {
             }
             segment::types::Condition::IsNull(is_null) => ConditionOneOf::IsNull(is_null.into()),
             segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
+            segment::types::Condition::HashRing(hash_ring) => {
+                ConditionOneOf::HashRing(hash_ring.into())
+            }
             segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
             segment::types::Condition::Nested(nested) => {
                 ConditionOneOf::Nested(nested.nested.into())
-            }
-
-            segment::types::Condition::Resharding(_) => {
-                unimplemented!()
             }
         };
 
@@ -1397,6 +1400,67 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             values_count: values_count.map(Into::into),
             datetime_range,
         }
+    }
+}
+
+impl TryFrom<HashRingCondition> for segment::types::HashRingCondition {
+    type Error = Status;
+
+    fn try_from(cond: HashRingCondition) -> Result<Self, Self::Error> {
+        let ring = cond
+            .ring
+            .ok_or_else(|| Status::invalid_argument("HashRingCondition::ring is None"))?
+            .into();
+
+        let shard_ids = cond.shard_ids.into_iter().collect();
+
+        Ok(Self {
+            ring,
+            shard_ids,
+            is_local_only: false,
+        })
+    }
+}
+
+impl From<segment::types::HashRingCondition> for HashRingCondition {
+    fn from(cond: segment::types::HashRingCondition) -> Self {
+        debug_assert!(!cond.is_local_only);
+
+        Self {
+            ring: Some(cond.ring.into()),
+            shard_ids: cond.shard_ids.into_iter().collect(),
+        }
+    }
+}
+
+impl From<HashRing> for scaled_hashring::ScaledHashRing<u32> {
+    fn from(ring: HashRing) -> Self {
+        let HashRing { scale, nodes } = ring;
+
+        let mut ring = if scale == 0 {
+            scaled_hashring::ScaledHashRing::raw()
+        } else {
+            scaled_hashring::ScaledHashRing::fair(scale)
+        };
+
+        for node in nodes {
+            ring.add(node);
+        }
+
+        ring
+    }
+}
+
+impl From<scaled_hashring::ScaledHashRing<u32>> for HashRing {
+    fn from(ring: scaled_hashring::ScaledHashRing<u32>) -> Self {
+        let scale = match &ring {
+            scaled_hashring::ScaledHashRing::Raw(_) => 0,
+            &scaled_hashring::ScaledHashRing::Fair { scale, .. } => scale,
+        };
+
+        let nodes = ring.unique_nodes().into_iter().collect();
+
+        Self { scale, nodes }
     }
 }
 

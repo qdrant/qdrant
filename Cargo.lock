@@ -474,6 +474,7 @@ dependencies = [
  "prost-build 0.12.6",
  "prost-wkt-types",
  "rand 0.8.5",
+ "scaled-hashring",
  "schemars",
  "segment",
  "serde",
@@ -1103,7 +1104,6 @@ dependencies = [
  "fs4",
  "fs_extra",
  "futures",
- "hashring",
  "indexmap 2.2.6",
  "indicatif",
  "io",
@@ -1121,6 +1121,7 @@ dependencies = [
  "ringbuffer",
  "rmp-serde",
  "rstest",
+ "scaled-hashring",
  "schemars",
  "segment",
  "semver",
@@ -5299,6 +5300,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "scaled-hashring"
+version = "0.0.0"
+dependencies = [
+ "hashring",
+ "schemars",
+ "serde",
+]
+
+[[package]]
 name = "scc"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5484,6 +5494,7 @@ dependencies = [
  "rmp-serde",
  "rocksdb",
  "rstest",
+ "scaled-hashring",
  "schemars",
  "seahash",
  "segment",

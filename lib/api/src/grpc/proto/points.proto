@@ -824,6 +824,7 @@ message Condition {
     Filter filter = 4;
     IsNullCondition is_null = 5;
     NestedCondition nested = 6;
+    HashRingCondition hash_ring = 7;
   }
 }
 
@@ -853,6 +854,16 @@ message FieldCondition {
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
   DatetimeRange datetime_range = 8; // Check if datetime is within a given range
+}
+
+message HashRingCondition {
+  HashRing ring = 1;
+  repeated uint32 shard_ids = 2;
+}
+
+message HashRing {
+  uint32 scale = 1;
+  repeated uint32 nodes = 2;
 }
 
 message Match {

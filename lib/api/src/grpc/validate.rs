@@ -183,6 +183,7 @@ impl Validate for grpc::condition::ConditionOneOf {
         use grpc::condition::ConditionOneOf;
         match self {
             ConditionOneOf::Field(field_condition) => field_condition.validate(),
+            ConditionOneOf::HashRing(hash_ring) => hash_ring.validate(),
             ConditionOneOf::Nested(nested) => nested.validate(),
             ConditionOneOf::Filter(filter) => filter.validate(),
             ConditionOneOf::IsEmpty(_) => Ok(()),
@@ -222,6 +223,60 @@ impl Validate for grpc::FieldCondition {
             Err(errors)
         } else {
             Ok(())
+        }
+    }
+}
+
+impl Validate for grpc::HashRingCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let Some(ring) = &self.ring else {
+            let mut errors = ValidationErrors::new();
+            errors.add("ring", ValidationError::new("hash ring can't be None"));
+            return Err(errors);
+        };
+
+        ValidationErrors::merge(Ok(()), "ring", ring.validate())?;
+
+        let invalid_shard_ids: Vec<_> = self
+            .shard_ids
+            .iter()
+            .filter(|shard_id| !ring.nodes.contains(shard_id))
+            .collect();
+
+        if !invalid_shard_ids.is_empty() {
+            let error = format!(
+                "all shard IDs have to be in the hash ring: {:?}",
+                invalid_shard_ids.as_slice(),
+            );
+
+            let error = ValidationError {
+                code: error.into(),
+                message: None,
+                params: HashMap::new(),
+            };
+
+            let mut errors = ValidationErrors::new();
+            errors.add("shard_ids", error);
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for grpc::HashRing {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if !self.nodes.is_empty() {
+            Ok(())
+        } else {
+            let mut errors = ValidationErrors::new();
+
+            errors.add(
+                "nodes",
+                ValidationError::new("hash ring must contain nodes"),
+            );
+
+            Err(errors)
         }
     }
 }

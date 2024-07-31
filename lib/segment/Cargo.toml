@@ -92,6 +92,7 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
+scaled-hashring = { path = "../common/scaled_hashring" }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }

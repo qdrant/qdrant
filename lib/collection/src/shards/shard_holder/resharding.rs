@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref as _;
-use std::sync::Arc;
 
-use segment::types::{Condition, Filter, ShardKey};
+use segment::types::{Condition, Filter, HashRingCondition, ShardKey};
 
 use super::ShardHolder;
-use crate::hash_ring::{self, HashRing};
+use crate::hash_ring::HashRing;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
@@ -368,13 +367,13 @@ impl ShardHolder {
     ///
     /// `None` if resharding is not active or if the read hash ring is not committed yet.
     pub fn resharding_filter(&self) -> Option<Filter> {
-        let filter = self.resharding_filter_impl()?;
-        let filter = Filter::new_must_not(Condition::Resharding(Arc::new(filter)));
+        let cond = self.resharding_hash_ring_condition()?.local_only();
+        let filter = Filter::new_must_not(Condition::HashRing(cond));
         Some(filter)
     }
 
     #[inline]
-    pub fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
+    pub fn resharding_hash_ring_condition(&self) -> Option<HashRingCondition> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {
@@ -394,7 +393,7 @@ impl ShardHolder {
             HashRing::Single(ring) => ring,
         };
 
-        Some(hash_ring::Filter::new(ring.clone(), state.shard_id))
+        Some(HashRingCondition::new(ring.clone(), state.shard_id))
     }
 }
 

@@ -425,7 +425,7 @@ impl Collection {
             let target_shards = shard_holder.select_shards(shard_selection)?;
 
             // Resharding filter to apply when resharding is active
-            let resharding_filter = shard_holder.resharding_filter_impl();
+            let resharding_filter = shard_holder.resharding_hash_ring_condition();
             let reshard_shard_id = shard_holder
                 .resharding_state
                 .read()

@@ -5511,7 +5511,7 @@ pub struct MinShould {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
     #[validate]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
@@ -5533,6 +5533,8 @@ pub mod condition {
         IsNull(super::IsNullCondition),
         #[prost(message, tag = "6")]
         Nested(super::NestedCondition),
+        #[prost(message, tag = "7")]
+        HashRing(super::HashRingCondition),
     }
 }
 #[derive(serde::Serialize)]
@@ -5596,6 +5598,24 @@ pub struct FieldCondition {
     /// Check if datetime is within a given range
     #[prost(message, optional, tag = "8")]
     pub datetime_range: ::core::option::Option<DatetimeRange>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HashRingCondition {
+    #[prost(message, optional, tag = "1")]
+    pub ring: ::core::option::Option<HashRing>,
+    #[prost(uint32, repeated, tag = "2")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HashRing {
+    #[prost(uint32, tag = "1")]
+    pub scale: u32,
+    #[prost(uint32, repeated, tag = "2")]
+    pub nodes: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
