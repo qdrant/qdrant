@@ -640,7 +640,7 @@ pub struct IntegerIndexParams {
     /// If true - support ranges filters.
     #[prost(bool, tag = "2")]
     pub range: bool,
-    /// If true - used for optimization similar to tenants.
+    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "3")]
     pub is_principal: ::core::option::Option<bool>,
     /// If true - store index on disk.
@@ -654,7 +654,7 @@ pub struct FloatIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
-    /// If true - used for optimization similar to tenants.
+    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
 }
@@ -690,7 +690,7 @@ pub struct DatetimeIndexParams {
     /// If true - store index on disk.
     #[prost(bool, optional, tag = "1")]
     pub on_disk: ::core::option::Option<bool>,
-    /// If true - used for optimization similar to tenants.
+    /// If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
     #[prost(bool, optional, tag = "2")]
     pub is_principal: ::core::option::Option<bool>,
 }
