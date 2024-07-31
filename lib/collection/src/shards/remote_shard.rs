@@ -918,6 +918,7 @@ impl ShardOperation for RemoteShard {
                     filter: filter.clone().map(api::grpc::qdrant::Filter::from),
                     limit: *limit as u64,
                     shard_id: self.id,
+                    timeout: timeout.map(|t| t.as_secs()),
                 };
 
                 let mut request = tonic::Request::new(request.clone());

@@ -105,6 +105,7 @@ async fn facet_counts_internal(
         filter,
         limit,
         shard_id,
+        timeout: _timeout,
     } = request;
 
     let _shard_selection = ShardSelectorInternal::ShardId(shard_id);
