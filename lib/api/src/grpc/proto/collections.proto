@@ -394,13 +394,13 @@ message KeywordIndexParams {
 message IntegerIndexParams {
   bool lookup = 1; // If true - support direct lookups.
   bool range = 2; // If true - support ranges filters.
-  optional bool is_tenant = 3; // If true - used for tenant optimization.
+  optional bool is_principal = 3; // If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
   optional bool on_disk = 4; // If true - store index on disk.
 }
 
 message FloatIndexParams {
   optional bool on_disk = 1; // If true - store index on disk.
-  optional bool is_tenant = 2; // If true - used for tenant optimization.
+  optional bool is_principal = 2; // If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
 }
 
 message GeoIndexParams {
@@ -418,7 +418,7 @@ message BoolIndexParams {
 
 message DatetimeIndexParams {
   optional bool on_disk = 1; // If true - store index on disk.
-  optional bool is_tenant = 2; // If true - used for tenant optimization.
+  optional bool is_principal = 2; // If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests.
 }
 
 message UuidIndexParams {

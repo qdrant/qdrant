@@ -1185,12 +1185,12 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_tenant(&self) -> bool {
+    pub fn tenant_optimization(&self) -> bool {
         match self {
             PayloadSchemaParams::Keyword(keyword) => keyword.is_tenant.unwrap_or_default(),
-            PayloadSchemaParams::Integer(integer) => integer.is_tenant.unwrap_or_default(),
-            PayloadSchemaParams::Float(float) => float.is_tenant.unwrap_or_default(),
-            PayloadSchemaParams::Datetime(datetime) => datetime.is_tenant.unwrap_or_default(),
+            PayloadSchemaParams::Integer(integer) => integer.is_principal.unwrap_or_default(),
+            PayloadSchemaParams::Float(float) => float.is_principal.unwrap_or_default(),
+            PayloadSchemaParams::Datetime(datetime) => datetime.is_principal.unwrap_or_default(),
             PayloadSchemaParams::Uuid(uuid) => uuid.is_tenant.unwrap_or_default(),
             PayloadSchemaParams::Geo(_)
             | PayloadSchemaParams::Text(_)
@@ -1235,7 +1235,7 @@ impl PayloadFieldSchema {
     pub fn is_tenant(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_tenant(),
+            PayloadFieldSchema::FieldParams(params) => params.tenant_optimization(),
         }
     }
 
