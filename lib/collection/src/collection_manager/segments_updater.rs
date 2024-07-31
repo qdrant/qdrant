@@ -112,21 +112,30 @@ pub(crate) fn delete_vectors_by_filter(
     delete_vectors(segments, op_num, &affected_points, vector_names)
 }
 
+/// Batch size when modifying payload.
+const PAYLOAD_OP_BATCH_SIZE: usize = 512;
+
 pub(crate) fn overwrite_payload(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     payload: &Payload,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        points,
-        |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
-        |segment| segment.get_indexed_fields().is_empty(),
-    )?;
+    let mut total_updated_points = 0;
 
-    check_unprocessed_points(points, &updated_points)?;
-    Ok(updated_points.len())
+    for batch in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            batch,
+            |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
+            |segment| segment.get_indexed_fields().is_empty(),
+        )?;
+
+        total_updated_points += updated_points.len();
+        check_unprocessed_points(batch, &updated_points)?;
+    }
+
+    Ok(total_updated_points)
 }
 
 pub(crate) fn overwrite_payload_by_filter(
@@ -146,19 +155,25 @@ pub(crate) fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        points,
-        |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
-        |segment| {
-            segment.get_indexed_fields().keys().all(|indexed_path| {
-                !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
-            })
-        },
-    )?;
+    let mut total_updated_points = 0;
 
-    check_unprocessed_points(points, &updated_points)?;
-    Ok(updated_points.len())
+    for chunk in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            chunk,
+            |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
+            |segment| {
+                segment.get_indexed_fields().keys().all(|indexed_path| {
+                    !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
+                })
+            },
+        )?;
+
+        check_unprocessed_points(chunk, &updated_points)?;
+        total_updated_points += updated_points.len();
+    }
+
+    Ok(total_updated_points)
 }
 
 fn points_by_filter(
@@ -191,27 +206,33 @@ pub(crate) fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        points,
-        |id, write_segment| {
-            let mut res = true;
-            for key in keys {
-                res &= write_segment.delete_payload(op_num, id, key)?;
-            }
-            Ok(res)
-        },
-        |segment| {
-            iproduct!(segment.get_indexed_fields().keys(), keys).all(
-                |(indexed_path, path_to_delete)| {
-                    !indexed_path.is_affected_by_value_remove(path_to_delete)
-                },
-            )
-        },
-    )?;
+    let mut total_deleted_points = 0;
 
-    check_unprocessed_points(points, &updated_points)?;
-    Ok(updated_points.len())
+    for batch in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            batch,
+            |id, write_segment| {
+                let mut res = true;
+                for key in keys {
+                    res &= write_segment.delete_payload(op_num, id, key)?;
+                }
+                Ok(res)
+            },
+            |segment| {
+                iproduct!(segment.get_indexed_fields().keys(), keys).all(
+                    |(indexed_path, path_to_delete)| {
+                        !indexed_path.is_affected_by_value_remove(path_to_delete)
+                    },
+                )
+            },
+        )?;
+
+        check_unprocessed_points(batch, &updated_points)?;
+        total_deleted_points += updated_points.len();
+    }
+
+    Ok(total_deleted_points)
 }
 
 pub(crate) fn delete_payload_by_filter(
@@ -229,15 +250,20 @@ pub(crate) fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        points,
-        |id, write_segment| write_segment.clear_payload(op_num, id),
-        |segment| segment.get_indexed_fields().is_empty(),
-    )?;
+    let mut total_updated_points = 0;
 
-    check_unprocessed_points(points, &updated_points)?;
-    Ok(updated_points.len())
+    for batch in points.chunks(PAYLOAD_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            batch,
+            |id, write_segment| write_segment.clear_payload(op_num, id),
+            |segment| segment.get_indexed_fields().is_empty(),
+        )?;
+        check_unprocessed_points(batch, &updated_points)?;
+        total_updated_points += updated_points.len();
+    }
+
+    Ok(total_updated_points)
 }
 
 /// Clear Payloads from all segments matching the given filter
@@ -248,14 +274,19 @@ pub(crate) fn clear_payload_by_filter(
 ) -> CollectionResult<usize> {
     let points_to_clear = points_by_filter(segments, filter)?;
 
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        points_to_clear.as_slice(),
-        |id, write_segment| write_segment.clear_payload(op_num, id),
-        |segment| segment.get_indexed_fields().is_empty(),
-    )?;
+    let mut total_updated_points = 0;
 
-    Ok(updated_points.len())
+    for batch in points_to_clear.chunks(PAYLOAD_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            batch,
+            |id, write_segment| write_segment.clear_payload(op_num, id),
+            |segment| segment.get_indexed_fields().is_empty(),
+        )?;
+        total_updated_points += updated_points.len();
+    }
+
+    Ok(total_updated_points)
 }
 
 pub(crate) fn create_field_index(
