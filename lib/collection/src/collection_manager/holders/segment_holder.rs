@@ -420,6 +420,33 @@ impl<'s> SegmentHolder {
         Ok(processed_segments)
     }
 
+    pub fn apply_segments_batched<F>(&self, mut f: F) -> OperationResult<()>
+    where
+        F: FnMut(
+            &mut RwLockWriteGuard<dyn SegmentEntry + 'static>,
+            SegmentId,
+        ) -> OperationResult<bool>,
+    {
+        let _update_guard = self.update_tracker.update();
+
+        loop {
+            let mut did_apply = false;
+
+            // It is important to iterate over all segments for each batch
+            // to avoid blocking of a single segment with sequential updates
+            for (segment_id, segment) in self.iter() {
+                did_apply |= f(&mut segment.get().write(), *segment_id)?;
+            }
+
+            // No segment update => we're done
+            if !did_apply {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Apply an operation `point_operation` to a set of points `ids`.
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.

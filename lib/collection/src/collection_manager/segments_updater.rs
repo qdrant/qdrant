@@ -580,16 +580,49 @@ pub(crate) fn process_field_index_operation(
     }
 }
 
+/// Max amount of points to delete in a batched deletion iteration.
+const DELETION_BATCH_SIZE: usize = 512;
+
 /// Deletes points from all segments matching the given filter
 pub(crate) fn delete_points_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     filter: &Filter,
 ) -> CollectionResult<usize> {
-    let mut deleted = 0;
-    segments.apply_segments(|s| {
-        deleted += s.delete_filtered(op_num, filter)?;
+    let mut total_deleted = 0;
+
+    let mut points_to_delete: HashMap<_, _> = segments
+        .iter()
+        .map(|(segment_id, segment)| {
+            (
+                *segment_id,
+                segment.get().read().read_filtered(None, None, Some(filter)),
+            )
+        })
+        .collect();
+
+    segments.apply_segments_batched(|s, segment_id| {
+        let Some(curr_points) = points_to_delete.get_mut(&segment_id) else {
+            return Ok(false);
+        };
+        if curr_points.is_empty() {
+            return Ok(false);
+        }
+
+        let mut deleted_in_batch = 0;
+        while let Some(point_id) = curr_points.pop() {
+            if s.delete_point(op_num, point_id)? {
+                total_deleted += 1;
+                deleted_in_batch += 1;
+            }
+
+            if deleted_in_batch >= DELETION_BATCH_SIZE {
+                break;
+            }
+        }
+
         Ok(true)
     })?;
-    Ok(deleted)
+
+    Ok(total_deleted)
 }
