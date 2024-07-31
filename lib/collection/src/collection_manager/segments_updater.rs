@@ -39,13 +39,19 @@ pub(crate) fn delete_points(
     op_num: SeqNumberType,
     ids: &[PointIdType],
 ) -> CollectionResult<usize> {
-    segments
-        .apply_points(
-            ids,
+    let mut total_deleted_points = 0;
+
+    for batch in ids.chunks(VECTOR_OP_BATCH_SIZE) {
+        let deleted_points = segments.apply_points(
+            batch,
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id),
-        )
-        .map_err(Into::into)
+        )?;
+
+        total_deleted_points += deleted_points;
+    }
+
+    Ok(total_deleted_points)
 }
 
 /// Update the specified named vectors of a point, keeping unspecified vectors intact.
@@ -66,18 +72,25 @@ pub(crate) fn update_vectors(
 
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
-    let updated_points = segments.apply_points_with_conditional_move(
-        op_num,
-        &ids,
-        |id, write_segment| {
-            let vectors = points_map[&id].clone();
-            write_segment.update_vectors(op_num, id, vectors)
-        },
-        |_| false,
-    )?;
-    check_unprocessed_points(&ids, &updated_points)?;
-    Ok(updated_points.len())
+    let mut total_updated_points = 0;
+    for batch in ids.chunks(VECTOR_OP_BATCH_SIZE) {
+        let updated_points = segments.apply_points_with_conditional_move(
+            op_num,
+            batch,
+            |id, write_segment| {
+                let vectors = points_map[&id].clone();
+                write_segment.update_vectors(op_num, id, vectors)
+            },
+            |_| false,
+        )?;
+        check_unprocessed_points(batch, &updated_points)?;
+        total_updated_points += updated_points.len();
+    }
+
+    Ok(total_updated_points)
 }
+
+const VECTOR_OP_BATCH_SIZE: usize = 512;
 
 /// Delete the given named vectors for the given points, keeping other vectors intact.
 pub(crate) fn delete_vectors(
@@ -86,9 +99,11 @@ pub(crate) fn delete_vectors(
     points: &[PointIdType],
     vector_names: &[String],
 ) -> CollectionResult<usize> {
-    segments
-        .apply_points(
-            points,
+    let mut total_deleted_points = 0;
+
+    for batch in points.chunks(VECTOR_OP_BATCH_SIZE) {
+        let deleted_points = segments.apply_points(
+            batch,
             |_| (),
             |id, _idx, write_segment, ()| {
                 let mut res = true;
@@ -97,8 +112,12 @@ pub(crate) fn delete_vectors(
                 }
                 Ok(res)
             },
-        )
-        .map_err(Into::into)
+        )?;
+
+        total_deleted_points += deleted_points;
+    }
+
+    Ok(total_deleted_points)
 }
 
 /// Delete the given named vectors for points matching the given filter, keeping other vectors intact.
