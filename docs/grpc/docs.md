@@ -692,7 +692,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
-| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| is_principal | [bool](#bool) | optional | If true - used for optimization similar to tenants. |
 
 
 
@@ -796,7 +796,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
-| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| is_principal | [bool](#bool) | optional | If true - used for optimization similar to tenants. |
 
 
 
@@ -874,7 +874,7 @@
 | ----- | ---- | ----- | ----------- |
 | lookup | [bool](#bool) |  | If true - support direct lookups. |
 | range | [bool](#bool) |  | If true - support ranges filters. |
-| is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| is_principal | [bool](#bool) | optional | If true - used for optimization similar to tenants. |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
 
 

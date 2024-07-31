@@ -6458,8 +6458,8 @@
             "description": "If true - support ranges filters.",
             "type": "boolean"
           },
-          "is_tenant": {
-            "description": "If true - used for tenant optimization.",
+          "is_principal": {
+            "description": "If true - used for optimization similar to tenants.",
             "type": "boolean",
             "nullable": true
           },
@@ -6485,8 +6485,8 @@
           "type": {
             "$ref": "#/components/schemas/FloatIndexType"
           },
-          "is_tenant": {
-            "description": "If true - used for tenant optimization.",
+          "is_principal": {
+            "description": "If true - used for optimization similar to tenants.",
             "type": "boolean",
             "nullable": true
           },
@@ -6592,8 +6592,8 @@
           "type": {
             "$ref": "#/components/schemas/DatetimeIndexType"
           },
-          "is_tenant": {
-            "description": "If true - used for tenant optimization.",
+          "is_principal": {
+            "description": "If true - used for optimization similar to tenants.",
             "type": "boolean",
             "nullable": true
           },
