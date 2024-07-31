@@ -903,9 +903,8 @@ impl ShardOperation for RemoteShard {
         &self,
         request: Arc<FacetRequest>,
         _search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
-        let timeout: Option<Duration> = None; // TODO(facets): Move to function args
-
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 

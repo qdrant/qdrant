@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
@@ -707,11 +708,15 @@ impl SegmentEntry for ProxySegment {
 
     fn facet(
         &self,
-        request: &segment::data_types::facets::FacetRequest,
+        request: &FacetRequest,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<FacetValueHit>> {
         let deleted_points = self.deleted_points.read();
         let read_segment_hits = if deleted_points.is_empty() {
-            self.wrapped_segment.get().read().facet(request)?
+            self.wrapped_segment
+                .get()
+                .read()
+                .facet(request, is_stopped)?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 request.filter.as_ref(),
@@ -722,9 +727,12 @@ impl SegmentEntry for ProxySegment {
                 limit: request.limit,
                 filter: Some(wrapped_filter),
             };
-            self.wrapped_segment.get().read().facet(&new_request)?
+            self.wrapped_segment
+                .get()
+                .read()
+                .facet(&new_request, is_stopped)?
         };
-        let write_segment_hits = self.write_segment.get().read().facet(request)?;
+        let write_segment_hits = self.write_segment.get().read().facet(request, is_stopped)?;
 
         let hits_iter =
             aggregate_facet_hits(read_segment_hits.into_iter().chain(write_segment_hits))

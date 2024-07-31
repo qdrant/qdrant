@@ -3,11 +3,13 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
+use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::{StorageVersion, VERSION_FILE};
@@ -1494,7 +1496,11 @@ impl SegmentEntry for Segment {
         }
     }
 
-    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetValueHit>> {
+    fn facet(
+        &self,
+        request: &FacetRequest,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<FacetValueHit>> {
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index
@@ -1511,6 +1517,7 @@ impl SegmentEntry for Segment {
 
             let hits_iter = payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
+                .check_stop(|| is_stopped.load(Ordering::Relaxed))
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(HashMap::new(), |mut map, point_id| {
                     facet_index.get_values(point_id).unique().for_each(|value| {
@@ -1523,7 +1530,9 @@ impl SegmentEntry for Segment {
 
             peek_top_largest_iterable(hits_iter, request.limit)
         } else {
-            let hits_iter = facet_index.iter_counts_per_value();
+            let hits_iter = facet_index
+                .iter_counts_per_value()
+                .check_stop(|| !is_stopped.load(Ordering::Relaxed));
             peek_top_largest_iterable(hits_iter, request.limit)
         };
 
