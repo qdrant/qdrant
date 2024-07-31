@@ -732,10 +732,10 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let cardinality_estimation = payload_index.estimate_cardinality(condition);
 
         let ids_iterator = payload_index
-            .query_points(condition)
-            .into_iter()
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {
@@ -774,16 +774,17 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
+        let cardinality_estimation = payload_index.estimate_cardinality(condition);
+
         let start_from = order_by.start_from();
 
         let values_ids_iterator = payload_index
-            .query_points(condition)
-            .into_iter()
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
                 numeric_index
                     .get_ordering_values(internal_id)
-                    // But only those which start from `start_from` 😛
+                    // But only those which start from `start_from`
                     .filter(|value| match order_by.direction() {
                         Direction::Asc => value >= &start_from,
                         Direction::Desc => value <= &start_from,
@@ -826,9 +827,9 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
+        let cardinality_estimation = payload_index.estimate_cardinality(condition);
         let ids_iterator = payload_index
-            .query_points(condition)
-            .into_iter()
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
             .filter_map(|internal_id| id_tracker.external_id(internal_id));
 
         let mut rng = rand::thread_rng();
