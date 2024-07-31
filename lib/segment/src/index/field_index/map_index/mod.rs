@@ -791,8 +791,7 @@ mod tests {
                     let values: Vec<_> = values.iter().collect();
                     builder.add_point(idx as PointOffsetType, &values).unwrap();
                 }
-                let index = builder.finalize().unwrap();
-                index.flusher()().unwrap();
+                builder.finalize().unwrap();
             }
             IndexType::Mmap => {
                 let mut builder = MapIndex::<N>::mmap_builder(path);
@@ -802,8 +801,7 @@ mod tests {
                     let values: Vec<_> = values.iter().collect();
                     builder.add_point(idx as PointOffsetType, &values).unwrap();
                 }
-                let index = builder.finalize().unwrap();
-                index.flusher()().unwrap();
+                builder.finalize().unwrap();
             }
         }
     }
@@ -851,7 +849,7 @@ mod tests {
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| v.clone().into());
+        save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
         let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is non zero
