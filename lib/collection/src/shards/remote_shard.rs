@@ -10,11 +10,11 @@ use api::grpc::qdrant::shard_snapshot_location::Location;
 use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
-    GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
-    QueryBatchPointsInternal, QueryShardPoints, RecoverShardSnapshotRequest,
-    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
-    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints,
+    GetPointsInternal, GetShardRecoveryPointRequest, HealthCheckRequest,
+    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryShardPoints,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
+    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -24,7 +24,7 @@ use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetRequest, FacetResponse, FacetValueHit};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -901,9 +901,47 @@ impl ShardOperation for RemoteShard {
 
     async fn facet(
         &self,
-        _request: Arc<FacetRequest>,
+        request: Arc<FacetRequest>,
         _search_runtime_handle: &Handle,
     ) -> CollectionResult<FacetResponse> {
-        todo!()
+        let timeout: Option<Duration> = None; // TODO(facets): Move to function args
+
+        let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
+        timer.set_success(false);
+
+        let FacetRequest { key, limit, filter } = request.as_ref();
+
+        let response = self
+            .with_points_client(|mut client| async move {
+                let request = &FacetCountsInternal {
+                    collection_name: self.collection_id.clone(),
+                    key: key.to_string(),
+                    filter: filter.clone().map(api::grpc::qdrant::Filter::from),
+                    limit: *limit as u64,
+                    shard_id: self.id,
+                };
+
+                let mut request = tonic::Request::new(request.clone());
+
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+
+                client.facet(request).await
+            })
+            .await?
+            .into_inner();
+
+        let hits = response
+            .hits
+            .into_iter()
+            .map(FacetValueHit::try_from)
+            .try_collect()?;
+
+        let result = FacetResponse { hits };
+
+        timer.set_success(true);
+
+        Ok(result)
     }
 }

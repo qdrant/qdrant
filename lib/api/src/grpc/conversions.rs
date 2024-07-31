@@ -19,10 +19,11 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, FieldType, FloatIndexParams, GeoIndexParams,
-    GeoLineString, GroupId, KeywordIndexParams, LookupLocation, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups,
-    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, WithLookup,
+    DatetimeIndexParams, DatetimeRange, Direction, FacetValue, FacetValueHit, FieldType,
+    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, KeywordIndexParams, LookupLocation,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    UuidIndexParams, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -2223,5 +2224,38 @@ impl From<LookupLocation> for rest::LookupLocation {
             vector: value.vector_name,
             shard_key: value.shard_key_selector.map(rest::ShardKeySelector::from),
         }
+    }
+}
+
+impl TryFrom<FacetValueHit> for segment::data_types::facets::FacetValueHit {
+    type Error = Status;
+
+    fn try_from(hit: FacetValueHit) -> Result<Self, Self::Error> {
+        let value = hit
+            .value
+            .ok_or_else(|| Status::internal("expected FacetValueHit to have a value"))?;
+
+        Ok(Self {
+            value: segment::data_types::facets::FacetValue::try_from(value)?,
+            count: hit.count as usize,
+        })
+    }
+}
+
+impl TryFrom<FacetValue> for segment::data_types::facets::FacetValue {
+    type Error = Status;
+
+    fn try_from(value: FacetValue) -> Result<Self, Self::Error> {
+        use segment::data_types::facets as segment;
+
+        use super::qdrant::facet_value::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::internal("expected FacetValue to have a value"))?;
+
+        Ok(match variant {
+            Variant::StringValue(value) => segment::FacetValue::Keyword(value),
+        })
     }
 }
