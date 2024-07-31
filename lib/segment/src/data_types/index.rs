@@ -46,8 +46,9 @@ pub struct IntegerIndexParams {
     /// If true - support ranges filters.
     pub range: bool,
 
-    /// If true - used for tenant optimization.
-    pub is_tenant: Option<bool>,
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
+    pub is_principal: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -60,7 +61,7 @@ impl Default for IntegerIndexParams {
             r#type: Default::default(),
             lookup: true,
             range: true,
-            is_tenant: None,
+            is_principal: None,
             on_disk: None,
         }
     }
@@ -105,8 +106,9 @@ pub struct FloatIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: FloatIndexType,
 
-    /// If true - used for tenant optimization.
-    pub is_tenant: Option<bool>,
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
+    pub is_principal: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -209,8 +211,9 @@ pub struct DatetimeIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: DatetimeIndexType,
 
-    /// If true - used for tenant optimization.
-    pub is_tenant: Option<bool>,
+    /// If true - use this key to organize storage of the collection data.
+    /// This option assumes that this key will be used in majority of filtered requests.
+    pub is_principal: Option<bool>,
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]

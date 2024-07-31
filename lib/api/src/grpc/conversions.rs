@@ -237,8 +237,8 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
             index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
                 lookup: params.lookup,
                 range: params.range,
-                is_tenant: params.is_tenant,
                 on_disk: params.on_disk,
+                is_principal: params.is_principal,
             })),
         }
     }
@@ -249,7 +249,7 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
         PayloadIndexParams {
             index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {
                 on_disk: params.on_disk,
-                is_tenant: params.is_tenant,
+                is_principal: params.is_principal,
             })),
         }
     }
@@ -300,7 +300,7 @@ impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParam
         PayloadIndexParams {
             index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {
                 on_disk: params.on_disk,
-                is_tenant: params.is_tenant,
+                is_principal: params.is_principal,
             })),
         }
     }
@@ -394,7 +394,7 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             r#type: IntegerIndexType::Integer,
             lookup: params.lookup,
             range: params.range,
-            is_tenant: params.is_tenant,
+            is_principal: params.is_principal,
             on_disk: params.on_disk,
         })
     }
@@ -406,7 +406,7 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
         Ok(segment::data_types::index::FloatIndexParams {
             r#type: FloatIndexType::Float,
             on_disk: params.on_disk,
-            is_tenant: params.is_tenant,
+            is_principal: params.is_principal,
         })
     }
 }
@@ -450,7 +450,7 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
         Ok(segment::data_types::index::DatetimeIndexParams {
             r#type: DatetimeIndexType::Datetime,
             on_disk: params.on_disk,
-            is_tenant: params.is_tenant,
+            is_principal: params.is_principal,
         })
     }
 }
