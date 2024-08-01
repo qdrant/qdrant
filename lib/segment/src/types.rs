@@ -1,4 +1,3 @@
-use std::any;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -1990,7 +1989,7 @@ pub enum Condition {
     Filter(Filter),
 
     #[serde(skip)]
-    Resharding(Arc<dyn ReshardingCondition + Send + Sync + 'static>),
+    CustomIdChecker(Arc<dyn CustomIdCheckerCondition + Send + Sync + 'static>),
 }
 
 impl PartialEq for Condition {
@@ -2002,7 +2001,7 @@ impl PartialEq for Condition {
             (Self::HasId(this), Self::HasId(other)) => this == other,
             (Self::Nested(this), Self::Nested(other)) => this == other,
             (Self::Filter(this), Self::Filter(other)) => this == other,
-            (Self::Resharding(this), Self::Resharding(other)) => this.eq(other.deref()),
+            (Self::CustomIdChecker(_), Self::CustomIdChecker(_)) => false,
             _ => false,
         }
     }
@@ -2014,10 +2013,6 @@ impl Condition {
             nested: Nested { key, filter },
         })
     }
-
-    pub fn is_local_only(&self) -> bool {
-        matches!(self, Condition::Resharding(_))
-    }
 }
 
 // The validator crate does not support deriving for enums.
@@ -2028,17 +2023,14 @@ impl Validate for Condition {
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
-            Condition::Resharding(_) => Ok(()),
+            Condition::CustomIdChecker(_) => Ok(()),
         }
     }
 }
 
-pub trait ReshardingCondition: fmt::Debug {
+pub trait CustomIdCheckerCondition: fmt::Debug {
     fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation;
     fn check(&self, point_id: ExtendedPointId) -> bool;
-
-    fn eq(&self, other: &dyn ReshardingCondition) -> bool;
-    fn as_any(&self) -> &dyn any::Any;
 }
 
 /// Options for specifying which payload to include or not

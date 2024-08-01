@@ -316,7 +316,7 @@ impl StructPayloadIndex {
                 .estimate_field_condition(field_condition, nested_path)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
-            Condition::Resharding(cond) => {
+            Condition::CustomIdChecker(cond) => {
                 cond.estimate_cardinality(self.id_tracker.borrow().available_point_count())
             }
         }
