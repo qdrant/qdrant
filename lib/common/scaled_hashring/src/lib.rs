@@ -256,10 +256,13 @@ mod tests {
         let mut serialized_json =
             serde_json::to_value(hashring).expect("ScaledHashRing can be serialized to JSON");
 
-        serialized_json
+        let nodes = serialized_json
             .get_mut("nodes")
-            .and_then(|nodes| nodes.as_array_mut())
-            .map(|nodes| nodes.sort_unstable_by_key(|node| node.as_u64()));
+            .and_then(|nodes| nodes.as_array_mut());
+
+        if let Some(nodes) = nodes {
+            nodes.sort_unstable_by_key(|node| node.as_u64());
+        }
 
         assert_eq!(&serialized_json, expected_json);
     }
