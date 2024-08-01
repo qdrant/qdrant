@@ -15,7 +15,7 @@ use crate::operations::types::{
 };
 
 #[derive(Debug, Default)]
-struct DistanceMatrixResult {
+struct DistanceMatrixResponse {
     sample_ids: Vec<PointIdType>,   // sampled point ids
     nearest: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
 }
@@ -23,19 +23,18 @@ struct DistanceMatrixResult {
 impl Collection {
     async fn distance_matrix(
         &self,
-        sample_count: usize,
-        limit: usize,
+        sample_size: usize,
+        limit_per_sample: usize,
         filter: Option<&Filter>,
         using: String,
+        shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
-    ) -> CollectionResult<DistanceMatrixResult> {
-        if limit == 0 || sample_count == 0 {
+    ) -> CollectionResult<DistanceMatrixResponse> {
+        if limit_per_sample == 0 || sample_size == 0 {
             return Ok(Default::default());
         }
 
-        let shard_selector = ShardSelectorInternal::All;
-
-        let mut sampled_point_ids = Vec::with_capacity(sample_count);
+        let mut sampled_point_ids = Vec::with_capacity(sample_size);
 
         // Get local shards in random order
         let mut local_shards = self.get_local_shards().await;
@@ -43,14 +42,10 @@ impl Collection {
 
         // Sample points from local shards
         for local_shard in self.get_local_shards().await {
-            // Break if we have enough sample points
-            if sampled_point_ids.len() >= sample_count {
-                break;
-            }
             let guard = self.shards_holder.read().await;
             if let Some(shard) = guard.get_shard(&local_shard) {
                 let sampled = shard
-                    .sample_filtered_points(sample_count, filter, timeout)
+                    .sample_filtered_points(sample_size, filter, timeout)
                     .await?;
                 sampled_point_ids.extend(sampled);
             }
@@ -67,7 +62,7 @@ impl Collection {
         }
 
         sampled_point_ids.shuffle(&mut rand::thread_rng());
-        sampled_point_ids.truncate(sample_count);
+        sampled_point_ids.truncate(sample_size);
 
         // retrieve the vectors for the sampled points
         let retrieve_request = PointRequestInternal {
@@ -121,7 +116,7 @@ impl Collection {
                     query,
                     filter: req_filter,
                     score_threshold: None,
-                    limit,
+                    limit: limit_per_sample,
                     offset: 0,
                     params: None,
                     with_vector: None,
@@ -134,7 +129,7 @@ impl Collection {
             .core_search_batch(batch_request, None, shard_selector, timeout)
             .await?;
 
-        Ok(DistanceMatrixResult {
+        Ok(DistanceMatrixResponse {
             sample_ids: sampled_point_ids,
             nearest,
         })
