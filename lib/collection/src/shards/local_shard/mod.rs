@@ -1,6 +1,7 @@
 pub mod clock_map;
 pub mod disk_usage_watcher;
 pub(super) mod query;
+pub mod sampling;
 pub(super) mod scroll;
 pub(super) mod search;
 pub(super) mod shard_ops;

@@ -259,4 +259,18 @@ impl ShardOperation for ProxyShard {
             .query_batch(request, search_runtime_handle, timeout)
             .await
     }
+
+    /// Forward read-only `sample_filtered_points` to `wrapped_shard`
+    async fn sample_filtered_points(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .sample_filtered_points(limit, filter, search_runtime_handle, timeout)
+            .await
+    }
 }

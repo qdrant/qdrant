@@ -157,4 +157,29 @@ impl ShardReplicaSet {
         )
         .await
     }
+
+    pub async fn sample_filtered_points(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        let filter = filter.map(|filter| Arc::new(filter.clone()));
+        self.execute_local_read_operation(|shard| {
+            let search_runtime_handle = self.search_runtime.clone();
+            let filter = filter.clone();
+            async move {
+                shard
+                    .sample_filtered_points(
+                        limit,
+                        filter.as_deref(),
+                        &search_runtime_handle,
+                        timeout,
+                    )
+                    .await
+            }
+            .boxed()
+        })
+        .await
+    }
 }

@@ -8,7 +8,8 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -306,9 +307,24 @@ impl ShardOperation for QueueProxyShard {
             .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
+
+    /// Forward read-only `sample_filtered_points` to `wrapped_shard`
+    async fn sample_filtered_points(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        self.inner
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .sample_filtered_points(limit, filter, search_runtime_handle, timeout)
+            .await
+    }
 }
 
-// Safe guard in debug mode to ensure that `finalize()` is called before dropping
+// Safeguard in debug mode to ensure that `finalize()` is called before dropping
 #[cfg(debug_assertions)]
 impl Drop for QueueProxyShard {
     fn drop(&mut self) {
@@ -589,6 +605,20 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         local_shard
             .query_batch(request, search_runtime_handle, timeout)
+            .await
+    }
+
+    /// Forward read-only `sample_filtered_points` to `wrapped_shard`
+    async fn sample_filtered_points(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .sample_filtered_points(limit, filter, search_runtime_handle, timeout)
             .await
     }
 }

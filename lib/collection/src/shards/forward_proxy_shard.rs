@@ -378,4 +378,17 @@ impl ShardOperation for ForwardProxyShard {
             .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
+
+    async fn sample_filtered_points(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        let local_shard = &self.wrapped_shard;
+        local_shard
+            .sample_filtered_points(limit, filter, search_runtime_handle, timeout)
+            .await
+    }
 }

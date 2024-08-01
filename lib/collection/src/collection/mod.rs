@@ -1,4 +1,6 @@
 mod collection_ops;
+#[allow(dead_code)] // TODO(distance_matrix) AG remove this
+mod distance_matrix;
 pub mod payload_index_schema;
 mod point_ops;
 pub mod query;

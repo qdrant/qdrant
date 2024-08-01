@@ -26,7 +26,8 @@ use segment::common::operation_time_statistics::{
 };
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 use tonic::codegen::InterceptedService;
@@ -896,5 +897,20 @@ impl ShardOperation for RemoteShard {
         timer.set_success(true);
 
         Ok(result)
+    }
+
+    async fn sample_filtered_points(
+        &self,
+        _limit: usize,
+        _filter: Option<&Filter>,
+        _search_runtime_handle: &Handle,
+        _timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointIdType>> {
+        // Not implemented for remote shards
+        debug_assert!(
+            false,
+            "sample_filtered_points is not implemented for remote shards"
+        );
+        Ok(vec![])
     }
 }

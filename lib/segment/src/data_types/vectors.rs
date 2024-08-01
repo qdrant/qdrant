@@ -422,7 +422,6 @@ pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-/// Multivector is not supported here because this structure is the part of a legacy search API
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorStructInternal {
     Single(DenseVector),
@@ -530,6 +529,12 @@ impl From<NamedVector> for NamedVectorStruct {
 impl From<NamedSparseVector> for NamedVectorStruct {
     fn from(v: NamedSparseVector) -> Self {
         NamedVectorStruct::Sparse(v)
+    }
+}
+
+impl From<NamedMultiDenseVector> for NamedVectorStruct {
+    fn from(v: NamedMultiDenseVector) -> Self {
+        NamedVectorStruct::MultiDense(v)
     }
 }
 
