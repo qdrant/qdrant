@@ -10,7 +10,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::operations::types::CollectionResult;
 
 impl LocalShard {
-    pub async fn facet(
+    pub async fn do_facet(
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,

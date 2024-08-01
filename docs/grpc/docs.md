@@ -138,6 +138,8 @@
     - [DiscoverInput](#qdrant-DiscoverInput)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
     - [DiscoverResponse](#qdrant-DiscoverResponse)
+    - [FacetValue](#qdrant-FacetValue)
+    - [FacetValueHit](#qdrant-FacetValueHit)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
@@ -2401,6 +2403,37 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-FacetValue"></a>
+
+### FacetValue
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| string_value | [string](#string) |  | String value from the facet |
+
+
+
+
+
+
+<a name="qdrant-FacetValueHit"></a>
+
+### FacetValueHit
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| value | [FacetValue](#qdrant-FacetValue) |  | Value from the facet |
+| count | [uint64](#uint64) |  | Number of points with this value |
 
 
 

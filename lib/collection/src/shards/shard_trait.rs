@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::*;
 use tokio::runtime::Handle;
@@ -54,6 +55,12 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;
+
+    async fn facet(
+        &self,
+        request: Arc<FacetRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<FacetResponse>;
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

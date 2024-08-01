@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
@@ -258,5 +259,14 @@ impl ShardOperation for ProxyShard {
         local_shard
             .query_batch(request, search_runtime_handle, timeout)
             .await
+    }
+
+    async fn facet(
+        &self,
+        request: Arc<FacetRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<FacetResponse> {
+        let local_shard = &self.wrapped_shard;
+        local_shard.facet(request, search_runtime_handle).await
     }
 }

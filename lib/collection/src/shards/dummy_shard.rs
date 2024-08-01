@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -108,6 +109,14 @@ impl ShardOperation for DummyShard {
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        self.dummy()
+    }
+
+    async fn facet(
+        &self,
+        _: Arc<FacetRequest>,
+        _search_runtime_handle: &Handle,
+    ) -> CollectionResult<FacetResponse> {
         self.dummy()
     }
 }

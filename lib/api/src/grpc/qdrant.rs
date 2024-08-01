@@ -5017,6 +5017,35 @@ pub struct QueryPointGroups {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetValue {
+    #[prost(oneof = "facet_value::Variant", tags = "1")]
+    pub variant: ::core::option::Option<facet_value::Variant>,
+}
+/// Nested message and enum types in `FacetValue`.
+pub mod facet_value {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// String value from the facet
+        #[prost(string, tag = "1")]
+        StringValue(::prost::alloc::string::String),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetValueHit {
+    /// Value from the facet
+    #[prost(message, optional, tag = "1")]
+    pub value: ::core::option::Option<FacetValue>,
+    /// Number of points with this value
+    #[prost(uint64, tag = "2")]
+    pub count: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PointsUpdateOperation {
     #[prost(
         oneof = "points_update_operation::Operation",
@@ -8787,6 +8816,33 @@ pub struct QueryBatchResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetCountsInternal {
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub key: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    #[prost(uint64, tag = "4")]
+    pub limit: u64,
+    #[prost(uint32, tag = "5")]
+    pub shard_id: u32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetResponseInternal {
+    #[prost(message, repeated, tag = "1")]
+    pub hits: ::prost::alloc::vec::Vec<FacetValueHit>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
 /// Generated client implementations.
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -9287,6 +9343,31 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "QueryBatch"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn facet(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FacetCountsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::FacetResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Facet",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Facet"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -9404,6 +9485,13 @@ pub mod points_internal_server {
             request: tonic::Request<super::QueryBatchPointsInternal>,
         ) -> std::result::Result<
             tonic::Response<super::QueryBatchResponseInternal>,
+            tonic::Status,
+        >;
+        async fn facet(
+            &self,
+            request: tonic::Request<super::FacetCountsInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::FacetResponseInternal>,
             tonic::Status,
         >;
     }
@@ -10263,6 +10351,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = QueryBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Facet" => {
+                    #[allow(non_camel_case_types)]
+                    struct FacetSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::FacetCountsInternal>
+                    for FacetSvc<T> {
+                        type Response = super::FacetResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FacetCountsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::facet(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = FacetSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
