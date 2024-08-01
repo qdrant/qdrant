@@ -586,6 +586,17 @@ message QueryPointGroups {
   optional ShardKeySelector shard_key_selector = 17; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
+message FacetValue {
+    oneof variant {
+        string string_value = 1; // String value from the facet
+    }
+}
+
+message FacetValueHit {
+    FacetValue value = 1; // Value from the facet
+    uint64 count = 2; // Number of points with this value
+}
+
 message PointsUpdateOperation {
   message PointStructList {
     repeated PointStruct points = 1;

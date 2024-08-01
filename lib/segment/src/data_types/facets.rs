@@ -46,6 +46,10 @@ pub struct FacetHit<T: FacetValueTrait> {
     pub count: usize,
 }
 
+pub struct FacetResponse {
+    pub hits: Vec<FacetValueHit>,
+}
+
 impl<T: FacetValueTrait> Ord for FacetHit<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.count

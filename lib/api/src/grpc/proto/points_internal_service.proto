@@ -23,6 +23,7 @@ service PointsInternal {
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
   rpc QueryBatch (QueryBatchPointsInternal) returns (QueryBatchResponseInternal) {}
+  rpc Facet(FacetCountsInternal) returns (FacetResponseInternal) {}
 }
 
 
@@ -286,4 +287,17 @@ message QueryResultInternal {
 message QueryBatchResponseInternal {
   repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
+}
+
+message FacetCountsInternal {
+    string collection_name = 1;
+    string key = 2;
+    optional Filter filter = 3;
+    uint64 limit = 4;
+    uint32 shard_id = 5;
+}
+
+message FacetResponseInternal {
+    repeated FacetValueHit hits = 1;
+    double time = 2; // Time spent to process
 }
