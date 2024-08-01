@@ -4,8 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -206,17 +205,6 @@ impl ShardOperation for LocalShard {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         self.do_planned_query(planned_query, search_runtime_handle, timeout)
-            .await
-    }
-
-    async fn sample_filtered_points(
-        &self,
-        limit: usize,
-        filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<PointIdType>> {
-        self.do_sample_filtered_points(limit, filter, search_runtime_handle, timeout)
             .await
     }
 }

@@ -54,14 +54,6 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ShardQueryResponse>>;
-
-    async fn sample_filtered_points(
-        &self,
-        limit: usize,
-        filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<PointIdType>>;
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

@@ -110,10 +110,7 @@ impl ShardReplicaSet {
         }
     }
 
-    pub async fn execute_local_read_operation<Res, F>(
-        &self,
-        read_operation: F,
-    ) -> CollectionResult<Res>
+    async fn execute_local_read_operation<Res, F>(&self, read_operation: F) -> CollectionResult<Res>
     where
         F: Fn(&(dyn ShardOperation + Send + Sync)) -> BoxFuture<'_, CollectionResult<Res>>,
     {
