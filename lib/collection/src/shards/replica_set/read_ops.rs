@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt as _;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::*;
 
@@ -151,6 +152,26 @@ impl ShardReplicaSet {
                 let search_runtime = self.search_runtime.clone();
 
                 async move { shard.query_batch(requests, &search_runtime, timeout).await }.boxed()
+            },
+            read_consistency,
+            local_only,
+        )
+        .await
+    }
+
+    pub async fn facet(
+        &self,
+        request: Arc<FacetRequest>,
+        read_consistency: Option<ReadConsistency>,
+        local_only: bool,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<FacetResponse> {
+        self.execute_and_resolve_read_operation(
+            |shard| {
+                let request = request.clone();
+                let search_runtime = self.search_runtime.clone();
+
+                async move { shard.facet(request, &search_runtime, timeout).await }.boxed()
             },
             read_consistency,
             local_only,
