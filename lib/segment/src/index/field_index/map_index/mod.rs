@@ -249,6 +249,25 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         self.values_count(idx) == 0
     }
 
+    fn clear(self) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Mmap(index) => index.clear(),
+        }
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.remove_point(id),
+            MapIndex::Immutable(index) => index.remove_point(id),
+            MapIndex::Mmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
+        }
+    }
+
     /// Estimates cardinality for `except` clause
     ///
     /// # Arguments
@@ -451,11 +470,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Mmap(index) => index.clear(),
-        }
+        self.clear()
     }
 
     fn flusher(&self) -> Flusher {
@@ -565,11 +580,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn clear(self) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Mmap(index) => index.clear(),
-        }
+        self.clear()
     }
 
     fn flusher(&self) -> Flusher {
@@ -692,14 +703,7 @@ impl ValueIndexer for MapIndex<str> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.remove_point(id),
-            MapIndex::Immutable(index) => index.remove_point(id),
-            MapIndex::Mmap(index) => {
-                index.remove_point(id);
-                Ok(())
-            }
-        }
+        self.remove_point(id)
     }
 }
 
@@ -730,14 +734,7 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(index) => index.remove_point(id),
-            MapIndex::Immutable(index) => index.remove_point(id),
-            MapIndex::Mmap(index) => {
-                index.remove_point(id);
-                Ok(())
-            }
-        }
+        self.remove_point(id)
     }
 }
 

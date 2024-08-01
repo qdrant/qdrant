@@ -151,31 +151,30 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
-        if self.deleted.get(idx as usize).unwrap_or(true) {
-            self.point_to_values
-                .check_values_any(idx, |v| check_fn(N::from_referenced(&v)))
-        } else {
-            false
-        }
+        self.deleted
+            .get(idx as usize)
+            .filter(|b| !b)
+            .map_or(false, |_| {
+                self.point_to_values
+                    .check_values_any(idx, |v| check_fn(N::from_referenced(&v)))
+            })
     }
 
     pub fn get_values(
         &self,
         idx: PointOffsetType,
     ) -> Option<Box<dyn Iterator<Item = N::Referenced<'_>> + '_>> {
-        if !self.deleted.get(idx as usize).unwrap_or(true) {
-            Some(Box::new(self.point_to_values.get_values(idx)?))
-        } else {
-            None
-        }
+        self.deleted.get(idx as usize).filter(|b| !b).and_then(|_| {
+            Some(Box::new(self.point_to_values.get_values(idx)?)
+                as Box<dyn Iterator<Item = N::Referenced<'_>>>)
+        })
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
-        if !self.deleted.get(idx as usize).unwrap_or(true) {
-            self.point_to_values.get_values_count(idx)
-        } else {
-            None
-        }
+        self.deleted
+            .get(idx as usize)
+            .filter(|b| !b)
+            .and_then(|_| self.point_to_values.get_values_count(idx))
     }
 
     pub fn get_indexed_points(&self) -> usize {
