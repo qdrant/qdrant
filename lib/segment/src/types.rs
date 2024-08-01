@@ -1970,10 +1970,17 @@ impl NestedCondition {
     }
 }
 
+/// Selects points that are hashed into particular shards
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct HashRingCondition {
+    /// Hash ring to hash point IDs with
     pub ring: scaled_hashring::ScaledHashRing<ShardId>,
+
+    /// Shard IDs that hashed point IDs should match
     pub match_shard_ids: HashSet<ShardId>,
+
+    /// Marks if this condition should *not* be transferred to remote shards when applying queries
+    // or operations to replica set
     #[serde(skip)]
     pub is_local_only: bool,
 }
