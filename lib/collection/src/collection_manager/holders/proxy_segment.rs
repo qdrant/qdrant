@@ -7,7 +7,7 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
-use segment::data_types::facets::{merge_facet_hits, FacetRequest, FacetValueHit};
+use segment::data_types::facets::{aggregate_facet_hits, FacetHit, FacetRequest, FacetValueHit};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -726,7 +726,10 @@ impl SegmentEntry for ProxySegment {
         };
         let write_segment_hits = self.write_segment.get().read().facet(request)?;
 
-        let hits_iter = merge_facet_hits(read_segment_hits, write_segment_hits);
+        let hits_iter =
+            aggregate_facet_hits(read_segment_hits.into_iter().chain(write_segment_hits))
+                .into_iter()
+                .map(|(value, count)| FacetHit { value, count });
         let hits = peek_top_largest_iterable(hits_iter, request.limit);
         Ok(hits)
     }
