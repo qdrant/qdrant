@@ -440,6 +440,11 @@ mod tests {
         assert_eq!(mmap.keys_count(), map.len());
         assert_eq!(mmap.keys().count(), map.len());
 
+        for (k, v) in mmap.iter() {
+            let v = v.iter().copied().collect::<BTreeSet<_>>();
+            assert_eq!(map.get(&from_ref(k)).unwrap(), &v);
+        }
+
         // Existing keys should return the correct values
         for (k, v) in map {
             assert_eq!(

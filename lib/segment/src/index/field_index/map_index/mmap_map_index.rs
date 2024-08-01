@@ -1,4 +1,6 @@
+use std::borrow::Borrow;
 use std::iter;
+use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
@@ -79,7 +81,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             &hashmap_path,
             values_to_points
                 .iter()
-                .map(|(value, ids)| (<N as MapIndexKey>::from_owned(value), ids.iter().copied())),
+                .map(|(value, ids)| (value.borrow(), ids.iter().copied())),
         )?;
 
         MmapPointToValues::<N>::from_iter(
@@ -89,19 +91,18 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                     idx as PointOffsetType,
                     values
                         .iter()
-                        .map(|value| N::into_referenced(N::from_owned(value))),
+                        .map(|value| N::into_referenced(value.borrow())),
                 )
             }),
         )?;
 
         {
-            const BITS_IN_BYTE: usize = 8;
             let deleted_flags_count = point_to_values.len();
             let deleted_file = create_and_ensure_length(
                 &deleted_path,
-                BITS_IN_BYTE
-                    * BITS_IN_BYTE
-                    * deleted_flags_count.div_ceil(BITS_IN_BYTE * BITS_IN_BYTE),
+                deleted_flags_count
+                    .div_ceil(u8::BITS as usize)
+                    .next_multiple_of(size_of::<usize>()),
             )?;
             let mut deleted_mmap = unsafe { MmapMut::map_mut(&deleted_file)? };
             deleted_mmap.fill(0);
@@ -141,9 +142,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     pub fn remove_point(&mut self, idx: PointOffsetType) {
         let idx = idx as usize;
-        if idx < self.deleted.len() && !self.deleted.get(idx).unwrap_or(true) {
-            self.deleted.set(idx, true);
-            self.deleted_count += 1;
+        if let Some(deleted) = self.deleted.get(idx) {
+            if !deleted {
+                self.deleted.set(idx, true);
+                self.deleted_count += 1;
+            }
         }
     }
 

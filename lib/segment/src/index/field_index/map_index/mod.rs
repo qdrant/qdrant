@@ -44,8 +44,6 @@ pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
 
     fn to_owned(&self) -> Self::Owned;
-
-    fn from_owned(owned: &Self::Owned) -> &Self;
 }
 
 impl MapIndexKey for str {
@@ -53,10 +51,6 @@ impl MapIndexKey for str {
 
     fn to_owned(&self) -> Self::Owned {
         SmolStr::from(self)
-    }
-
-    fn from_owned(owned: &Self::Owned) -> &Self {
-        owned
     }
 }
 
@@ -66,19 +60,15 @@ impl MapIndexKey for IntPayloadType {
     fn to_owned(&self) -> Self::Owned {
         *self
     }
-
-    fn from_owned(owned: &Self::Owned) -> &Self {
-        owned
-    }
 }
 
-pub enum MapIndex<N: MapIndexKey + MmapValue + ?Sized> {
+pub enum MapIndex<N: MapIndexKey + ?Sized> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
     Mmap(Box<MmapMapIndex<N>>),
 }
 
-impl<N: MapIndexKey + MmapValue + ?Sized> MapIndex<N> {
+impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
@@ -777,7 +767,7 @@ mod tests {
         index_type: IndexType,
         into_value: impl Fn(&N::Owned) -> Value,
     ) where
-        N: MapIndexKey + MmapValue + ?Sized,
+        N: MapIndexKey + ?Sized,
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
@@ -806,7 +796,7 @@ mod tests {
         }
     }
 
-    fn load_map_index<N: MapIndexKey + MmapValue + ?Sized>(
+    fn load_map_index<N: MapIndexKey + ?Sized>(
         data: &[Vec<N::Owned>],
         path: &Path,
         index_type: IndexType,
@@ -827,7 +817,7 @@ mod tests {
                 .unwrap()
                 .map(|v| N::to_owned(N::from_referenced(&v)))
                 .collect();
-            let index_values: HashSet<&N> = index_values.iter().map(|v| N::from_owned(v)).collect();
+            let index_values: HashSet<&N> = index_values.iter().map(|v| v.borrow()).collect();
             let check_values: HashSet<&N> = values.iter().map(|v| v.borrow()).collect();
             assert_eq!(index_values, check_values);
         }
