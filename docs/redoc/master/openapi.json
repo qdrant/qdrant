@@ -7209,6 +7209,9 @@
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
+            "$ref": "#/components/schemas/HashRingCondition"
+          },
+          {
             "$ref": "#/components/schemas/NestedCondition"
           },
           {
@@ -7636,6 +7639,70 @@
             "uniqueItems": true
           }
         }
+      },
+      "HashRingCondition": {
+        "type": "object",
+        "required": [
+          "match_shard_ids",
+          "ring"
+        ],
+        "properties": {
+          "ring": {
+            "$ref": "#/components/schemas/ScaledHashRing"
+          },
+          "match_shard_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "uniqueItems": true
+          }
+        }
+      },
+      "ScaledHashRing": {
+        "type": "object",
+        "required": [
+          "nodes"
+        ],
+        "properties": {
+          "scale": {
+            "$ref": "#/components/schemas/Scale"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "Scale": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "raw"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "fair"
+            ],
+            "properties": {
+              "fair": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "NestedCondition": {
         "type": "object",
