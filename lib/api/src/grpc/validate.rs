@@ -241,7 +241,7 @@ impl Validate for grpc::HashRingCondition {
         // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         //
         // There's no point checking that hash ring contains all `match_shard_ids`, if there are
-        // no nodes in the hash ring. Return immideately.
+        // no nodes in the hash ring. Return immediately.
         ValidationErrors::merge(Ok(()), "ring", ring.validate())?;
 
         // Hash ring in `HashRingCondition` *must* contain all `match_shard_ids`, because otherwise

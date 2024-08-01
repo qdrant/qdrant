@@ -2020,7 +2020,7 @@ impl Validate for HashRingCondition {
         // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         if self.ring.is_empty() {
             // There's no point checking that hash ring contains all `match_shard_ids`,
-            // if there are no nodes in the hash ring. Return immideately.
+            // if there are no nodes in the hash ring. Return immediately.
             errors.add("ring", ValidationError::new("hash ring must contain nodes"));
             return Err(errors);
         }
