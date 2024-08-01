@@ -150,6 +150,8 @@
     - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
+    - [HashRing](#qdrant-HashRing)
+    - [HashRingCondition](#qdrant-HashRingCondition)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
@@ -2080,6 +2082,7 @@ The JSON representation for `Value` is a JSON value.
 | filter | [Filter](#qdrant-Filter) |  |  |
 | is_null | [IsNullCondition](#qdrant-IsNullCondition) |  |  |
 | nested | [NestedCondition](#qdrant-NestedCondition) |  |  |
+| hash_ring | [HashRingCondition](#qdrant-HashRingCondition) |  |  |
 
 
 
@@ -2604,6 +2607,38 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | has_id | [PointId](#qdrant-PointId) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-HashRing"></a>
+
+### HashRing
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| scale | [uint32](#uint32) |  |  |
+| nodes | [uint32](#uint32) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-HashRingCondition"></a>
+
+### HashRingCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| ring | [HashRing](#qdrant-HashRing) |  |  |
+| match_shard_ids | [uint32](#uint32) | repeated |  |
 
 
 

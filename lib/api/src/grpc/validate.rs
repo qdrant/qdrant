@@ -183,6 +183,7 @@ impl Validate for grpc::condition::ConditionOneOf {
         use grpc::condition::ConditionOneOf;
         match self {
             ConditionOneOf::Field(field_condition) => field_condition.validate(),
+            ConditionOneOf::HashRing(hash_ring) => hash_ring.validate(),
             ConditionOneOf::Nested(nested) => nested.validate(),
             ConditionOneOf::Filter(filter) => filter.validate(),
             ConditionOneOf::IsEmpty(_) => Ok(()),
@@ -222,6 +223,72 @@ impl Validate for grpc::FieldCondition {
             Err(errors)
         } else {
             Ok(())
+        }
+    }
+}
+
+impl Validate for grpc::HashRingCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        // `HashRingCondition` *must* contain hash ring
+        let Some(ring) = &self.ring else {
+            // There's no point making further checks, if there's no hash ring. Return immediately.
+            let mut errors = ValidationErrors::new();
+            errors.add("ring", ValidationError::new("hash ring can't be None"));
+            return Err(errors);
+        };
+
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        //
+        // There's no point checking that hash ring contains all `match_shard_ids`, if there are
+        // no nodes in the hash ring. Return immediately.
+        ValidationErrors::merge(Ok(()), "ring", ring.validate())?;
+
+        // Hash ring in `HashRingCondition` *must* contain all `match_shard_ids`, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        let invalid_shard_ids: Vec<_> = self
+            .match_shard_ids
+            .iter()
+            .filter(|shard_id| !ring.nodes.contains(shard_id))
+            .collect();
+
+        if !invalid_shard_ids.is_empty() {
+            // Explicitly construct `ValidationError`, to include invalid shard IDs into the error
+            let error = format!(
+                "hash ring must contain all shard IDs being matched, missing shard IDs {:?}",
+                invalid_shard_ids.as_slice(),
+            );
+
+            let error = ValidationError {
+                code: error.into(),
+                message: None,
+                params: HashMap::new(),
+            };
+
+            let mut errors = ValidationErrors::new();
+            errors.add("shard_ids", error);
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for grpc::HashRing {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        if !self.nodes.is_empty() {
+            Ok(())
+        } else {
+            let mut errors = ValidationErrors::new();
+
+            errors.add(
+                "nodes",
+                ValidationError::new("hash ring must contain nodes"),
+            );
+
+            Err(errors)
         }
     }
 }

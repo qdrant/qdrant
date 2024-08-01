@@ -1,13 +1,11 @@
-use std::any;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use common::types::ScoreType;
 use fnv::FnvBuildHasher;
@@ -1972,7 +1970,102 @@ impl NestedCondition {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+/// Selects points that are hashed into particular shards
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct HashRingCondition {
+    /// Hash ring to hash point IDs with
+    pub ring: scaled_hashring::ScaledHashRing<ShardId>,
+
+    /// Shard IDs that hashed point IDs should match
+    pub match_shard_ids: HashSet<ShardId>,
+
+    /// Marks if this condition should *not* be transferred to remote shards when applying queries
+    // or operations to replica set
+    #[serde(skip)]
+    pub is_local_only: bool,
+}
+
+impl HashRingCondition {
+    pub fn new(ring: scaled_hashring::ScaledHashRing<ShardId>, shard_id: ShardId) -> Self {
+        Self {
+            ring,
+            match_shard_ids: HashSet::from_iter([shard_id]),
+            is_local_only: false,
+        }
+    }
+
+    pub fn local_only(mut self) -> Self {
+        self.is_local_only = true;
+        self
+    }
+
+    pub fn check(&self, point_id: PointIdType) -> bool {
+        self.ring
+            .get(&point_id)
+            .map_or(false, |shard_id| self.match_shard_ids.contains(shard_id))
+    }
+
+    pub fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation {
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: points / self.ring.len(),
+            max: points,
+        }
+    }
+
+    pub fn is_local_only(&self) -> bool {
+        self.is_local_only
+    }
+}
+
+impl Validate for HashRingCondition {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        if self.ring.is_empty() {
+            // There's no point checking that hash ring contains all `match_shard_ids`,
+            // if there are no nodes in the hash ring. Return immediately.
+            errors.add("ring", ValidationError::new("hash ring must contain nodes"));
+            return Err(errors);
+        }
+
+        // Hash ring in `HashRingCondition` *must* contain all `match_shard_ids`, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        let nodes = self.ring.unique_nodes();
+
+        let invalid_shard_ids: Vec<_> = self
+            .match_shard_ids
+            .iter()
+            .filter(|shard_id| !nodes.contains(shard_id))
+            .collect();
+
+        if !invalid_shard_ids.is_empty() {
+            // Explicitly construct `ValidationError`, to include invalid shard IDs into the error
+            let error = format!(
+                "hash ring must contain all shard IDs being matched, missing shard IDs {:?}",
+                invalid_shard_ids.as_slice()
+            );
+
+            let error = ValidationError {
+                code: error.into(),
+                message: None,
+                params: HashMap::new(),
+            };
+
+            errors.add("shard_ids", error);
+            return Err(errors);
+        }
+
+        Ok(())
+    }
+}
+
+pub type ShardId = u32;
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum Condition {
@@ -1989,23 +2082,9 @@ pub enum Condition {
     /// Nested filter
     Filter(Filter),
 
-    #[serde(skip)]
-    Resharding(Arc<dyn ReshardingCondition + Send + Sync + 'static>),
-}
-
-impl PartialEq for Condition {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Field(this), Self::Field(other)) => this == other,
-            (Self::IsEmpty(this), Self::IsEmpty(other)) => this == other,
-            (Self::IsNull(this), Self::IsNull(other)) => this == other,
-            (Self::HasId(this), Self::HasId(other)) => this == other,
-            (Self::Nested(this), Self::Nested(other)) => this == other,
-            (Self::Filter(this), Self::Filter(other)) => this == other,
-            (Self::Resharding(this), Self::Resharding(other)) => this.eq(other.deref()),
-            _ => false,
-        }
-    }
+    /// Check if point ID is hashed into particular shard(s)
+    #[schemars(skip)]
+    HashRing(HashRingCondition),
 }
 
 impl Condition {
@@ -2016,7 +2095,10 @@ impl Condition {
     }
 
     pub fn is_local_only(&self) -> bool {
-        matches!(self, Condition::Resharding(_))
+        match self {
+            Self::HashRing(hash_ring) => hash_ring.is_local_only(),
+            _ => false,
+        }
     }
 }
 
@@ -2026,19 +2108,11 @@ impl Validate for Condition {
         match self {
             Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
+            Condition::HashRing(hash_ring) => hash_ring.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
-            Condition::Resharding(_) => Ok(()),
         }
     }
-}
-
-pub trait ReshardingCondition: fmt::Debug {
-    fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation;
-    fn check(&self, point_id: ExtendedPointId) -> bool;
-
-    fn eq(&self, other: &dyn ReshardingCondition) -> bool;
-    fn as_any(&self) -> &dyn any::Any;
 }
 
 /// Options for specifying which payload to include or not

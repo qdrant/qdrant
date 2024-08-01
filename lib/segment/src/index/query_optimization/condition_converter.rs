@@ -121,7 +121,8 @@ pub fn condition_converter<'a>(
                 })
             })
         }
-        Condition::Resharding(cond) => {
+
+        Condition::HashRing(cond) => {
             let segment_ids: HashSet<_> = id_tracker
                 .iter_external()
                 .filter(|&point_id| cond.check(point_id))
@@ -130,6 +131,7 @@ pub fn condition_converter<'a>(
 
             Box::new(move |internal_id| segment_ids.contains(&internal_id))
         }
+
         Condition::Filter(_) => unreachable!(),
     }
 }

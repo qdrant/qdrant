@@ -323,7 +323,7 @@ impl<'a> Extractor<'a> {
             }
             // No index needed
             Condition::HasId(_) => return,
-            Condition::Resharding(_) => return,
+            Condition::HashRing(_) => return,
         };
 
         let full_key = JsonPath::extend_or_new(nested_prefix, key);
