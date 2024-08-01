@@ -1970,7 +1970,7 @@ impl NestedCondition {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct HashRingCondition {
     pub ring: scaled_hashring::ScaledHashRing<ShardId>,
     pub match_shard_ids: HashSet<ShardId>,
@@ -2070,12 +2070,14 @@ pub enum Condition {
     IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
-    /// Check if point ID is hashed into particular shards
-    HashRing(HashRingCondition),
     /// Nested filters
     Nested(NestedCondition),
     /// Nested filter
     Filter(Filter),
+
+    /// Check if point ID is hashed into particular shard(s)
+    #[schemars(skip)]
+    HashRing(HashRingCondition),
 }
 
 impl Condition {

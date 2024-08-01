@@ -91,25 +91,7 @@ impl<T: Copy + hash::Hash> ScaledHashRing<T> {
     }
 }
 
-impl<T: schemars::JsonSchema> schemars::JsonSchema for ScaledHashRing<T> {
-    fn schema_name() -> String {
-        "ScaledHashRing".into()
-    }
-
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        SerdeHelper::<T>::json_schema(gen)
-    }
-
-    fn is_referenceable() -> bool {
-        SerdeHelper::<T>::is_referenceable()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        SerdeHelper::<T>::schema_id()
-    }
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct SerdeHelper<T> {
     #[serde(default)]
     scale: Scale,
@@ -144,7 +126,7 @@ impl<T: Copy + hash::Hash> From<SerdeHelper<T>> for ScaledHashRing<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[derive(Copy, Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Scale {
     Raw,
