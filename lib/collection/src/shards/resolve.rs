@@ -3,7 +3,7 @@ use std::hash;
 use std::iter::Peekable;
 use std::rc::Rc;
 
-use itertools::{Itertools, Position};
+use itertools::Itertools;
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
@@ -129,8 +129,36 @@ where
             ResolveCondition::Majority => items.len() / 2 + 1,
         };
 
+        // Items:
+        //  [
+        //      [
+        //          { id: 10, item: A, score: 0.9 },
+        //          { id: 3, item: B, score: 0.8 },
+        //          { id: 4, item: C, score: 0.7 }
+        //      ],
+        //      [
+        //          { id: 10, item: A, score: 0.9 },
+        //          { id: 3, item: B, score: 0.8 },
+        //          { id: 4, item: C, score: 0.7 }
+        //      ],
+        //      [
+        //          { id: 10, item: A, score: 0.9 },
+        //          { id: 4, item: C, score: 0.7 },
+        //          { id: 2, item: D, score: 0.6 }
+        //      ]
+        //  ]
         let mut resolver = Resolver::new(items.first().map_or(0, Vec::len), identify, compare);
         resolver.add_all(&items);
+
+        // resolver items:
+        // {
+        //     10: [ { item: A, count: 3, coordinates: [(0, 0), (1, 0), (2, 0)] } ],
+        //     3:  [ { item: B, count: 2, coordinates: [(0, 1), (1, 1)] } ],
+        //     4:  [ { item: C, count: 3, coordinates: [(0, 2), (1, 2), (2, 1)] } ],
+        //     2:  [ { item: D, count: 1, coordinates: [(2, 2)] } ]
+        // }
+
+        // For majority, we need resolution_count = 2
 
         // Select coordinates of accepted items, avoiding copying
         let resolved_coords: HashSet<_> = resolver
@@ -145,26 +173,67 @@ where
             .flatten()
             .collect();
 
+        // resolved coords:
+        // [
+        //     (0, 0), (1, 0), (2, 0),
+        //     (0, 1), (1, 1),
+        //     (0, 2), (1, 2), (2, 1)
+        // ]
+
         // Shortcut if everything is consistent: return first items, avoiding filtering
-        let is_consistent = resolved_coords.len() == items.first().map_or(0, Vec::len)
-            && resolved_coords.iter().all(|&(row, _)| row == 0);
+        let all_items_len = items.iter().map(Vec::len).sum::<usize>();
+        let is_consistent = resolved_coords.len() == all_items_len;
 
         if is_consistent {
-            items.into_iter().next().unwrap_or_default()
-        } else {
-            let resolved_coords = Rc::new(resolved_coords);
+            // Return the first replica result as everything is consistent
+            return items.into_iter().next().unwrap_or_default();
+        }
 
-            let resolved_iters = items.into_iter().enumerate().map(|(row, list)| {
+        // Items:
+        //  [
+        //      [
+        //          { id: 3, item: B, score: 0.8 },
+        //          { id: 4, item: C, score: 0.7 }
+        //      ],
+        //      [
+        //          { id: 3, item: B, score: 0.8 },
+        //          { id: 4, item: C, score: 0.7 }
+        //      ],
+        //      [
+        //          { id: 4, item: C, score: 0.7 },
+        //      ]
+        //  ]
+        let resolved_coords = Rc::new(resolved_coords);
+
+        let resolved_iters = items
+            .into_iter()
+            .enumerate()
+            .map(|(replica_id, replica_response)| {
+                // replica_response:
+                //  [
+                //      { id: 10, item: A, score: 0.9 },
+                //      { id: 4, item: C, score: 0.7 },
+                //      { id: 2, item: D, score: 0.6 }
+                //  ]
+
                 let resolved_coords = resolved_coords.clone();
-                list.into_iter()
+                replica_response
+                    .into_iter()
                     .enumerate()
                     .filter_map(move |(index, item)| {
-                        resolved_coords.contains(&(row, index)).then_some(item)
+                        resolved_coords
+                            .contains(&(replica_id, index))
+                            .then_some(item)
                     })
+
+                // Iterator of filtered items:
+                //  Iter<
+                //      { id: 10, item: A, score: 0.9 },
+                //      { id: 4, item: C, score: 0.7 },
+                //  >
             });
 
-            Merger::new(resolved_iters, identify, resolution_count).collect_vec()
-        }
+        Merger::new(resolved_iters, identify, resolution_count).collect_vec()
     }
 
     fn new(capacity: usize, identify: Ident, compare: Cmp) -> Self {
@@ -187,7 +256,7 @@ where
         }
     }
 
-    fn add(&mut self, id: Id, item: &'a Item, row: usize, index: usize) {
+    fn add(&mut self, id: Id, item: &'a Item, row: RowId, index: ColumnId) {
         let points = self.items.entry(id).or_default();
 
         for point in points.iter_mut() {
@@ -202,11 +271,14 @@ where
     }
 }
 
+type RowId = usize;
+type ColumnId = usize;
+
 #[derive(Debug, Clone)]
 struct ResolverRecord<'a, T> {
     item: Option<&'a T>,
     /// Store all coordinates of equal items in `(row, index)` tuples
-    coordinates: TinyVec<[(usize, usize); EXPECTED_REPLICAS]>,
+    coordinates: TinyVec<[(RowId, ColumnId); EXPECTED_REPLICAS]>,
     /// Keeps track of the amount of times we see this same item
     count: usize,
 }
@@ -222,7 +294,7 @@ impl<'a, T> Default for ResolverRecord<'a, T> {
 }
 
 impl<'a, T> ResolverRecord<'a, T> {
-    fn new(item: &'a T, row: usize, index: usize) -> Self {
+    fn new(item: &'a T, row: RowId, index: ColumnId) -> Self {
         let mut coordinates = TinyVec::new();
         coordinates.push((row, index));
 
@@ -234,6 +306,19 @@ impl<'a, T> ResolverRecord<'a, T> {
     }
 }
 
+/// Resolves multiple list of items by reading heads of all iterators on each step
+/// and accepting the most common occurrence as the next resolved item.
+///
+/// [
+///    [A, F, B, C],
+///    [A, B, C],
+///    [F, B, C],
+/// ]
+///
+///   1   2   3   4
+///  [A,  F,  B,  C]
+///  [A,      B,  C]
+///  [    F,  B,  C]
 struct Merger<I: Iterator, Ident> {
     /// One iterator per set of results, which outputs items that comply with resolution count, in their original order
     resolved_iters: Vec<Peekable<I>>,
@@ -264,7 +349,8 @@ where
         }
     }
 
-    fn peek_heads(&mut self) -> impl Iterator<Item = (usize, Id)> + '_ {
+    /// An iterator over all current heads of the resolved iterators
+    fn peek_heads(&mut self) -> impl Iterator<Item = (RowId, Id)> + '_ {
         self.resolved_iters
             .iter_mut()
             .enumerate()
@@ -272,7 +358,21 @@ where
     }
 
     /// Peeks each row, then maps IDs to the peeked rows in which each ID appears
-    fn heads_map(&mut self) -> HashMap<Id, TinyVec<[usize; EXPECTED_REPLICAS]>> {
+    ///
+    /// Example:
+    ///
+    ///  resolved_iters = [
+    ///     <- (10, A) <- (4, B) <- (3, C)
+    ///     <- (10, A) <- (4, B) <- (3, C)
+    ///     <- (4, B) <- (3, C)
+    /// ]
+    ///
+    /// output:
+    /// {
+    ///     10: [0, 1],
+    ///     4:  [2],
+    /// }
+    fn heads_map(&mut self) -> HashMap<Id, TinyVec<[RowId; EXPECTED_REPLICAS]>> {
         let capacity = self.resolved_iters.len();
         self.peek_heads()
             .fold(HashMap::with_capacity(capacity), |mut map, (row, id)| {
@@ -285,30 +385,14 @@ where
     /// Advances the rows and returns the item in the first of them
     ///
     /// Minimum len of `row_ids` should be the resolution count.
-    fn advance_rows(&mut self, row_ids: &[usize]) -> Option<Item> {
+    fn advance_rows(&mut self, row_ids: &[RowId]) -> Option<Item> {
         debug_assert!(row_ids.len() >= self.resolution_count);
 
         let mut merged_item = None;
-        for (position, row) in row_ids.iter().with_position() {
-            match position {
-                Position::First => {
-                    // use this one to return
-                    merged_item = self.resolved_iters[*row].next();
-                }
-                Position::Only => {
-                    debug_assert!(
-                        false,
-                        "this should never happen, 
-                        because it means that we got only one row to advance,
-                        while the minimum is 2 to have majority with 2 or more replicas"
-                    )
-                }
-                _ => {
-                    // discard the rest of equal items
-                    self.resolved_iters[*row].next();
-                }
-            }
+        for row_id in row_ids {
+            merged_item = self.resolved_iters[*row_id].next();
         }
+
         merged_item
     }
 }
@@ -323,8 +407,19 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         // Choose the item that appears the most times in the heads
-        let chosen_rows = self.heads_map().into_values().max_by_key(|kv| kv.len())?;
 
+        // heads_map: (id to source row_ids)
+        // {
+        //     10: [0, 1],
+        //     4:  [2],
+        // }
+        let heads_map = self.heads_map();
+
+        // Most frequent row IDs - Assume most frequent item is the one to be resolved next
+        // [0, 1]
+        let chosen_rows = heads_map.into_values().max_by_key(|kv| kv.len())?;
+
+        // Pull the item from the chosen rows (return only one of them)
         self.advance_rows(&chosen_rows)
     }
 }
