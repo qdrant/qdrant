@@ -858,7 +858,7 @@ message FieldCondition {
 
 message HashRingCondition {
   HashRing ring = 1;
-  repeated uint32 shard_ids = 2;
+  repeated uint32 match_shard_ids = 2;
 }
 
 message HashRing {

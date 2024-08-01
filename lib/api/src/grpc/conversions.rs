@@ -1412,11 +1412,11 @@ impl TryFrom<HashRingCondition> for segment::types::HashRingCondition {
             .ok_or_else(|| Status::invalid_argument("HashRingCondition::ring is None"))?
             .into();
 
-        let shard_ids = cond.shard_ids.into_iter().collect();
+        let shard_ids = cond.match_shard_ids.into_iter().collect();
 
         Ok(Self {
             ring,
-            shard_ids,
+            match_shard_ids: shard_ids,
             is_local_only: false,
         })
     }
@@ -1428,7 +1428,7 @@ impl From<segment::types::HashRingCondition> for HashRingCondition {
 
         Self {
             ring: Some(cond.ring.into()),
-            shard_ids: cond.shard_ids.into_iter().collect(),
+            match_shard_ids: cond.match_shard_ids.into_iter().collect(),
         }
     }
 }

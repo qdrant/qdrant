@@ -229,23 +229,33 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::HashRingCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
+        // `HashRingCondition` *must* contain hash ring
         let Some(ring) = &self.ring else {
+            // There's no point making further checks, if there's no hash ring. Return immediately.
             let mut errors = ValidationErrors::new();
             errors.add("ring", ValidationError::new("hash ring can't be None"));
             return Err(errors);
         };
 
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
+        //
+        // There's no point checking that hash ring contains all `match_shard_ids`, if there are
+        // no nodes in the hash ring. Return immideately.
         ValidationErrors::merge(Ok(()), "ring", ring.validate())?;
 
+        // Hash ring in `HashRingCondition` *must* contain all `match_shard_ids`, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         let invalid_shard_ids: Vec<_> = self
-            .shard_ids
+            .match_shard_ids
             .iter()
             .filter(|shard_id| !ring.nodes.contains(shard_id))
             .collect();
 
         if !invalid_shard_ids.is_empty() {
+            // Explicitly construct `ValidationError`, to include invalid shard IDs into the error
             let error = format!(
-                "all shard IDs have to be in the hash ring: {:?}",
+                "hash ring must contain all shard IDs being matched, missing shard IDs {:?}",
                 invalid_shard_ids.as_slice(),
             );
 
@@ -266,6 +276,8 @@ impl Validate for grpc::HashRingCondition {
 
 impl Validate for grpc::HashRing {
     fn validate(&self) -> Result<(), ValidationErrors> {
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         if !self.nodes.is_empty() {
             Ok(())
         } else {

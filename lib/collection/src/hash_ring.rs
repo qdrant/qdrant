@@ -23,7 +23,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     ///
     /// The hashring is created with a fair distribution of points and `FAIR_HASH_RING_SCALE` scale.
     pub fn single() -> Self {
-        Self::Single(Inner::fair(common::defaults::FAIR_HASH_RING_SCALE))
+        Self::Single(Inner::fair(scaled_hashring::DEFAULT_FAIR_HASH_RING_SCALE))
     }
 
     /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
@@ -31,8 +31,8 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
     /// The hashring is created with a fair distribution of points and `FAIR_HASH_RING_SCALE` scale.
     pub fn resharding(shard: T, direction: ReshardingDirection) -> Self {
         let mut ring = Self::Resharding {
-            old: Inner::fair(common::defaults::FAIR_HASH_RING_SCALE),
-            new: Inner::fair(common::defaults::FAIR_HASH_RING_SCALE),
+            old: Inner::fair(scaled_hashring::DEFAULT_FAIR_HASH_RING_SCALE),
+            new: Inner::fair(scaled_hashring::DEFAULT_FAIR_HASH_RING_SCALE),
         };
 
         ring.start_resharding(shard, direction);

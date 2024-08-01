@@ -16,3 +16,7 @@ workspace = true
 hashring = "0.3"
 schemars = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+rstest = "0.21.0"
+serde_json = { workspace = true }

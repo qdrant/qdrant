@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::hash;
 
+/// Default number of virtual nodes for the `ScaledHashRing::Fair` used in Qdrant code.
 pub const DEFAULT_FAIR_HASH_RING_SCALE: u32 = 100;
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -158,8 +159,17 @@ impl Default for Scale {
     }
 }
 
+impl From<u32> for Scale {
+    fn from(scale: u32) -> Self {
+        Self::Fair(scale)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -212,5 +222,79 @@ mod tests {
                 assert_eq!(*y, 4);
             }
         }
+    }
+
+    // Serialization format for `ScaledHashRing` is pretty trivial... *but* we are using
+    // `#[serde(from/into)]` with `SerdeHelper`, so this test ensures we convert stuff properly.
+    #[rstest]
+    #[case::empty_raw_hashring(Scale::Raw, 0)]
+    #[case::empty_fair_hashring(100, 0)]
+    #[case::empty_fair_hashring_scale_1(1, 0)]
+    #[case::raw_hashring(Scale::Raw, 5)]
+    #[case::fair_hashring(100, 5)]
+    #[case::fair_hashring_scale_1(1, 5)]
+    fn test_hashring_serde(#[case] scale: impl Into<Scale>, #[case] nodes: u32) {
+        let scale = scale.into();
+
+        let expected_hashring = hashring(scale, nodes);
+        let expected_json = json(scale, nodes);
+
+        test_serialization(expected_hashring.clone(), &expected_json);
+        test_deserialization(expected_json, &expected_hashring);
+    }
+
+    // There's a special-case simplification in `SerdeHelper`: `Scale::Fair(0)` is deserialized
+    // as `Scale::Raw`. This test enforces this behavior, to ensure we notice if/when it is changed.
+    #[rstest]
+    #[case::empty(0)]
+    #[case::non_empty(5)]
+    fn test_fair_hashring_scale_0_deserialization(#[case] nodes: u32) {
+        test_deserialization(json(0, nodes), &hashring(Scale::Raw, nodes));
+    }
+
+    fn test_serialization(hashring: ScaledHashRing<u32>, expected_json: &serde_json::Value) {
+        let mut serialized_json =
+            serde_json::to_value(hashring).expect("ScaledHashRing can be serialized to JSON");
+
+        serialized_json
+            .get_mut("nodes")
+            .and_then(|nodes| nodes.as_array_mut())
+            .map(|nodes| nodes.sort_unstable_by_key(|node| node.as_u64()));
+
+        assert_eq!(&serialized_json, expected_json);
+    }
+
+    fn test_deserialization(json: serde_json::Value, expected_hashring: &ScaledHashRing<u32>) {
+        let deserialized_hashring: ScaledHashRing<u32> =
+            serde_json::from_value(json).expect("ScaledHashRing can be deserialized from JSON");
+
+        assert_eq!(&deserialized_hashring, expected_hashring);
+    }
+
+    fn hashring(scale: impl Into<Scale>, nodes: u32) -> ScaledHashRing<u32> {
+        let mut ring = match scale.into() {
+            Scale::Raw => ScaledHashRing::raw(),
+            Scale::Fair(scale) => ScaledHashRing::fair(scale),
+        };
+
+        for node in 0..nodes {
+            ring.add(node);
+        }
+
+        ring
+    }
+
+    fn json(scale: impl Into<Scale>, nodes: u32) -> serde_json::Value {
+        let scale = match scale.into() {
+            Scale::Raw => json!("raw"),
+            Scale::Fair(scale) => json!(scale),
+        };
+
+        let nodes: Vec<_> = (0..nodes).collect();
+
+        json!({
+            "scale": scale,
+            "nodes": nodes,
+        })
     }
 }

@@ -1973,7 +1973,7 @@ impl NestedCondition {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct HashRingCondition {
     pub ring: scaled_hashring::ScaledHashRing<ShardId>,
-    pub shard_ids: HashSet<ShardId>,
+    pub match_shard_ids: HashSet<ShardId>,
     #[serde(skip)]
     pub is_local_only: bool,
 }
@@ -1982,7 +1982,7 @@ impl HashRingCondition {
     pub fn new(ring: scaled_hashring::ScaledHashRing<ShardId>, shard_id: ShardId) -> Self {
         Self {
             ring,
-            shard_ids: HashSet::from_iter([shard_id]),
+            match_shard_ids: HashSet::from_iter([shard_id]),
             is_local_only: false,
         }
     }
@@ -1995,7 +1995,7 @@ impl HashRingCondition {
     pub fn check(&self, point_id: PointIdType) -> bool {
         self.ring
             .get(&point_id)
-            .map_or(false, |shard_id| self.shard_ids.contains(shard_id))
+            .map_or(false, |shard_id| self.match_shard_ids.contains(shard_id))
     }
 
     pub fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation {
@@ -2016,22 +2016,29 @@ impl Validate for HashRingCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let mut errors = ValidationErrors::new();
 
+        // Hash ring in `HashRingCondition` *must* contain some nodes, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         if self.ring.is_empty() {
+            // There's no point checking that hash ring contains all `match_shard_ids`,
+            // if there are no nodes in the hash ring. Return immideately.
             errors.add("ring", ValidationError::new("hash ring must contain nodes"));
             return Err(errors);
         }
 
+        // Hash ring in `HashRingCondition` *must* contain all `match_shard_ids`, because otherwise
+        // it would be way too easy to, e.g., wipe your whole shard with a faulty filter.
         let nodes = self.ring.unique_nodes();
 
         let invalid_shard_ids: Vec<_> = self
-            .shard_ids
+            .match_shard_ids
             .iter()
             .filter(|shard_id| !nodes.contains(shard_id))
             .collect();
 
         if !invalid_shard_ids.is_empty() {
+            // Explicitly construct `ValidationError`, to include invalid shard IDs into the error
             let error = format!(
-                "all shard IDs have to be in the hash ring: {:?}",
+                "hash ring must contain all shard IDs being matched, missing shard IDs {:?}",
                 invalid_shard_ids.as_slice()
             );
 

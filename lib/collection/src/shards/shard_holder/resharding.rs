@@ -367,7 +367,7 @@ impl ShardHolder {
     ///
     /// `None` if resharding is not active or if the read hash ring is not committed yet.
     pub fn resharding_filter(&self) -> Option<Filter> {
-        let cond = self.resharding_hash_ring_condition()?.local_only();
+        let cond = self.resharding_hash_ring_condition()?;
         let filter = Filter::new_must_not(Condition::HashRing(cond));
         Some(filter)
     }
@@ -393,7 +393,7 @@ impl ShardHolder {
             HashRing::Single(ring) => ring,
         };
 
-        Some(HashRingCondition::new(ring.clone(), state.shard_id))
+        Some(HashRingCondition::new(ring.clone(), state.shard_id).local_only())
     }
 }
 

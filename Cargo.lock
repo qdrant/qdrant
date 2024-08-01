@@ -5304,8 +5304,10 @@ name = "scaled-hashring"
 version = "0.0.0"
 dependencies = [
  "hashring",
+ "rstest",
  "schemars",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

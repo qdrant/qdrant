@@ -25,9 +25,6 @@ lazy_static! {
     pub static ref POOL_KEEP_LIMIT: usize = cpu::get_num_cpus().clamp(16, 128);
 }
 
-/// Default number of virtual nodes for the `ScaledHashRing::Fair` used in Qdrant code.
-pub const FAIR_HASH_RING_SCALE: u32 = 100;
-
 /// Default value of CPU budget parameter.
 ///
 /// Dynamic based on CPU size.

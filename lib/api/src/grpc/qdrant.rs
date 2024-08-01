@@ -5606,7 +5606,7 @@ pub struct HashRingCondition {
     #[prost(message, optional, tag = "1")]
     pub ring: ::core::option::Option<HashRing>,
     #[prost(uint32, repeated, tag = "2")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u32>,
+    pub match_shard_ids: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
