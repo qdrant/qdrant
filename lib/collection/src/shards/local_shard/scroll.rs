@@ -281,10 +281,10 @@ impl LocalShard {
 
         let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
 
-        if availability.is_empty() {
+        // Shortcut if all segments are empty
+        if availability.iter().all(|&count| count == 0) {
             return Ok(Vec::new());
         }
-
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
         let distribution = WeightedIndex::new(availability).map_err(|err| {
             CollectionError::service_error(format!(
