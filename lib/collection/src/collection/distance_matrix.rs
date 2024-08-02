@@ -71,9 +71,12 @@ impl Collection {
                         NamedVectorStruct::from(multi)
                     }
                     VectorStructInternal::Named(named_vectors) => {
-                        // expect is safe because we just retrieved the vector
-                        let v = named_vectors.get(&using).expect("Vector not found").clone();
-                        NamedVectorStruct::new_from_vector(v, using.clone())
+                        // TODO make sure to sample only points with the vector (need HasVector condition)
+                        if let Some(v) = named_vectors.get(&using) {
+                            NamedVectorStruct::new_from_vector(v.clone(), using.clone())
+                        } else {
+                            continue;
+                        }
                     }
                 };
 
