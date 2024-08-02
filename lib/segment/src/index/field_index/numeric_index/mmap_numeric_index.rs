@@ -1,3 +1,4 @@
+use std::fs::{create_dir_all, remove_dir};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
@@ -77,6 +78,8 @@ impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIt
 
 impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     pub fn build(dynamic_index: DynamicNumericIndex<T>, path: &Path) -> OperationResult<Self> {
+        create_dir_all(path)?;
+
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
@@ -164,10 +167,11 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
     pub fn clear(self) -> OperationResult<()> {
         let files = self.files();
-        drop(self);
+        let Self { path, .. } = self;
         for file in files {
             std::fs::remove_file(file)?;
         }
+        let _ = remove_dir(path);
         Ok(())
     }
 
