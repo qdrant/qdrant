@@ -34,7 +34,7 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 
 /// Whitelist for GRPC endpoints in metrics output.
 ///
-/// Contains selection of search, recommend and upsert endpoints.
+/// Contains selection of search, recommend, scroll and upsert endpoints.
 ///
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
