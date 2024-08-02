@@ -829,10 +829,10 @@ mod tests {
     #[test]
     fn test_index_non_ascending_insertion() {
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(&temp_dir.path());
+        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path());
         builder.init().unwrap();
 
-        let data = vec![vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
+        let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
         for (idx, values) in data.iter().enumerate().rev() {
             let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
