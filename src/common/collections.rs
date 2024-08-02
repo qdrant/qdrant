@@ -6,9 +6,7 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation, ReshardingDirection, RestartTransfer, RestartTransferOperation,
-    StartResharding,
+    ClusterOperations, ReshardingDirection, RestartTransfer, StartResharding,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -241,7 +239,7 @@ pub async fn do_update_collection_cluster(
         .await?;
 
     match operation {
-        ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
+        ClusterOperations::MoveShard(move_shard) => {
             // validate shard to move
             if !collection.contains_shard(move_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
@@ -275,7 +273,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::ReplicateShard(ReplicateShardOperation { replicate_shard }) => {
+        ClusterOperations::ReplicateShard(replicate_shard) => {
             // validate shard to move
             if !collection.contains_shard(replicate_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
@@ -311,7 +309,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::AbortTransfer(AbortTransferOperation { abort_transfer }) => {
+        ClusterOperations::AbortTransfer(abort_transfer) => {
             let transfer = ShardTransferKey {
                 shard_id: abort_transfer.shard_id,
                 to_shard_id: abort_transfer.to_shard_id,
@@ -342,7 +340,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::DropReplica(DropReplicaOperation { drop_replica }) => {
+        ClusterOperations::DropReplica(drop_replica) => {
             if !collection.contains_shard(drop_replica.shard_id).await {
                 return Err(StorageError::BadRequest {
                     description: format!(
@@ -369,9 +367,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::CreateShardingKey(create_sharding_key_op) => {
-            let create_sharding_key = create_sharding_key_op.create_sharding_key;
-
+        ClusterOperations::CreateShardingKey(create_sharding_key) => {
             // Validate that:
             // - proper sharding method is used
             // - key does not exist yet
@@ -442,8 +438,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::DropShardingKey(drop_sharding_key_op) => {
-            let drop_sharding_key = drop_sharding_key_op.drop_sharding_key;
+        ClusterOperations::DropShardingKey(drop_sharding_key) => {
             // Validate that:
             // - proper sharding method is used
             // - key does exist
@@ -480,7 +475,7 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::RestartTransfer(RestartTransferOperation { restart_transfer }) => {
+        ClusterOperations::RestartTransfer(restart_transfer) => {
             // TODO(reshading): Deduplicate resharding operations handling?
 
             let RestartTransfer {
@@ -524,12 +519,12 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::StartResharding(op) => {
+        ClusterOperations::StartResharding(start_resharding) => {
             let StartResharding {
                 direction,
                 peer_id,
                 shard_key,
-            } = op.start_resharding;
+            } = start_resharding;
 
             let collection_state = collection.state().await;
 

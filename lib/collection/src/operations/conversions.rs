@@ -37,10 +37,8 @@ use crate::config::{
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
-    AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
-    CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
-    MoveShard, MoveShardOperation, Replica, ReplicateShard, ReplicateShardOperation,
-    RestartTransfer, RestartTransferOperation,
+    AbortShardTransfer, ClusterOperations, CreateShardingKey, DropShardingKey, MoveShard, Replica,
+    ReplicateShard, RestartTransfer,
 };
 use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -1733,50 +1731,26 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
 
     fn try_from(value: ClusterOperationsPb) -> Result<Self, Self::Error> {
         Ok(match value {
-            ClusterOperationsPb::MoveShard(op) => {
-                ClusterOperations::MoveShard(MoveShardOperation {
-                    move_shard: op.try_into()?,
-                })
-            }
+            ClusterOperationsPb::MoveShard(op) => ClusterOperations::MoveShard(op.try_into()?),
             ClusterOperationsPb::ReplicateShard(op) => {
-                ClusterOperations::ReplicateShard(ReplicateShardOperation {
-                    replicate_shard: op.try_into()?,
-                })
+                ClusterOperations::ReplicateShard(op.try_into()?)
             }
             ClusterOperationsPb::AbortTransfer(op) => {
-                ClusterOperations::AbortTransfer(AbortTransferOperation {
-                    abort_transfer: op.try_into()?,
-                })
+                ClusterOperations::AbortTransfer(op.try_into()?)
             }
-            ClusterOperationsPb::DropReplica(op) => {
-                ClusterOperations::DropReplica(DropReplicaOperation {
-                    drop_replica: Replica {
-                        shard_id: op.shard_id,
-                        peer_id: op.peer_id,
-                    },
-                })
-            }
-            Operation::CreateShardKey(op) => {
-                ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-                    create_sharding_key: op.try_into()?,
-                })
-            }
-            Operation::DeleteShardKey(op) => {
-                ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-                    drop_sharding_key: op.try_into()?,
-                })
-            }
-            Operation::RestartTransfer(op) => {
-                ClusterOperations::RestartTransfer(RestartTransferOperation {
-                    restart_transfer: RestartTransfer {
-                        shard_id: op.shard_id,
-                        to_shard_id: op.to_shard_id,
-                        from_peer_id: op.from_peer_id,
-                        to_peer_id: op.to_peer_id,
-                        method: op.method.try_into()?,
-                    },
-                })
-            }
+            ClusterOperationsPb::DropReplica(op) => ClusterOperations::DropReplica(Replica {
+                shard_id: op.shard_id,
+                peer_id: op.peer_id,
+            }),
+            Operation::CreateShardKey(op) => ClusterOperations::CreateShardingKey(op.try_into()?),
+            Operation::DeleteShardKey(op) => ClusterOperations::DropShardingKey(op.try_into()?),
+            Operation::RestartTransfer(op) => ClusterOperations::RestartTransfer(RestartTransfer {
+                shard_id: op.shard_id,
+                to_shard_id: op.to_shard_id,
+                from_peer_id: op.from_peer_id,
+                to_peer_id: op.to_peer_id,
+                method: op.method.try_into()?,
+            }),
         })
     }
 }

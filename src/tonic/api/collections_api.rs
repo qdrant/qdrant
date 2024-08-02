@@ -11,9 +11,7 @@ use api::grpc::qdrant::{
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
     UpdateCollection, UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
 };
-use collection::operations::cluster_ops::{
-    ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
-};
+use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::types::CollectionsAliasesResponse;
 use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
@@ -243,14 +241,10 @@ impl Collections for CollectionsService {
 
         let timeout = timeout.map(std::time::Duration::from_secs);
 
-        let operation = ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-            create_sharding_key: request.try_into()?,
-        });
-
         let result = do_update_collection_cluster(
             self.dispatcher.as_ref(),
             collection_name,
-            operation,
+            ClusterOperations::CreateShardingKey(request.try_into()?),
             access,
             timeout,
         )
@@ -278,14 +272,10 @@ impl Collections for CollectionsService {
 
         let timeout = timeout.map(std::time::Duration::from_secs);
 
-        let operation = ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-            drop_sharding_key: request.try_into()?,
-        });
-
         let result = do_update_collection_cluster(
             self.dispatcher.as_ref(),
             collection_name,
-            operation,
+            ClusterOperations::DropShardingKey(request.try_into()?),
             access,
             timeout,
         )

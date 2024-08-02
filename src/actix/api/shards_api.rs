@@ -1,9 +1,6 @@
 use actix_web::{post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::operations::cluster_ops::{
-    ClusterOperations, CreateShardingKey, CreateShardingKeyOperation, DropShardingKey,
-    DropShardingKeyOperation,
-};
+use collection::operations::cluster_ops::{ClusterOperations, CreateShardingKey, DropShardingKey};
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -29,14 +26,10 @@ async fn create_shard_key(
 
     let request = request.into_inner();
 
-    let operation = ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-        create_sharding_key: request,
-    });
-
     let response = do_update_collection_cluster(
         &dispatcher,
         collection.name.clone(),
-        operation,
+        ClusterOperations::CreateShardingKey(request),
         access,
         wait_timeout,
     )
@@ -59,14 +52,10 @@ async fn delete_shard_key(
     let dispatcher = dispatcher.into_inner();
     let request = request.into_inner();
 
-    let operation = ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-        drop_sharding_key: request,
-    });
-
     let response = do_update_collection_cluster(
         &dispatcher,
         collection.name.clone(),
-        operation,
+        ClusterOperations::DropShardingKey(request),
         access,
         wait_timeout,
     )

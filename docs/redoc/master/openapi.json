@@ -10723,40 +10723,99 @@
         }
       },
       "ClusterOperations": {
-        "anyOf": [
+        "oneOf": [
           {
-            "$ref": "#/components/schemas/MoveShardOperation"
+            "description": "Move shard to a different peer",
+            "type": "object",
+            "required": [
+              "move_shard"
+            ],
+            "properties": {
+              "move_shard": {
+                "$ref": "#/components/schemas/MoveShard"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/ReplicateShardOperation"
+            "description": "Replicate shard to a different peer",
+            "type": "object",
+            "required": [
+              "replicate_shard"
+            ],
+            "properties": {
+              "replicate_shard": {
+                "$ref": "#/components/schemas/ReplicateShard"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/AbortTransferOperation"
+            "description": "Abort currently running shard moving operation",
+            "type": "object",
+            "required": [
+              "abort_transfer"
+            ],
+            "properties": {
+              "abort_transfer": {
+                "$ref": "#/components/schemas/AbortShardTransfer"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/DropReplicaOperation"
+            "description": "Restart transfer",
+            "type": "object",
+            "required": [
+              "restart_transfer"
+            ],
+            "properties": {
+              "restart_transfer": {
+                "$ref": "#/components/schemas/RestartTransfer"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/CreateShardingKeyOperation"
+            "description": "Drop replica of a shard from a peer",
+            "type": "object",
+            "required": [
+              "drop_replica"
+            ],
+            "properties": {
+              "drop_replica": {
+                "$ref": "#/components/schemas/Replica"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/DropShardingKeyOperation"
+            "description": "Create a custom shard partition for a given key",
+            "type": "object",
+            "required": [
+              "create_sharding_key"
+            ],
+            "properties": {
+              "create_sharding_key": {
+                "$ref": "#/components/schemas/CreateShardingKey"
+              }
+            },
+            "additionalProperties": false
           },
           {
-            "$ref": "#/components/schemas/RestartTransferOperation"
+            "description": "Drop a custom shard partition for a given key",
+            "type": "object",
+            "required": [
+              "drop_sharding_key"
+            ],
+            "properties": {
+              "drop_sharding_key": {
+                "$ref": "#/components/schemas/DropShardingKey"
+              }
+            },
+            "additionalProperties": false
           }
         ]
-      },
-      "MoveShardOperation": {
-        "type": "object",
-        "required": [
-          "move_shard"
-        ],
-        "properties": {
-          "move_shard": {
-            "$ref": "#/components/schemas/MoveShard"
-          }
-        }
       },
       "MoveShard": {
         "type": "object",
@@ -10791,17 +10850,6 @@
                 "nullable": true
               }
             ]
-          }
-        }
-      },
-      "ReplicateShardOperation": {
-        "type": "object",
-        "required": [
-          "replicate_shard"
-        ],
-        "properties": {
-          "replicate_shard": {
-            "$ref": "#/components/schemas/ReplicateShard"
           }
         }
       },
@@ -10841,17 +10889,6 @@
           }
         }
       },
-      "AbortTransferOperation": {
-        "type": "object",
-        "required": [
-          "abort_transfer"
-        ],
-        "properties": {
-          "abort_transfer": {
-            "$ref": "#/components/schemas/AbortShardTransfer"
-          }
-        }
-      },
       "AbortShardTransfer": {
         "type": "object",
         "required": [
@@ -10877,14 +10914,32 @@
           }
         }
       },
-      "DropReplicaOperation": {
+      "RestartTransfer": {
         "type": "object",
         "required": [
-          "drop_replica"
+          "from_peer_id",
+          "method",
+          "shard_id",
+          "to_peer_id"
         ],
         "properties": {
-          "drop_replica": {
-            "$ref": "#/components/schemas/Replica"
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "from_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "method": {
+            "$ref": "#/components/schemas/ShardTransferMethod"
           }
         }
       },
@@ -10904,17 +10959,6 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
-          }
-        }
-      },
-      "CreateShardingKeyOperation": {
-        "type": "object",
-        "required": [
-          "create_sharding_key"
-        ],
-        "properties": {
-          "create_sharding_key": {
-            "$ref": "#/components/schemas/CreateShardingKey"
           }
         }
       },
@@ -10953,17 +10997,6 @@
           }
         }
       },
-      "DropShardingKeyOperation": {
-        "type": "object",
-        "required": [
-          "drop_sharding_key"
-        ],
-        "properties": {
-          "drop_sharding_key": {
-            "$ref": "#/components/schemas/DropShardingKey"
-          }
-        }
-      },
       "DropShardingKey": {
         "type": "object",
         "required": [
@@ -10972,46 +11005,6 @@
         "properties": {
           "shard_key": {
             "$ref": "#/components/schemas/ShardKey"
-          }
-        }
-      },
-      "RestartTransferOperation": {
-        "type": "object",
-        "required": [
-          "restart_transfer"
-        ],
-        "properties": {
-          "restart_transfer": {
-            "$ref": "#/components/schemas/RestartTransfer"
-          }
-        }
-      },
-      "RestartTransfer": {
-        "type": "object",
-        "required": [
-          "from_peer_id",
-          "method",
-          "shard_id",
-          "to_peer_id"
-        ],
-        "properties": {
-          "shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
-          },
-          "from_peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "to_peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
-          },
-          "method": {
-            "$ref": "#/components/schemas/ShardTransferMethod"
           }
         }
       },
