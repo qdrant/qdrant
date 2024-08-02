@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
-use crate::hash_ring::HashRing;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct, PointSyncOperation,
 };
@@ -43,7 +43,7 @@ pub struct ForwardProxyShard {
     shard_id: ShardId,
     pub(crate) wrapped_shard: LocalShard,
     pub(crate) remote_shard: RemoteShard,
-    resharding_hash_ring: Option<HashRing>,
+    resharding_hash_ring: Option<HashRingRouter>,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
@@ -54,7 +54,7 @@ impl ForwardProxyShard {
         shard_id: ShardId,
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        resharding_hash_ring: Option<HashRing>,
+        resharding_hash_ring: Option<HashRingRouter>,
     ) -> Self {
         // Validate that `ForwardProxyShard` initialized correctly
 
@@ -116,7 +116,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        hashring_filter: Option<&HashRing>,
+        hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {

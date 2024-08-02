@@ -13,7 +13,7 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
-use crate::hash_ring::HashRing;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
 
@@ -285,7 +285,7 @@ impl Validate for Batch {
 }
 
 impl SplitByShard for PointInsertOperationsInternal {
-    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         match self {
             PointInsertOperationsInternal::PointsBatch(batch) => batch
                 .split_by_shard(ring)
@@ -364,7 +364,7 @@ impl Validate for PointOperations {
 }
 
 impl SplitByShard for Batch {
-    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         let batch = self;
         let mut batch_by_shard: HashMap<ShardId, Batch> = HashMap::new();
         let Batch {
@@ -513,13 +513,13 @@ impl SplitByShard for Batch {
 }
 
 impl SplitByShard for Vec<PointStruct> {
-    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         split_iter_by_shard(self, |point| point.id, ring)
     }
 }
 
 impl SplitByShard for PointOperations {
-    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         match self {
             PointOperations::UpsertPoints(upsert_points) => upsert_points
                 .split_by_shard(ring)

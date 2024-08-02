@@ -6,7 +6,7 @@ use std::sync::Arc;
 use segment::types::{Condition, Filter, ShardKey};
 
 use super::ShardHolder;
-use crate::hash_ring::{self, HashRing};
+use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
@@ -369,12 +369,12 @@ impl ShardHolder {
     /// `None` if resharding is not active or if the read hash ring is not committed yet.
     pub fn resharding_filter(&self) -> Option<Filter> {
         let filter = self.resharding_filter_impl()?;
-        let filter = Filter::new_must_not(Condition::Resharding(Arc::new(filter)));
+        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
         Some(filter)
     }
 
     #[inline]
-    pub fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
+    pub fn resharding_filter_impl(&self) -> Option<hash_ring::HashRingFilter> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {
@@ -390,18 +390,18 @@ impl ShardHolder {
         };
 
         let ring = match ring {
-            HashRing::Resharding { new, .. } => new,
-            HashRing::Single(ring) => ring,
+            HashRingRouter::Resharding { new, .. } => new,
+            HashRingRouter::Single(ring) => ring,
         };
 
-        Some(hash_ring::Filter::new(ring.clone(), state.shard_id))
+        Some(hash_ring::HashRingFilter::new(ring.clone(), state.shard_id))
     }
 }
 
 fn get_ring<'a>(
-    rings: &'a mut HashMap<Option<ShardKey>, HashRing>,
+    rings: &'a mut HashMap<Option<ShardKey>, HashRingRouter>,
     shard_key: &'_ Option<ShardKey>,
-) -> CollectionResult<&'a mut HashRing> {
+) -> CollectionResult<&'a mut HashRingRouter> {
     rings.get_mut(shard_key).ok_or_else(|| {
         CollectionError::bad_request(format!(
             "{} hashring does not exist",
@@ -412,7 +412,7 @@ fn get_ring<'a>(
 
 fn assert_resharding_state_consistency(
     state: &Option<ReshardState>,
-    ring: &HashRing,
+    ring: &HashRingRouter,
     shard_key: &Option<ShardKey>,
 ) {
     match state.as_ref().map(|state| state.stage) {

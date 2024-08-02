@@ -121,7 +121,7 @@ pub fn condition_converter<'a>(
                 })
             })
         }
-        Condition::Resharding(cond) => {
+        Condition::CustomIdChecker(cond) => {
             let segment_ids: HashSet<_> = id_tracker
                 .iter_external()
                 .filter(|&point_id| cond.check(point_id))
