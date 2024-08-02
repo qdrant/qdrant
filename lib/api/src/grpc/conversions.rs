@@ -1134,7 +1134,11 @@ fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>)
             if conditions.is_empty() {
                 vec![]
             } else {
-                conditions.into_iter().map(Condition::from).collect()
+                conditions
+                    .into_iter()
+                    .map(Condition::from)
+                    .filter(|c| c.condition_one_of.is_some()) // Filter out empty conditions
+                    .collect()
             }
         }
     }
@@ -1240,7 +1244,8 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::Nested(nested) => {
                 Some(ConditionOneOf::Nested(NestedCondition::from(nested.nested)))
             }
-
+            // This type of condition should be only applied locally
+            // and never be sent to the other peers
             segment::types::Condition::CustomIdChecker(_) => None,
         };
 
