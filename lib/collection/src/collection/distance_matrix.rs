@@ -1,10 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use segment::data_types::vectors::{
-    NamedMultiDenseVector, NamedVectorStruct, VectorStructInternal,
-};
-use segment::types::{Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
+use segment::data_types::vectors::NamedVectorStruct;
+use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
 
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -18,6 +16,9 @@ struct DistanceMatrixResponse {
     sample_ids: Vec<PointIdType>,   // sampled point ids
     nearest: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
 }
+
+// TODO introduce HasVector condition to avoid iterative sampling
+const SAMPLING_TRIES: usize = 3;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)] // TODO use request object
@@ -35,81 +36,99 @@ impl Collection {
             return Ok(Default::default());
         }
 
-        // Sample points with query API
-        let sampling_query = ShardQueryRequest {
-            prefetches: vec![],
-            query: Some(ScoringQuery::Sample(Sample::Random)),
-            filter: filter.cloned(),
-            score_threshold: None,
-            limit: sample_size,
-            offset: 0,
-            params: None,
-            with_vector: WithVector::Selector(vec![using.clone()]), // retrieve the vector
-            with_payload: Default::default(),
-        };
-        let sampling_response = self
-            .query(
-                sampling_query,
-                read_consistency,
-                shard_selector.clone(),
-                timeout,
-            )
-            .await?;
-        let sampled_point_ids: Vec<_> = sampling_response.iter().map(|point| point.id).collect();
+        let mut sampled_points: Vec<(_, _)> = Vec::with_capacity(sample_size);
 
-        // Perform nearest neighbor search for each sampled point
-        let mut searches = Vec::with_capacity(sampling_response.len());
-        for point in sampling_response {
-            if let Some(vector) = point.vector {
-                let named_vector: NamedVectorStruct = match vector {
-                    VectorStructInternal::Single(v) => NamedVectorStruct::from(v),
-                    VectorStructInternal::MultiDense(v) => {
-                        let multi = NamedMultiDenseVector {
-                            name: using.clone(),
-                            vector: v,
-                        };
-                        NamedVectorStruct::from(multi)
-                    }
-                    VectorStructInternal::Named(named_vectors) => {
-                        // TODO make sure to sample only points with the vector (need HasVector condition)
-                        if let Some(v) = named_vectors.get(&using) {
-                            NamedVectorStruct::new_from_vector(v.clone(), using.clone())
-                        } else {
-                            continue;
-                        }
-                    }
-                };
+        // Sampling multiple times because we might not have enough points with the named vector
+        for _ in 0..SAMPLING_TRIES {
+            // check if we have enough samples with right named vector
+            if sampled_points.len() >= sample_size {
+                break;
+            }
 
-                // nearest query on the sample vector
-                let query = QueryEnum::Nearest(named_vector);
-                // exclude the point itself from the possible points to score
-                let req_ids: HashSet<_> = sampled_point_ids
-                    .iter()
-                    .filter(|id| *id != &point.id)
-                    .cloned()
-                    .collect();
-                let only_ids = Filter::new_must(segment::types::Condition::HasId(
-                    HasIdCondition::from(req_ids),
-                ));
-                // update filter with the only_ids
-                let req_filter = Some(
+            // exclude already sampled points
+            let exclude_ids: HashSet<_> = sampled_points.iter().map(|(id, _)| *id).collect();
+            let filter = if exclude_ids.is_empty() {
+                filter.cloned()
+            } else {
+                let exclude_ids = Filter::new_must_not(Condition::HasId(exclude_ids.into()));
+                Some(
                     filter
                         .as_ref()
-                        .map(|filter| filter.merge(&only_ids))
-                        .unwrap_or(only_ids),
-                );
-                searches.push(CoreSearchRequest {
-                    query,
-                    filter: req_filter,
-                    score_threshold: None,
-                    limit: limit_per_sample,
-                    offset: 0,
-                    params: None,
-                    with_vector: None,
-                    with_payload: None,
-                });
-            }
+                        .map(|filter| filter.merge(&exclude_ids))
+                        .unwrap_or(exclude_ids),
+                )
+            };
+
+            // Sample points with query API
+            let sampling_query = ShardQueryRequest {
+                prefetches: vec![],
+                query: Some(ScoringQuery::Sample(Sample::Random)),
+                filter,
+                score_threshold: None,
+                limit: sample_size,
+                offset: 0,
+                params: None,
+                with_vector: WithVector::Selector(vec![using.clone()]), // retrieve the vector
+                with_payload: Default::default(),
+            };
+
+            let sampling_response = self
+                .query(
+                    sampling_query.clone(),
+                    read_consistency,
+                    shard_selector.clone(),
+                    timeout,
+                )
+                .await?;
+
+            // select only points with the queried named vector
+            let filtered = sampling_response.into_iter().filter_map(|p| {
+                p.vector
+                    .as_ref()
+                    .and_then(|v| v.get(&using))
+                    .map(|v| (p.id, v.to_owned()))
+            });
+
+            sampled_points.extend(filtered);
         }
+
+        sampled_points.truncate(sample_size);
+        let sampled_point_ids: Vec<_> = sampled_points.iter().map(|(id, _)| *id).collect();
+
+        // Perform nearest neighbor search for each sampled point
+        let mut searches = Vec::with_capacity(sampled_points.len());
+        for (point_id, vector) in sampled_points {
+            // nearest query on the sample vector
+            let named_vector = NamedVectorStruct::new_from_vector(vector, using.clone());
+            let query = QueryEnum::Nearest(named_vector);
+
+            // exclude the point itself from the possible points to score
+            let req_ids: HashSet<_> = sampled_point_ids
+                .iter()
+                .filter(|id| *id != &point_id)
+                .cloned()
+                .collect();
+            let only_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(req_ids)));
+
+            // update filter with the only_ids
+            let req_filter = Some(
+                filter
+                    .as_ref()
+                    .map(|filter| filter.merge(&only_ids))
+                    .unwrap_or(only_ids),
+            );
+            searches.push(CoreSearchRequest {
+                query,
+                filter: req_filter,
+                score_threshold: None,
+                limit: limit_per_sample,
+                offset: 0,
+                params: None,
+                with_vector: None,
+                with_payload: None,
+            });
+        }
+
         // run batch search request
         let batch_request = CoreSearchRequestBatch { searches };
         let nearest = self
