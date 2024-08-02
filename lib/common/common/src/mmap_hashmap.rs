@@ -200,6 +200,15 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         })
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &[PointOffsetType])> {
+        (0..self.keys_count()).filter_map(|i| {
+            let entry = self.get_entry(i).ok()?;
+            let key = K::from_bytes(entry)?;
+            let values = Self::get_values_from_entry(entry, key).ok()?;
+            Some((key, values))
+        })
+    }
+
     /// Get the values associated with the `key`.
     pub fn get(&self, key: &K) -> io::Result<Option<&[PointOffsetType]>> {
         let Some(hash) = self.phf.get(key) else {
@@ -207,11 +216,16 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         };
 
         let entry = self.get_entry(hash as usize)?;
-        let entry_start = entry.as_ptr() as usize;
 
         if !key.matches(entry) {
             return Ok(None);
         }
+
+        Ok(Some(Self::get_values_from_entry(entry, key)?))
+    }
+
+    fn get_values_from_entry<'a>(entry: &'a [u8], key: &K) -> io::Result<&'a [PointOffsetType]> {
+        let entry_start = entry.as_ptr() as usize;
         let entry = &entry[key.write_bytes()..];
 
         let padding = {
@@ -229,7 +243,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
             )
             .ok_or(io::ErrorKind::InvalidData)?;
         let result = PointOffsetType::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
-        Ok(Some(result))
+        Ok(result)
     }
 
     fn get_entry(&self, index: usize) -> io::Result<&[u8]> {
@@ -425,6 +439,11 @@ mod tests {
         }
         assert_eq!(mmap.keys_count(), map.len());
         assert_eq!(mmap.keys().count(), map.len());
+
+        for (k, v) in mmap.iter() {
+            let v = v.iter().copied().collect::<BTreeSet<_>>();
+            assert_eq!(map.get(&from_ref(k)).unwrap(), &v);
+        }
 
         // Existing keys should return the correct values
         for (k, v) in map {
