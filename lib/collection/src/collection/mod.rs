@@ -1,4 +1,5 @@
 mod collection_ops;
+pub mod distance_matrix;
 pub mod payload_index_schema;
 mod point_ops;
 pub mod query;

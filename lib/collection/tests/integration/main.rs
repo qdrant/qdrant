@@ -1,6 +1,7 @@
 mod collection_restore_test;
 mod collection_test;
 mod common;
+mod distance_matrix_test;
 mod grouping_test;
 mod lookup_test;
 mod multi_vec_test;
