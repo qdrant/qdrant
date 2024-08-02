@@ -291,7 +291,7 @@ mod tests {
         match condition {
             Condition::Filter(_) => panic!("unexpected Filter"),
             Condition::Nested(_) => panic!("unexpected Nested"),
-            Condition::Resharding(_) => panic!("unexpected Resharding"),
+            Condition::CustomIdChecker(_) => panic!("unexpected CustomIdChecker"),
             Condition::Field(field) => match field.key.to_string().as_str() {
                 "color" => CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Condition(field.clone())],

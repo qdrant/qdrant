@@ -1136,8 +1136,8 @@ fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>)
             } else {
                 conditions
                     .into_iter()
-                    .filter(|c| !c.is_local_only()) // TODO(resharding)!?
-                    .map(|c| c.into())
+                    .map(Condition::from)
+                    .filter(|c| c.condition_one_of.is_some()) // Filter out empty conditions
                     .collect()
             }
         }
@@ -1226,25 +1226,30 @@ impl TryFrom<Condition> for segment::types::Condition {
 impl From<segment::types::Condition> for Condition {
     fn from(value: segment::types::Condition) -> Self {
         let condition_one_of = match value {
-            segment::types::Condition::Field(field) => ConditionOneOf::Field(field.into()),
+            segment::types::Condition::Field(field) => {
+                Some(ConditionOneOf::Field(FieldCondition::from(field)))
+            }
             segment::types::Condition::IsEmpty(is_empty) => {
-                ConditionOneOf::IsEmpty(is_empty.into())
+                Some(ConditionOneOf::IsEmpty(IsEmptyCondition::from(is_empty)))
             }
-            segment::types::Condition::IsNull(is_null) => ConditionOneOf::IsNull(is_null.into()),
-            segment::types::Condition::HasId(has_id) => ConditionOneOf::HasId(has_id.into()),
-            segment::types::Condition::Filter(filter) => ConditionOneOf::Filter(filter.into()),
+            segment::types::Condition::IsNull(is_null) => {
+                Some(ConditionOneOf::IsNull(IsNullCondition::from(is_null)))
+            }
+            segment::types::Condition::HasId(has_id) => {
+                Some(ConditionOneOf::HasId(HasIdCondition::from(has_id)))
+            }
+            segment::types::Condition::Filter(filter) => {
+                Some(ConditionOneOf::Filter(Filter::from(filter)))
+            }
             segment::types::Condition::Nested(nested) => {
-                ConditionOneOf::Nested(nested.nested.into())
+                Some(ConditionOneOf::Nested(NestedCondition::from(nested.nested)))
             }
-
-            segment::types::Condition::Resharding(_) => {
-                unimplemented!()
-            }
+            // This type of condition should be only applied locally
+            // and never be sent to the other peers
+            segment::types::Condition::CustomIdChecker(_) => None,
         };
 
-        Self {
-            condition_one_of: Some(condition_one_of),
-        }
+        Self { condition_one_of }
     }
 }
 

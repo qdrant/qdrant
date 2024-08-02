@@ -5,7 +5,9 @@ use futures::stream::FuturesUnordered;
 use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::types::{Filter, ShardKey, WithPayload, WithPayloadInterface};
+use segment::types::{
+    CustomIdCheckerCondition, Filter, ShardKey, WithPayload, WithPayloadInterface,
+};
 use validator::Validate as _;
 
 use super::Collection;

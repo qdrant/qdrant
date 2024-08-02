@@ -20,7 +20,7 @@ use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
-use crate::hash_ring::HashRing;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::SnapshotDescription;
@@ -50,7 +50,7 @@ pub struct ShardHolder {
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
-    pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
+    pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
@@ -77,7 +77,7 @@ impl ShardHolder {
             }
         }
 
-        let rings = HashMap::from([(None, HashRing::single())]);
+        let rings = HashMap::from([(None, HashRingRouter::single())]);
 
         let (shard_transfer_changes, _) = broadcast::channel(64);
 
@@ -146,7 +146,7 @@ impl ShardHolder {
         self.shards.insert(shard_id, shard);
         self.rings
             .entry(shard_key.clone())
-            .or_insert_with(HashRing::single)
+            .or_insert_with(HashRingRouter::single)
             .add(shard_id);
 
         if let Some(shard_key) = shard_key {
@@ -197,13 +197,13 @@ impl ShardHolder {
     fn rebuild_rings(&mut self) {
         // TODO(resharding): Correctly rebuild resharding hashrings!
 
-        let mut rings = HashMap::from([(None, HashRing::single())]);
+        let mut rings = HashMap::from([(None, HashRingRouter::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
             rings
                 .entry(shard_key)
-                .or_insert_with(HashRing::single)
+                .or_insert_with(HashRingRouter::single)
                 .add(*shard_id);
         }
 
