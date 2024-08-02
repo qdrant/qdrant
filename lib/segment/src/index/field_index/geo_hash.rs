@@ -45,7 +45,7 @@ const BASE32_CODES: [char; 32] = [
 ];
 
 /// Max size of geo-hash used for indexing. size=12 is about 6cm2
-const GEOHASH_MAX_LENGTH: usize = 12;
+pub const GEOHASH_MAX_LENGTH: usize = 12;
 
 const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
