@@ -12,9 +12,9 @@ use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRe
 use crate::operations::universal_query::shard_query::{Sample, ScoringQuery, ShardQueryRequest};
 
 #[derive(Debug, Default)]
-struct DistanceMatrixResponse {
-    sample_ids: Vec<PointIdType>,   // sampled point ids
-    nearest: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
+pub struct DistanceMatrixResponse {
+    pub sample_ids: Vec<PointIdType>,   // sampled point ids
+    pub nearest: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
 }
 
 // TODO introduce HasVector condition to avoid iterative sampling
@@ -22,7 +22,7 @@ const SAMPLING_TRIES: usize = 3;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)] // TODO use request object
-    async fn distance_matrix(
+    pub async fn distance_matrix(
         &self,
         sample_size: usize,
         limit_per_sample: usize,
