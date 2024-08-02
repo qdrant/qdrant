@@ -228,7 +228,7 @@ impl SegmentsSearcher {
         sampling_enabled: bool,
         query_context: QueryContext,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let query_context_acr = Arc::new(query_context);
+        let query_context_arc = Arc::new(query_context);
 
         // Using block to ensure `segments` variable is dropped in the end of it
         let (locked_segments, searches): (Vec<_>, Vec<_>) = {
@@ -246,11 +246,11 @@ impl SegmentsSearcher {
             // - segments are not empty
             let use_sampling = sampling_enabled
                 && segments_lock.len() > 1
-                && query_context_acr.available_point_count() > 0;
+                && query_context_arc.available_point_count() > 0;
 
             segments
                 .map(|segment| {
-                    let query_context_arc_segment = query_context_acr.clone();
+                    let query_context_arc_segment = query_context_arc.clone();
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
@@ -293,7 +293,7 @@ impl SegmentsSearcher {
             let secondary_searches: Vec<_> = {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
-                    let query_context_arc_segment = query_context_acr.clone();
+                    let query_context_arc_segment = query_context_arc.clone();
                     let segment = locked_segments[*segment_id].clone();
                     let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
@@ -465,11 +465,8 @@ fn effective_limit(limit: usize, ef_limit: usize, poisson_sampling: usize) -> us
 ///
 /// * `segment` - Locked segment to search in
 /// * `request` - Batch of search requests
-/// * `total_points` - Number of points in all segments combined
 /// * `use_sampling` - If true, try to use probabilistic sampling
-/// * `is_stopped` - Atomic bool to check if search is stopped
-/// * `indexing_threshold` - If `indexed_only` is enabled, the search will skip
-///                          segments with more than this number Kb of un-indexed vectors
+/// * `query_context` - Additional context for the search
 ///
 /// # Returns
 ///

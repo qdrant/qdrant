@@ -305,6 +305,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QueryBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
             ("QueryBatchPointsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
             ("FacetCountsInternal.collection_name", "length(min = 1, max = 255)"),
+            ("FacetCountsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
         ], &[])
         // Service: raft_service.proto
         .validates(&[

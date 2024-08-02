@@ -265,8 +265,11 @@ impl ShardOperation for ProxyShard {
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
-        local_shard.facet(request, search_runtime_handle).await
+        local_shard
+            .facet(request, search_runtime_handle, timeout)
+            .await
     }
 }

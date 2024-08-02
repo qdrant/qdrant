@@ -8832,6 +8832,9 @@ pub struct FacetCountsInternal {
     pub limit: u64,
     #[prost(uint32, tag = "5")]
     pub shard_id: u32,
+    #[prost(uint64, optional, tag = "6")]
+    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

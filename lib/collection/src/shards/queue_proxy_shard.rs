@@ -283,10 +283,11 @@ impl ShardOperation for QueueProxyShard {
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
         self.inner_unchecked()
             .wrapped_shard
-            .facet(request, search_runtime_handle)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 }
@@ -579,9 +580,12 @@ impl ShardOperation for Inner {
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
-        local_shard.facet(request, search_runtime_handle).await
+        local_shard
+            .facet(request, search_runtime_handle, timeout)
+            .await
     }
 }
 
