@@ -15,7 +15,6 @@ use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
 use collection::operations::types::CollectionsAliasesResponse;
-use storage::content_manager::conversions::error_to_status;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -51,8 +50,7 @@ impl CollectionsService {
         let result = self
             .dispatcher
             .submit_collection_meta_op(operation.try_into()?, access, wait_timeout)
-            .await
-            .map_err(error_to_status)?;
+            .await?;
 
         let response = CollectionOperationResponse::from((timing, result));
         Ok(Response::new(response))
@@ -83,9 +81,7 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let result = do_list_collections(self.dispatcher.toc(&access), access)
-            .await
-            .map_err(error_to_status)?;
+        let result = do_list_collections(self.dispatcher.toc(&access), access).await?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -133,8 +129,7 @@ impl Collections for CollectionsService {
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
         let CollectionsAliasesResponse { aliases } =
             do_list_collection_aliases(self.dispatcher.toc(&access), access, &collection_name)
-                .await
-                .map_err(error_to_status)?;
+                .await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -150,9 +145,7 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         let access = extract_access(&mut request);
         let CollectionsAliasesResponse { aliases } =
-            do_list_aliases(self.dispatcher.toc(&access), access)
-                .await
-                .map_err(error_to_status)?;
+            do_list_aliases(self.dispatcher.toc(&access), access).await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -168,9 +161,8 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result = do_collection_exists(self.dispatcher.toc(&access), access, &collection_name)
-            .await
-            .map_err(error_to_status)?;
+        let result =
+            do_collection_exists(self.dispatcher.toc(&access), access, &collection_name).await?;
         let response = CollectionExistsResponse {
             result: Some(result),
             time: timing.elapsed().as_secs_f64(),
@@ -190,8 +182,7 @@ impl Collections for CollectionsService {
             access,
             request.into_inner().collection_name.as_str(),
         )
-        .await
-        .map_err(error_to_status)?
+        .await?
         .into();
 
         Ok(Response::new(response))
@@ -218,8 +209,7 @@ impl Collections for CollectionsService {
             access,
             timeout.map(std::time::Duration::from_secs),
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
         Ok(Response::new(UpdateCollectionClusterSetupResponse {
             result,
         }))
@@ -254,8 +244,7 @@ impl Collections for CollectionsService {
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(CreateShardKeyResponse { result }))
     }
@@ -289,8 +278,7 @@ impl Collections for CollectionsService {
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(DeleteShardKeyResponse { result }))
     }

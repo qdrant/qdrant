@@ -10,20 +10,22 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::errors::StorageError;
 
-pub fn error_to_status(error: StorageError) -> tonic::Status {
-    let error_code = match &error {
-        StorageError::BadInput { .. } => tonic::Code::InvalidArgument,
-        StorageError::NotFound { .. } => tonic::Code::NotFound,
-        StorageError::ServiceError { .. } => tonic::Code::Internal,
-        StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
-        StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
-        StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
-        StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,
-        StorageError::ChecksumMismatch { .. } => tonic::Code::DataLoss,
-        StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
-        StorageError::PreconditionFailed { .. } => tonic::Code::FailedPrecondition,
-    };
-    tonic::Status::new(error_code, format!("{error}"))
+impl From<StorageError> for tonic::Status {
+    fn from(error: StorageError) -> Self {
+        let error_code = match &error {
+            StorageError::BadInput { .. } => tonic::Code::InvalidArgument,
+            StorageError::NotFound { .. } => tonic::Code::NotFound,
+            StorageError::ServiceError { .. } => tonic::Code::Internal,
+            StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
+            StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
+            StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
+            StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,
+            StorageError::ChecksumMismatch { .. } => tonic::Code::DataLoss,
+            StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
+            StorageError::PreconditionFailed { .. } => tonic::Code::FailedPrecondition,
+        };
+        tonic::Status::new(error_code, format!("{error}"))
+    }
 }
 
 impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {

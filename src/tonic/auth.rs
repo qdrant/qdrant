@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use storage::content_manager::conversions::error_to_status;
 use storage::rbac::Access;
 use tonic::body::BoxBody;
 use tonic::Status;
@@ -26,7 +25,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         .map_err(|e| match e {
             AuthError::Unauthorized(e) => Status::unauthenticated(e),
             AuthError::Forbidden(e) => Status::permission_denied(e),
-            AuthError::StorageError(e) => error_to_status(e),
+            AuthError::StorageError(e) => Status::from(e),
         })?;
 
     let previous = req.extensions_mut().insert::<Access>(access);

@@ -10,7 +10,7 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
-use storage::content_manager::conversions::error_to_status;
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
@@ -54,8 +54,7 @@ impl Snapshots for SnapshotsService {
             )?
             .await?
         }
-        .await
-        .map_err(error_to_status)?;
+        .await?;
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
             time: timing.elapsed().as_secs_f64(),
@@ -71,9 +70,8 @@ impl Snapshots for SnapshotsService {
         let ListSnapshotsRequest { collection_name } = request.into_inner();
 
         let timing = Instant::now();
-        let snapshots = do_list_snapshots(self.dispatcher.toc(&access), access, &collection_name)
-            .await
-            .map_err(error_to_status)?;
+        let snapshots =
+            do_list_snapshots(self.dispatcher.toc(&access), access, &collection_name).await?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -101,8 +99,7 @@ impl Snapshots for SnapshotsService {
             .await?
             .await?
         }
-        .await
-        .map_err(error_to_status)?;
+        .await?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -115,9 +112,8 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let response = async move { do_create_full_snapshot(&self.dispatcher, access)?.await? }
-            .await
-            .map_err(error_to_status)?;
+        let response =
+            async move { do_create_full_snapshot(&self.dispatcher, access)?.await? }.await?;
 
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
@@ -132,9 +128,7 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let snapshots = do_list_full_snapshots(self.dispatcher.toc(&access), access)
-            .await
-            .map_err(error_to_status)?;
+        let snapshots = do_list_full_snapshots(self.dispatcher.toc(&access), access).await?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -150,14 +144,13 @@ impl Snapshots for SnapshotsService {
         let snapshot_name = request.into_inner().snapshot_name;
         let timing = Instant::now();
         let _response = async move {
-            Ok(
+            Ok::<_, StorageError>(
                 do_delete_full_snapshot(&self.dispatcher, access, &snapshot_name)
                     .await?
                     .await?,
             )
         }
-        .await
-        .map_err(error_to_status)?;
+        .await?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -193,8 +186,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.collection_name,
             request.shard_id,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(snapshot_description.into()),
@@ -218,8 +210,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.collection_name,
             request.shard_id,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshot_descriptions.into_iter().map(Into::into).collect(),
@@ -244,8 +235,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.shard_id,
             request.snapshot_name,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
@@ -273,8 +263,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             self.http_client.clone(),
             request.api_key,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
         Ok(Response::new(RecoverSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),

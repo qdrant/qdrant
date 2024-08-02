@@ -7,7 +7,6 @@ use api::grpc::qdrant::{
     GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
-use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::{Access, AccessRequirements, CollectionPass};
 use tonic::{Request, Response, Status};
@@ -20,7 +19,7 @@ const FULL_ACCESS: Access = Access::full("Internal API");
 fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
     FULL_ACCESS
         .check_collection_access(collection_name, AccessRequirements::new())
-        .map_err(error_to_status)
+        .map_err(Status::from)
 }
 
 pub struct CollectionsInternalService {
@@ -73,8 +72,7 @@ impl CollectionsInternal for CollectionsInternalService {
         // TODO: Ensure cancel safety!
         self.toc
             .initiate_receiving_shard(collection_name, shard_id)
-            .await
-            .map_err(error_to_status)?;
+            .await?;
 
         let response = CollectionOperationResponse {
             result: true,
