@@ -481,6 +481,8 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::RestartTransfer(RestartTransferOperation { restart_transfer }) => {
+            // TODO(reshading): Deduplicate resharding operations handling?
+
             let RestartTransfer {
                 shard_id,
                 to_shard_id,
@@ -633,6 +635,8 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::AbortResharding(_) => {
+            // TODO(reshading): Deduplicate resharding operations handling?
+
             let Some(state) = collection.resharding_state().await else {
                 return Err(StorageError::bad_request(format!(
                     "resharding is not in progress for collection {collection_name}"
@@ -644,6 +648,62 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::Abort(ReshardKey {
+                            direction: state.direction,
+                            peer_id: state.peer_id,
+                            shard_id: state.shard_id,
+                            shard_key: state.shard_key.clone(),
+                        }),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        ClusterOperations::CommitReadHashRing(_) => {
+            // TODO(reshading): Deduplicate resharding operations handling?
+
+            let Some(state) = collection.resharding_state().await else {
+                return Err(StorageError::bad_request(format!(
+                    "resharding is not in progress for collection {collection_name}"
+                )));
+            };
+
+            // TODO(resharding): Add precondition checks?
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::CommitRead(ReshardKey {
+                            direction: state.direction,
+                            peer_id: state.peer_id,
+                            shard_id: state.shard_id,
+                            shard_key: state.shard_key.clone(),
+                        }),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        ClusterOperations::CommitWriteHashRing(_) => {
+            // TODO(reshading): Deduplicate resharding operations handling?
+
+            let Some(state) = collection.resharding_state().await else {
+                return Err(StorageError::bad_request(format!(
+                    "resharding is not in progress for collection {collection_name}"
+                )));
+            };
+
+            // TODO(resharding): Add precondition checks?
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::CommitWrite(ReshardKey {
                             direction: state.direction,
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
