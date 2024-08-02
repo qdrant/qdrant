@@ -60,6 +60,7 @@ pub trait ShardOperation {
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse>;
 }
 

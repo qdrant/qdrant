@@ -2,6 +2,7 @@ pub mod cpu;
 pub mod defaults;
 pub mod disk;
 pub mod fixed_length_priority_queue;
+pub mod iterator_ext;
 pub mod math;
 pub mod mmap_hashmap;
 pub mod panic;

@@ -116,6 +116,7 @@ impl ShardOperation for DummyShard {
         &self,
         _: Arc<FacetRequest>,
         _search_runtime_handle: &Handle,
+        _: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
         self.dummy()
     }

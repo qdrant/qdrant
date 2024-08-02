@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use common::types::TelemetryDetail;
 
@@ -133,7 +134,11 @@ pub trait SegmentEntry {
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
 
     /// Return the largest counts for the given facet request.
-    fn facet(&self, request: &FacetRequest) -> OperationResult<Vec<FacetHit<FacetValue>>>;
+    fn facet(
+        &self,
+        request: &FacetRequest,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<FacetHit<FacetValue>>>;
 
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;

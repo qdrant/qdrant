@@ -984,9 +984,9 @@ fn test_keyword_facet() {
     };
 
     // Plain segment should fail, as it does not have a keyword index
-    assert!(plain_segment.facet(&request).is_err());
+    assert!(plain_segment.facet(&request, &Default::default()).is_err());
 
-    let facet_hits = struct_segment.facet(&request).unwrap();
+    let facet_hits = struct_segment.facet(&request, &Default::default()).unwrap();
 
     validate_facet_result(&struct_segment, facet_hits, None);
 
@@ -999,7 +999,7 @@ fn test_keyword_facet() {
         filter: Some(filter.clone()),
     };
 
-    let facet_hits = struct_segment.facet(&request).unwrap();
+    let facet_hits = struct_segment.facet(&request, &Default::default()).unwrap();
 
     validate_facet_result(&struct_segment, facet_hits, Some(filter))
 }

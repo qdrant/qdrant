@@ -213,8 +213,11 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<FacetRequest>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
-        let hits = self.do_facet(request, search_runtime_handle).await?;
+        let hits = self
+            .do_facet(request, search_runtime_handle, timeout)
+            .await?;
         Ok(FacetResponse { hits })
     }
 }
