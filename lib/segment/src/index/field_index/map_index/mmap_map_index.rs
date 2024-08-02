@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::fs::{create_dir_all, remove_dir};
 use std::iter;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
@@ -66,6 +67,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         point_to_values: Vec<Vec<N::Owned>>,
         values_to_points: HashMap<N::Owned, Vec<PointOffsetType>>,
     ) -> OperationResult<Self> {
+        create_dir_all(path)?;
+
         let hashmap_path = path.join(HASHMAP_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
@@ -123,10 +126,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     pub fn clear(self) -> OperationResult<()> {
         let files = self.files();
-        drop(self);
+        let Self { path, .. } = self;
         for file in files {
             std::fs::remove_file(file)?;
         }
+        let _ = remove_dir(path);
         Ok(())
     }
 
