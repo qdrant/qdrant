@@ -701,6 +701,9 @@ pub struct UuidIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
     pub is_tenant: ::core::option::Option<bool>,
+    /// If true - index stored on disk
+    #[prost(bool, optional, tag = "2")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

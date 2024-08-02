@@ -28,7 +28,7 @@ use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
-    PayloadKeyType, ValueVariants,
+    PayloadKeyType, UuidIntType, ValueVariants,
 };
 
 pub mod immutable_map_index;

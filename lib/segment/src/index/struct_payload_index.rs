@@ -178,7 +178,8 @@ impl StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut builders = index_builder_selector(field, &payload_schema, self.db.clone());
+        let mut builders =
+            index_builder_selector(field, &payload_schema, self.db.clone(), self.path.as_ref());
         for index in &mut builders {
             index.init()?;
         }

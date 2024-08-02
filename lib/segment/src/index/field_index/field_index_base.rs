@@ -8,7 +8,9 @@ use super::binary_index::BinaryIndexBuilder;
 use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{IdRefIter, MapIndex, MapIndexBuilder};
-use super::numeric_index::{NumericIndex, NumericIndexBuilder, StreamRange};
+use super::numeric_index::{
+    NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
+};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
@@ -396,6 +398,7 @@ pub enum FieldIndexBuilder {
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
     UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
+    UuidIndexMmap(NumericIndexMmapBuilder<UuidIntType, UuidPayloadType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -412,6 +415,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::BinaryIndex(index) => index,
             Self::FullTextIndex(index) => index,
             Self::UuidIndex(index) => index,
+            Self::UuidIndexMmap(index) => index,
         } {
             fn init(&mut self) -> OperationResult<()>;
             fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
@@ -429,6 +433,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
+            Self::UuidIndexMmap(index) => FieldIndex::UuidIndex(index.finalize()?),
         })
     }
 }

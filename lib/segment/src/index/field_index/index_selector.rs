@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -78,9 +79,13 @@ pub fn index_builder_selector(
     field: &JsonPath,
     payload_schema: &PayloadFieldSchema,
     db: Arc<RwLock<DB>>,
+    path: &Path,
 ) -> Vec<FieldIndexBuilder> {
     let field: String = field.to_string();
     let field = field.as_str();
+
+    println!("index buildder selector");
+    println!("{:#?}", payload_schema);
 
     match payload_schema.expand().as_ref() {
         PayloadSchemaParams::Keyword(_) => vec![FieldIndexBuilder::KeywordIndex(
@@ -116,10 +121,18 @@ pub fn index_builder_selector(
                 db, field,
             ))]
         }
-        PayloadSchemaParams::Uuid(_) => {
-            vec![FieldIndexBuilder::UuidIndex(NumericIndex::builder(
-                db, field,
-            ))]
+        PayloadSchemaParams::Uuid(i) => {
+            println!("{:?}", i.on_disk);
+            if i.on_disk.unwrap_or_default() {
+                println!("on disk uuid");
+                vec![FieldIndexBuilder::UuidIndexMmap(
+                    NumericIndex::builder_mmap(path),
+                )]
+            } else {
+                vec![FieldIndexBuilder::UuidIndex(NumericIndex::builder(
+                    db, field,
+                ))]
+            }
         }
     }
 }
