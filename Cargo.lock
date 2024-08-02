@@ -1158,7 +1158,7 @@ dependencies = [
  "object_store",
  "ordered-float 4.2.2",
  "parking_lot",
- "pprof",
+ "pprof 0.13.0",
  "proptest",
  "rand 0.8.5",
  "ringbuffer",
@@ -4133,15 +4133,35 @@ dependencies = [
  "backtrace",
  "cfg-if",
  "findshlibs",
+ "libc",
+ "log",
+ "nix 0.26.2",
+ "once_cell",
+ "parking_lot",
+ "smallvec",
+ "symbolic-demangle",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "pprof"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef5c97c51bd34c7e742402e216abdeb44d415fbe6ae41d56b114723e953711cb"
+dependencies = [
+ "backtrace",
+ "cfg-if",
+ "findshlibs",
  "inferno",
  "libc",
  "log",
  "nix 0.26.2",
  "once_cell",
  "parking_lot",
- "prost 0.11.9",
- "prost-build 0.11.9",
- "prost-derive 0.11.9",
+ "prost 0.12.6",
+ "prost-build 0.12.6",
+ "prost-derive 0.12.6",
  "sha2",
  "smallvec",
  "symbolic-demangle",
@@ -4525,7 +4545,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43f010b2a981a7f8449a650f25f309e520b5206ea2d89512dcb146aaa5518ff4"
 dependencies = [
  "log",
- "pprof",
+ "pprof 0.12.1",
  "pyroscope",
  "thiserror",
 ]
@@ -5559,7 +5579,7 @@ dependencies = [
  "num-traits",
  "ordered-float 4.2.2",
  "parking_lot",
- "pprof",
+ "pprof 0.13.0",
  "procfs",
  "proptest",
  "quantization",
@@ -5948,7 +5968,7 @@ dependencies = [
  "memory",
  "ordered-float 4.2.2",
  "parking_lot",
- "pprof",
+ "pprof 0.13.0",
  "rand 0.8.5",
  "schemars",
  "serde",

@@ -167,7 +167,7 @@ memmap2 = "0.9.4"
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 ph = "0.8.3"
-pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
+pprof = { version = "0.13.0", features = ["flamegraph", "prost-codec"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
