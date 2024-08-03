@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use common::cpu::CpuPermit;
 use itertools::Itertools;
-use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, VectorRef, DEFAULT_VECTOR_NAME};
@@ -45,14 +44,8 @@ fn test_building_new_segment() {
         .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
         .unwrap();
 
-    let segment1 = Arc::new(RwLock::new(segment1));
-    let segment2 = Arc::new(RwLock::new(segment2));
-
     builder
-        .update(
-            &[segment1.clone(), segment2.clone(), segment2.clone()],
-            &stopped,
-        )
+        .update(&[&segment1, &segment2, &segment2], &stopped)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -83,9 +76,8 @@ fn test_building_new_segment() {
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .read()
             .iter_points()
-            .chain(segment2.read().iter_points())
+            .chain(segment2.iter_points())
             .unique()
             .count(),
     );
@@ -120,14 +112,9 @@ fn test_building_new_defragmented_segment() {
         .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
         .unwrap();
 
-    let segment1 = Arc::new(RwLock::new(segment1));
-    let segment2 = Arc::new(RwLock::new(segment2));
-
     builder.set_defragment_keys(vec![defragment_key.clone()]);
 
-    builder
-        .update(&[segment1.clone(), segment2.clone()], &stopped)
-        .unwrap();
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     // Check what happens if segment building fails here
 
@@ -157,9 +144,8 @@ fn test_building_new_defragmented_segment() {
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .read()
             .iter_points()
-            .chain(segment2.read().iter_points())
+            .chain(segment2.iter_points())
             .unique()
             .count(),
     );
@@ -245,14 +231,8 @@ fn test_building_new_sparse_segment() {
         )
         .unwrap();
 
-    let segment1 = Arc::new(RwLock::new(segment1));
-    let segment2 = Arc::new(RwLock::new(segment2));
-
     builder
-        .update(
-            &[segment1.clone(), segment2.clone(), segment2.clone()],
-            &stopped,
-        )
+        .update(&[&segment1, &segment2, &segment2], &stopped)
         .unwrap();
 
     // Check what happens if segment building fails here
@@ -283,9 +263,8 @@ fn test_building_new_sparse_segment() {
     assert_eq!(
         merged_segment.available_point_count(),
         segment1
-            .read()
             .iter_points()
-            .chain(segment2.read().iter_points())
+            .chain(segment2.iter_points())
             .unique()
             .count(),
     );
@@ -293,10 +272,7 @@ fn test_building_new_sparse_segment() {
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
 }
 
-fn estimate_build_time(
-    segment: Arc<RwLock<Segment>>,
-    stop_delay_millis: Option<u64>,
-) -> (u64, bool) {
+fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u64, bool) {
     let stopped = Arc::new(AtomicBool::new(false));
 
     let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
@@ -306,8 +282,8 @@ fn estimate_build_time(
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
             VectorDataConfig {
-                size: segment.read().segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
-                distance: segment.read().segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                size: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].size,
+                distance: segment.segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Hnsw(Default::default()),
                 quantization_config: None,
@@ -379,20 +355,16 @@ fn test_building_cancellation() {
             .unwrap();
     }
 
-    let baseline_segment = Arc::new(RwLock::new(baseline_segment));
-    let segment = Arc::new(RwLock::new(segment));
-    let segment_2 = Arc::new(RwLock::new(segment_2));
-
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(baseline_segment, None);
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, None);
     assert!(!was_cancelled_baseline);
     eprintln!("baseline time: {time_baseline}");
 
     // Checks that optimization with longer cancellation delay will also finish fast
     let early_stop_delay = time_baseline / 20;
-    let (time_fast, was_cancelled_early) = estimate_build_time(segment, Some(early_stop_delay));
+    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, Some(early_stop_delay));
     let late_stop_delay = time_baseline / 5;
-    let (time_long, was_cancelled_later) = estimate_build_time(segment_2, Some(late_stop_delay));
+    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, Some(late_stop_delay));
 
     let acceptable_stopping_delay = 600; // millis
 

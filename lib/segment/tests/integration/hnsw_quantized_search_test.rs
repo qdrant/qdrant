@@ -6,7 +6,6 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
-use parking_lot::RwLock;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
@@ -428,8 +427,7 @@ fn test_build_hnsw_using_quantization() {
 
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
 
-    let segment1 = Arc::new(RwLock::new(segment1));
-    builder.update(&[segment1], &stopped).unwrap();
+    builder.update(&[&segment1], &stopped).unwrap();
 
     let built_segment: Segment = builder.build(permit, &stopped).unwrap();
 

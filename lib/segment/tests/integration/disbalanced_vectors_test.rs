@@ -2,10 +2,8 @@ const NUM_VECTORS_1: u64 = 300;
 const NUM_VECTORS_2: u64 = 500;
 
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
@@ -75,9 +73,6 @@ fn test_rebuild_with_removed_vectors() {
         }
     }
 
-    let segment2 = Arc::new(RwLock::new(segment2));
-
-    let segment2_read = segment2.read();
     let mut reference = vec![];
 
     for i in 0..20 {
@@ -85,18 +80,14 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = segment2_read.all_vectors(idx.into()).unwrap();
+        let vec = segment2.all_vectors(idx.into()).unwrap();
         reference.push(vec);
     }
 
     let mut builder =
         SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
-    let segment1 = Arc::new(RwLock::new(segment1));
-
-    builder
-        .update(&[segment1, segment2.clone()], &stopped)
-        .unwrap();
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
