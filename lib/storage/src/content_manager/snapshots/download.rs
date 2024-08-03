@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
@@ -9,6 +10,9 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::StorageError;
+
+/// Special file:// URI prefix for relative paths
+const URI_FILE_RELATIVE_PREFIX: &str = "file://./";
 
 fn random_name() -> String {
     format!("{}.snapshot", Uuid::new_v4())
@@ -58,32 +62,68 @@ async fn download_file(
     Ok(temp_path)
 }
 
-/// Download a snapshot from the given URI.
+/// Download remote snapshot file, or use local snapshot file.
 ///
-/// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
-/// downloaded file is deleted automatically. To keep the file `keep()` may be used.
+/// If an HTTP/HTTPS URL is provided, the snapshot file will be downloaded to `downloads_dir`.
+/// If a file URL is provided, the local file will be used directly.
+///
+/// If remote file was downloaded, an optional `TempPath` is also returned. When `TempFile` is dropped, it will delete downloaded file automatically. See [`TempPath::keep`] and [`TempPath::persist`] to preserve the file.
+///
+/// # Security
+///
+/// A `file://` URI is jailed within the `snapshots_dir`. If it points to anything outside that
+/// directory an error is returned.
 #[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
-pub async fn download_snapshot(
+pub async fn download_or_local_snapshot(
     client: &reqwest::Client,
     url: Url,
+    downloads_dir: &Path,
     snapshots_dir: &Path,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
         "file" => {
-            let local_path = url.to_file_path().map_err(|_| {
-                StorageError::bad_request(
-                    "Invalid snapshot URI, file path must be absolute or on localhost",
-                )
-            })?;
+            let local_path = resolve_uri_file_path(&url, snapshots_dir)?;
             if !local_path.exists() {
+                // Report user provided URL here to prevent leaking the local path
                 return Err(StorageError::bad_request(format!(
-                    "Snapshot file {local_path:?} does not exist"
+                    "Snapshot file {:?} does not exist",
+                    url.to_string(),
                 )));
             }
+
+            // Don't return an error if we fail, prevent side channel to check file presence
+            let local_path = local_path.canonicalize().unwrap_or(local_path);
+
+            if !snapshots_dir.exists() {
+                fs::create_dir_all(snapshots_dir).map_err(|err| {
+                    StorageError::forbidden(format!(
+                        "Failed to create snapshots directory at {}: {err}",
+                        snapshots_dir.display(),
+                    ))
+                })?;
+            }
+
+            // Prevent using arbitrary files from our file system, enforce the file to be in the
+            // snapshots directory
+            let inside_snapshots_dir = snapshots_dir
+                .canonicalize()
+                .map_or(false, |snapshots_dir| local_path.starts_with(snapshots_dir));
+            if !inside_snapshots_dir {
+                return Err(StorageError::forbidden(format!(
+                    "Snapshot file {} must be inside snapshots directory",
+                    local_path.display(),
+                )));
+            }
+
             Ok((local_path, None))
         }
         "http" | "https" => {
-            let download_to = snapshots_dir.join(snapshot_name(&url));
+            let download_to = downloads_dir.join(snapshot_name(&url));
+
+            log::debug!(
+                "Downloading snapshot from {url} to {}",
+                downloads_dir.display(),
+            );
 
             let temp_path = download_file(client, &url, &download_to).await?;
             Ok((download_to, Some(temp_path)))
@@ -91,7 +131,42 @@ pub async fn download_snapshot(
         _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
             url,
-            url.scheme()
+            url.scheme(),
         ))),
     }
+}
+
+/// Resolve a file:// URI to a local path
+///
+/// This supports both absolute and relative paths. If the path is relative, it is resolved within
+/// the given `workdir`.
+///
+/// # Security
+///
+/// This may point to arbitrary files. The resolved file may not exist.
+pub fn resolve_uri_file_path(url: &Url, workdir: &Path) -> Result<PathBuf, StorageError> {
+    // Must be a file URI
+    if url.scheme() != "file" {
+        return Err(StorageError::service_error(
+            "provided URI is not a file:// URI",
+        ));
+    }
+
+    // Parse relative path with specific prefix, normally not supported
+    if let Some(relative_path) = url.to_string().strip_prefix(URI_FILE_RELATIVE_PREFIX) {
+        if !workdir.exists() {
+            fs::create_dir_all(workdir).map_err(|err| {
+                StorageError::service_error(format!(
+                    "Failed to create working directory at {}: {err}",
+                    workdir.display(),
+                ))
+            })?;
+        }
+
+        return Ok(workdir.canonicalize()?.join(relative_path));
+    }
+
+    // Parse absolute path
+    url.to_file_path()
+        .map_err(|_| StorageError::bad_request("Malformed file URI"))
 }

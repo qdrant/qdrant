@@ -128,8 +128,13 @@ pub async fn recover_shard_snapshot(
                     let client = client.client(api_key.as_deref())?;
 
                     let (snapshot_path, snapshot_temp_path) =
-                        snapshots::download::download_snapshot(&client, url, download_dir.path())
-                            .await?;
+                        snapshots::download::download_or_local_snapshot(
+                            &client,
+                            url,
+                            download_dir.path(),
+                            collection.snapshots_path(),
+                        )
+                        .await?;
 
                     (snapshot_path, snapshot_temp_path)
                 }

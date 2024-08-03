@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
 };
-use crate::content_manager::snapshots::download::download_snapshot;
+use crate::content_manager::snapshots::download::download_or_local_snapshot;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::{StorageError, TableOfContent};
@@ -59,14 +59,24 @@ pub fn do_recover_from_snapshot(
 
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
+    let collection_name = collection_name.to_string();
     Ok(tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
+        _do_recover_from_snapshot(
+            dispatcher,
+            access,
+            &collection_name,
+            collection_pass,
+            source,
+            &client,
+        )
+        .await
     }))
 }
 
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
     access: Access,
+    collection_name: &str,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
@@ -84,14 +94,9 @@ async fn _do_recover_from_snapshot(
     let is_distributed = toc.is_distributed();
 
     let download_dir = toc.snapshots_download_tempdir()?;
-
-    log::debug!(
-        "Downloading snapshot from {location} to {}",
-        download_dir.path().display(),
-    );
-
+    let snapshots_path = toc.snapshots_path_for_collection(collection_name);
     let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path()).await?;
+        download_or_local_snapshot(client, location, download_dir.path(), &snapshots_path).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;
