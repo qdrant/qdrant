@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -440,7 +441,13 @@ pub trait SegmentOptimizer {
             segment_builder.set_defragment_keys(defragmentation_keys.into_iter().collect());
         }
 
-        segment_builder.update(&segments, stopped)?;
+        {
+            let segment_guards = segments.iter().map(|segment| segment.read()).collect_vec();
+            segment_builder.update(
+                &segment_guards.iter().map(Deref::deref).collect_vec(),
+                stopped,
+            )?;
+        }
 
         for field in proxy_deleted_indexes.read().iter() {
             segment_builder.remove_indexed_field(field);

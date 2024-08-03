@@ -11,7 +11,6 @@ use bitvec::macros::internal::funty::Integral;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
-use parking_lot::RwLock;
 use uuid::Uuid;
 
 use super::{
@@ -236,20 +235,14 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update(
-        &mut self,
-        segments: &[Arc<RwLock<Segment>>],
-        stopped: &AtomicBool,
-    ) -> OperationResult<bool> {
+    pub fn update(&mut self, segments: &[&Segment], stopped: &AtomicBool) -> OperationResult<bool> {
         if segments.is_empty() {
             return Ok(true);
         }
 
-        let segment_guards: Vec<_> = segments.iter().map(|segment| segment.read()).collect();
-
         let mut merged_points: HashMap<ExtendedPointId, PositionedPointMetadata> = HashMap::new();
 
-        for (segment_index, segment) in segment_guards.iter().enumerate() {
+        for (segment_index, segment) in segments.iter().enumerate() {
             for external_id in segment.iter_points() {
                 let version = segment.point_version(external_id).unwrap_or(0);
                 merged_points
@@ -273,10 +266,7 @@ impl SegmentBuilder {
             }
         }
 
-        let payloads: Vec<_> = segment_guards
-            .iter()
-            .map(|i| i.payload_index.borrow())
-            .collect();
+        let payloads: Vec<_> = segments.iter().map(|i| i.payload_index.borrow()).collect();
 
         let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
 
@@ -300,10 +290,10 @@ impl SegmentBuilder {
             points_to_insert.sort_unstable_by_key(|i| i.ordering);
         }
 
-        let src_segment_max_version = segment_guards.iter().map(|i| i.version()).max().unwrap();
+        let src_segment_max_version = segments.iter().map(|i| i.version()).max().unwrap();
         self.version = cmp::max(self.version, src_segment_max_version);
 
-        let vector_storages: Vec<_> = segment_guards.iter().map(|i| &i.vector_data).collect();
+        let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
         let mut new_internal_range = None;
         for (vector_name, vector_storage) in &mut self.vector_storages {
