@@ -663,7 +663,14 @@ fn test_struct_payload_index() {
             .zip(struct_result_sorted_ties.into_iter())
             .map(|(r1, r2)| (r1.0, r2.0))
             .for_each(|(r1, r2)| {
-                assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
+                assert_eq!(
+                    r1.id, r2.id,
+                    "got different ScoredPoint {r1:?} and {r2:?} for\n\
+                    query vector {query_vector:?}\n\
+                    query filter {query_filter:?}\n\
+                    plain result {plain_result:?}\n\
+                    struct result{struct_result:?}",
+                );
                 assert!((r1.score - r2.score) < 0.0001)
             });
     }
@@ -819,7 +826,14 @@ fn test_struct_payload_index_nested_fields() {
             .iter()
             .zip(struct_result.iter())
             .for_each(|(r1, r2)| {
-                assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
+                assert_eq!(
+                    r1.id, r2.id,
+                    "got different ScoredPoint {r1:?} and {r2:?} for\n\
+                    query vector {query_vector:?}\n\
+                    query filter {query_filter:?}\n\
+                    plain result {plain_result:?}\n\
+                    struct result{struct_result:?}",
+                );
                 assert!((r1.score - r2.score) < 0.0001)
             });
     }
@@ -938,7 +952,8 @@ fn test_any_matcher_cardinality_estimation() {
     assert!(exact >= estimation.min);
 }
 
-/// Checks that it is ordered in descending order, and that the counts are the same as counting each value exactly.
+/// Checks that it is ordered in descending order, and that the counts are the same as counting
+/// each value exactly.
 fn validate_facet_result(
     segment: &Segment,
     facet_hits: Vec<FacetValueHit>,
