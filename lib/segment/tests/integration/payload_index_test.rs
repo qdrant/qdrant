@@ -1,9 +1,12 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
+use std::fs::create_dir;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
@@ -11,14 +14,17 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::facets::{FacetRequest, FacetValue, FacetValueHit};
-use segment::data_types::index::{IntegerIndexParams, IntegerIndexType};
+use segment::data_types::index::{
+    FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
+    KeywordIndexType,
+};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
     generate_diverse_nested_payload, generate_diverse_payload, random_filter, random_nested_filter,
-    random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE, LON_RANGE,
-    STR_KEY, STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
+    random_vector, FLICKING_KEY, FLT_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE,
+    LON_RANGE, STR_KEY, STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
 };
 use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
@@ -28,12 +34,13 @@ use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::PayloadFieldSchema::{FieldParams, FieldType};
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
-    GeoPoint, GeoPolygon, GeoRadius, Indexes, IsEmptyCondition, Match, Payload, PayloadField,
-    PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, VectorDataConfig,
+    GeoPoint, GeoPolygon, GeoRadius, HnswConfig, Indexes, IsEmptyCondition, Match, Payload,
+    PayloadField, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, VectorDataConfig,
     VectorStorageType, WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
@@ -47,30 +54,16 @@ struct TestSegments {
     _base_dir: TempDir,
     struct_segment: Segment,
     plain_segment: Segment,
+    mmap_segment: Option<Segment>,
 }
 
 impl TestSegments {
-    fn new() -> Self {
+    fn new(make_mmap: bool) -> Self {
         let base_dir = Builder::new().prefix("test_segments").tempdir().unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
 
-        let config = SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    size: DIM,
-                    distance: Distance::Dot,
-                    storage_type: VectorStorageType::Memory,
-                    index: Indexes::Plain {},
-                    quantization_config: None,
-                    multivector_config: None,
-                    datatype: None,
-                },
-            )]),
-            sparse_vector_data: Default::default(),
-            payload_storage_type: Default::default(),
-        };
+        let config = Self::make_simple_config(true);
 
         let mut plain_segment =
             build_segment(&base_dir.path().join("plain"), &config, true).unwrap();
@@ -162,6 +155,10 @@ impl TestSegments {
             .create_field_index(opnum, &JsonPath::new(FLICKING_KEY), Some(&Integer.into()))
             .unwrap();
 
+        // Make mmap segment after inserting the points, but after deleting some of them
+        let mut mmap_segment = make_mmap
+            .then(|| Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment));
+
         for _ in 0..points_to_clear {
             opnum += 1;
             let idx_to_remove = rnd.gen_range(0..num_points);
@@ -171,6 +168,11 @@ impl TestSegments {
             struct_segment
                 .clear_payload(opnum, idx_to_remove.into())
                 .unwrap();
+            mmap_segment.as_mut().map(|mmap_segment| {
+                mmap_segment
+                    .clear_payload(opnum, idx_to_remove.into())
+                    .unwrap()
+            });
         }
 
         for _ in 0..points_to_delete {
@@ -182,6 +184,11 @@ impl TestSegments {
             struct_segment
                 .delete_point(opnum, idx_to_remove.into())
                 .unwrap();
+            mmap_segment.as_mut().map(|mmap_segment| {
+                mmap_segment
+                    .delete_point(opnum, idx_to_remove.into())
+                    .unwrap()
+            });
         }
 
         for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
@@ -200,7 +207,123 @@ impl TestSegments {
             _base_dir: base_dir,
             struct_segment,
             plain_segment,
+            mmap_segment,
         }
+    }
+
+    fn make_simple_config(appendable: bool) -> SegmentConfig {
+        let conf = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
+                    index: if appendable {
+                        Indexes::Plain {}
+                    } else {
+                        Indexes::Hnsw(HnswConfig::default())
+                    },
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
+        assert_eq!(conf.is_appendable(), appendable);
+        conf
+    }
+
+    fn make_mmap_segment(path: &Path, plain_segment: &Segment) -> Segment {
+        let stopped = AtomicBool::new(false);
+        create_dir(path).unwrap();
+
+        let mut builder = SegmentBuilder::new(
+            path,
+            &path.with_extension("tmp"),
+            &Self::make_simple_config(false),
+        )
+        .unwrap();
+
+        builder.update(&[plain_segment], &stopped).unwrap();
+        let permit = CpuPermit::dummy(1);
+
+        let mut segment = builder.build(permit, &stopped).unwrap();
+        let opnum = segment.version() + 1;
+
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(STR_KEY),
+                Some(&FieldParams(PayloadSchemaParams::Keyword(
+                    KeywordIndexParams {
+                        r#type: KeywordIndexType::Keyword,
+                        is_tenant: None,
+                        on_disk: Some(true),
+                    },
+                ))),
+            )
+            .unwrap();
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY),
+                Some(&FieldParams(PayloadSchemaParams::Integer(
+                    IntegerIndexParams {
+                        r#type: IntegerIndexType::Integer,
+                        lookup: true,
+                        range: true,
+                        is_principal: None,
+                        on_disk: Some(true),
+                    },
+                ))),
+            )
+            .unwrap();
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY_2),
+                Some(&FieldParams(PayloadSchemaParams::Integer(
+                    IntegerIndexParams {
+                        r#type: IntegerIndexType::Integer,
+                        lookup: true,
+                        range: false,
+                        is_principal: None,
+                        on_disk: Some(true),
+                    },
+                ))),
+            )
+            .unwrap();
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY_3),
+                Some(&FieldParams(PayloadSchemaParams::Integer(
+                    IntegerIndexParams {
+                        r#type: IntegerIndexType::Integer,
+                        lookup: false,
+                        range: true,
+                        is_principal: None,
+                        on_disk: Some(true),
+                    },
+                ))),
+            )
+            .unwrap();
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(FLT_KEY),
+                Some(&FieldParams(PayloadSchemaParams::Float(FloatIndexParams {
+                    r#type: FloatIndexType::Float,
+                    is_principal: None,
+                    on_disk: Some(true),
+                }))),
+            )
+            .unwrap();
+
+        segment
     }
 }
 
@@ -315,7 +438,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::thread_rng();
     let query = random_vector(&mut rnd, DIM).into();
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(false);
 
     for _i in 0..ATTEMPTS {
         let plain_result = test_segments
@@ -392,7 +515,7 @@ fn validate_geo_filter(query_filter: Filter) {
 
 #[test]
 fn test_is_empty_conditions() {
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(false);
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
@@ -446,38 +569,54 @@ fn test_is_empty_conditions() {
 
 #[test]
 fn test_integer_index_types() {
-    let test_segments = TestSegments::new();
-    let indexes = test_segments.struct_segment.payload_index.borrow();
+    let test_segments = TestSegments::new(true);
 
-    assert!(matches!(
-        indexes
-            .field_indexes
-            .get(&JsonPath::new(INT_KEY))
-            .unwrap()
-            .as_slice(),
-        [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)]
-    ));
-    assert!(matches!(
-        indexes
-            .field_indexes
-            .get(&JsonPath::new(INT_KEY_2))
-            .unwrap()
-            .as_slice(),
-        [FieldIndex::IntMapIndex(_)]
-    ));
-    assert!(matches!(
-        indexes
-            .field_indexes
-            .get(&JsonPath::new(INT_KEY_3))
-            .unwrap()
-            .as_slice(),
-        [FieldIndex::IntIndex(_)]
-    ));
+    for (kind, indexes) in [
+        (
+            "struct",
+            &test_segments.struct_segment.payload_index.borrow(),
+        ),
+        (
+            "mmap",
+            &test_segments
+                .mmap_segment
+                .as_ref()
+                .unwrap()
+                .payload_index
+                .borrow(),
+        ),
+    ] {
+        eprintln!("Checking {kind}_segment");
+        assert!(matches!(
+            indexes
+                .field_indexes
+                .get(&JsonPath::new(INT_KEY))
+                .unwrap()
+                .as_slice(),
+            [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)],
+        ));
+        assert!(matches!(
+            indexes
+                .field_indexes
+                .get(&JsonPath::new(INT_KEY_2))
+                .unwrap()
+                .as_slice(),
+            [FieldIndex::IntMapIndex(_)],
+        ));
+        assert!(matches!(
+            indexes
+                .field_indexes
+                .get(&JsonPath::new(INT_KEY_3))
+                .unwrap()
+                .as_slice(),
+            [FieldIndex::IntIndex(_)],
+        ));
+    }
 }
 
 #[test]
 fn test_cardinality_estimation() {
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(false);
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
@@ -631,12 +770,12 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
     assert!(exact >= estimation.min);
 }
 
+/// Compare search with plain, struct, and mmap indices.
 #[test]
 fn test_struct_payload_index() {
-    // Compare search with plain and struct indexes
     let mut rnd = rand::thread_rng();
 
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(true);
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rnd, DIM).into();
@@ -656,6 +795,20 @@ fn test_struct_payload_index() {
             .unwrap();
         let struct_result = test_segments
             .struct_segment
+            .search(
+                DEFAULT_VECTOR_NAME,
+                &query_vector,
+                &WithPayload::default(),
+                &false.into(),
+                Some(&query_filter),
+                5,
+                None,
+            )
+            .unwrap();
+        let mmap_result = test_segments
+            .mmap_segment
+            .as_ref()
+            .unwrap()
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
@@ -694,21 +847,53 @@ fn test_struct_payload_index() {
             struct_result.iter().map(|x| x.into()).collect_vec();
         struct_result_sorted_ties.sort();
 
-        plain_result_sorted_ties
-            .into_iter()
-            .zip(struct_result_sorted_ties.into_iter())
-            .map(|(r1, r2)| (r1.0, r2.0))
-            .for_each(|(r1, r2)| {
-                assert_eq!(
-                    r1.id, r2.id,
-                    "got different ScoredPoint {r1:?} and {r2:?} for\n\
-                    query vector {query_vector:?}\n\
-                    query filter {query_filter:?}\n\
-                    plain result {plain_result:?}\n\
-                    struct result{struct_result:?}",
-                );
-                assert!((r1.score - r2.score) < 0.0001)
-            });
+        let mut mmap_result_sorted_ties: Vec<ScoredPointTies> =
+            mmap_result.iter().map(|x| x.into()).collect_vec();
+        mmap_result_sorted_ties.sort();
+
+        assert_eq!(
+            plain_result_sorted_ties.len(),
+            struct_result_sorted_ties.len(),
+            "query vector {query_vector:?}\n\
+            query filter {query_filter:?}\n\
+            plain result {plain_result:?}\n\
+            struct result{struct_result:?}",
+        );
+        assert_eq!(
+            plain_result_sorted_ties.len(),
+            mmap_result_sorted_ties.len(),
+            "query vector {query_vector:?}\n\
+            query filter {query_filter:?}\n\
+            plain result {plain_result:?}\n\
+            mmap result  {mmap_result:?}",
+        );
+
+        itertools::izip!(
+            plain_result_sorted_ties,
+            struct_result_sorted_ties,
+            mmap_result_sorted_ties,
+        )
+        .map(|(r1, r2, r3)| (r1.0, r2.0, r3.0))
+        .for_each(|(r1, r2, r3)| {
+            assert_eq!(
+                r1.id, r2.id,
+                "got different ScoredPoint {r1:?} and {r2:?} for\n\
+                query vector {query_vector:?}\n\
+                query filter {query_filter:?}\n\
+                plain result {plain_result:?}\n\
+                struct result{struct_result:?}",
+            );
+            assert!((r1.score - r2.score) < 0.0001);
+            assert_eq!(
+                r1.id, r3.id,
+                "got different ScoredPoint {r1:?} and {r3:?} for\n\
+                query vector {query_vector:?}\n\
+                query filter {query_filter:?}\n\
+                plain result {plain_result:?}\n\
+                mmap result  {mmap_result:?}",
+            );
+            assert!((r1.score - r3.score) < 0.0001);
+        });
     }
 }
 
@@ -868,7 +1053,7 @@ fn test_struct_payload_index_nested_fields() {
                     query vector {query_vector:?}\n\
                     query filter {query_filter:?}\n\
                     plain result {plain_result:?}\n\
-                    struct result{struct_result:?}",
+                    struct result{struct_result:?}"
                 );
                 assert!((r1.score - r2.score) < 0.0001)
             });
@@ -938,7 +1123,7 @@ fn test_update_payload_index_type() {
 
 #[test]
 fn test_any_matcher_cardinality_estimation() {
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(false);
 
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
@@ -1018,7 +1203,7 @@ fn validate_facet_result(
 
 #[test]
 fn test_keyword_facet() {
-    let test_segments = TestSegments::new();
+    let test_segments = TestSegments::new(false);
 
     let limit = 100;
     let key: JsonPath = STR_KEY.try_into().unwrap();
