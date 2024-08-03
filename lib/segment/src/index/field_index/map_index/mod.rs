@@ -443,7 +443,11 @@ where
             flatten_values.extend(payload_values);
         }
         let flatten_values: Vec<N::Owned> = flatten_values.into_iter().map(Into::into).collect();
-        self.point_to_values.resize_with(id as usize + 1, Vec::new);
+
+        if self.point_to_values.len() <= id as usize {
+            self.point_to_values.resize_with(id as usize + 1, Vec::new);
+        }
+
         self.point_to_values[id as usize].extend(flatten_values.clone());
         for value in flatten_values {
             self.values_to_points.entry(value).or_default().push(id);
@@ -820,6 +824,31 @@ mod tests {
         }
 
         index
+    }
+
+    #[test]
+    fn test_index_non_ascending_insertion() {
+        let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path());
+        builder.init().unwrap();
+
+        let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
+
+        for (idx, values) in data.iter().enumerate().rev() {
+            let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
+            let values: Vec<_> = values.iter().collect();
+            builder.add_point(idx as PointOffsetType, &values).unwrap();
+        }
+
+        let index = builder.finalize().unwrap();
+        for (idx, values) in data.iter().enumerate().rev() {
+            let res: Vec<_> = index
+                .get_values(idx as u32)
+                .unwrap()
+                .map(|i| i as i32)
+                .collect();
+            assert_eq!(res, *values);
+        }
     }
 
     #[rstest]
