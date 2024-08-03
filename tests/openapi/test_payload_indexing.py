@@ -7,9 +7,8 @@ collection_name = 'test_collection_payload_indexing'
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
-    basic_collection_setup(collection_name=collection_name,
-                           on_disk_vectors=on_disk_vectors)
+def setup():
+    basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
