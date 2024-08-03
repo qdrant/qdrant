@@ -38,154 +38,170 @@ use segment::types::{
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use serde_json::json;
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 
 const DIM: usize = 5;
 const ATTEMPTS: usize = 100;
 
-fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
-    let mut rnd = StdRng::seed_from_u64(42);
+struct TestSegments {
+    _base_dir: TempDir,
+    struct_segment: Segment,
+    plain_segment: Segment,
+}
 
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: DIM,
-                distance: Distance::Dot,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
+impl TestSegments {
+    fn new() -> Self {
+        let base_dir = Builder::new().prefix("test_segments").tempdir().unwrap();
 
-    let mut plain_segment = build_segment(path_plain, &config, true).unwrap();
-    let mut struct_segment = build_segment(path_struct, &config, true).unwrap();
+        let mut rnd = StdRng::seed_from_u64(42);
 
-    let num_points = 3000;
-    let points_to_delete = 500;
-    let points_to_clear = 500;
-
-    let mut opnum = 0;
-    struct_segment
-        .create_field_index(opnum, &JsonPath::new(INT_KEY_2), Some(&Integer.into()))
-        .unwrap();
-
-    opnum += 1;
-    for n in 0..num_points {
-        let idx = n.into();
-        let vector = random_vector(&mut rnd, DIM);
-        let payload: Payload = generate_diverse_payload(&mut rnd);
-
-        plain_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
-            .unwrap();
-        struct_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
-            .unwrap();
-        plain_segment
-            .set_full_payload(opnum, idx, &payload)
-            .unwrap();
-        struct_segment
-            .set_full_payload(opnum, idx, &payload)
-            .unwrap();
-
-        opnum += 1;
-    }
-
-    struct_segment
-        .create_field_index(opnum, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
-        .unwrap();
-    struct_segment
-        .create_field_index(opnum, &JsonPath::new(INT_KEY), None)
-        .unwrap();
-    struct_segment
-        .create_field_index(
-            opnum,
-            &JsonPath::new(INT_KEY_2),
-            Some(&FieldParams(PayloadSchemaParams::Integer(
-                IntegerIndexParams {
-                    r#type: IntegerIndexType::Integer,
-                    lookup: true,
-                    range: false,
-                    is_principal: None,
-                    on_disk: None,
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
                 },
-            ))),
-        )
-        .unwrap();
-    struct_segment
-        .create_field_index(
-            opnum,
-            &JsonPath::new(INT_KEY_3),
-            Some(&FieldParams(PayloadSchemaParams::Integer(
-                IntegerIndexParams {
-                    r#type: IntegerIndexType::Integer,
-                    lookup: false,
-                    range: true,
-                    is_principal: None,
-                    on_disk: None,
-                },
-            ))),
-        )
-        .unwrap();
-    struct_segment
-        .create_field_index(
-            opnum,
-            &JsonPath::new(GEO_KEY),
-            Some(&PayloadSchemaType::Geo.into()),
-        )
-        .unwrap();
-    struct_segment
-        .create_field_index(
-            opnum,
-            &JsonPath::new(TEXT_KEY),
-            Some(&PayloadSchemaType::Text.into()),
-        )
-        .unwrap();
-    struct_segment
-        .create_field_index(opnum, &JsonPath::new(FLICKING_KEY), Some(&Integer.into()))
-        .unwrap();
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
 
-    for _ in 0..points_to_clear {
+        let mut plain_segment =
+            build_segment(&base_dir.path().join("plain"), &config, true).unwrap();
+        let mut struct_segment =
+            build_segment(&base_dir.path().join("struct"), &config, true).unwrap();
+
+        let num_points = 3000;
+        let points_to_delete = 500;
+        let points_to_clear = 500;
+
+        let mut opnum = 0;
+        struct_segment
+            .create_field_index(opnum, &JsonPath::new(INT_KEY_2), Some(&Integer.into()))
+            .unwrap();
+
         opnum += 1;
-        let idx_to_remove = rnd.gen_range(0..num_points);
-        plain_segment
-            .clear_payload(opnum, idx_to_remove.into())
+        for n in 0..num_points {
+            let idx = n.into();
+            let vector = random_vector(&mut rnd, DIM);
+            let payload: Payload = generate_diverse_payload(&mut rnd);
+
+            plain_segment
+                .upsert_point(opnum, idx, only_default_vector(&vector))
+                .unwrap();
+            struct_segment
+                .upsert_point(opnum, idx, only_default_vector(&vector))
+                .unwrap();
+            plain_segment
+                .set_full_payload(opnum, idx, &payload)
+                .unwrap();
+            struct_segment
+                .set_full_payload(opnum, idx, &payload)
+                .unwrap();
+
+            opnum += 1;
+        }
+
+        struct_segment
+            .create_field_index(opnum, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
             .unwrap();
         struct_segment
-            .clear_payload(opnum, idx_to_remove.into())
-            .unwrap();
-    }
-
-    for _ in 0..points_to_delete {
-        opnum += 1;
-        let idx_to_remove = rnd.gen_range(0..num_points);
-        plain_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .create_field_index(opnum, &JsonPath::new(INT_KEY), None)
             .unwrap();
         struct_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY_2),
+                Some(&FieldParams(PayloadSchemaParams::Integer(
+                    IntegerIndexParams {
+                        r#type: IntegerIndexType::Integer,
+                        lookup: true,
+                        range: false,
+                        is_principal: None,
+                        on_disk: None,
+                    },
+                ))),
+            )
             .unwrap();
-    }
+        struct_segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY_3),
+                Some(&FieldParams(PayloadSchemaParams::Integer(
+                    IntegerIndexParams {
+                        r#type: IntegerIndexType::Integer,
+                        lookup: false,
+                        range: true,
+                        is_principal: None,
+                        on_disk: None,
+                    },
+                ))),
+            )
+            .unwrap();
+        struct_segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(GEO_KEY),
+                Some(&PayloadSchemaType::Geo.into()),
+            )
+            .unwrap();
+        struct_segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(TEXT_KEY),
+                Some(&PayloadSchemaType::Text.into()),
+            )
+            .unwrap();
+        struct_segment
+            .create_field_index(opnum, &JsonPath::new(FLICKING_KEY), Some(&Integer.into()))
+            .unwrap();
 
-    for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
-        for index in indexes {
-            assert!(index.count_indexed_points() <= num_points as usize);
-            if field.to_string() != FLICKING_KEY {
-                assert!(
-                    index.count_indexed_points()
-                        >= (num_points as usize - points_to_delete - points_to_clear)
-                );
+        for _ in 0..points_to_clear {
+            opnum += 1;
+            let idx_to_remove = rnd.gen_range(0..num_points);
+            plain_segment
+                .clear_payload(opnum, idx_to_remove.into())
+                .unwrap();
+            struct_segment
+                .clear_payload(opnum, idx_to_remove.into())
+                .unwrap();
+        }
+
+        for _ in 0..points_to_delete {
+            opnum += 1;
+            let idx_to_remove = rnd.gen_range(0..num_points);
+            plain_segment
+                .delete_point(opnum, idx_to_remove.into())
+                .unwrap();
+            struct_segment
+                .delete_point(opnum, idx_to_remove.into())
+                .unwrap();
+        }
+
+        for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
+            for index in indexes {
+                assert!(index.count_indexed_points() <= num_points as usize);
+                if field.to_string() != FLICKING_KEY {
+                    assert!(
+                        index.count_indexed_points()
+                            >= (num_points as usize - points_to_delete - points_to_clear)
+                    );
+                }
             }
         }
-    }
 
-    (struct_segment, plain_segment)
+        Self {
+            _base_dir: base_dir,
+            struct_segment,
+            plain_segment,
+        }
+    }
 }
 
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
@@ -299,12 +315,11 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::thread_rng();
     let query = random_vector(&mut rnd, DIM).into();
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     for _i in 0..ATTEMPTS {
-        let plain_result = plain_segment
+        let plain_result = test_segments
+            .plain_segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query,
@@ -316,7 +331,8 @@ fn validate_geo_filter(query_filter: Filter) {
             )
             .unwrap();
 
-        let estimation = plain_segment
+        let estimation = test_segments
+            .plain_segment
             .payload_index
             .borrow()
             .estimate_cardinality(&query_filter);
@@ -324,11 +340,17 @@ fn validate_geo_filter(query_filter: Filter) {
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
         assert!(estimation.exp <= estimation.max, "{estimation:#?}");
         assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            estimation.max
+                <= test_segments
+                    .struct_segment
+                    .id_tracker
+                    .borrow()
+                    .available_point_count(),
             "{estimation:#?}",
         );
 
-        let struct_result = struct_segment
+        let struct_result = test_segments
+            .struct_segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query,
@@ -340,7 +362,8 @@ fn validate_geo_filter(query_filter: Filter) {
             )
             .unwrap();
 
-        let estimation = struct_segment
+        let estimation = test_segments
+            .struct_segment
             .payload_index
             .borrow()
             .estimate_cardinality(&query_filter);
@@ -348,7 +371,12 @@ fn validate_geo_filter(query_filter: Filter) {
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
         assert!(estimation.exp <= estimation.max, "{estimation:#?}");
         assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            estimation.max
+                <= test_segments
+                    .struct_segment
+                    .id_tracker
+                    .borrow()
+                    .available_point_count(),
             "{estimation:#?}",
         );
 
@@ -364,10 +392,7 @@ fn validate_geo_filter(query_filter: Filter) {
 
 #[test]
 fn test_is_empty_conditions() {
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-
-    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
@@ -375,21 +400,31 @@ fn test_is_empty_conditions() {
         },
     }));
 
-    let estimation_struct = struct_segment
+    let estimation_struct = test_segments
+        .struct_segment
         .payload_index
         .borrow()
         .estimate_cardinality(&filter);
 
-    let estimation_plain = plain_segment
+    let estimation_plain = test_segments
+        .plain_segment
         .payload_index
         .borrow()
         .estimate_cardinality(&filter);
 
-    let plain_result = plain_segment.payload_index.borrow().query_points(&filter);
+    let plain_result = test_segments
+        .plain_segment
+        .payload_index
+        .borrow()
+        .query_points(&filter);
 
     let real_number = plain_result.len();
 
-    let struct_result = struct_segment.payload_index.borrow().query_points(&filter);
+    let struct_result = test_segments
+        .struct_segment
+        .payload_index
+        .borrow()
+        .query_points(&filter);
 
     assert_eq!(plain_result, struct_result);
 
@@ -411,12 +446,9 @@ fn test_is_empty_conditions() {
 
 #[test]
 fn test_integer_index_types() {
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+    let test_segments = TestSegments::new();
+    let indexes = test_segments.struct_segment.payload_index.borrow();
 
-    let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
-
-    let indexes = struct_segment.payload_index.borrow();
     assert!(matches!(
         indexes
             .field_indexes
@@ -445,10 +477,7 @@ fn test_integer_index_types() {
 
 #[test]
 fn test_cardinality_estimation() {
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-
-    let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
@@ -460,14 +489,16 @@ fn test_cardinality_estimation() {
         },
     )));
 
-    let estimation = struct_segment
+    let estimation = test_segments
+        .struct_segment
         .payload_index
         .borrow()
         .estimate_cardinality(&filter);
 
-    let payload_index = struct_segment.payload_index.borrow();
+    let payload_index = test_segments.struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter);
-    let exact = struct_segment
+    let exact = test_segments
+        .struct_segment
         .id_tracker
         .borrow()
         .iter_ids()
@@ -603,18 +634,16 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 #[test]
 fn test_struct_payload_index() {
     // Compare search with plain and struct indexes
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-
     let mut rnd = rand::thread_rng();
 
-    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rnd, DIM).into();
         let query_filter = random_filter(&mut rnd, 3);
 
-        let plain_result = plain_segment
+        let plain_result = test_segments
+            .plain_segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
@@ -625,7 +654,8 @@ fn test_struct_payload_index() {
                 None,
             )
             .unwrap();
-        let struct_result = struct_segment
+        let struct_result = test_segments
+            .struct_segment
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
@@ -637,7 +667,8 @@ fn test_struct_payload_index() {
             )
             .unwrap();
 
-        let estimation = struct_segment
+        let estimation = test_segments
+            .struct_segment
             .payload_index
             .borrow()
             .estimate_cardinality(&query_filter);
@@ -645,7 +676,12 @@ fn test_struct_payload_index() {
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
         assert!(estimation.exp <= estimation.max, "{estimation:#?}");
         assert!(
-            estimation.max <= struct_segment.id_tracker.borrow().available_point_count(),
+            estimation.max
+                <= test_segments
+                    .struct_segment
+                    .id_tracker
+                    .borrow()
+                    .available_point_count(),
             "{estimation:#?}",
         );
 
@@ -902,10 +938,7 @@ fn test_update_payload_index_type() {
 
 #[test]
 fn test_any_matcher_cardinality_estimation() {
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-
-    let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
@@ -918,7 +951,8 @@ fn test_any_matcher_cardinality_estimation() {
 
     let filter = Filter::new_must(Condition::Field(any_match.clone()));
 
-    let estimation = struct_segment
+    let estimation = test_segments
+        .struct_segment
         .payload_index
         .borrow()
         .estimate_cardinality(&filter);
@@ -935,9 +969,10 @@ fn test_any_matcher_cardinality_estimation() {
         }
     }
 
-    let payload_index = struct_segment.payload_index.borrow();
+    let payload_index = test_segments.struct_segment.payload_index.borrow();
     let filter_context = payload_index.filter_context(&filter);
-    let exact = struct_segment
+    let exact = test_segments
+        .struct_segment
         .id_tracker
         .borrow()
         .iter_ids()
@@ -983,10 +1018,7 @@ fn validate_facet_result(
 
 #[test]
 fn test_keyword_facet() {
-    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
-    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
-
-    let (struct_segment, plain_segment) = build_test_segments(dir1.path(), dir2.path());
+    let test_segments = TestSegments::new();
 
     let limit = 100;
     let key: JsonPath = STR_KEY.try_into().unwrap();
@@ -999,11 +1031,17 @@ fn test_keyword_facet() {
     };
 
     // Plain segment should fail, as it does not have a keyword index
-    assert!(plain_segment.facet(&request, &Default::default()).is_err());
+    assert!(test_segments
+        .plain_segment
+        .facet(&request, &Default::default())
+        .is_err());
 
-    let facet_hits = struct_segment.facet(&request, &Default::default()).unwrap();
+    let facet_hits = test_segments
+        .struct_segment
+        .facet(&request, &Default::default())
+        .unwrap();
 
-    validate_facet_result(&struct_segment, facet_hits, None);
+    validate_facet_result(&test_segments.struct_segment, facet_hits, None);
 
     // *** With filter ***
     let mut rng = rand::thread_rng();
@@ -1014,7 +1052,10 @@ fn test_keyword_facet() {
         filter: Some(filter.clone()),
     };
 
-    let facet_hits = struct_segment.facet(&request, &Default::default()).unwrap();
+    let facet_hits = test_segments
+        .struct_segment
+        .facet(&request, &Default::default())
+        .unwrap();
 
-    validate_facet_result(&struct_segment, facet_hits, Some(filter))
+    validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter));
 }
