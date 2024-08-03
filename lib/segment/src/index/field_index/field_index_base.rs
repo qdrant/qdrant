@@ -1,4 +1,5 @@
 use std::fmt::Formatter;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use delegate::delegate;
@@ -7,8 +8,10 @@ use serde_json::Value;
 use super::binary_index::BinaryIndexBuilder;
 use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
-use super::map_index::{IdRefIter, MapIndex, MapIndexBuilder};
-use super::numeric_index::{NumericIndex, NumericIndexBuilder, StreamRange};
+use super::map_index::{IdRefIter, MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
+use super::numeric_index::{
+    NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
+};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
@@ -36,6 +39,8 @@ pub trait PayloadFieldIndex {
 
     /// Return function that flushes all pending updates to disk.
     fn flusher(&self) -> Flusher;
+
+    fn files(&self) -> Vec<PathBuf>;
 
     /// Get iterator over points fitting given `condition`
     /// Return `None` if condition does not match the index type
@@ -220,6 +225,10 @@ impl FieldIndex {
         self.get_payload_field_index().flusher()
     }
 
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.get_payload_field_index().files()
+    }
+
     pub fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -388,14 +397,20 @@ pub trait FieldIndexBuilderTrait {
 /// Builders for all index types
 pub enum FieldIndexBuilder {
     IntIndex(NumericIndexBuilder<IntPayloadType, IntPayloadType>),
+    IntMmapIndex(NumericIndexMmapBuilder<IntPayloadType, IntPayloadType>),
     DatetimeIndex(NumericIndexBuilder<IntPayloadType, DateTimePayloadType>),
+    DatetimeMmapIndex(NumericIndexMmapBuilder<IntPayloadType, DateTimePayloadType>),
     IntMapIndex(MapIndexBuilder<IntPayloadType>),
+    IntMapMmapIndex(MapIndexMmapBuilder<IntPayloadType>),
     KeywordIndex(MapIndexBuilder<str>),
+    KeywordMmapIndex(MapIndexMmapBuilder<str>),
     FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
+    FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
     UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
+    UuidMmapIndex(NumericIndexMmapBuilder<UuidIntType, UuidPayloadType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -404,14 +419,20 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
     delegate! {
         to match self {
             Self::IntIndex(index) => index,
+            Self::IntMmapIndex(index) => index,
             Self::DatetimeIndex(index) => index,
+            Self::DatetimeMmapIndex(index) => index,
             Self::IntMapIndex(index) => index,
+            Self::IntMapMmapIndex(index) => index,
             Self::KeywordIndex(index) => index,
+            Self::KeywordMmapIndex(index) => index,
             Self::FloatIndex(index) => index,
+            Self::FloatMmapIndex(index) => index,
             Self::GeoIndex(index) => index,
             Self::BinaryIndex(index) => index,
             Self::FullTextIndex(index) => index,
             Self::UuidIndex(index) => index,
+            Self::UuidMmapIndex(index) => index,
         } {
             fn init(&mut self) -> OperationResult<()>;
             fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
@@ -421,14 +442,20 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
     fn finalize(self) -> OperationResult<FieldIndex> {
         Ok(match self {
             Self::IntIndex(index) => FieldIndex::IntIndex(index.finalize()?),
+            Self::IntMmapIndex(index) => FieldIndex::IntIndex(index.finalize()?),
             Self::DatetimeIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
+            Self::DatetimeMmapIndex(index) => FieldIndex::DatetimeIndex(index.finalize()?),
             Self::IntMapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
+            Self::IntMapMmapIndex(index) => FieldIndex::IntMapIndex(index.finalize()?),
             Self::KeywordIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
+            Self::KeywordMmapIndex(index) => FieldIndex::KeywordIndex(index.finalize()?),
             Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
+            Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
+            Self::UuidMmapIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
         })
     }
 }

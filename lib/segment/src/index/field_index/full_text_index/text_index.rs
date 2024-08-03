@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -227,6 +228,10 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 
     fn filter(
