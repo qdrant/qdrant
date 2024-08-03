@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -260,6 +261,10 @@ impl PayloadFieldIndex for BinaryIndex {
 
     fn flusher(&self) -> crate::common::Flusher {
         self.db_wrapper.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 
     fn filter<'a>(

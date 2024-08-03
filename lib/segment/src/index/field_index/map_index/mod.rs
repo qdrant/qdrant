@@ -268,6 +268,14 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            MapIndex::Mutable(_) => Vec::new(),
+            MapIndex::Immutable(_) => Vec::new(),
+            MapIndex::Mmap(index) => index.files(),
+        }
+    }
+
     /// Estimates cardinality for `except` clause
     ///
     /// # Arguments
@@ -481,6 +489,10 @@ impl PayloadFieldIndex for MapIndex<str> {
         MapIndex::flusher(self)
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
@@ -589,6 +601,10 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
 
     fn flusher(&self) -> Flusher {
         MapIndex::flusher(self)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        self.files()
     }
 
     fn filter<'a>(

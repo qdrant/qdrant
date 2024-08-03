@@ -620,6 +620,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
         NumericIndexInner::flusher(self)
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        NumericIndexInner::files(self)
+    }
+
     fn filter(
         &self,
         condition: &FieldCondition,

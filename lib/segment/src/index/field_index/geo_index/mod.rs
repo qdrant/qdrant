@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -357,6 +358,10 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn flusher(&self) -> Flusher {
         GeoMapIndex::flusher(self)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 
     fn filter(
