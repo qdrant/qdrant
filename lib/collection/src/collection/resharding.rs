@@ -28,9 +28,9 @@ impl Collection {
     pub async fn start_resharding<T, F>(
         &self,
         resharding_key: ReshardKey,
-        consensus: Box<dyn ShardTransferConsensus>,
-        on_finish: T,
-        on_error: F,
+        _consensus: Box<dyn ShardTransferConsensus>,
+        _on_finish: T,
+        _on_error: F,
     ) -> CollectionResult<()>
     where
         T: Future<Output = ()> + Send + 'static,
@@ -83,8 +83,8 @@ impl Collection {
         }
 
         // Drive resharding
-        self.drive_resharding(resharding_key, consensus, false, on_finish, on_error)
-            .await?;
+        // self.drive_resharding(resharding_key, consensus, false, on_finish, on_error)
+        //     .await?;
 
         Ok(())
     }
