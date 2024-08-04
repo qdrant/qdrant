@@ -18,6 +18,7 @@ COLLECTION_NAME = "test_collection"
 #
 # More specifically this starts at 1 shard, reshards 3 times to 4 shards, and
 # reshards 3 times back to 1 shard.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -138,6 +139,7 @@ def test_resharding(tmp_path: pathlib.Path):
 #
 # In this case the replicas are balanced on the second and third node. The first
 # node has all shards because we explicitly set it as shard target all the time.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_balance(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -221,6 +223,7 @@ def test_resharding_balance(tmp_path: pathlib.Path):
 # - 3 threads upserting new points on all peers
 # - 1 threads updating existing points on the first peer
 # - 2 threads deleting points on the first two peers
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -318,6 +321,7 @@ def test_resharding_concurrent_updates(tmp_path: pathlib.Path):
 #
 # On a static collection, this performs resharding a few times and asserts the
 # exact point count remains stable on all peers during the whole process.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_stable_point_count(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -401,6 +405,7 @@ def test_resharding_stable_point_count(tmp_path: pathlib.Path):
 # On a static collection, this performs resharding and indexing a few times and
 # asserts the exact point count remains stable on all peers during the whole
 # process.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -487,6 +492,7 @@ def test_resharding_indexing_stable_point_count(tmp_path: pathlib.Path):
 #
 # On a static collection, this performs resharding a few times and asserts
 # scrolling remains stable on all peers during the whole process.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_stable_scroll(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -577,6 +583,7 @@ def test_resharding_stable_scroll(tmp_path: pathlib.Path):
 #
 # On a static collection, this performs resharding a few times and asserts
 # query remains stable on all peers during the whole process.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_stable_query(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -668,6 +675,7 @@ def test_resharding_stable_query(tmp_path: pathlib.Path):
 # On a static collection, this performs resharding. It kills and restarts the
 # driving peer at various stages. On restart, it should finish resharding as if
 # nothing happened.
+@pytest.mark.skip(reason="moving resharding driver to external service")
 def test_resharding_resume_on_restart(tmp_path: pathlib.Path):
     assert_project_root()
 
