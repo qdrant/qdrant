@@ -97,6 +97,9 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             VectorStorageEnum::DenseAppendableInRam(_) => unreachable!(),
             VectorStorageEnum::DenseAppendableInRamByte(_) => unreachable!(),
             VectorStorageEnum::DenseAppendableInRamHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRam(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => unreachable!(),
         };
     }
 
