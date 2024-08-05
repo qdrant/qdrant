@@ -31,6 +31,8 @@ struct ChunkedMmapConfig {
     chunk_size_bytes: usize,
     chunk_size_vectors: usize,
     dim: usize,
+    #[serde(default)]
+    mlock: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -65,7 +67,11 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    fn ensure_config(directory: &Path, dim: usize) -> OperationResult<ChunkedMmapConfig> {
+    fn ensure_config(
+        directory: &Path,
+        dim: usize,
+        mlock: Option<bool>,
+    ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
         if !config_file.exists() {
             let chunk_size_bytes = DEFAULT_CHUNK_SIZE;
@@ -77,6 +83,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 chunk_size_bytes: corrected_chunk_size_bytes,
                 chunk_size_vectors,
                 dim,
+                mlock,
             };
             let mut file = OpenOptions::new()
                 .write(true)
@@ -102,12 +109,12 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
+    pub fn open(directory: &Path, dim: usize, mlock: Option<bool>) -> OperationResult<Self> {
         create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
-        let config = Self::ensure_config(directory, dim)?;
+        let config = Self::ensure_config(directory, dim, mlock)?;
         let chunks = read_mmaps(directory)?;
 
         let vectors = Self {
@@ -298,7 +305,7 @@ mod tests {
 
         {
             let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim).unwrap();
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec).unwrap();
@@ -324,7 +331,7 @@ mod tests {
 
         {
             let chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim).unwrap();
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
 
             assert!(
                 chunked_mmap.chunks.len() > 1,

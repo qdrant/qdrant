@@ -163,6 +163,7 @@ pub(crate) fn open_vector_storage(
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
+                        Some(false),
                     ),
                     VectorStorageDatatype::Uint8 => {
                         open_appendable_memmap_multi_vector_storage_byte(
@@ -170,6 +171,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            Some(false),
                         )
                     }
                     VectorStorageDatatype::Float16 => {
@@ -178,6 +180,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            Some(false),
                         )
                     }
                 }
@@ -210,6 +213,7 @@ pub(crate) fn open_vector_storage(
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
+                        Some(false),
                     ),
                     VectorStorageDatatype::Uint8 => {
                         open_appendable_memmap_multi_vector_storage_byte(
@@ -217,6 +221,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            Some(false),
                         )
                     }
                     VectorStorageDatatype::Float16 => {
@@ -225,6 +230,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            Some(false),
                         )
                     }
                 }
@@ -234,16 +240,19 @@ pub(crate) fn open_vector_storage(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        Some(false),
                     ),
                     VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        Some(false),
                     ),
                     VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
+                        Some(false),
                     ),
                 }
             }

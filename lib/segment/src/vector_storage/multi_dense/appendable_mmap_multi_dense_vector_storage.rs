@@ -42,12 +42,14 @@ pub fn open_appendable_memmap_multi_vector_storage(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
         distance,
         multi_vector_config,
+        force_ram,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
@@ -60,9 +62,15 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        force_ram,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
         storage,
@@ -74,9 +82,15 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        force_ram,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
         storage,
@@ -88,6 +102,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    force_ram: Option<bool>,
 ) -> OperationResult<AppendableMmapMultiDenseVectorStorage<T>> {
     create_dir_all(path)?;
 
@@ -95,8 +110,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::open(&vectors_path, dim)?;
-    let offsets = ChunkedMmapVectors::open(&offsets_path, 1)?;
+    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, force_ram)?;
+    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, force_ram)?;
 
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();
