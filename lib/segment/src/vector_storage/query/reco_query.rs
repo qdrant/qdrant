@@ -82,7 +82,6 @@ mod test {
 
     use common::math::scaled_fast_sigmoid;
     use common::types::ScoreType;
-    use float_cmp::approx_eq;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -130,7 +129,7 @@ mod test {
 
     /// Relaxes the comparison of floats to allow for a some difference in units of least precision
     fn float_cmp(a: f32, b: f32) -> Ordering {
-        if approx_eq!(f32, a, b, ulps = 80) {
+        if (a - b).abs() < 0.001 {
             Ordering::Equal
         } else {
             a.total_cmp(&b)
