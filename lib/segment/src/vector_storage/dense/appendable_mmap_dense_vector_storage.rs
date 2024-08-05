@@ -32,11 +32,9 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
-        path, dim, distance, force_ram,
-    )?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
 }
@@ -45,9 +43,8 @@ pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance, force_ram)?;
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
         storage,
@@ -58,9 +55,8 @@ pub fn open_appendable_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
-    force_ram: Option<bool>,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance, force_ram)?;
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
 
     Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
         storage,
@@ -71,14 +67,13 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
-    force_ram: Option<bool>,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, force_ram)?;
+    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, Some(false))?;
 
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();
