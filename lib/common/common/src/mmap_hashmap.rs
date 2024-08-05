@@ -360,6 +360,28 @@ impl Key for i64 {
     }
 }
 
+impl Key for u128 {
+    const ALIGN: usize = align_of::<u128>();
+
+    const NAME: [u8; 8] = *b"u128\0\0\0\0";
+
+    fn write_bytes(&self) -> usize {
+        size_of::<u128>()
+    }
+
+    fn write(&self, buf: &mut impl Write) -> io::Result<()> {
+        buf.write_all(AsBytes::as_bytes(self))
+    }
+
+    fn matches(&self, buf: &[u8]) -> bool {
+        buf.get(..size_of::<u128>()) == Some(AsBytes::as_bytes(self))
+    }
+
+    fn from_bytes(buf: &[u8]) -> Option<&Self> {
+        buf.get(..size_of::<u128>()).and_then(FromBytes::ref_from)
+    }
+}
+
 /// Returns a reference to a slice of zeroes of length `len`.
 #[inline]
 fn zeroes(len: usize) -> &'static [u8] {

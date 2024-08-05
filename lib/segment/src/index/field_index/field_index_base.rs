@@ -24,7 +24,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
+    PayloadKeyType, RangeInterface, UuidIntType,
 };
 
 pub trait PayloadFieldIndex {
@@ -118,7 +118,7 @@ pub enum FieldIndex {
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
-    UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
+    UuidIndex(MapIndex<UuidIntType>),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -185,7 +185,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
             FieldIndex::BinaryIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
-            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::UuidIndex(payload_field_index) => payload_field_index,
         }
     }
 
@@ -409,8 +409,8 @@ pub enum FieldIndexBuilder {
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
-    UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
-    UuidMmapIndex(NumericIndexMmapBuilder<UuidIntType, UuidPayloadType>),
+    UuidIndex(MapIndexBuilder<UuidIntType>),
+    UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {

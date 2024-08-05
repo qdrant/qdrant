@@ -1203,6 +1203,7 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Integer(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
             _ => false,
         }
     }

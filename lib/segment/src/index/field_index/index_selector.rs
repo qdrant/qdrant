@@ -81,7 +81,7 @@ impl<'a> IndexSelector<'a> {
             PayloadSchemaParams::Datetime(_) => {
                 vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
             }
-            PayloadSchemaParams::Uuid(_) => vec![FieldIndex::UuidIndex(self.numeric_new(field)?)],
+            PayloadSchemaParams::Uuid(_) => vec![FieldIndex::UuidIndex(self.map_new(field)?)],
         })
     }
 
@@ -150,7 +150,7 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Uuid(_) => {
-                vec![self.numeric_builder(
+                vec![self.map_builder(
                     field,
                     FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
@@ -178,9 +178,11 @@ impl<'a> IndexSelector<'a> {
     ) -> FieldIndexBuilder {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
+                println!("Selecting rocks db: {field:?}");
                 make_rocksdb(MapIndex::builder(Arc::clone(db), &field.to_string()))
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                println!("Selecting on disk: {field:?}");
                 make_mmap(MapIndex::mmap_builder(&map_dir(dir, field)))
             }
         }

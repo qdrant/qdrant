@@ -441,6 +441,8 @@ impl PayloadIndex for StructPayloadIndex {
         self.build_and_save(field, payload_schema)?;
         self.save_config()?;
 
+        println!("Indexing done");
+
         Ok(())
     }
 

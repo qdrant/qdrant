@@ -291,6 +291,7 @@ impl From<segment::data_types::index::UuidIndexParams> for PayloadIndexParams {
         PayloadIndexParams {
             index_params: Some(IndexParams::UuidIndexParams(UuidIndexParams {
                 is_tenant: params.is_tenant,
+                on_disk: params.on_disk,
             })),
         }
     }
@@ -462,6 +463,7 @@ impl TryFrom<UuidIndexParams> for segment::data_types::index::UuidIndexParams {
         Ok(segment::data_types::index::UuidIndexParams {
             r#type: UuidIndexType::Uuid,
             is_tenant: params.is_tenant,
+            on_disk: params.on_disk,
         })
     }
 }

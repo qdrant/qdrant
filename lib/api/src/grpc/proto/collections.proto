@@ -423,6 +423,7 @@ message DatetimeIndexParams {
 
 message UuidIndexParams {
   optional bool is_tenant = 1; // If true - used for tenant optimization.
+  optional bool on_disk = 2; // If true - store index on disk.
 }
 
 message PayloadIndexParams {
