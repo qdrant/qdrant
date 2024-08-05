@@ -97,7 +97,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     }
 
     // returns how many flattened vectors can be inserted starting from key
-    pub fn get_chunk_left_keys<TKey>(&mut self, start_key: TKey) -> usize
+    pub fn get_chunk_left_keys<TKey>(&self, start_key: TKey) -> usize
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {

@@ -6,13 +6,14 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
-use crate::vector_storage::vector_storage_internal_trait::VectorStorageInternal;
+use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
 
 #[cfg(debug_assertions)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
@@ -215,7 +216,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     // returns how many vectors can be inserted starting from key
-    pub fn get_remaining_chunk_keys<TKey>(&mut self, start_key: TKey) -> usize
+    pub fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
@@ -284,7 +285,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 }
 
-impl<T: Sized + Copy + 'static> VectorStorageInternal<T> for ChunkedMmapVectors<T> {
+impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T> {
     #[inline]
     fn len(&self) -> usize {
         ChunkedMmapVectors::len(self)
@@ -310,15 +311,48 @@ impl<T: Sized + Copy + 'static> VectorStorageInternal<T> for ChunkedMmapVectors<
         ChunkedMmapVectors::flusher(self)
     }
 
+    #[inline]
     fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
         ChunkedMmapVectors::push(self, vector)
     }
 
-    fn insert<TKey>(&mut self, key: TKey, vector: &[T]) -> OperationResult<()>
+    #[inline]
+    fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()> {
+        ChunkedMmapVectors::insert(self, key, vector)
+    }
+
+    #[inline]
+    fn insert_many<TKey>(
+        &mut self,
+        start_key: TKey,
+        vectors: &[T],
+        count: usize,
+    ) -> OperationResult<()>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
-        ChunkedMmapVectors::insert(self, key, vector)
+        ChunkedMmapVectors::insert_many(self, start_key, vectors, count)
+    }
+
+    #[inline]
+    fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
+    where
+        TKey: AsPrimitive<usize>,
+    {
+        ChunkedMmapVectors::get_many(self, key, count)
+    }
+
+    #[inline]
+    fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
+    where
+        TKey: AsPrimitive<usize>,
+    {
+        ChunkedMmapVectors::get_remaining_chunk_keys(self, start_key)
+    }
+
+    #[inline]
+    fn max_vector_size_bytes(&self) -> usize {
+        ChunkedMmapVectors::max_vector_size_bytes(self)
     }
 }
 

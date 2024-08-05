@@ -8,7 +8,9 @@ use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
-use super::multi_dense::appendable_mmap_multi_dense_vector_storage::AppendableMmapMultiDenseVectorStorage;
+use super::multi_dense::appendable_mmap_multi_dense_vector_storage::{
+    AppendableMmapMultiDenseVectorStorage, MultivectorMmapOffset,
+};
 use super::multi_dense::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -179,12 +181,32 @@ pub enum VectorStorageEnum {
     MultiDenseSimple(SimpleMultiDenseVectorStorage<VectorElementType>),
     MultiDenseSimpleByte(SimpleMultiDenseVectorStorage<VectorElementTypeByte>),
     MultiDenseSimpleHalf(SimpleMultiDenseVectorStorage<VectorElementTypeHalf>),
-    MultiDenseAppendableMemmap(Box<AppendableMmapMultiDenseVectorStorage<VectorElementType>>),
+    MultiDenseAppendableMemmap(
+        Box<
+            AppendableMmapMultiDenseVectorStorage<
+                VectorElementType,
+                ChunkedMmapVectors<VectorElementType>,
+                ChunkedMmapVectors<MultivectorMmapOffset>,
+            >,
+        >,
+    ),
     MultiDenseAppendableMemmapByte(
-        Box<AppendableMmapMultiDenseVectorStorage<VectorElementTypeByte>>,
+        Box<
+            AppendableMmapMultiDenseVectorStorage<
+                VectorElementTypeByte,
+                ChunkedMmapVectors<VectorElementTypeByte>,
+                ChunkedMmapVectors<MultivectorMmapOffset>,
+            >,
+        >,
     ),
     MultiDenseAppendableMemmapHalf(
-        Box<AppendableMmapMultiDenseVectorStorage<VectorElementTypeHalf>>,
+        Box<
+            AppendableMmapMultiDenseVectorStorage<
+                VectorElementTypeHalf,
+                ChunkedMmapVectors<VectorElementTypeHalf>,
+                ChunkedMmapVectors<MultivectorMmapOffset>,
+            >,
+        >,
     ),
 }
 

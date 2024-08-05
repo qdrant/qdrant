@@ -14,16 +14,15 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
-use crate::vector_storage::vector_storage_internal_trait::VectorStorageInternal;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
-pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: VectorStorageInternal<T>>
-{
+pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> {
     vectors: S,
     deleted: DynamicMmapFlags,
     distance: Distance,
@@ -90,9 +89,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     })
 }
 
-impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>>
-    AppendableMmapDenseVectorStorage<T, S>
-{
+impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseVectorStorage<T, S> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
@@ -113,7 +110,7 @@ impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>>
     }
 }
 
-impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>> DenseVectorStorage<T>
+impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T>
     for AppendableMmapDenseVectorStorage<T, S>
 {
     fn vector_dim(&self) -> usize {
@@ -125,7 +122,7 @@ impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>> DenseVectorStorage<
     }
 }
 
-impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>> VectorStorage
+impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
     for AppendableMmapDenseVectorStorage<T, S>
 {
     fn distance(&self) -> Distance {
