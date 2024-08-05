@@ -253,7 +253,7 @@ pub(crate) fn open_vector_storage(
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => unimplemented!(),
                     VectorStorageDatatype::Uint8 => unimplemented!(),
-                    VectorStorageDatatype::Float16 => unimplemented!()
+                    VectorStorageDatatype::Float16 => unimplemented!(),
                 }
             } else {
                 match storage_element_type {
