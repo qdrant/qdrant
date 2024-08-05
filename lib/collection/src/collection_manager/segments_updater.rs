@@ -201,7 +201,7 @@ fn points_by_filter(
     filter: &Filter,
 ) -> CollectionResult<Vec<PointIdType>> {
     let mut affected_points: Vec<PointIdType> = Vec::new();
-    // the filtered read cannot be canceled from here
+    // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
         let points = s.read_filtered(None, None, Some(filter), &is_stopped);
@@ -643,7 +643,7 @@ pub(crate) fn delete_points_by_filter(
     filter: &Filter,
 ) -> CollectionResult<usize> {
     let mut total_deleted = 0;
-    // the filtered read cannot be canceled from here
+    // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     let mut points_to_delete: HashMap<_, _> = segments
         .iter()
