@@ -5,7 +5,7 @@ use std::hash::Hash;
 use crate::json_path::JsonPath;
 use crate::types::Filter;
 
-pub struct FacetRequest {
+pub struct FacetRequestInternal {
     pub key: JsonPath,
     pub limit: usize,
     pub filter: Option<Filter>,
