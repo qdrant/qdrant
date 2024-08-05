@@ -12,6 +12,7 @@ use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
+use crate::vector_storage::vector_storage_internal_trait::VectorStorageInternal;
 
 #[cfg(debug_assertions)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
@@ -280,6 +281,44 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             files.push(chunk_name(&self.directory, chunk_idx));
         }
         files
+    }
+}
+
+impl<T: Sized + Copy + 'static> VectorStorageInternal<T> for ChunkedMmapVectors<T> {
+    #[inline]
+    fn len(&self) -> usize {
+        ChunkedMmapVectors::len(self)
+    }
+
+    #[inline]
+    fn dim(&self) -> usize {
+        ChunkedMmapVectors::dim(self)
+    }
+
+    #[inline]
+    fn get(&self, key: PointOffsetType) -> Option<&[T]> {
+        ChunkedMmapVectors::get(self, key)
+    }
+
+    #[inline]
+    fn files(&self) -> Vec<PathBuf> {
+        ChunkedMmapVectors::files(self)
+    }
+
+    #[inline]
+    fn flusher(&self) -> Flusher {
+        ChunkedMmapVectors::flusher(self)
+    }
+
+    fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
+        ChunkedMmapVectors::push(self, vector)
+    }
+
+    fn insert<TKey>(&mut self, key: TKey, vector: &[T]) -> OperationResult<()>
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        ChunkedMmapVectors::insert(self, key, vector)
     }
 }
 

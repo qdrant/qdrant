@@ -154,6 +154,15 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => {
             raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
+        VectorStorageEnum::DenseAppendableInRam(vs) => {
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
+        VectorStorageEnum::DenseAppendableInRamByte(vs) => {
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
+        VectorStorageEnum::DenseAppendableInRamHalf(vs) => {
+            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
         VectorStorageEnum::SparseSimple(vs) => {
             raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
         }

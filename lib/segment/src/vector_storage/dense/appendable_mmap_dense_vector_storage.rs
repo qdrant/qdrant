@@ -15,17 +15,20 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::vector_storage::vector_storage_internal_trait::VectorStorageInternal;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Debug)]
-pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
-    vectors: ChunkedMmapVectors<T>,
+pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: VectorStorageInternal<T>>
+{
+    vectors: S,
     deleted: DynamicMmapFlags,
     distance: Distance,
     deleted_count: usize,
+    _phantom: std::marker::PhantomData<T>,
 }
 
 pub fn open_appendable_memmap_vector_storage(
@@ -67,7 +70,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
+) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_DIR_PATH);
@@ -83,10 +86,13 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
         deleted,
         distance,
         deleted_count,
+        _phantom: Default::default(),
     })
 }
 
-impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>>
+    AppendableMmapDenseVectorStorage<T, S>
+{
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
@@ -107,7 +113,9 @@ impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
     }
 }
 
-impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>> DenseVectorStorage<T>
+    for AppendableMmapDenseVectorStorage<T, S>
+{
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }
@@ -117,7 +125,9 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
     }
 }
 
-impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement, S: VectorStorageInternal<T>> VectorStorage
+    for AppendableMmapDenseVectorStorage<T, S>
+{
     fn distance(&self) -> Distance {
         self.distance
     }

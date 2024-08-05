@@ -249,7 +249,7 @@ pub(crate) fn open_vector_storage(
             }
         }
         VectorStorageType::LockedChunkedMmap => {
-            if let Some(multi_vec_config) = &vector_config.multivector_config {
+            if let Some(_multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => unimplemented!(),
                     VectorStorageDatatype::Uint8 => unimplemented!(),

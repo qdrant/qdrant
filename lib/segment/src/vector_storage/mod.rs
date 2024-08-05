@@ -16,10 +16,12 @@ mod async_io_mock;
 mod bitvec;
 pub mod common;
 pub mod dense;
+mod in_ram_persisted_vectors;
 pub mod multi_dense;
 pub mod query;
 mod query_scorer;
 pub mod simple_sparse_vector_storage;
+mod vector_storage_internal_trait;
 
 pub use raw_scorer::*;
 pub use vector_storage_base::*;
