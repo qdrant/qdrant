@@ -739,7 +739,7 @@ impl Segment {
 
         let ids_iterator = payload_index
             .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
-            .check_stop(|| !is_stopped.load(Ordering::Relaxed))
+            .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);
                 match external_id {

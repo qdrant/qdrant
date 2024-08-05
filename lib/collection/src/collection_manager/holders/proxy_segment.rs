@@ -986,6 +986,7 @@ impl SegmentEntry for ProxySegment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
+        // the filtered read cannot be canceled from here
         let is_stopped = AtomicBool::new(false);
         let points_to_delete =
             self.wrapped_segment
