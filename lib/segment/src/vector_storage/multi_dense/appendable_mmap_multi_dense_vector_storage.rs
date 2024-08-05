@@ -229,9 +229,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.vectors.dim());
         let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
-        let chunk_size = self.vectors.get_chunk_size_in_bytes();
-        if multivector_size_in_bytes >= chunk_size {
-            return Err(OperationError::service_error(format!("Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage. It's too large, maximum size is {chunk_size}.")));
+        let max_vector_size_bytes = self.vectors.max_vector_size_bytes();
+        if multivector_size_in_bytes >= max_vector_size_bytes {
+            return Err(OperationError::service_error(format!(
+                "Cannot insert multi vector of size {multivector_size_in_bytes} to the mmap vector storage.\
+                 It's too large, maximum size is {max_vector_size_bytes}."
+            )));
         }
 
         let mut offset = self

@@ -138,7 +138,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         chunk_vector_idx * self.config.dim
     }
 
-    pub fn get_chunk_size_in_bytes(&self) -> usize {
+    pub fn max_vector_size_bytes(&self) -> usize {
         self.config.chunk_size_bytes
     }
 
