@@ -155,6 +155,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             &self.directory,
             self.chunks.len(),
             self.config.chunk_size_bytes,
+            self.config.mlock.unwrap_or_default(),
         )?;
 
         self.chunks.push(chunk);

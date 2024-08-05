@@ -74,10 +74,20 @@ pub fn create_chunk<T: Sized>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
+    mlock: bool,
 ) -> OperationResult<MmapChunk<T>> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path)?;
+    #[cfg(unix)]
+    if mlock {
+        mmap.lock()?;
+    }
+    // If not, log warning and continue
+    #[cfg(not(unix))]
+    if mlock {
+        log::warn!("Can't lock vectors in RAM, is not supported on this platform");
+    }
     let chunk = unsafe { MmapChunk::try_from(mmap)? };
     Ok(chunk)
 }
