@@ -22,7 +22,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
+use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 

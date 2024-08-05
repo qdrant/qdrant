@@ -16,6 +16,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
@@ -28,65 +29,6 @@ pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement, S: Chunke
     distance: Distance,
     deleted_count: usize,
     _phantom: std::marker::PhantomData<T>,
-}
-
-pub fn open_appendable_memmap_vector_storage(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
-}
-
-pub fn open_appendable_memmap_vector_storage_byte(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_memmap_vector_storage_half(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<VectorStorageEnum> {
-    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
-
-    Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
-        storage,
-    )))
-}
-
-pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
-    path: &Path,
-    dim: usize,
-    distance: Distance,
-) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
-    create_dir_all(path)?;
-
-    let vectors_path = path.join(VECTORS_DIR_PATH);
-    let deleted_path = path.join(DELETED_DIR_PATH);
-
-    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, Some(false))?;
-
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
-    let deleted_count = deleted.count_flags();
-
-    Ok(AppendableMmapDenseVectorStorage {
-        vectors,
-        deleted,
-        distance,
-        deleted_count,
-        _phantom: Default::default(),
-    })
 }
 
 impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseVectorStorage<T, S> {
@@ -213,4 +155,122 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.get_bitslice()
     }
+}
+
+pub fn open_appendable_memmap_vector_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
+}
+
+pub fn open_appendable_memmap_vector_storage_byte(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
+        storage,
+    )))
+}
+
+pub fn open_appendable_memmap_vector_storage_half(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
+        storage,
+    )))
+}
+
+pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<AppendableMmapDenseVectorStorage<T, ChunkedMmapVectors<T>>> {
+    create_dir_all(path)?;
+
+    let vectors_path = path.join(VECTORS_DIR_PATH);
+    let deleted_path = path.join(DELETED_DIR_PATH);
+
+    let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim, Some(false))?;
+
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
+    let deleted_count = deleted.count_flags();
+
+    Ok(AppendableMmapDenseVectorStorage {
+        vectors,
+        deleted,
+        distance,
+        deleted_count,
+        _phantom: Default::default(),
+    })
+}
+
+pub fn open_appendable_in_ram_vector_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage =
+        open_appendable_in_ram_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableInRam(Box::new(storage)))
+}
+
+pub fn open_appendable_in_ram_vector_storage_byte(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_in_ram_vector_storage_impl(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableInRamByte(Box::new(
+        storage,
+    )))
+}
+
+pub fn open_appendable_in_ram_vector_storage_half(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    let storage = open_appendable_in_ram_vector_storage_impl(path, dim, distance)?;
+
+    Ok(VectorStorageEnum::DenseAppendableInRamHalf(Box::new(
+        storage,
+    )))
+}
+
+pub fn open_appendable_in_ram_vector_storage_impl<T: PrimitiveVectorElement>(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<AppendableMmapDenseVectorStorage<T, InRamPersistedVectors<T>>> {
+    create_dir_all(path)?;
+
+    let vectors_path = path.join(VECTORS_DIR_PATH);
+    let deleted_path = path.join(DELETED_DIR_PATH);
+
+    let vectors = InRamPersistedVectors::<T>::open(&vectors_path, dim)?;
+
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
+    let deleted_count = deleted.count_flags();
+
+    Ok(AppendableMmapDenseVectorStorage {
+        vectors,
+        deleted,
+        distance,
+        deleted_count,
+        _phantom: Default::default(),
+    })
 }

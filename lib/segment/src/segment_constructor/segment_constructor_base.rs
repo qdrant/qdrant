@@ -36,9 +36,10 @@ use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
-use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::{
-    open_appendable_memmap_vector_storage, open_appendable_memmap_vector_storage_byte,
-    open_appendable_memmap_vector_storage_half,
+use crate::vector_storage::dense::appendable_dense_vector_storage::{
+    open_appendable_in_ram_vector_storage, open_appendable_in_ram_vector_storage_byte,
+    open_appendable_in_ram_vector_storage_half, open_appendable_memmap_vector_storage,
+    open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
@@ -248,7 +249,7 @@ pub(crate) fn open_vector_storage(
                 }
             }
         }
-        VectorStorageType::LockedChunkedMmap => {
+        VectorStorageType::InRamChunkedMmap => {
             if let Some(_multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => unimplemented!(),
@@ -257,9 +258,21 @@ pub(crate) fn open_vector_storage(
                 }
             } else {
                 match storage_element_type {
-                    VectorStorageDatatype::Float32 => unimplemented!(),
-                    VectorStorageDatatype::Uint8 => unimplemented!(),
-                    VectorStorageDatatype::Float16 => unimplemented!(),
+                    VectorStorageDatatype::Float32 => open_appendable_in_ram_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Uint8 => open_appendable_in_ram_vector_storage_byte(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Float16 => open_appendable_in_ram_vector_storage_half(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
                 }
             }
         }
