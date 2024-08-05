@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::fixtures::payload_fixtures::random_filter;
@@ -9,6 +11,7 @@ const ATTEMPTS: usize = 100;
 
 #[test]
 fn test_filtering_context_consistency() {
+    let is_stopped = AtomicBool::new(false);
     let seed = 42;
     let mut rng = StdRng::seed_from_u64(seed);
 
@@ -21,10 +24,18 @@ fn test_filtering_context_consistency() {
 
         let random_offset = rng.gen_range(0..10);
 
-        let read_by_index_res =
-            segment.filtered_read_by_index(Some(random_offset.into()), Some(10), &filter);
-        let read_by_stream_res =
-            segment.filtered_read_by_id_stream(Some(random_offset.into()), Some(10), &filter);
+        let read_by_index_res = segment.filtered_read_by_index(
+            Some(random_offset.into()),
+            Some(10),
+            &filter,
+            &is_stopped,
+        );
+        let read_by_stream_res = segment.filtered_read_by_id_stream(
+            Some(random_offset.into()),
+            Some(10),
+            &filter,
+            &is_stopped,
+        );
 
         assert_eq!(read_by_index_res, read_by_stream_res, "filter: {filter:#?}");
     }

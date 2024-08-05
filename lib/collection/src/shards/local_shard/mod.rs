@@ -889,9 +889,15 @@ impl LocalShard {
         filter: Option<&'a Filter>,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments().read();
+        let is_stopped = AtomicBool::new(false);
         let all_points: BTreeSet<_> = segments
             .non_appendable_then_appendable_segments()
-            .flat_map(|segment| segment.get().read().read_filtered(None, None, filter))
+            .flat_map(|segment| {
+                segment
+                    .get()
+                    .read()
+                    .read_filtered(None, None, filter, &is_stopped)
+            })
             .collect();
         Ok(all_points)
     }

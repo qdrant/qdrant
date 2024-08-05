@@ -15,6 +15,7 @@ use tokio::runtime::Handle;
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollOrder,
 };
@@ -148,18 +149,21 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
+        let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
-
+            let is_stopped = stopping_guard.get_is_stopped();
             search_runtime_handle.spawn_blocking(move || {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(offset, Some(limit), filter.as_ref())
+                segment.get().read().read_filtered(
+                    offset,
+                    Some(limit),
+                    filter.as_ref(),
+                    &is_stopped,
+                )
             })
         };
 
@@ -196,19 +200,23 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
     ) -> CollectionResult<(Vec<Record>, Vec<OrderValue>)> {
+        let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_ordered_filtered = |segment: LockedSegment| {
+            let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
             let order_by = order_by.clone();
 
             search_runtime_handle.spawn_blocking(move || {
-                segment
-                    .get()
-                    .read()
-                    .read_ordered_filtered(Some(limit), filter.as_ref(), &order_by)
+                segment.get().read().read_ordered_filtered(
+                    Some(limit),
+                    filter.as_ref(),
+                    &order_by,
+                    &is_stopped,
+                )
             })
         };
 
@@ -253,11 +261,13 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
+        let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_filtered = |segment: LockedSegment| {
+            let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
 
             search_runtime_handle.spawn_blocking(move || {
@@ -266,7 +276,7 @@ impl LocalShard {
 
                 (
                     read_segment.available_point_count(),
-                    read_segment.read_random_filtered(limit, filter.as_ref()),
+                    read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped),
                 )
             })
         };

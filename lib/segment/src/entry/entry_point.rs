@@ -110,25 +110,38 @@ pub trait SegmentEntry {
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
+    ///
+    /// Cancelled by `is_stopped` flag.
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
+        is_stopped: &AtomicBool,
     ) -> Vec<PointIdType>;
 
     /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
     /// starting with `order_by.start_from` value including.
     ///
     /// Will fail if there is no index for the order_by key.
+    /// Cancelled by `is_stopped` flag.
     fn read_ordered_filtered<'a>(
         &'a self,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
-    fn read_random_filtered(&self, limit: usize, filter: Option<&Filter>) -> Vec<PointIdType>;
+    /// Return random points which satisfies filtering condition.
+    ///
+    /// Cancelled by `is_stopped` flag.
+    fn read_random_filtered(
+        &self,
+        limit: usize,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> Vec<PointIdType>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;

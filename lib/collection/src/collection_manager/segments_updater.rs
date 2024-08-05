@@ -1,6 +1,7 @@
 //! A collection of functions for updating points and payloads stored in segments
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
 
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -200,8 +201,10 @@ fn points_by_filter(
     filter: &Filter,
 ) -> CollectionResult<Vec<PointIdType>> {
     let mut affected_points: Vec<PointIdType> = Vec::new();
+    // we don’t want to cancel this filtered read
+    let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter));
+        let points = s.read_filtered(None, None, Some(filter), &is_stopped);
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;
@@ -640,13 +643,17 @@ pub(crate) fn delete_points_by_filter(
     filter: &Filter,
 ) -> CollectionResult<usize> {
     let mut total_deleted = 0;
-
+    // we don’t want to cancel this filtered read
+    let is_stopped = AtomicBool::new(false);
     let mut points_to_delete: HashMap<_, _> = segments
         .iter()
         .map(|(segment_id, segment)| {
             (
                 *segment_id,
-                segment.get().read().read_filtered(None, None, Some(filter)),
+                segment
+                    .get()
+                    .read()
+                    .read_filtered(None, None, Some(filter), &is_stopped),
             )
         })
         .collect();
