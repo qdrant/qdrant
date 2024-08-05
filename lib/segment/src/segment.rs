@@ -27,7 +27,7 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
-use crate::data_types::facets::{FacetHit, FacetRequest, FacetValueHit};
+use crate::data_types::facets::{FacetHit, FacetRequestInternal, FacetValueHit};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -1517,7 +1517,7 @@ impl SegmentEntry for Segment {
 
     fn facet(
         &self,
-        request: &FacetRequest,
+        request: &FacetRequestInternal,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<FacetValueHit>> {
         let payload_index = self.payload_index.borrow();

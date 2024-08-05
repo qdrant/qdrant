@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetRequestInternal, FacetResponse};
 
 use super::TableOfContent;
 use crate::content_manager::errors::StorageResult;
@@ -29,7 +29,7 @@ impl TableOfContent {
     pub async fn facet_internal(
         &self,
         collection_name: &str,
-        request: FacetRequest,
+        request: FacetRequestInternal,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> StorageResult<FacetResponse> {

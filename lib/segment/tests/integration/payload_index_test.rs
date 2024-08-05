@@ -13,7 +13,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::facets::{FacetRequest, FacetValue, FacetValueHit};
+use segment::data_types::facets::{FacetRequestInternal, FacetValue, FacetValueHit};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
     KeywordIndexType,
@@ -1210,7 +1210,7 @@ fn test_keyword_facet() {
     let key: JsonPath = STR_KEY.try_into().unwrap();
 
     // *** No filter ***
-    let request = FacetRequest {
+    let request = FacetRequestInternal {
         key: key.clone(),
         limit,
         filter: None,
@@ -1232,7 +1232,7 @@ fn test_keyword_facet() {
     // *** With filter ***
     let mut rng = rand::thread_rng();
     let filter = random_filter(&mut rng, 3);
-    let request = FacetRequest {
+    let request = FacetRequestInternal {
         key,
         limit,
         filter: Some(filter.clone()),

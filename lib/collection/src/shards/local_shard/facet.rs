@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::{process_results, Itertools};
-use segment::data_types::facets::{aggregate_facet_hits, FacetRequest, FacetValueHit};
+use segment::data_types::facets::{aggregate_facet_hits, FacetRequestInternal, FacetValueHit};
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
@@ -15,7 +15,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 impl LocalShard {
     pub async fn do_facet(
         &self,
-        request: Arc<FacetRequest>,
+        request: Arc<FacetRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<FacetValueHit>> {

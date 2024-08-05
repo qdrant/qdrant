@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt as _;
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetRequestInternal, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::*;
 
@@ -185,7 +185,7 @@ impl ShardReplicaSet {
 
     pub async fn facet(
         &self,
-        request: Arc<FacetRequest>,
+        request: Arc<FacetRequestInternal>,
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,

@@ -6,7 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetRequestInternal, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -298,7 +298,7 @@ impl ShardOperation for QueueProxyShard {
 
     async fn facet(
         &self,
-        request: Arc<FacetRequest>,
+        request: Arc<FacetRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
@@ -612,7 +612,7 @@ impl ShardOperation for Inner {
 
     async fn facet(
         &self,
-        request: Arc<FacetRequest>,
+        request: Arc<FacetRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
