@@ -3,12 +3,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::stream::FuturesUnordered;
-use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
+use futures::{future, StreamExt as _, TryStreamExt as _};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::types::{
-    CustomIdCheckerCondition, Filter, ShardKey, WithPayload, WithPayloadInterface,
-};
+use segment::types::{CustomIdCheckerCondition, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
 use super::Collection;
@@ -252,49 +250,41 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
 
-            // Resharding filter to apply when resharding is active
-            let resharding_filter = shards_holder.resharding_filter();
-            let reshard_shard_id = shards_holder
-                .resharding_state
-                .read()
-                .as_ref()
-                .map(|state| state.shard_id);
-
-            // Create a normal and resharding filter
-            // Resharding filter must be used on existing shards if resharding is active
-            let (normal_filter, reshard_filter) =
-                normal_and_resharding_filter(request.filter, resharding_filter);
+            let reshardable_filter = shards_holder.reshardable_request(Arc::new(request.filter));
 
             let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                // Take resharding filter if available on existing shards, otherwise take normal filter
-                let filter = reshard_filter
-                    .as_ref()
-                    .filter(|_| Some(shard.shard_id) != reshard_shard_id)
-                    .or(normal_filter.as_ref());
+                let with_payload = &with_payload_interface;
+                let with_vector = &with_vector;
+                let filter = reshardable_filter.get_request(shard.shard_id);
+                let order_by = order_by.as_ref();
 
-                let shard_key = shard_key.cloned();
-                shard
-                    .scroll_by(
-                        id_offset,
-                        limit,
-                        &with_payload_interface,
-                        &with_vector,
-                        filter,
-                        read_consistency,
-                        local_only,
-                        order_by.as_ref(),
-                        timeout,
-                    )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
-                        }
-                        for point in &mut records {
-                            point.shard_key.clone_from(&shard_key);
-                        }
-                        Ok(records)
-                    })
+                async move {
+                    let mut records = shard
+                        .scroll_by(
+                            id_offset,
+                            limit,
+                            with_payload,
+                            with_vector,
+                            filter.as_ref().as_ref(),
+                            read_consistency,
+                            local_only,
+                            order_by,
+                            timeout,
+                        )
+                        .await?;
+
+                    if shard_key.is_none() {
+                        return Ok(records);
+                    }
+
+                    for point in &mut records {
+                        point.shard_key = shard_key.cloned();
+                    }
+
+                    CollectionResult::Ok(records)
+                }
             });
+
             future::try_join_all(scroll_futures).await?
         };
 
@@ -375,36 +365,17 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
 
-        // Resharding filter to apply when resharding is active
-        let resharding_filter = shards_holder.resharding_filter();
-        let reshard_shard_id = shards_holder
-            .resharding_state
-            .read()
-            .as_ref()
-            .map(|state| state.shard_id);
+        // Requests received through internal gRPC *always* have `shard_selection`
+        let local_only = shard_selection.is_shard_id();
 
-        // Create a request with resharding filtering a normal and resharding filter
-        // Should be used on all shards, except the new resharding shard
-        let (normal_request, reshard_request) =
-            normal_and_resharding_count_request(request, resharding_filter);
+        let reshardable_request = shards_holder.reshardable_request(Arc::new(request));
 
         let mut requests: FuturesUnordered<_> = shards
             .into_iter()
-            // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|(shard, _shard_key)| {
-                // Take resharding request if available on existing shards, otherwise take normal request
-                let request = reshard_request
-                    .as_ref()
-                    .filter(|_| Some(shard.shard_id) != reshard_shard_id)
-                    .unwrap_or(&normal_request)
-                    .clone();
+                let request = reshardable_request.get_request(shard.shard_id);
 
-                shard.count(
-                    request,
-                    read_consistency,
-                    timeout,
-                    shard_selection.is_shard_id(),
-                )
+                shard.count(request, read_consistency, timeout, local_only)
             })
             .collect();
 
@@ -494,50 +465,5 @@ impl Collection {
             .collect();
 
         Ok(points)
-    }
-}
-
-/// Merge a regular and resharding filter
-///
-/// The first element is always the given `request`.
-///
-/// The second element is the `request` with `resharding_filter` merged into it. It's None if no
-/// resharding filter was given.
-///
-/// This function minimizes cloning of the request to when it's strictly necessary.
-#[inline]
-fn normal_and_resharding_count_request(
-    mut request: CountRequestInternal,
-    resharding_filter: Option<Filter>,
-) -> (Arc<CountRequestInternal>, Option<Arc<CountRequestInternal>>) {
-    match resharding_filter {
-        None => (Arc::new(request), None),
-        Some(resharding_filter) => (Arc::new(request.clone()), {
-            super::resharding::merge_filters(&mut request.filter, Some(resharding_filter));
-            Some(Arc::new(request))
-        }),
-    }
-}
-
-/// Merge a regular and resharding filter
-///
-/// The first element is always the given `filter`.
-///
-/// The second element is the `filter` with `resharding_filter` merged into it. It's None if no
-/// resharding filter was given.
-///
-/// This function minimizes cloning of the filter to when it's strictly necessary.
-#[inline]
-fn normal_and_resharding_filter(
-    filter: Option<Filter>,
-    resharding_filter: Option<Filter>,
-) -> (Option<Filter>, Option<Filter>) {
-    match (filter, resharding_filter) {
-        (filter, None) => (filter, None),
-        (Some(filter), Some(resharding_filter)) => (
-            Some(filter.clone()),
-            Some(filter.merge_owned(resharding_filter)),
-        ),
-        (None, Some(resharding_filter)) => (None, Some(resharding_filter)),
     }
 }

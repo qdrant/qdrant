@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use segment::types::{Condition, Filter, ShardKey};
 
+use super::reshardable_read_request::{EditFilter, ReshardableReadRequest};
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -367,10 +368,23 @@ impl ShardHolder {
     /// A filter that excludes points migrated to a different shard, as part of resharding.
     ///
     /// `None` if resharding is not active or if the read hash ring is not committed yet.
-    pub fn resharding_filter(&self) -> Option<Filter> {
+    fn resharding_filter(&self) -> Option<Filter> {
         let filter = self.resharding_filter_impl()?;
         let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
         Some(filter)
+    }
+
+    pub fn reshardable_request<T: EditFilter + Clone>(
+        &self,
+        request: Arc<T>,
+    ) -> ReshardableReadRequest<T> {
+        let resharding_id_and_filter = self
+            .resharding_state
+            .read()
+            .as_ref()
+            .map(|state| state.shard_id)
+            .and_then(|shard_id| self.resharding_filter().map(|filter| (shard_id, filter)));
+        ReshardableReadRequest::new(request, resharding_id_and_filter)
     }
 
     #[inline]
