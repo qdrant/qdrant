@@ -8,12 +8,7 @@ use std::path::Path;
 use common::types::PointOffsetType;
 
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
-
-// chunk size in bytes
-pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;
-
-// if dimension is too high, use this capacity
-const MIN_CHUNK_CAPACITY: usize = 16;
+use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]
 pub struct ChunkedVectors<T> {
@@ -32,7 +27,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     pub fn new(dim: usize) -> Self {
         assert_ne!(dim, 0, "The vector's dimension cannot be 0");
         let vector_size = dim * mem::size_of::<T>();
-        let chunk_capacity = max(MIN_CHUNK_CAPACITY, CHUNK_SIZE / vector_size);
+        let chunk_capacity = CHUNK_SIZE / vector_size;
         Self {
             dim,
             len: 0,

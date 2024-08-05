@@ -18,3 +18,6 @@ pub struct StoredRecord<T> {
     pub deleted: bool,
     pub vector: T,
 }
+
+/// Vector storage chunk size in bytes
+pub const CHUNK_SIZE: usize = 32 * 1024 * 1024;

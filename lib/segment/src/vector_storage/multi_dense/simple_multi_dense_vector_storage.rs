@@ -18,8 +18,8 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::{ChunkedVectors, CHUNK_SIZE};
-use crate::vector_storage::common::StoredRecord;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;

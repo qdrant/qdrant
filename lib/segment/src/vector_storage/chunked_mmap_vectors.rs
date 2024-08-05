@@ -14,11 +14,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
-
-#[cfg(debug_assertions)]
-const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
-#[cfg(not(debug_assertions))]
-const DEFAULT_CHUNK_SIZE: usize = 32 * 1024 * 1024; // 32Mb
+use crate::vector_storage::common::CHUNK_SIZE;
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -76,7 +72,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
         if !config_file.exists() {
-            let chunk_size_bytes = DEFAULT_CHUNK_SIZE;
+            let chunk_size_bytes = CHUNK_SIZE;
             let vector_size_bytes = dim * std::mem::size_of::<T>();
             let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
             let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
