@@ -230,3 +230,9 @@ Our protocol buffers are defined in `lib/api/src/grpc/proto/*.proto`
 7. generate docs `./tools/generate_grpc_docs.sh`
 
 Here is a good [tonic tutorial](https://github.com/hyperium/tonic/blob/master/examples/routeguide-tutorial.md#defining-the-service) for reference.
+
+### System integration
+
+On top of the API definitions, Qdrant has a few system integrations that need to be considered when making changes:
+1. add new endpoints to the metrics allow lists in `src/common/metrics.rs`
+2. test the JWT integration in `tests/auth_tests`
