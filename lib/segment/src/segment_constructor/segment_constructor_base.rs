@@ -49,7 +49,9 @@ use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_vector_storage,
 };
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
-    open_appendable_memmap_multi_vector_storage, open_appendable_memmap_multi_vector_storage_byte,
+    open_appendable_in_ram_multi_vector_storage, open_appendable_in_ram_multi_vector_storage_byte,
+    open_appendable_in_ram_multi_vector_storage_half, open_appendable_memmap_multi_vector_storage,
+    open_appendable_memmap_multi_vector_storage_byte,
     open_appendable_memmap_multi_vector_storage_half,
 };
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
@@ -250,11 +252,30 @@ pub(crate) fn open_vector_storage(
             }
         }
         VectorStorageType::InRamChunkedMmap => {
-            if let Some(_multi_vec_config) = &vector_config.multivector_config {
+            if let Some(multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
-                    VectorStorageDatatype::Float32 => unimplemented!(),
-                    VectorStorageDatatype::Uint8 => unimplemented!(),
-                    VectorStorageDatatype::Float16 => unimplemented!(),
+                    VectorStorageDatatype::Float32 => open_appendable_in_ram_multi_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                    ),
+                    VectorStorageDatatype::Uint8 => {
+                        open_appendable_in_ram_multi_vector_storage_byte(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                    VectorStorageDatatype::Float16 => {
+                        open_appendable_in_ram_multi_vector_storage_half(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
                 }
             } else {
                 match storage_element_type {
