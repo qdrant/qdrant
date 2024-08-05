@@ -257,6 +257,58 @@ pub(crate) fn open_vector_storage(
                 }
             }
         }
+        VectorStorageType::LockedChunkedMmap => {
+            if let Some(multi_vec_config) = &vector_config.multivector_config {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                        Some(true),
+                    ),
+                    VectorStorageDatatype::Uint8 => {
+                        open_appendable_memmap_multi_vector_storage_byte(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                            Some(true),
+                        )
+                    }
+                    VectorStorageDatatype::Float16 => {
+                        open_appendable_memmap_multi_vector_storage_half(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                            Some(true),
+                        )
+                    }
+                }
+            } else {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        Some(true),
+                    ),
+                    VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        Some(false),
+                    ),
+                    VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        Some(true),
+                    ),
+                }
+            }
+        }
     }
 }
 

@@ -21,7 +21,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps<T: Sized>(directory: &Path) -> OperationResult<Vec<MmapChunk<T>>> {
+pub fn read_mmaps<T: Sized>(directory: &Path, mlock: bool) -> OperationResult<Vec<MmapChunk<T>>> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -48,6 +48,16 @@ pub fn read_mmaps<T: Sized>(directory: &Path) -> OperationResult<Vec<MmapChunk<T
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file)?;
+        // If unix, lock the memory
+        #[cfg(unix)]
+        if mlock {
+            mmap.lock()?;
+        }
+        // If not, log warning and continue
+        #[cfg(not(unix))]
+        if mlock {
+            log::warn!("Can't lock vectors in RAM, is not supported on this platform");
+        }
         let chunk = unsafe { MmapChunk::try_from(mmap)? };
         result.push(chunk);
     }

@@ -354,7 +354,11 @@ impl CollectionParams {
                         // Default to in memory storage
                         storage_type: if params.on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
+                        } else if cfg!(unix) {
+                            VectorStorageType::LockedChunkedMmap
                         } else {
+                            // non-unix platforms do not support mlock
+                            // So we default to Memory storage
                             VectorStorageType::Memory
                         },
                         multivector_config: params.multivector_config,

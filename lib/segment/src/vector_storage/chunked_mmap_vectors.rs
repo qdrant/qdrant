@@ -115,7 +115,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let status = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim, mlock)?;
-        let chunks = read_mmaps(directory)?;
+        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default())?;
 
         let vectors = Self {
             status,
