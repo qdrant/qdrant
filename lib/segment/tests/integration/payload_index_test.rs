@@ -1179,6 +1179,7 @@ fn validate_facet_result(
     facet_hits: Vec<FacetValueHit>,
     filter: Option<Filter>,
 ) {
+    let is_stopped = AtomicBool::new(false);
     let mut expected = facet_hits.clone();
     expected.sort_by_key(|hit| Reverse(hit.clone()));
     assert_eq!(facet_hits, expected);
@@ -1194,7 +1195,7 @@ fn validate_facet_result(
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
         let exact = segment
-            .read_filtered(None, None, count_filter.as_ref())
+            .read_filtered(None, None, count_filter.as_ref(), &is_stopped)
             .len();
 
         assert_eq!(hit.count, exact);

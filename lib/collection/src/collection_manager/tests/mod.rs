@@ -2,6 +2,7 @@ mod test_search_aggregation;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -46,6 +47,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
 #[test]
 fn test_update_proxy_segments() {
+    let is_stopped = AtomicBool::new(false);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let segment1 = build_segment_1(dir.path());
@@ -84,7 +86,12 @@ fn test_update_proxy_segments() {
     let all_ids = segments
         .read()
         .iter()
-        .flat_map(|(_id, segment)| segment.get().read().read_filtered(None, Some(100), None))
+        .flat_map(|(_id, segment)| {
+            segment
+                .get()
+                .read()
+                .read_filtered(None, Some(100), None, &is_stopped)
+        })
         .sorted()
         .collect_vec();
 
