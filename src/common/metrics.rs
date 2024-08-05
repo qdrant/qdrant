@@ -20,16 +20,26 @@ use crate::common::telemetry_ops::requests_telemetry::{
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{name}/index",
     "/collections/{name}/points",
+    "/collections/{name}/points/batch",
+    "/collections/{name}/points/count",
+    "/collections/{name}/points/delete",
     "/collections/{name}/points/discover",
     "/collections/{name}/points/discover/batch",
     "/collections/{name}/points/payload",
+    "/collections/{name}/points/payload/clear",
+    "/collections/{name}/points/payload/delete",
     "/collections/{name}/points/query",
     "/collections/{name}/points/query/batch",
+    "/collections/{name}/points/query/groups",
     "/collections/{name}/points/recommend",
     "/collections/{name}/points/recommend/batch",
+    "/collections/{name}/points/recommend/groups",
     "/collections/{name}/points/scroll",
     "/collections/{name}/points/search",
     "/collections/{name}/points/search/batch",
+    "/collections/{name}/points/search/groups",
+    "/collections/{name}/points/vectors",
+    "/collections/{name}/points/vectors/delete",
 ];
 
 /// Whitelist for GRPC endpoints in metrics output.
@@ -38,17 +48,27 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 ///
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
+    "/qdrant.Points/ClearPayload",
+    "/qdrant.Points/Count",
+    "/qdrant.Points/Delete",
+    "/qdrant.Points/DeletePayload",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
+    "/qdrant.Points/Get",
     "/qdrant.Points/OverwritePayload",
     "/qdrant.Points/Query",
     "/qdrant.Points/QueryBatch",
+    "/qdrant.Points/QueryGroups",
     "/qdrant.Points/Recommend",
     "/qdrant.Points/RecommendBatch",
+    "/qdrant.Points/RecommendGroups",
     "/qdrant.Points/Scroll",
     "/qdrant.Points/Search",
     "/qdrant.Points/SearchBatch",
+    "/qdrant.Points/SearchGroups",
     "/qdrant.Points/SetPayload",
+    "/qdrant.Points/UpdateBatch",
+    "/qdrant.Points/UpdateVectors",
     "/qdrant.Points/Upsert",
 ];
 
