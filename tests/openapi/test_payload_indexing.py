@@ -7,9 +7,8 @@ collection_name = 'test_collection_payload_indexing'
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
-    basic_collection_setup(collection_name=collection_name,
-                           on_disk_vectors=on_disk_vectors)
+def setup():
+    basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -292,3 +291,97 @@ def test_update_payload_on_indexed_field():
     )
     assert response.ok
     assert [p['id'] for p in response.json()['result']['points']] == [1, 2, 3]
+
+
+def test_payload_schemas():
+    FIELDS = [
+        "keyword",
+        "integer",
+        "float",
+        "geo",
+        "text",
+        "bool",
+        "datetime",
+        "uuid",
+        {
+            "type": "keyword",
+            "is_tenant": True,
+            "on_disk": True,
+        },
+        {
+            "type": "integer",
+            "lookup": True,
+            "range": True,
+            "is_principal": True,
+            "on_disk": True,
+        },
+        {
+            "type": "float",
+            "on_disk": True,
+            "is_principal": True,
+        },
+        {
+            "type": "geo",
+        },
+        {
+            "type": "text",
+            "tokenizer": "word",
+            "lowercase": True,
+            "min_token_len": 2,
+            "max_token_len": 10,
+        },
+        {
+            "type": "bool",
+        },
+        {
+            "type": "datetime",
+            "on_disk": True,
+            "is_principal": True,
+        },
+        {
+            "type": "uuid",
+            "is_tenant": True,
+        },
+    ]
+
+    try:
+        for field_no, schema in enumerate(FIELDS):
+            response = request_with_validation(
+                api="/collections/{collection_name}/index",
+                method="PUT",
+                path_params={"collection_name": collection_name},
+                query_params={"wait": "true"},
+                body={
+                    "field_name": f"field_{field_no:02d}",
+                    "field_schema": schema,
+                },
+            )
+            assert response.ok
+
+        response = request_with_validation(
+            api="/collections/{collection_name}",
+            method="GET",
+            path_params={"collection_name": collection_name},
+        )
+        assert response.ok
+        for field_no, schema in enumerate(FIELDS):
+            actual_schema = response.json()["result"]["payload_schema"][
+                f"field_{field_no:02d}"
+            ]
+            if isinstance(schema, str):
+                assert actual_schema["data_type"] == schema
+                assert "params" not in actual_schema
+            else:
+                assert actual_schema["data_type"] == schema["type"]
+                assert actual_schema["params"] == schema
+            assert actual_schema["points"] == 0
+    finally:
+        for field_no in range(len(FIELDS)):
+            response = request_with_validation(
+                api="/collections/{collection_name}/index/{field_name}",
+                method="DELETE",
+                path_params={
+                    "collection_name": collection_name,
+                    "field_name": f"field_{field_no:02d}",
+                },
+            )
