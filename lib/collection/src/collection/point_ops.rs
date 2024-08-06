@@ -295,7 +295,6 @@ impl Collection {
                         Ok(records)
                     })
             });
-            // todo tokio::timeout
             future::try_join_all(scroll_futures).await?
         };
 
@@ -410,7 +409,6 @@ impl Collection {
             .collect();
 
         let mut count = 0;
-        // TODO tokio.timeout
         while let Some(response) = requests.try_next().await? {
             count += response.count;
         }
