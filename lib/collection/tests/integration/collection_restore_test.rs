@@ -112,6 +112,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
+            None,
         )
         .await
         .unwrap();
@@ -192,6 +193,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
+            None,
         )
         .await
         .unwrap();
@@ -227,6 +229,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
+            None,
         )
         .await
         .unwrap();

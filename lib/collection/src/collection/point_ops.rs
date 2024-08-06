@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::stream::FuturesUnordered;
 use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
@@ -212,6 +213,7 @@ impl Collection {
         request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequestInternal::default();
 
@@ -281,6 +283,7 @@ impl Collection {
                         read_consistency,
                         local_only,
                         order_by.as_ref(),
+                        timeout,
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
@@ -292,7 +295,6 @@ impl Collection {
                         Ok(records)
                     })
             });
-
             future::try_join_all(scroll_futures).await?
         };
 
@@ -368,6 +370,7 @@ impl Collection {
         request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
@@ -385,7 +388,7 @@ impl Collection {
         let (normal_request, reshard_request) =
             normal_and_resharding_count_request(request, resharding_filter);
 
-        let mut requests: futures::stream::FuturesUnordered<_> = shards
+        let mut requests: FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|(shard, _shard_key)| {
@@ -396,12 +399,16 @@ impl Collection {
                     .unwrap_or(&normal_request)
                     .clone();
 
-                shard.count(request, read_consistency, shard_selection.is_shard_id())
+                shard.count(
+                    request,
+                    read_consistency,
+                    timeout,
+                    shard_selection.is_shard_id(),
+                )
             })
             .collect();
 
         let mut count = 0;
-
         while let Some(response) = requests.try_next().await? {
             count += response.count;
         }
@@ -414,6 +421,7 @@ impl Collection {
         request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = request
             .with_payload
@@ -452,6 +460,7 @@ impl Collection {
                             with_payload,
                             &request.with_vector,
                             read_consistency,
+                            timeout,
                             shard_selection.is_shard_id(),
                         )
                         .await?;

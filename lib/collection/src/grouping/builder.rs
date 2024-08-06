@@ -75,6 +75,7 @@ where
 
     /// Does the actual grouping
     async fn run(self) -> CollectionResult<Vec<PointGroup>> {
+        let start = std::time::Instant::now();
         let with_lookup = self.group_by.with_lookup.clone();
 
         let core_group_by = self
@@ -84,6 +85,7 @@ where
                 self.collection_by_name.clone(),
                 self.read_consistency,
                 self.shard_selection.clone(),
+                self.timeout,
             )
             .await?;
 
@@ -97,6 +99,8 @@ where
         .await?;
 
         if let Some(lookup) = with_lookup {
+            // update timeout
+            let timeout = self.timeout.map(|timeout| timeout - start.elapsed());
             let mut lookups = {
                 let pseudo_ids = groups
                     .iter()
@@ -110,6 +114,7 @@ where
                     self.collection_by_name,
                     self.read_consistency,
                     &self.shard_selection,
+                    timeout,
                 )
                 .await?
             };

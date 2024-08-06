@@ -22,6 +22,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -46,6 +47,7 @@ impl ShardReplicaSet {
                             filter.as_deref(),
                             &search_runtime,
                             order_by.as_deref(),
+                            timeout,
                         )
                         .await
                 }
@@ -81,12 +83,13 @@ impl ShardReplicaSet {
         &self,
         request: Arc<CountRequestInternal>,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
         local_only: bool,
     ) -> CollectionResult<CountResult> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
-                async move { shard.count(request).await }.boxed()
+                async move { shard.count(request, timeout).await }.boxed()
             },
             read_consistency,
             local_only,
@@ -100,6 +103,7 @@ impl ShardReplicaSet {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
         local_only: bool,
     ) -> CollectionResult<Vec<Record>> {
         let with_payload = Arc::new(with_payload.clone());
@@ -111,7 +115,12 @@ impl ShardReplicaSet {
                 let with_payload = with_payload.clone();
                 let with_vector = with_vector.clone();
 
-                async move { shard.retrieve(request, &with_payload, &with_vector).await }.boxed()
+                async move {
+                    shard
+                        .retrieve(request, &with_payload, &with_vector, timeout)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             local_only,
@@ -130,11 +139,12 @@ impl ShardReplicaSet {
     pub async fn count_local(
         &self,
         request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Option<CountResult>> {
         let local = self.local.read().await;
         match &*local {
             None => Ok(None),
-            Some(shard) => Ok(Some(shard.get().count(request).await?)),
+            Some(shard) => Ok(Some(shard.get().count(request, timeout).await?)),
         }
     }
 

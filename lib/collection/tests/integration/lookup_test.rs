@@ -117,6 +117,7 @@ async fn happy_lookup_ids() {
         collection_by_name,
         read_consistency,
         &shard_selection,
+        None,
     )
     .await;
 
@@ -205,6 +206,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         collection_by_name,
         read_consistency,
         &shard_selection,
+        None,
     )
     .await;
 
@@ -237,6 +239,7 @@ async fn err_when_collection_by_name_returns_none() {
         collection_by_name,
         read_consistency,
         &shard_selection,
+        None,
     )
     .await;
 

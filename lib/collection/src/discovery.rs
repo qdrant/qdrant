@@ -163,6 +163,7 @@ where
     F: Fn(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
+    let start = std::time::Instant::now();
     // shortcuts batch if all requests with limit=0
     if request_batch.iter().all(|(s, _)| s.limit == 0) {
         return Ok(vec![]);
@@ -192,8 +193,12 @@ where
         collection,
         collection_by_name,
         read_consistency,
+        timeout,
     )
     .await?;
+
+    // update timeout
+    let timeout = timeout.map(|timeout| timeout - start.elapsed());
 
     let res = batch_requests::<
         (DiscoverRequestInternal, ShardSelectorInternal),

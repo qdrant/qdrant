@@ -212,6 +212,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             },
             None,
             &ShardSelectorInternal::All,
+            None,
         )
         .await
         .unwrap();

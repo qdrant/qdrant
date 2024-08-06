@@ -133,6 +133,7 @@ impl ForwardProxyShard {
                 None,
                 runtime_handle,
                 None,
+                None, // no timeout
             )
             .await?;
         let next_page_offset = if batch.len() < limit {
@@ -320,6 +321,7 @@ impl ShardOperation for ForwardProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -331,6 +333,7 @@ impl ShardOperation for ForwardProxyShard {
                 filter,
                 search_runtime_handle,
                 order_by,
+                timeout,
             )
             .await
     }
@@ -351,9 +354,13 @@ impl ShardOperation for ForwardProxyShard {
             .await
     }
 
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
-        local_shard.count(request).await
+        local_shard.count(request, timeout).await
     }
 
     async fn retrieve(
@@ -361,10 +368,11 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .retrieve(request, with_payload, with_vector)
+            .retrieve(request, with_payload, with_vector, timeout)
             .await
     }
 
