@@ -16,6 +16,7 @@ use collection::operations::universal_query::collection_query::{
 };
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
+use segment::data_types::facets::FacetRequest;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
@@ -23,7 +24,7 @@ use super::{
     CollectionAccessView, CollectionPass, PayloadConstraint,
 };
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
-use crate::content_manager::errors::StorageError;
+use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl Access {
     #[allow(private_bounds)]
@@ -363,6 +364,25 @@ fn check_access_for_prefetch(
     }
 
     Ok(())
+}
+
+impl CheckableCollectionOperation for FacetRequest {
+    fn access_requirements(&self) -> AccessRequirements {
+        AccessRequirements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
+    }
+
+    fn check_access(
+        &mut self,
+        view: CollectionAccessView<'_>,
+        _access: &CollectionAccessList,
+    ) -> StorageResult<()> {
+        view.apply_filter(&mut self.filter);
+        Ok(())
+    }
 }
 
 impl CheckableCollectionOperation for CollectionUpdateOperations {

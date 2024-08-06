@@ -6,6 +6,8 @@ use io::file_operations::FileStorageError;
 use tempfile::PersistError;
 use thiserror::Error;
 
+pub type StorageResult<T> = Result<T, StorageError>;
+
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum StorageError {

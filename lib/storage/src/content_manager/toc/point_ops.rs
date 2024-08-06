@@ -12,10 +12,11 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
-use crate::content_manager::errors::StorageError;
+use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::rbac::Access;
 
 impl TableOfContent {
@@ -37,7 +38,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<ScoredPoint>, StorageError> {
+    ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -70,7 +71,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
             collection_pass = Some(access.check_point_op(collection_name, request)?);
@@ -113,7 +114,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for request in &mut request.searches {
             collection_pass = Some(access.check_point_op(collection_name, request)?);
@@ -149,7 +150,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-    ) -> Result<CountResult, StorageError> {
+    ) -> StorageResult<CountResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -178,7 +179,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-    ) -> Result<Vec<Record>, StorageError> {
+    ) -> StorageResult<Vec<Record>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -196,7 +197,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<GroupsResult, StorageError> {
+    ) -> StorageResult<GroupsResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -223,7 +224,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<ScoredPoint>, StorageError> {
+    ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -246,7 +247,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
             collection_pass = Some(access.check_point_op(collection_name, request)?);
@@ -287,7 +288,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-    ) -> Result<ScrollResult, StorageError> {
+    ) -> StorageResult<ScrollResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
@@ -304,12 +305,13 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-    ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+    ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
             collection_pass = Some(access.check_point_op(collection_name, request)?);
         }
         let Some(collection_pass) = collection_pass else {
+            // This can happen only if there are no requests
             return Ok(vec![]);
         };
 
@@ -326,6 +328,26 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    // Return unique values for a payload key, and a count of points for each value.
+    pub async fn facet(
+        &self,
+        collection_name: &str,
+        mut request: FacetRequest,
+        shard_selection: ShardSelectorInternal,
+        read_consistency: Option<ReadConsistency>,
+        access: Access,
+        timeout: Option<Duration>,
+    ) -> StorageResult<FacetResponse> {
+        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+
+        let collection = self.get_collection(&collection_pass).await?;
+
+        collection
+            .facet(request, shard_selection, read_consistency, timeout)
+            .await
+            .map_err(StorageError::from)
+    }
+
     /// # Cancel safety
     ///
     /// This method is cancel safe.
@@ -338,7 +360,7 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
-    ) -> Result<UpdateResult, StorageError> {
+    ) -> StorageResult<UpdateResult> {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
         let updates: FuturesUnordered<_> = shard_keys
@@ -368,7 +390,7 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
-    ) -> Result<UpdateResult, StorageError> {
+    ) -> StorageResult<UpdateResult> {
         let collection_pass = access.check_point_op(collection_name, &mut operation.operation)?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,

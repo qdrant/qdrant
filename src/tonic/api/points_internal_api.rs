@@ -17,10 +17,9 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
-use segment::data_types::facets::FacetRequest;
+use segment::data_types::facets::{FacetRequest, FacetResponse};
 use segment::json_path::JsonPath;
 use segment::types::Filter;
-use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
@@ -72,8 +71,7 @@ pub async fn query_batch_internal(
 
     let batch_response = toc
         .query_batch_internal(&collection_name, batch_requests, shard_selection, timeout)
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = QueryBatchResponseInternal {
         results: batch_response
@@ -94,31 +92,46 @@ pub async fn query_batch_internal(
 }
 
 async fn facet_counts_internal(
-    _toc: &TableOfContent,
+    toc: &TableOfContent,
     request: FacetCountsInternal,
 ) -> Result<Response<FacetResponseInternal>, Status> {
-    let _timing = Instant::now();
+    let timing = Instant::now();
 
     let FacetCountsInternal {
-        collection_name: _collection_name,
+        collection_name,
         key,
         filter,
         limit,
         shard_id,
-        timeout: _timeout,
+        timeout,
     } = request;
 
-    let _shard_selection = ShardSelectorInternal::ShardId(shard_id);
+    let shard_selection = ShardSelectorInternal::ShardId(shard_id);
 
-    let _facet_request = FacetRequest {
+    let request = FacetRequest {
         key: JsonPath::from_str(&key)
             .map_err(|_| Status::invalid_argument("Failed to parse facet key"))?,
         limit: limit as usize,
         filter: filter.map(Filter::try_from).transpose()?,
     };
 
-    // TODO(facets): Add facets to TableOfContent
-    todo!();
+    let response = toc
+        .facet_internal(
+            &collection_name,
+            request,
+            shard_selection,
+            timeout.map(Duration::from_secs),
+        )
+        .await?;
+
+    let FacetResponse { hits } = response;
+
+    let response = FacetResponseInternal {
+        hits: hits.into_iter().map(From::from).collect_vec(),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
 }
 
 #[tonic::async_trait]

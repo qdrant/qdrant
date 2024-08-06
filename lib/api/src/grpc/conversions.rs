@@ -8,7 +8,7 @@ use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
     KeywordIndexType, TextIndexType, UuidIndexType,
 };
-use segment::data_types::vectors as segment_vectors;
+use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use segment::vector_storage::query as segment_query;
@@ -2232,7 +2232,7 @@ impl From<LookupLocation> for rest::LookupLocation {
     }
 }
 
-impl TryFrom<FacetValueHit> for segment::data_types::facets::FacetValueHit {
+impl TryFrom<FacetValueHit> for segment_facets::FacetValueHit {
     type Error = Status;
 
     fn try_from(hit: FacetValueHit) -> Result<Self, Self::Error> {
@@ -2241,18 +2241,25 @@ impl TryFrom<FacetValueHit> for segment::data_types::facets::FacetValueHit {
             .ok_or_else(|| Status::internal("expected FacetValueHit to have a value"))?;
 
         Ok(Self {
-            value: segment::data_types::facets::FacetValue::try_from(value)?,
+            value: segment_facets::FacetValue::try_from(value)?,
             count: hit.count as usize,
         })
     }
 }
 
-impl TryFrom<FacetValue> for segment::data_types::facets::FacetValue {
+impl From<segment_facets::FacetValueHit> for FacetValueHit {
+    fn from(hit: segment_facets::FacetValueHit) -> Self {
+        Self {
+            value: Some(hit.value.into()),
+            count: hit.count as u64,
+        }
+    }
+}
+
+impl TryFrom<FacetValue> for segment_facets::FacetValue {
     type Error = Status;
 
     fn try_from(value: FacetValue) -> Result<Self, Self::Error> {
-        use segment::data_types::facets as segment;
-
         use super::qdrant::facet_value::Variant;
 
         let variant = value
@@ -2260,7 +2267,19 @@ impl TryFrom<FacetValue> for segment::data_types::facets::FacetValue {
             .ok_or_else(|| Status::internal("expected FacetValue to have a value"))?;
 
         Ok(match variant {
-            Variant::StringValue(value) => segment::FacetValue::Keyword(value),
+            Variant::StringValue(value) => segment_facets::FacetValue::Keyword(value),
         })
+    }
+}
+
+impl From<segment_facets::FacetValue> for FacetValue {
+    fn from(value: segment_facets::FacetValue) -> Self {
+        use super::qdrant::facet_value::Variant;
+
+        Self {
+            variant: Some(match value {
+                segment_facets::FacetValue::Keyword(value) => Variant::StringValue(value),
+            }),
+        }
     }
 }
