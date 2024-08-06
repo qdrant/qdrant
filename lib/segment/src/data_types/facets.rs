@@ -2,11 +2,18 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::hash::Hash;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use validator::Validate;
+
 use crate::json_path::JsonPath;
 use crate::types::Filter;
 
+#[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
 pub struct FacetRequestInternal {
     pub key: JsonPath,
+
+    #[validate(range(min = 1))]
     pub limit: usize,
     pub filter: Option<Filter>,
 }

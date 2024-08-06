@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
+use segment::data_types::facets::FacetRequestInternal;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
@@ -650,4 +651,30 @@ pub struct QueryGroupsRequest {
     pub search_group_request: QueryGroupsRequestInternal,
 
     pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct FacetRequest {
+    #[validate]
+    #[serde(flatten)]
+    pub facet_request: FacetRequestInternal,
+
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum FacetValue {
+    Keyword(String),
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FacetValueHit {
+    pub value: FacetValue,
+    pub count: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FacetResponse {
+    pub hits: Vec<FacetValueHit>,
 }
