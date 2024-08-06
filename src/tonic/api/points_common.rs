@@ -43,7 +43,6 @@ use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
-use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -133,8 +132,7 @@ pub async fn upsert(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -187,8 +185,7 @@ pub async fn sync(
             shard_selector,
             access,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -225,8 +222,7 @@ pub async fn delete(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -280,8 +276,7 @@ pub async fn update_vectors(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -327,8 +322,7 @@ pub async fn delete_vectors(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -372,8 +366,7 @@ pub async fn set_payload(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -417,8 +410,7 @@ pub async fn overwrite_payload(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -460,8 +452,7 @@ pub async fn delete_payload(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -498,8 +489,7 @@ pub async fn clear_payload(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -873,8 +863,7 @@ pub async fn create_field_index(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -909,8 +898,7 @@ pub async fn create_field_index_internal(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -943,8 +931,7 @@ pub async fn delete_field_index(
         write_ordering_from_proto(ordering)?,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -975,8 +962,7 @@ pub async fn delete_field_index_internal(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
@@ -1037,8 +1023,7 @@ pub async fn search(
         access,
         timeout.map(Duration::from_secs),
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = SearchResponse {
         result: scored_points
@@ -1071,8 +1056,7 @@ pub async fn core_search_batch(
         access,
         timeout,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -1126,8 +1110,7 @@ pub async fn core_search_list(
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -1172,8 +1155,7 @@ pub async fn search_groups(
         access,
         timeout.map(Duration::from_secs),
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = SearchGroupsResponse {
         result: Some(groups_result.into()),
@@ -1265,8 +1247,7 @@ pub async fn recommend(
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = RecommendResponse {
         result: recommended_points
@@ -1308,8 +1289,7 @@ pub async fn recommend_batch(
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = RecommendBatchResponse {
         result: scored_points
@@ -1353,8 +1333,7 @@ pub async fn recommend_groups(
         access,
         timeout.map(Duration::from_secs),
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = RecommendGroupsResponse {
         result: Some(groups_result.into()),
@@ -1385,8 +1364,7 @@ pub async fn discover(
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = DiscoverResponse {
         result: discovered_points
@@ -1427,8 +1405,7 @@ pub async fn discover_batch(
             access,
             timeout,
         )
-        .await
-        .map_err(error_to_status)?;
+        .await?;
 
     let response = DiscoverBatchResponse {
         result: scored_points
@@ -1490,8 +1467,7 @@ pub async fn scroll(
         shard_selector,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = ScrollResponse {
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
@@ -1541,8 +1517,7 @@ pub async fn count(
         shard_selector,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = CountResponse {
         result: Some(count_result.into()),
@@ -1594,8 +1569,7 @@ pub async fn get(
         shard_selector,
         access,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
@@ -1631,8 +1605,7 @@ pub async fn query(
         access,
         timeout,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = QueryResponse {
         result: scored_points
@@ -1670,8 +1643,7 @@ pub async fn query_batch(
         access,
         timeout,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = QueryBatchResponse {
         result: scored_points
@@ -1712,8 +1684,7 @@ pub async fn query_groups(
         access,
         timeout,
     )
-    .await
-    .map_err(error_to_status)?;
+    .await?;
 
     let response = QueryGroupsResponse {
         result: Some(groups_result.into()),
