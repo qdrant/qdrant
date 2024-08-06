@@ -5,9 +5,8 @@ use std::io::{Read, Write};
 use std::mem;
 use std::path::Path;
 
-use common::types::PointOffsetType;
-
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
 
 #[derive(Debug)]
@@ -44,21 +43,14 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         self.len == 0
     }
 
-    pub fn get<TKey>(&self, key: TKey) -> &[T]
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get(&self, key: VectorOffsetType) -> &[T] {
         self.get_opt(key).expect("vector not found")
     }
 
-    pub fn get_opt<TKey>(&self, key: TKey) -> Option<&[T]>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get_opt(&self, key: VectorOffsetType) -> Option<&[T]> {
         if self.chunks.is_empty() {
             return None;
         }
-        let key: usize = key.as_();
         self.chunks
             .get(key / self.chunk_capacity)
             .and_then(|chunk_data| {
@@ -68,14 +60,10 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             })
     }
 
-    pub fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
         if self.chunks.is_empty() {
             return None;
         }
-        let key: usize = key.as_();
         self.chunks
             .get(key / self.chunk_capacity)
             .and_then(|chunk_data| {
@@ -85,38 +73,28 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             })
     }
 
-    pub fn push(&mut self, vector: &[T]) -> Result<PointOffsetType, TryReserveError> {
-        let new_id = self.len as PointOffsetType;
+    pub fn push(&mut self, vector: &[T]) -> Result<VectorOffsetType, TryReserveError> {
+        let new_id = self.len;
         self.insert(new_id, vector)?;
         Ok(new_id)
     }
 
     // returns how many flattened vectors can be inserted starting from key
-    pub fn get_chunk_left_keys<TKey>(&self, start_key: TKey) -> usize
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
-        self.chunk_capacity - (start_key.as_() % self.chunk_capacity)
+    pub fn get_chunk_left_keys(&self, start_key: VectorOffsetType) -> usize {
+        self.chunk_capacity - (start_key % self.chunk_capacity)
     }
 
-    pub fn insert<TKey>(&mut self, key: TKey, vector: &[T]) -> Result<(), TryReserveError>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
         assert_eq!(vector.len(), self.dim, "Vector size mismatch");
         self.insert_many(key, vector, 1)
     }
 
-    pub fn insert_many<TKey>(
+    pub fn insert_many(
         &mut self,
-        key: TKey,
+        key: VectorOffsetType,
         vectors: &[T],
         vectors_count: usize,
-    ) -> Result<(), TryReserveError>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
-        let key = key.as_();
+    ) -> Result<(), TryReserveError> {
         assert_eq!(
             vectors.len(),
             vectors_count * self.dim,

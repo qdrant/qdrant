@@ -309,6 +309,7 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
     fn search_in_graph<TGraphLinks: GraphLinks>(
         query: &[VectorElementType],
@@ -356,7 +357,10 @@ mod tests {
         let linking_idx: PointOffsetType = 7;
 
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors.get(linking_idx).to_vec();
+        let added_vector = vector_holder
+            .vectors
+            .get(linking_idx as VectorOffsetType)
+            .to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
@@ -453,7 +457,7 @@ mod tests {
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx);
+            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),
@@ -486,7 +490,12 @@ mod tests {
 
         let vectors_json = serde_json::to_string_pretty(
             &(0..vector_holder.vectors.len() as PointOffsetType)
-                .map(|point_id| vector_holder.vectors.get(point_id).to_vec())
+                .map(|point_id| {
+                    vector_holder
+                        .vectors
+                        .get(point_id as VectorOffsetType)
+                        .to_vec()
+                })
                 .collect_vec(),
         )
         .unwrap();

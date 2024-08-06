@@ -14,7 +14,7 @@ mod tests;
 mod async_io;
 mod async_io_mock;
 mod bitvec;
-mod chunked_vector_storage;
+pub mod chunked_vector_storage;
 pub mod common;
 pub mod dense;
 mod in_ram_persisted_vectors;

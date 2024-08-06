@@ -1,12 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use common::types::PointOffsetType;
-use num_traits::AsPrimitive;
-
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 
 #[derive(Debug)]
@@ -52,7 +49,7 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get(&self, key: PointOffsetType) -> Option<&[T]> {
+    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
         self.vectors.get_opt(key)
     }
 
@@ -67,47 +64,39 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
-        self.mmap_storage.push(vector)?;
+    fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType> {
         let key = self.vectors.push(vector)?;
+        let key2 = self.mmap_storage.push(vector)?;
+        debug_assert_eq!(key, key2);
         Ok(key)
     }
 
     #[inline]
-    fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()> {
-        self.mmap_storage.insert(key, vector)?;
+    fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()> {
         self.vectors.insert(key, vector)?;
+        self.mmap_storage.insert(key, vector)?;
         Ok(())
     }
 
     #[inline]
-    fn insert_many<TKey>(
+    fn insert_many(
         &mut self,
-        start_key: TKey,
+        start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
-    ) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
-        self.mmap_storage.insert_many(start_key, vectors, count)?;
+    ) -> OperationResult<()> {
         self.vectors.insert_many(start_key, vectors, count)?;
+        self.mmap_storage.insert_many(start_key, vectors, count)?;
         Ok(())
     }
 
     #[inline]
-    fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
-    where
-        TKey: AsPrimitive<usize>,
-    {
+    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
         self.vectors.get_many(key, count)
     }
 
     #[inline]
-    fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
-    where
-        TKey: AsPrimitive<usize>,
-    {
+    fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
         self.vectors.get_chunk_left_keys(start_key)
     }
 

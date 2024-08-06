@@ -1,41 +1,38 @@
 use std::path::PathBuf;
 
-use common::types::PointOffsetType;
-
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 
+/// In case of simple vector storage, vector offset is the same as PointOffsetType.
+/// But in case of multivectors, it requires an additional lookup.
+pub type VectorOffsetType = usize;
+
+#[allow(clippy::len_without_is_empty)]
 pub trait ChunkedVectorStorage<T> {
     fn len(&self) -> usize;
 
     fn dim(&self) -> usize;
 
-    fn get(&self, key: PointOffsetType) -> Option<&[T]>;
+    fn get(&self, key: VectorOffsetType) -> Option<&[T]>;
 
     fn files(&self) -> Vec<PathBuf>;
 
     fn flusher(&self) -> Flusher;
 
-    fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType>;
+    fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType>;
 
-    fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()>;
+    fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()>;
 
-    fn insert_many<TKey>(
+    fn insert_many(
         &mut self,
-        start_key: TKey,
+        start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
-    ) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>;
+    ) -> OperationResult<()>;
 
-    fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>;
+    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
 
-    fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>;
+    fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
 
     fn max_vector_size_bytes(&self) -> usize;
 }

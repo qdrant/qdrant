@@ -13,7 +13,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -24,9 +24,9 @@ const DELETED_DIR_PATH: &str = "deleted";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MultivectorMmapOffset {
-    offset: PointOffsetType,
-    count: PointOffsetType,
-    capacity: PointOffsetType,
+    offset: u32,
+    count: u32,
+    capacity: u32,
 }
 
 #[derive(Debug)]
@@ -88,11 +88,13 @@ impl<
     /// Returns None if key is not found
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
         self.offsets
-            .get(key)
+            .get(key as VectorOffsetType)
             .and_then(|mmap_offset| {
                 let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
-                self.vectors
-                    .get_many(mmap_offset.offset, mmap_offset.count as usize)
+                self.vectors.get_many(
+                    mmap_offset.offset as VectorOffsetType,
+                    mmap_offset.count as usize,
+                )
             })
             .map(|flattened_vectors| TypedMultiDenseVectorRef {
                 flattened_vectors,
@@ -104,11 +106,15 @@ impl<
         (0..self.total_vector_count()).flat_map(|key| {
             let mmap_offset = self
                 .offsets
-                .get(key as PointOffsetType)
+                .get(key as VectorOffsetType)
                 .unwrap()
                 .first()
                 .unwrap();
-            (0..mmap_offset.count).map(|i| self.vectors.get(mmap_offset.offset + i).unwrap())
+            (0..mmap_offset.count).map(|i| {
+                self.vectors
+                    .get((mmap_offset.offset + i) as VectorOffsetType)
+                    .unwrap()
+            })
         })
     }
 
@@ -177,7 +183,7 @@ impl<
 
         let mut offset = self
             .offsets
-            .get(key)
+            .get(key as VectorOffsetType)
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 
@@ -200,11 +206,11 @@ impl<
         }
 
         self.vectors.insert_many(
-            offset.offset,
+            offset.offset as VectorOffsetType,
             multi_vector.flattened_vectors,
             multi_vector.vectors_count(),
         )?;
-        self.offsets.insert(key, &[offset])?;
+        self.offsets.insert(key as VectorOffsetType, &[offset])?;
         self.set_deleted(key, false)?;
 
         Ok(())

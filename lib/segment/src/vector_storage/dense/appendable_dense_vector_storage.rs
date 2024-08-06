@@ -14,7 +14,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
-use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
@@ -60,7 +60,9 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
     }
 
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key).expect("mmap vector not found")
+        self.vectors
+            .get(key as VectorOffsetType)
+            .expect("mmap vector not found")
     }
 }
 
@@ -93,14 +95,15 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.vectors
-            .get(key)
+            .get(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
-        self.vectors.insert(key, vector.as_ref())?;
+        self.vectors
+            .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -116,7 +119,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let new_id = self.vectors.push(other_vector.as_ref())?;
-            self.set_deleted(new_id, other_deleted)?;
+            self.set_deleted(new_id as PointOffsetType, other_deleted)?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)

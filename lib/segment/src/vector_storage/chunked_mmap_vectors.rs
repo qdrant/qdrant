@@ -3,7 +3,6 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use common::types::PointOffsetType;
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use num_traits::AsPrimitive;
@@ -13,7 +12,7 @@ use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
-use crate::vector_storage::chunked_vector_storage::ChunkedVectorStorage;
+use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::CHUNK_SIZE;
 
 const CONFIG_FILE_NAME: &str = "config.json";
@@ -160,23 +159,17 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         Ok(())
     }
 
-    pub fn insert<TKey>(&mut self, key: TKey, vector: &[T]) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()> {
         self.insert_many(key, vector, 1)
     }
 
     #[inline]
-    pub fn insert_many<TKey>(
+    pub fn insert_many(
         &mut self,
-        start_key: TKey,
+        start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
-    ) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    ) -> OperationResult<()> {
         assert_eq!(
             vectors.len(),
             count * self.config.dim,
@@ -212,34 +205,25 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     // returns how many vectors can be inserted starting from key
-    pub fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
         let start_key = start_key.as_();
         let chunk_vector_idx = self.get_chunk_offset(start_key) / self.config.dim;
         self.config.chunk_size_vectors - chunk_vector_idx
     }
 
-    pub fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
-        let new_id = self.status.len as PointOffsetType;
+    pub fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType> {
+        let new_id = self.status.len;
         self.insert(new_id, vector)?;
         Ok(new_id)
     }
 
-    pub fn get<TKey>(&self, key: TKey) -> Option<&[T]>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
         self.get_many(key, 1)
     }
 
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
     #[inline]
-    pub fn get_many<TKey>(&self, start_key: TKey, count: usize) -> Option<&[T]>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    pub fn get_many(&self, start_key: VectorOffsetType, count: usize) -> Option<&[T]> {
         let start_key: usize = start_key.as_();
         let chunk_idx = self.get_chunk_index(start_key);
         if chunk_idx >= self.chunks.len() {
@@ -293,7 +277,7 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get(&self, key: PointOffsetType) -> Option<&[T]> {
+    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
         ChunkedMmapVectors::get(self, key)
     }
 
@@ -308,41 +292,32 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
+    fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType> {
         ChunkedMmapVectors::push(self, vector)
     }
 
     #[inline]
-    fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()> {
+    fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()> {
         ChunkedMmapVectors::insert(self, key, vector)
     }
 
     #[inline]
-    fn insert_many<TKey>(
+    fn insert_many(
         &mut self,
-        start_key: TKey,
+        start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
-    ) -> OperationResult<()>
-    where
-        TKey: num_traits::cast::AsPrimitive<usize>,
-    {
+    ) -> OperationResult<()> {
         ChunkedMmapVectors::insert_many(self, start_key, vectors, count)
     }
 
     #[inline]
-    fn get_many<TKey>(&self, key: TKey, count: usize) -> Option<&[T]>
-    where
-        TKey: AsPrimitive<usize>,
-    {
+    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
         ChunkedMmapVectors::get_many(self, key, count)
     }
 
     #[inline]
-    fn get_remaining_chunk_keys<TKey>(&self, start_key: TKey) -> usize
-    where
-        TKey: AsPrimitive<usize>,
-    {
+    fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize {
         ChunkedMmapVectors::get_remaining_chunk_keys(self, start_key)
     }
 

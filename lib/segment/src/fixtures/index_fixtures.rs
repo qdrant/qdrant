@@ -46,7 +46,7 @@ impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
     }
 
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key)
+        self.vectors.get(key as _)
     }
 }
 
@@ -76,11 +76,11 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
     }
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        self.vectors.get_opt(key).map(|v| v.into())
+        self.vectors.get_opt(key as _).map(|v| v.into())
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.vectors.insert(key, vector.try_into()?)?;
+        self.vectors.insert(key as _, vector.try_into()?)?;
         Ok(())
     }
 
