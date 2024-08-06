@@ -45,6 +45,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let start = Instant::now();
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
@@ -100,6 +101,8 @@ impl Collection {
                     timeout,
                 )
                 .await?;
+            // update timeout
+            let timeout = timeout.map(|t| t - start.elapsed());
             let filled_results = without_payload_results
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
