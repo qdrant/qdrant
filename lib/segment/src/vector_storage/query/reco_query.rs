@@ -127,9 +127,20 @@ mod test {
         }
     }
 
+    fn ulps_eq(a: f32, b: f32, ulps: u32) -> bool {
+        if a.signum() != b.signum() {
+            return false;
+        }
+
+        let a = a.to_bits();
+        let b = b.to_bits();
+
+        a.abs_diff(b) <= ulps
+    }
+
     /// Relaxes the comparison of floats to allow for a some difference in units of least precision
     fn float_cmp(a: f32, b: f32) -> Ordering {
-        if (a - b).abs() < 0.001 {
+        if ulps_eq(a, b, 80) {
             Ordering::Equal
         } else {
             a.total_cmp(&b)
