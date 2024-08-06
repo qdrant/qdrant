@@ -791,7 +791,6 @@ pub enum VectorStorageType {
     /// In this way we avoid cold requests to disk, but risk to run out of memory
     ///
     /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
-    /// Works only on UNIX
     InRamChunkedMmap,
 }
 
