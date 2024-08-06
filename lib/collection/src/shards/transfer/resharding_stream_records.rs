@@ -63,10 +63,13 @@ pub(crate) async fn transfer_resharding_stream_records(
             .await?;
 
         let Some(count_result) = replica_set
-            .count_local(Arc::new(CountRequestInternal {
-                filter: None,
-                exact: true,
-            }))
+            .count_local(
+                Arc::new(CountRequestInternal {
+                    filter: None,
+                    exact: true,
+                }),
+                None,
+            )
             .await?
         else {
             return Err(CollectionError::service_error(format!(
@@ -95,7 +98,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true, None)
             .await?;
 
         {

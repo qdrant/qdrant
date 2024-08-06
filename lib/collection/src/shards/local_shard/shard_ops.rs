@@ -114,6 +114,7 @@ impl ShardOperation for LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         match order_by {
             None => {
@@ -124,6 +125,7 @@ impl ShardOperation for LocalShard {
                     with_vector,
                     filter,
                     search_runtime_handle,
+                    timeout,
                 )
                 .await
             }
@@ -136,6 +138,7 @@ impl ShardOperation for LocalShard {
                         filter,
                         search_runtime_handle,
                         order_by,
+                        timeout,
                     )
                     .await?;
 
@@ -169,7 +172,11 @@ impl ShardOperation for LocalShard {
             .await
     }
 
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        _timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
         let total_count = if request.exact {
             let all_points = self.read_filtered(request.filter.as_ref())?;
             all_points.len()
@@ -184,6 +191,7 @@ impl ShardOperation for LocalShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        _timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let records_map =
             SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)?;

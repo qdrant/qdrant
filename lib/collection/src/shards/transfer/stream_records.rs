@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 
@@ -28,6 +29,7 @@ pub(super) async fn transfer_stream_records(
     shard_id: ShardId,
     remote_shard: RemoteShard,
     collection_id: &CollectionId,
+    timeout: Option<Duration>,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -48,10 +50,13 @@ pub(super) async fn transfer_stream_records(
             .await?;
 
         let Some(count_result) = replica_set
-            .count_local(Arc::new(CountRequestInternal {
-                filter: None,
-                exact: true,
-            }))
+            .count_local(
+                Arc::new(CountRequestInternal {
+                    filter: None,
+                    exact: true,
+                }),
+                timeout,
+            )
             .await?
         else {
             return Err(CollectionError::service_error(format!(
@@ -80,7 +85,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false, timeout)
             .await?;
 
         {

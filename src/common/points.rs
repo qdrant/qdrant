@@ -915,6 +915,7 @@ pub async fn do_count_points(
     collection_name: &str,
     request: CountRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
 ) -> Result<CountResult, StorageError> {
@@ -922,6 +923,7 @@ pub async fn do_count_points(
         collection_name,
         request,
         read_consistency,
+        timeout,
         shard_selection,
         access,
     )
@@ -933,6 +935,7 @@ pub async fn do_get_points(
     collection_name: &str,
     request: PointRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
 ) -> Result<Vec<Record>, StorageError> {
@@ -940,6 +943,7 @@ pub async fn do_get_points(
         collection_name,
         request,
         read_consistency,
+        timeout,
         shard_selection,
         access,
     )
@@ -951,6 +955,7 @@ pub async fn do_scroll_points(
     collection_name: &str,
     request: ScrollRequestInternal,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
 ) -> Result<ScrollResult, StorageError> {
@@ -958,6 +963,7 @@ pub async fn do_scroll_points(
         collection_name,
         request,
         read_consistency,
+        timeout,
         shard_selection,
         access,
     )

@@ -11,6 +11,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
+use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -30,7 +31,7 @@ impl LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let scrolls = batch
             .iter()
-            .map(|request| self.query_scroll(request, search_runtime_handle));
+            .map(|request| self.query_scroll(request, search_runtime_handle, Some(timeout)));
 
         // execute all the scrolls concurrently
         let all_scroll_results = try_join_all(scrolls);
@@ -50,6 +51,7 @@ impl LocalShard {
         &self,
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
             limit,
@@ -72,6 +74,7 @@ impl LocalShard {
                     with_vector,
                     filter.as_ref(),
                     search_runtime_handle,
+                    timeout,
                 )
                 .await?
                 .into_iter()
@@ -94,6 +97,7 @@ impl LocalShard {
                         filter.as_ref(),
                         search_runtime_handle,
                         order_by,
+                        timeout,
                     )
                     .await?;
 
@@ -119,6 +123,7 @@ impl LocalShard {
                         with_vector,
                         filter.as_ref(),
                         search_runtime_handle,
+                        timeout,
                     )
                     .await?;
 
@@ -140,6 +145,7 @@ impl LocalShard {
         Ok(point_results)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn scroll_by_id(
         &self,
         offset: Option<ExtendedPointId>,
@@ -148,7 +154,9 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
@@ -167,12 +175,22 @@ impl LocalShard {
             })
         };
 
-        let non_appendable = try_join_all(non_appendable.into_iter().map(read_filtered)).await?;
-        let appendable = try_join_all(appendable.into_iter().map(read_filtered)).await?;
+        let all_reads = tokio::time::timeout(
+            timeout,
+            try_join_all(
+                non_appendable
+                    .into_iter()
+                    .chain(appendable)
+                    .map(read_filtered),
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| {
+            CollectionError::timeout(timeout.as_secs() as usize, "scroll_by_id")
+        })??;
 
-        let point_ids = non_appendable
+        let point_ids = all_reads
             .into_iter()
-            .chain(appendable)
             .flatten()
             .sorted()
             .dedup()
@@ -191,6 +209,7 @@ impl LocalShard {
         Ok(ordered_records)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn scroll_by_field(
         &self,
         limit: usize,
@@ -199,7 +218,9 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
+        timeout: Option<Duration>,
     ) -> CollectionResult<(Vec<Record>, Vec<OrderValue>)> {
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
@@ -220,14 +241,21 @@ impl LocalShard {
             })
         };
 
-        let non_appendable =
-            try_join_all(non_appendable.into_iter().map(read_ordered_filtered)).await?;
-        let appendable = try_join_all(appendable.into_iter().map(read_ordered_filtered)).await?;
+        let all_reads = tokio::time::timeout(
+            timeout,
+            try_join_all(
+                non_appendable
+                    .into_iter()
+                    .chain(appendable)
+                    .map(read_ordered_filtered),
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| {
+            CollectionError::timeout(timeout.as_secs() as usize, "scroll_by_field")
+        })??;
 
-        let all_reads = non_appendable
-            .into_iter()
-            .chain(appendable)
-            .collect::<Result<Vec<_>, _>>()?;
+        let all_reads = all_reads.into_iter().collect::<Result<Vec<_>, _>>()?;
 
         let (values, point_ids): (Vec<_>, Vec<_>) = all_reads
             .into_iter()
@@ -260,7 +288,9 @@ impl LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
         let segments = self.segments();
 
@@ -281,13 +311,19 @@ impl LocalShard {
             })
         };
 
-        let all_reads = try_join_all(
-            non_appendable
-                .into_iter()
-                .chain(appendable)
-                .map(read_filtered),
+        let all_reads = tokio::time::timeout(
+            timeout,
+            try_join_all(
+                non_appendable
+                    .into_iter()
+                    .chain(appendable)
+                    .map(read_filtered),
+            ),
         )
-        .await?;
+        .await
+        .map_err(|_: Elapsed| {
+            CollectionError::timeout(timeout.as_secs() as usize, "scroll_randomly")
+        })??;
 
         let (availability, mut segments_reads): (Vec<_>, Vec<_>) = all_reads.into_iter().unzip();
 

@@ -558,14 +558,14 @@ impl RemoteShard {
     ) -> CollectionResult<CollectionOperationResponse> {
         let res = self
             .with_collections_client(|mut client| async move {
-                client
-                    .wait_for_shard_state(WaitForShardStateRequest {
-                        collection_name: collection_name.into(),
-                        shard_id,
-                        state: api::grpc::qdrant::ReplicaState::from(state) as i32,
-                        timeout: timeout.as_secs_f32().ceil() as u64,
-                    })
-                    .await
+                let mut wait_for_shard_request = tonic::Request::new(WaitForShardStateRequest {
+                    collection_name: collection_name.into(),
+                    shard_id,
+                    state: api::grpc::qdrant::ReplicaState::from(state) as i32,
+                    timeout: timeout.as_secs_f32().ceil() as u64,
+                });
+                wait_for_shard_request.set_timeout(timeout);
+                client.wait_for_shard_state(wait_for_shard_request).await
             })
             .await?
             .into_inner();
@@ -661,6 +661,7 @@ impl ShardOperation for RemoteShard {
         filter: Option<&Filter>,
         _search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
@@ -672,15 +673,20 @@ impl ShardOperation for RemoteShard {
             read_consistency: None,
             shard_key_selector: None,
             order_by: order_by.map(|o| o.clone().into()),
+            timeout: timeout.map(|t| t.as_secs()),
         };
-        let request = &ScrollPointsInternal {
+        let scroll_request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
             shard_id: Some(self.id),
         };
 
         let scroll_response = self
             .with_points_client(|mut client| async move {
-                client.scroll(tonic::Request::new(request.clone())).await
+                let mut request = tonic::Request::new(scroll_request.clone());
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+                client.scroll(request).await
             })
             .await?
             .into_inner();
@@ -773,22 +779,31 @@ impl ShardOperation for RemoteShard {
         result
     }
 
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             exact: Some(request.exact),
             read_consistency: None,
             shard_key_selector: None,
+            timeout: timeout.map(|t| t.as_secs()),
         };
 
-        let request = &CountPointsInternal {
+        let count_request = &CountPointsInternal {
             count_points: Some(count_points),
             shard_id: Some(self.id),
         };
         let count_response = self
             .with_points_client(|mut client| async move {
-                client.count(tonic::Request::new(request.clone())).await
+                let mut request = tonic::Request::new(count_request.clone());
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+                client.count(request).await
             })
             .await?
             .into_inner();
@@ -807,6 +822,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
@@ -815,15 +831,20 @@ impl ShardOperation for RemoteShard {
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
             shard_key_selector: None,
+            timeout: timeout.map(|t| t.as_secs()),
         };
-        let request = &GetPointsInternal {
+        let get_request = &GetPointsInternal {
             get_points: Some(get_points),
             shard_id: Some(self.id),
         };
 
         let get_response = self
             .with_points_client(|mut client| async move {
-                client.get(tonic::Request::new(request.clone())).await
+                let mut request = tonic::Request::new(get_request.clone());
+                if let Some(timeout) = timeout {
+                    request.set_timeout(timeout);
+                }
+                client.get(request).await
             })
             .await?
             .into_inner();

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
@@ -31,6 +33,7 @@ async fn do_get_point(
     collection_name: &str,
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
     access: Access,
 ) -> Result<Option<Record>, StorageError> {
     let request = PointRequestInternal {
@@ -45,6 +48,7 @@ async fn do_get_point(
         collection_name,
         request,
         read_consistency,
+        timeout,
         shard_selection,
         access,
     )
@@ -70,6 +74,7 @@ async fn get_point(
             &collection.name,
             point_id,
             params.consistency,
+            params.timeout(),
             access,
         )
         .await?
@@ -109,6 +114,7 @@ async fn get_points(
         &collection.name,
         point_request,
         params.consistency,
+        params.timeout(),
         shard_selection,
         access,
     )
@@ -143,7 +149,7 @@ async fn scroll_points(
             &collection.name,
             scroll_request,
             params.consistency,
-            // TODO: handle params.timeout
+            params.timeout(),
             shard_selection,
             access,
         )

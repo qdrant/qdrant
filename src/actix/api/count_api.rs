@@ -36,9 +36,9 @@ async fn count_points(
         &collection.name,
         count_request,
         params.consistency,
+        params.timeout(),
         shard_selector,
         access,
-        // ToDo: use timeout from params
     )
     .await;
 

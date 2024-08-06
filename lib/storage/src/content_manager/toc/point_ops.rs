@@ -146,6 +146,7 @@ impl TableOfContent {
         collection_name: &str,
         mut request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<CountResult, StorageError> {
@@ -153,7 +154,7 @@ impl TableOfContent {
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .count(request, read_consistency, &shard_selection)
+            .count(request, read_consistency, &shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }
@@ -174,6 +175,7 @@ impl TableOfContent {
         collection_name: &str,
         mut request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<Vec<Record>, StorageError> {
@@ -181,7 +183,7 @@ impl TableOfContent {
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .retrieve(request, read_consistency, &shard_selection)
+            .retrieve(request, read_consistency, &shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }
@@ -282,6 +284,7 @@ impl TableOfContent {
         collection_name: &str,
         mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
+        timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<ScrollResult, StorageError> {
@@ -289,7 +292,7 @@ impl TableOfContent {
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .scroll_by(request, read_consistency, &shard_selection)
+            .scroll_by(request, read_consistency, &shard_selection, timeout)
             .await
             .map_err(|err| err.into())
     }

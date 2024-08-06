@@ -73,6 +73,7 @@ pub(super) async fn drive(
                     None,
                     false,
                     None,
+                    None, // no timeout
                 )
                 .await?;
 

@@ -67,6 +67,7 @@ pub async fn transfer_shard(
                 local_shard_id,
                 remote_shard,
                 &collection_id,
+                None, // no timeout
             )
             .await?;
         }

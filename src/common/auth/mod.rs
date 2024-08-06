@@ -126,6 +126,7 @@ impl AuthKeys {
                 value_exists.get_collection(),
                 scroll_req,
                 None,
+                None, // no timeout
                 ShardSelectorInternal::All,
                 Access::full("JWT stateful validation"),
             )

@@ -208,6 +208,8 @@ impl Collection {
         F: Fn(String) -> Fut,
         Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
     {
+        let start = Instant::now();
+
         // Lift nested prefetches to root queries for vector resolution
         let resolver_requests = build_vector_resolver_queries(&requests_batch);
 
@@ -217,8 +219,12 @@ impl Collection {
             self,
             collection_by_name,
             read_consistency,
+            timeout,
         )
         .await?;
+
+        // update timeout
+        let timeout = timeout.map(|timeout| timeout - start.elapsed());
 
         // Check we actually fetched all referenced vectors from the resolver requests
         for (resolver_req, _) in &resolver_requests {

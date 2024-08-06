@@ -110,6 +110,7 @@ impl Collection {
                         req.with_vector.unwrap_or_default(),
                         read_consistency,
                         &shard_selection,
+                        timeout,
                     )
                 });
             future::try_join_all(filled_results).await
@@ -217,6 +218,7 @@ impl Collection {
         with_vector: WithVector,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -238,7 +240,7 @@ impl Collection {
             with_vector,
         };
         let retrieved_records = self
-            .retrieve(retrieve_request, read_consistency, shard_selection)
+            .retrieve(retrieve_request, read_consistency, shard_selection, timeout)
             .await?;
         let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
             .into_iter()

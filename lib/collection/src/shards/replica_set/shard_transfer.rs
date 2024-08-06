@@ -1,5 +1,6 @@
 use std::ops::Deref as _;
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use segment::types::PointIdType;
@@ -342,6 +343,7 @@ impl ShardReplicaSet {
         batch_size: usize,
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Option<PointIdType>> {
         let local = self.local.read().await;
 
@@ -359,6 +361,7 @@ impl ShardReplicaSet {
                 hashring_filter,
                 merge_points,
                 &self.search_runtime,
+                timeout,
             )
             .await
     }
