@@ -177,6 +177,7 @@ impl ShardOperation for LocalShard {
         request: Arc<CountRequestInternal>,
         _timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
+        // TODO run in spawn_blocking + timeout + cancellation
         let total_count = if request.exact {
             let all_points = self.read_filtered(request.filter.as_ref())?;
             all_points.len()
@@ -193,6 +194,7 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         _timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        // TODO run in spawn_blocking + timeout + cancellation
         let records_map =
             SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)?;
 
