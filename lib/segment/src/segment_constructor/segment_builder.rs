@@ -196,7 +196,7 @@ impl SegmentBuilder {
                     }
                     break;
                 }
-                FieldIndex::UuidIndex(index) => {
+                FieldIndex::UuidMapIndex(index) => {
                     if let Some(ids) = index.get_values(internal_id) {
                         for id in ids {
                             let uuid = Uuid::from_u128(id);
@@ -218,6 +218,7 @@ impl SegmentBuilder {
                     }
                     break;
                 }
+                FieldIndex::UuidIndex(_) => {} // TODO
                 FieldIndex::GeoIndex(_) => {}
                 FieldIndex::FullTextIndex(_) => {}
                 FieldIndex::BinaryIndex(_) => {}
