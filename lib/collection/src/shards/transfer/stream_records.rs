@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use parking_lot::Mutex;
 
@@ -29,7 +28,6 @@ pub(super) async fn transfer_stream_records(
     shard_id: ShardId,
     remote_shard: RemoteShard,
     collection_id: &CollectionId,
-    timeout: Option<Duration>,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -55,7 +53,7 @@ pub(super) async fn transfer_stream_records(
                     filter: None,
                     exact: true,
                 }),
-                timeout,
+                None, // no timeout
             )
             .await?
         else {
@@ -85,7 +83,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false, timeout)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
             .await?;
 
         {

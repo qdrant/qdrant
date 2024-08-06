@@ -119,7 +119,6 @@ impl ForwardProxyShard {
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
-        timeout: Option<Duration>,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
@@ -134,7 +133,7 @@ impl ForwardProxyShard {
                 None,
                 runtime_handle,
                 None,
-                timeout,
+                None, // no timeout
             )
             .await?;
         let next_page_offset = if batch.len() < limit {
