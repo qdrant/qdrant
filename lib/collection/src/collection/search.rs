@@ -45,6 +45,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let start = Instant::now();
         // shortcuts batch if all requests with limit=0
         if request.searches.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
@@ -100,6 +101,8 @@ impl Collection {
                     timeout,
                 )
                 .await?;
+            // update timeout
+            let timeout = timeout.map(|t| t - start.elapsed());
             let filled_results = without_payload_results
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
@@ -110,6 +113,7 @@ impl Collection {
                         req.with_vector.unwrap_or_default(),
                         read_consistency,
                         &shard_selection,
+                        timeout,
                     )
                 });
             future::try_join_all(filled_results).await
@@ -217,6 +221,7 @@ impl Collection {
         with_vector: WithVector,
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -238,7 +243,7 @@ impl Collection {
             with_vector,
         };
         let retrieved_records = self
-            .retrieve(retrieve_request, read_consistency, shard_selection)
+            .retrieve(retrieve_request, read_consistency, shard_selection, timeout)
             .await?;
         let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
             .into_iter()

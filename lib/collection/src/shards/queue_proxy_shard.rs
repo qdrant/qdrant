@@ -220,6 +220,7 @@ impl ShardOperation for QueueProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         self.inner_unchecked()
             .scroll_by(
@@ -230,6 +231,7 @@ impl ShardOperation for QueueProxyShard {
                 filter,
                 search_runtime_handle,
                 order_by,
+                timeout,
             )
             .await
     }
@@ -250,8 +252,12 @@ impl ShardOperation for QueueProxyShard {
     }
 
     /// Forward read-only `count` to `wrapped_shard`
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
-        self.inner_unchecked().count(request).await
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
+        self.inner_unchecked().count(request, timeout).await
     }
 
     /// Forward read-only `retrieve` to `wrapped_shard`
@@ -260,9 +266,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         self.inner_unchecked()
-            .retrieve(request, with_payload, with_vector)
+            .retrieve(request, with_payload, with_vector, timeout)
             .await
     }
 
@@ -510,6 +517,7 @@ impl ShardOperation for Inner {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -521,6 +529,7 @@ impl ShardOperation for Inner {
                 filter,
                 search_runtime_handle,
                 order_by,
+                timeout,
             )
             .await
     }
@@ -545,9 +554,13 @@ impl ShardOperation for Inner {
     }
 
     /// Forward read-only `count` to `wrapped_shard`
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
-        local_shard.count(request).await
+        local_shard.count(request, timeout).await
     }
 
     /// Forward read-only `retrieve` to `wrapped_shard`
@@ -556,10 +569,11 @@ impl ShardOperation for Inner {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .retrieve(request, with_payload, with_vector)
+            .retrieve(request, with_payload, with_vector, timeout)
             .await
     }
 

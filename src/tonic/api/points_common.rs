@@ -1458,6 +1458,7 @@ pub async fn scroll(
         read_consistency,
         shard_key_selector,
         order_by,
+        timeout,
     } = scroll_points;
 
     let scroll_request = ScrollRequestInternal {
@@ -1474,6 +1475,7 @@ pub async fn scroll(
             .map(OrderByInterface::Struct),
     };
 
+    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1484,6 +1486,7 @@ pub async fn scroll(
         &collection_name,
         scroll_request,
         read_consistency,
+        timeout,
         shard_selector,
         access,
     )
@@ -1516,13 +1519,14 @@ pub async fn count(
         exact,
         read_consistency,
         shard_key_selector,
+        timeout,
     } = count_points;
 
     let count_request = collection::operations::types::CountRequestInternal {
         filter: filter.map(|f| f.try_into()).transpose()?,
         exact: exact.unwrap_or_else(default_exact_count),
     };
-
+    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1533,6 +1537,7 @@ pub async fn count(
         &collection_name,
         count_request,
         read_consistency,
+        timeout,
         shard_selector,
         access,
     )
@@ -1560,6 +1565,7 @@ pub async fn get(
         with_vectors,
         read_consistency,
         shard_key_selector,
+        timeout,
     } = get_points;
 
     let point_request = PointRequestInternal {
@@ -1572,7 +1578,7 @@ pub async fn get(
             .map(|selector| selector.into())
             .unwrap_or_default(),
     };
-
+    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1584,6 +1590,7 @@ pub async fn get(
         &collection_name,
         point_request,
         read_consistency,
+        timeout,
         shard_selector,
         access,
     )

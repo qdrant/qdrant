@@ -29,6 +29,7 @@ pub trait ShardOperation {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
@@ -40,13 +41,18 @@ pub trait ShardOperation {
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>;
 
-    async fn count(&self, request: Arc<CountRequestInternal>) -> CollectionResult<CountResult>;
+    async fn count(
+        &self,
+        request: Arc<CountRequestInternal>,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<CountResult>;
 
     async fn retrieve(
         &self,
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn query_batch(

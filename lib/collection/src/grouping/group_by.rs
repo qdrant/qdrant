@@ -86,6 +86,7 @@ impl GroupRequest {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        timeout: Option<Duration>,
     ) -> CollectionResult<QueryGroupRequest>
     where
         F: Fn(String) -> Fut,
@@ -99,6 +100,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
+                    timeout,
                 )
                 .await?;
 
@@ -115,6 +117,7 @@ impl GroupRequest {
                     collection,
                     collection_by_name,
                     read_consistency,
+                    timeout,
                 )
                 .await?;
                 query_req.try_into_shard_request(&collection.id, &referenced_vectors)?
@@ -303,6 +306,7 @@ pub async fn group_by(
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>> {
+    let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();
     let score_ordering = ScoringQuery::order(request.source.query.as_ref(), &collection_params)?;
 
@@ -316,6 +320,8 @@ pub async fn group_by(
     // Try to complete amount of groups
     let mut needs_filling = true;
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
+        // update timeout
+        let timeout = timeout.map(|t| t - start.elapsed());
         let mut request = request.clone();
 
         let source = &mut request.source;
@@ -378,6 +384,8 @@ pub async fn group_by(
     // Try to fill up groups
     if needs_filling {
         for _ in 0..MAX_GROUP_FILLING_REQUESTS {
+            // update timeout
+            let timeout = timeout.map(|t| t - start.elapsed());
             let mut request = request.clone();
 
             let source = &mut request.source;
@@ -444,6 +452,9 @@ pub async fn group_by(
         .flat_map(|group| group.hits)
         .collect();
 
+    // update timeout
+    let timeout = timeout.map(|t| t - start.elapsed());
+
     // enrich with payload and vector
     let enriched_points: HashMap<_, _> = collection
         .fill_search_result_with_payload(
@@ -452,6 +463,7 @@ pub async fn group_by(
             request.source.with_vector,
             read_consistency,
             &shard_selection,
+            timeout,
         )
         .await?
         .into_iter()

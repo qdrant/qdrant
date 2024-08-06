@@ -73,6 +73,7 @@ impl ShardOperation for DummyShard {
         _: Option<&Filter>,
         _: &Handle,
         _: Option<&OrderBy>,
+        _: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }
@@ -90,7 +91,11 @@ impl ShardOperation for DummyShard {
         self.dummy()
     }
 
-    async fn count(&self, _: Arc<CountRequestInternal>) -> CollectionResult<CountResult> {
+    async fn count(
+        &self,
+        _: Arc<CountRequestInternal>,
+        _: Option<Duration>,
+    ) -> CollectionResult<CountResult> {
         self.dummy()
     }
 
@@ -99,6 +104,7 @@ impl ShardOperation for DummyShard {
         _: Arc<PointRequestInternal>,
         _: &WithPayload,
         _: &WithVector,
+        _: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }

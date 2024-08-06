@@ -315,7 +315,7 @@ impl Collection {
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
                 let count_result = replica_set
-                    .count_local(count_request.clone())
+                    .count_local(count_request.clone(), None)
                     .await
                     .unwrap_or_default();
                 let points_count = count_result.map(|x| x.count).unwrap_or(0);

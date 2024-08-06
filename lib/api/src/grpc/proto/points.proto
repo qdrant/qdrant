@@ -113,6 +113,7 @@ message GetPoints {
   optional WithVectorsSelector with_vectors = 5; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 6; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 7; // Specify in which shards to look for the points, if not specified - look in all shards
+  optional uint64 timeout = 8; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message UpdatePointVectors {
@@ -360,6 +361,7 @@ message ScrollPoints {
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 9; // Specify in which shards to look for the points, if not specified - look in all shards
   optional OrderBy order_by = 10; // Order the records by a payload field
+  optional uint64 timeout = 11; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`.
@@ -482,6 +484,7 @@ message CountPoints {
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
   optional ReadConsistency read_consistency = 4; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
+   optional uint64 timeout = 6; // If set, overrides global timeout setting for this request. Unit is seconds.
 }
 
 message RecommendInput {
