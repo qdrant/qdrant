@@ -4,6 +4,7 @@ use std::iter::Peekable;
 use std::rc::Rc;
 
 use itertools::Itertools;
+use segment::data_types::facets::{FacetResponse, FacetValue};
 use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
@@ -15,6 +16,15 @@ use crate::operations::universal_query::shard_query::ShardQueryResponse;
 pub enum ResolveCondition {
     All,
     Majority,
+}
+
+impl ResolveCondition {
+    fn resolution_count(&self, num_replicas: usize) -> usize {
+        match self {
+            Self::All => num_replicas,
+            Self::Majority => num_replicas / 2 + 1,
+        }
+    }
 }
 
 pub trait Resolve: Sized {
@@ -42,6 +52,82 @@ impl Resolve for CountResult {
                     count: counts.get(middle).copied().unwrap_or_default(),
                 }
             }
+        }
+    }
+}
+
+impl Resolve for FacetResponse {
+    /// Resolve the counts for each value using the CountResult implementation
+    fn resolve(responses: Vec<Self>, condition: ResolveCondition) -> Self {
+        let num_replicas = responses.len();
+        let resolution_count = condition.resolution_count(num_replicas);
+
+        // Example responses:
+        // [
+        //   {
+        //     hits: [
+        //       { value: "a", count: 20 },
+        //       { value: "b": count: 15 }
+        //     ]
+        //   },
+        //   {
+        //     hits: [
+        //       { value: "a", count: 21 },
+        //       { value: "b": count: 13 }
+        //     ]
+        //   },
+        // ]
+
+        let resolved_counts: HashMap<_, _> = responses
+            .iter()
+            .flat_map(|FacetResponse { hits }| hits)
+            // Collect all hits into a Hashmap of {value -> Vec<CountResult>}
+            .fold(
+                HashMap::new(),
+                |mut map: HashMap<FacetValue, Vec<CountResult>>, hit| {
+                    if let Some(counts) = map.get_mut(&hit.value) {
+                        counts.push(CountResult { count: hit.count });
+                    } else {
+                        map.entry(hit.value.clone())
+                            .or_insert(Vec::with_capacity(num_replicas))
+                            .push(CountResult { count: hit.count });
+                    };
+                    map
+                },
+            )
+            .into_iter()
+            // Filter out values that don't appear in enough replicas
+            .filter(|(_, counts)| counts.len() >= resolution_count)
+            // Resolve the counts with the CountResult implementation
+            .map(|(value, counts)| {
+                let count = CountResult::resolve(counts, condition).count;
+
+                (value, count)
+            })
+            .collect();
+
+        let filtered_iters = responses.into_iter().map(|FacetResponse { hits }| {
+            hits.into_iter().filter_map(|mut hit| {
+                resolved_counts.get(&hit.value).map(|&count| {
+                    // Use the resolved count
+                    hit.count = count;
+                    hit
+                })
+            })
+        });
+
+        // Retain the original order of the hits (instead of always sorting in the same direction).
+        let resolved_hits =
+            MergeInOrder::new(filtered_iters, |hit| hit.value.clone(), resolution_count).collect();
+
+        // resolved_hits for ResolveCondition::All:
+        // [
+        //  { value: "a", count: 20 },
+        //  { value: "b", count: 13 }
+        // ]
+
+        FacetResponse {
+            hits: resolved_hits,
         }
     }
 }
@@ -124,10 +210,7 @@ where
         compare: Cmp,
         condition: ResolveCondition,
     ) -> Vec<Item> {
-        let resolution_count = match condition {
-            ResolveCondition::All => items.len(),
-            ResolveCondition::Majority => items.len() / 2 + 1,
-        };
+        let resolution_count = condition.resolution_count(items.len());
 
         // Items:
         //  [
@@ -233,7 +316,7 @@ where
                 //  >
             });
 
-        Merger::new(resolved_iters, identify, resolution_count).collect_vec()
+        MergeInOrder::new(resolved_iters, identify, resolution_count).collect_vec()
     }
 
     fn new(capacity: usize, identify: Ident, compare: Cmp) -> Self {
@@ -319,7 +402,7 @@ impl<'a, T> ResolverRecord<'a, T> {
 ///  [A,  F,  B,  C]
 ///  [A,      B,  C]
 ///  [    F,  B,  C]
-struct Merger<I: Iterator, Ident> {
+struct MergeInOrder<I: Iterator, Ident> {
     /// One iterator per set of results, which outputs items that comply with resolution count, in their original order
     resolved_iters: Vec<Peekable<I>>,
     /// Closure which retrieves the item's ID
@@ -329,7 +412,7 @@ struct Merger<I: Iterator, Ident> {
     resolution_count: usize,
 }
 
-impl<Iter, Ident, Id, Item> Merger<Iter, Ident>
+impl<Iter, Ident, Id, Item> MergeInOrder<Iter, Ident>
 where
     Id: Eq + hash::Hash,
     Ident: Fn(&Item) -> Id,
@@ -397,7 +480,7 @@ where
     }
 }
 
-impl<Iter, Ident, Id, Item> Iterator for Merger<Iter, Ident>
+impl<Iter, Ident, Id, Item> Iterator for MergeInOrder<Iter, Ident>
 where
     Id: Eq + hash::Hash,
     Ident: Fn(&Item) -> Id,
