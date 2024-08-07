@@ -27,6 +27,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         assert_ne!(dim, 0, "The vector's dimension cannot be 0");
         let vector_size = dim * mem::size_of::<T>();
         let chunk_capacity = CHUNK_SIZE / vector_size;
+        assert_ne!(chunk_capacity, 0, "The vector's size is too big");
         Self {
             dim,
             len: 0,
