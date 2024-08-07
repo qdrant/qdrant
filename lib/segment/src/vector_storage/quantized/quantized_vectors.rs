@@ -246,6 +246,15 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
+            VectorStorageEnum::DenseAppendableInRam(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::DenseAppendableInRamByte(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::MultiDenseSimple(v) => {
                 Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
@@ -263,6 +272,15 @@ impl QuantizedVectors {
                 Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => {
+                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => {
+                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => {
                 Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
         }

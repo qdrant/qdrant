@@ -18,6 +18,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
@@ -61,7 +62,7 @@ fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
             bitvec_set_deleted(&mut deleted, point_id, true);
             deleted_count += 1;
         }
-        vectors.insert(point_id, &stored_record.vector)?;
+        vectors.insert(point_id as VectorOffsetType, &stored_record.vector)?;
 
         check_process_stopped(stopped)?;
     }
@@ -187,7 +188,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStora
     }
 
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key)
+        self.vectors.get(key as VectorOffsetType)
     }
 }
 
@@ -219,14 +220,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
     /// Get vector by key, if it exists.
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.vectors
-            .get_opt(key)
+            .get_opt(key as VectorOffsetType)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
-        self.vectors.insert(key, vector.as_ref())?;
+        self.vectors
+            .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector.as_ref()))?;
         Ok(())
@@ -242,7 +244,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            let new_id = self.vectors.push(other_vector.as_ref())?;
+            let new_id = self.vectors.push(other_vector.as_ref())? as PointOffsetType;
             self.set_deleted(new_id, other_deleted);
             self.update_stored(new_id, other_deleted, Some(other_vector.as_ref()))?;
         }

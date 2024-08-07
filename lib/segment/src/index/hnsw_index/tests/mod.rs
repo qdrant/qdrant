@@ -13,6 +13,7 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
 pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
@@ -40,7 +41,7 @@ where
 
     for idx in 0..(num_vectors as PointOffsetType) {
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);

@@ -15,7 +15,7 @@ use crate::data_types::vectors::{
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, MultiVectorConfig};
-use crate::vector_storage::chunked_vectors::CHUNK_SIZE;
+use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::{new_raw_scorer, MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -94,6 +94,12 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => unreachable!(),
+            VectorStorageEnum::DenseAppendableInRam(_) => unreachable!(),
+            VectorStorageEnum::DenseAppendableInRamByte(_) => unreachable!(),
+            VectorStorageEnum::DenseAppendableInRamHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRam(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => unreachable!(),
         };
     }
 

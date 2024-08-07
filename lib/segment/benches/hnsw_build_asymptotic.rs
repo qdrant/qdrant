@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
+use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
 
 const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;
@@ -32,7 +33,7 @@ fn build_index<TMetric: Metric<VectorElementType>>(
         GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);

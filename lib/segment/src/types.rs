@@ -787,6 +787,11 @@ pub enum VectorStorageType {
     ///
     /// Search performance is defined by disk speed and the fraction of vectors that fit in memory.
     ChunkedMmap,
+    /// Same as `ChunkedMmap`, but vectors are forced to be locked in RAM
+    /// In this way we avoid cold requests to disk, but risk to run out of memory
+    ///
+    /// Designed as a replacement for `Memory`, which doesn't depend on RocksDB
+    InRamChunkedMmap,
 }
 
 /// Storage types for vectors
@@ -820,7 +825,7 @@ impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
     pub fn is_on_disk(&self) -> bool {
         match self {
-            Self::Memory => false,
+            Self::Memory | Self::InRamChunkedMmap => false,
             Self::Mmap | Self::ChunkedMmap => true,
         }
     }
@@ -861,6 +866,7 @@ impl VectorDataConfig {
             VectorStorageType::Memory => true,
             VectorStorageType::Mmap => false,
             VectorStorageType::ChunkedMmap => true,
+            VectorStorageType::InRamChunkedMmap => true,
         };
         is_index_appendable && is_storage_appendable
     }
