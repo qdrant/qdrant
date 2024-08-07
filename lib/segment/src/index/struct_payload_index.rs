@@ -627,6 +627,12 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![self.config_path()]
+        let mut files = self
+            .field_indexes
+            .values()
+            .flat_map(|indexes| indexes.iter().flat_map(|index| index.files().into_iter()))
+            .collect::<Vec<PathBuf>>();
+        files.push(self.config_path());
+        files
     }
 }
