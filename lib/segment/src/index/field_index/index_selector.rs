@@ -149,13 +149,19 @@ impl<'a> IndexSelector<'a> {
                     FieldIndexBuilder::DatetimeMmapIndex,
                 )]
             }
-            PayloadSchemaParams::Uuid(_) => {
-                vec![self.map_builder(
-                    field,
-                    FieldIndexBuilder::UuidIndex,
-                    FieldIndexBuilder::UuidMmapIndex,
-                )]
-            }
+            PayloadSchemaParams::Uuid(_) => match self {
+                IndexSelector::RocksDb(rocksdb) => {
+                    vec![FieldIndexBuilder::UuidIndex(NumericIndex::builder(
+                        rocksdb.db.clone(),
+                        &field.to_string(),
+                    ))]
+                }
+                IndexSelector::OnDisk(on_disk) => {
+                    vec![FieldIndexBuilder::UuidMmapIndex(MapIndex::mmap_builder(
+                        &map_dir(on_disk.dir, field),
+                    ))]
+                }
+            },
         })
     }
 
