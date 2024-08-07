@@ -321,7 +321,7 @@ pub async fn group_by(
     let mut needs_filling = true;
     for _ in 0..MAX_GET_GROUPS_REQUESTS {
         // update timeout
-        let timeout = timeout.map(|t| t - start.elapsed());
+        let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
         let mut request = request.clone();
 
         let source = &mut request.source;
@@ -385,7 +385,7 @@ pub async fn group_by(
     if needs_filling {
         for _ in 0..MAX_GROUP_FILLING_REQUESTS {
             // update timeout
-            let timeout = timeout.map(|t| t - start.elapsed());
+            let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let mut request = request.clone();
 
             let source = &mut request.source;
@@ -453,7 +453,7 @@ pub async fn group_by(
         .collect();
 
     // update timeout
-    let timeout = timeout.map(|t| t - start.elapsed());
+    let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
 
     // enrich with payload and vector
     let enriched_points: HashMap<_, _> = collection

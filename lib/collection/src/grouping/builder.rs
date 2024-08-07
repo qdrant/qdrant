@@ -100,7 +100,9 @@ where
 
         if let Some(lookup) = with_lookup {
             // update timeout
-            let timeout = self.timeout.map(|timeout| timeout - start.elapsed());
+            let timeout = self
+                .timeout
+                .map(|timeout| timeout.saturating_sub(start.elapsed()));
             let mut lookups = {
                 let pseudo_ids = groups
                     .iter()
