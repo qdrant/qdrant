@@ -184,11 +184,9 @@ impl<'a> IndexSelector<'a> {
     ) -> FieldIndexBuilder {
         match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
-                println!("Selecting rocks db: {field:?}");
                 make_rocksdb(MapIndex::builder(Arc::clone(db), &field.to_string()))
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                println!("Selecting on disk: {field:?}");
                 make_mmap(MapIndex::mmap_builder(&map_dir(dir, field)))
             }
         }
