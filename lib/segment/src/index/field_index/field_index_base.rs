@@ -119,6 +119,7 @@ pub enum FieldIndex {
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
+    UuidMapIndex(MapIndex<UuidIntType>),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -133,6 +134,7 @@ impl std::fmt::Debug for FieldIndex {
             FieldIndex::BinaryIndex(_index) => write!(f, "BinaryIndex"),
             FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
             FieldIndex::UuidIndex(_index) => write!(f, "UuidIndex"),
+            FieldIndex::UuidMapIndex(_index) => write!(f, "UuidMapIndex"),
         }
     }
 }
@@ -172,6 +174,7 @@ impl FieldIndex {
                 _ => None,
             },
             FieldIndex::UuidIndex(_) => None,
+            FieldIndex::UuidMapIndex(_) => None,
         }
     }
 
@@ -186,6 +189,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
+            FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
         }
     }
 
@@ -200,6 +204,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::UuidIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::UuidMapIndex(ref mut payload_field_index) => payload_field_index.load(),
         }
     }
 
@@ -214,6 +219,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(index) => index.clear(),
             FieldIndex::FullTextIndex(index) => index.clear(),
             FieldIndex::UuidIndex(index) => index.clear(),
+            FieldIndex::UuidMapIndex(index) => index.clear(),
         }
     }
 
@@ -282,6 +288,9 @@ impl FieldIndex {
             FieldIndex::UuidIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::UuidMapIndex(ref mut payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
         }
     }
 
@@ -296,6 +305,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(index) => index.remove_point(point_id),
             FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidIndex(index) => index.remove_point(point_id),
+            FieldIndex::UuidMapIndex(index) => index.remove_point(point_id),
         }
     }
 
@@ -310,6 +320,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(index) => index.get_telemetry_data(),
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
+            FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
         }
     }
 
@@ -324,6 +335,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(index) => index.values_count(point_id),
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
+            FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
         }
     }
 
@@ -338,6 +350,7 @@ impl FieldIndex {
             FieldIndex::BinaryIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -350,6 +363,7 @@ impl FieldIndex {
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BinaryIndex(_)
+            | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_) => None,
         }
@@ -359,7 +373,8 @@ impl FieldIndex {
         match self {
             FieldIndex::KeywordIndex(index) => Some(FacetIndex::KeywordIndex(index)),
             FieldIndex::IntMapIndex(_) // TODO(facets): use int map index too
-            | FieldIndex::UuidIndex(_) // TODO(facets): use uuid index too
+            | FieldIndex::UuidMapIndex(_) // TODO(facets): use uuid index too
+            | FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)
@@ -409,8 +424,8 @@ pub enum FieldIndexBuilder {
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
-    UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
-    UuidMmapIndex(NumericIndexMmapBuilder<UuidIntType, UuidPayloadType>),
+    UuidIndex(MapIndexBuilder<UuidIntType>),
+    UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -454,8 +469,8 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
-            Self::UuidIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
-            Self::UuidMmapIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
+            Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
+            Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
         })
     }
 }

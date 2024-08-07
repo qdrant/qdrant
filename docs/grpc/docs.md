@@ -1473,6 +1473,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | is_tenant | [bool](#bool) | optional | If true - used for tenant optimization. |
+| on_disk | [bool](#bool) | optional | If true - store index on disk. |
 
 
 

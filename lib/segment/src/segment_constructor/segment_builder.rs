@@ -196,25 +196,15 @@ impl SegmentBuilder {
                     }
                     break;
                 }
+                FieldIndex::UuidMapIndex(index) => {
+                    if let Some(ids) = index.get_values(internal_id) {
+                        uuid_hash(&mut ordering, ids);
+                    }
+                    break;
+                }
                 FieldIndex::UuidIndex(index) => {
                     if let Some(ids) = index.get_values(internal_id) {
-                        for id in ids {
-                            let uuid = Uuid::from_u128(id);
-
-                            // Not all Uuid versions hold timestamp data. The most common version, v4 for example is completely
-                            // random and can't be sorted. To still allow defragmentation, we assume that usually the same
-                            // version gets used for a payload key and implement an alternative sorting criteria, that just
-                            // takes the Uuids bytes to group equal Uuids together.
-                            if let Some(timestamp) = uuid.get_timestamp() {
-                                ordering = ordering.wrapping_add(timestamp.to_gregorian().0);
-                            } else {
-                                // First part of u128
-                                ordering = ordering.wrapping_add((id >> 64) as u64);
-
-                                // Second part of u128
-                                ordering = ordering.wrapping_add(id as u64);
-                            }
-                        }
+                        uuid_hash(&mut ordering, ids);
                     }
                     break;
                 }
@@ -595,6 +585,29 @@ impl SegmentBuilder {
             }
         }
         Ok(quantized_vectors_map)
+    }
+}
+
+fn uuid_hash<I>(hash: &mut u64, ids: I)
+where
+    I: Iterator<Item = u128>,
+{
+    for id in ids {
+        let uuid = Uuid::from_u128(id);
+
+        // Not all Uuid versions hold timestamp data. The most common version, v4 for example is completely
+        // random and can't be sorted. To still allow defragmentation, we assume that usually the same
+        // version gets used for a payload key and implement an alternative sorting criteria, that just
+        // takes the Uuids bytes to group equal Uuids together.
+        if let Some(timestamp) = uuid.get_timestamp() {
+            *hash = hash.wrapping_add(timestamp.to_gregorian().0);
+        } else {
+            // First part of u128
+            *hash = hash.wrapping_add((id >> 64) as u64);
+
+            // Second part of u128
+            *hash = hash.wrapping_add(id as u64);
+        }
     }
 }
 
