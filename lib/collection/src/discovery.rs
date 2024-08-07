@@ -198,7 +198,7 @@ where
     .await?;
 
     // update timeout
-    let timeout = timeout.map(|timeout| timeout - start.elapsed());
+    let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
     let res = batch_requests::<
         (DiscoverRequestInternal, ShardSelectorInternal),

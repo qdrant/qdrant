@@ -102,7 +102,7 @@ impl Collection {
                 )
                 .await?;
             // update timeout
-            let timeout = timeout.map(|t| t - start.elapsed());
+            let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let filled_results = without_payload_results
                 .into_iter()
                 .zip(request.clone().searches.into_iter())
