@@ -600,6 +600,7 @@ impl ShardHolder {
                             shared_storage_config.clone(),
                             payload_index_schema.clone(),
                             update_runtime.clone(),
+                            search_runtime.clone(),
                             optimizer_cpu_budget.clone(),
                         )
                         .await
@@ -627,6 +628,7 @@ impl ShardHolder {
                             shared_storage_config.clone(),
                             payload_index_schema.clone(),
                             update_runtime.clone(),
+                            search_runtime.clone(),
                             optimizer_cpu_budget.clone(),
                         )
                         .await

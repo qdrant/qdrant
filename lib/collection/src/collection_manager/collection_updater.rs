@@ -68,6 +68,9 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
     use itertools::Itertools;
     use segment::data_types::vectors::{
         only_default_vector, VectorStructInternal, DEFAULT_VECTOR_NAME,
@@ -133,6 +136,7 @@ mod tests {
     #[test]
     fn test_point_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let is_stopped = AtomicBool::new(false);
 
         let segments = build_test_holder(dir.path());
         let points = vec![
@@ -151,11 +155,13 @@ mod tests {
         let res = upsert_points(&segments.read(), 100, &points);
         assert!(matches!(res, Ok(1)));
 
-        let records = SegmentsSearcher::retrieve(
-            &segments,
+        let segments = Arc::new(segments);
+        let records = SegmentsSearcher::retrieve_blocking(
+            segments.clone(),
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
+            &is_stopped,
         )
         .unwrap()
         .into_values()
@@ -185,11 +191,12 @@ mod tests {
         )
         .unwrap();
 
-        let records = SegmentsSearcher::retrieve(
-            &segments,
+        let records = SegmentsSearcher::retrieve_blocking(
+            segments.clone(),
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
+            &is_stopped,
         )
         .unwrap()
         .into_values()
@@ -205,8 +212,8 @@ mod tests {
     fn test_payload_ops() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segments = build_test_holder(dir.path());
-
         let payload: Payload = serde_json::from_str(r#"{"color":"red"}"#).unwrap();
+        let is_stopped = AtomicBool::new(false);
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
@@ -222,11 +229,17 @@ mod tests {
         )
         .unwrap();
 
-        let res =
-            SegmentsSearcher::retrieve(&segments, &points, &WithPayload::from(true), &false.into())
-                .unwrap()
-                .into_values()
-                .collect_vec();
+        let segments = Arc::new(segments);
+        let res = SegmentsSearcher::retrieve_blocking(
+            segments.clone(),
+            &points,
+            &WithPayload::from(true),
+            &false.into(),
+            &is_stopped,
+        )
+        .unwrap()
+        .into_values()
+        .collect_vec();
 
         assert_eq!(res.len(), 3);
 
@@ -252,11 +265,12 @@ mod tests {
         )
         .unwrap();
 
-        let res = SegmentsSearcher::retrieve(
-            &segments,
+        let res = SegmentsSearcher::retrieve_blocking(
+            segments.clone(),
             &[3.into()],
             &WithPayload::from(true),
             &false.into(),
+            &is_stopped,
         )
         .unwrap()
         .into_values()
@@ -267,11 +281,12 @@ mod tests {
 
         // Test clear payload
 
-        let res = SegmentsSearcher::retrieve(
-            &segments,
+        let res = SegmentsSearcher::retrieve_blocking(
+            segments.clone(),
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
+            &is_stopped,
         )
         .unwrap()
         .into_values()
@@ -288,11 +303,12 @@ mod tests {
             },
         )
         .unwrap();
-        let res = SegmentsSearcher::retrieve(
-            &segments,
+        let res = SegmentsSearcher::retrieve_blocking(
+            segments,
             &[2.into()],
             &WithPayload::from(true),
             &false.into(),
+            &is_stopped,
         )
         .unwrap()
         .into_values()

@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::distributions::WeightedIndex;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -156,9 +157,10 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
-        let segments = self.segments();
+        let segments = self.segments.clone();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
@@ -198,8 +200,20 @@ impl LocalShard {
             .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
-        let records_map =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                segments,
+                &point_ids,
+                &with_payload,
+                with_vector,
+                search_runtime_handle,
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         let ordered_records = point_ids
             .iter()
@@ -220,9 +234,10 @@ impl LocalShard {
         order_by: &OrderBy,
         timeout: Option<Duration>,
     ) -> CollectionResult<(Vec<Record>, Vec<OrderValue>)> {
+        let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
-        let segments = self.segments();
+        let segments = self.segments.clone();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
@@ -269,9 +284,22 @@ impl LocalShard {
 
         let with_payload = WithPayload::from(with_payload_interface);
 
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+
         // Fetch with the requested vector and payload
-        let records_map =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                segments,
+                &point_ids,
+                &with_payload,
+                with_vector,
+                search_runtime_handle,
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         let ordered_records = point_ids
             .iter()
@@ -290,9 +318,10 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
-        let segments = self.segments();
+        let segments = self.segments.clone();
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
@@ -338,7 +367,7 @@ impl LocalShard {
             ))
         })?;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::from_entropy();
         let mut random_points = HashSet::with_capacity(limit);
 
         // Randomly sample points in two stages
@@ -378,8 +407,20 @@ impl LocalShard {
         let selected_points: Vec<_> = random_points.into_iter().collect();
 
         let with_payload = WithPayload::from(with_payload_interface);
-        let records_map =
-            SegmentsSearcher::retrieve(segments, &selected_points, &with_payload, with_vector)?;
+        // update timeout
+        let timeout = timeout.saturating_sub(start.elapsed());
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                segments,
+                &selected_points,
+                &with_payload,
+                with_vector,
+                search_runtime_handle,
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         Ok(records_map.into_values().collect())
     }

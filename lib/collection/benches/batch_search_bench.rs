@@ -101,6 +101,7 @@ fn batch_search_bench(c: &mut Criterion) {
             Default::default(),
             payload_index_schema,
             handle.clone(),
+            handle.clone(),
             CpuBudget::default(),
             optimizers_config,
         ))

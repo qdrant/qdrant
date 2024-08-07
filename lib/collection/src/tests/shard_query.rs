@@ -40,6 +40,7 @@ async fn test_shard_query_rrf_rescoring() {
         Arc::new(Default::default()),
         payload_index_schema,
         current_runtime.clone(),
+        current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),
     )
@@ -224,6 +225,7 @@ async fn test_shard_query_vector_rescoring() {
         Arc::new(Default::default()),
         payload_index_schema,
         current_runtime.clone(),
+        current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),
     )
@@ -354,6 +356,7 @@ async fn test_shard_query_payload_vector() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         payload_index_schema,
+        current_runtime.clone(),
         current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),

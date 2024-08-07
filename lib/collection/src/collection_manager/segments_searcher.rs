@@ -1,11 +1,11 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::types::ScoreType;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use ordered_float::Float;
-use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -19,7 +19,7 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 use super::holders::segment_holder::LockedSegmentHolder;
-use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::common::stopping_guard::StoppingGuard;
@@ -342,58 +342,90 @@ impl SegmentsSearcher {
     /// The points ids can contain duplicates, the records will be fetched only once
     ///
     /// If an id is not found in the segments, it won't be included in the output.
-    pub fn retrieve(
-        segments: &RwLock<SegmentHolder>,
+    pub async fn retrieve(
+        segments: LockedSegmentHolder,
         points: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<HashMap<PointIdType, Record>> {
+        let stopping_guard = StoppingGuard::new();
+        runtime_handle
+            .spawn_blocking({
+                let segments = segments.clone();
+                let points = points.to_vec();
+                let with_payload = with_payload.clone();
+                let with_vector = with_vector.clone();
+                let is_stopped = stopping_guard.get_is_stopped();
+                // TODO create one Task per segment level retrieve
+                move || {
+                    Self::retrieve_blocking(
+                        segments,
+                        &points,
+                        &with_payload,
+                        &with_vector,
+                        &is_stopped,
+                    )
+                }
+            })
+            .await?
+    }
+
+    pub fn retrieve_blocking(
+        segments: LockedSegmentHolder,
+        points: &[PointIdType],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
     ) -> CollectionResult<HashMap<PointIdType, Record>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, Record> = Default::default();
 
-        segments.read().read_points(points, |id, segment| {
-            let version = segment.point_version(id).ok_or_else(|| {
-                OperationError::service_error(format!("No version for point {id}"))
-            })?;
-            // If this point was not found yet or this segment have later version
-            if !point_version.contains_key(&id) || point_version[&id] < version {
-                point_records.insert(
-                    id,
-                    Record {
+        segments
+            .read()
+            .read_points(points, is_stopped, |id, segment| {
+                let version = segment.point_version(id).ok_or_else(|| {
+                    OperationError::service_error(format!("No version for point {id}"))
+                })?;
+                // If this point was not found yet or this segment have later version
+                if !point_version.contains_key(&id) || point_version[&id] < version {
+                    point_records.insert(
                         id,
-                        payload: if with_payload.enable {
-                            if let Some(selector) = &with_payload.payload_selector {
-                                Some(selector.process(segment.payload(id)?))
-                            } else {
-                                Some(segment.payload(id)?)
-                            }
-                        } else {
-                            None
-                        },
-                        vector: {
-                            let vector: Option<VectorStructInternal> = match with_vector {
-                                WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
-                                WithVector::Bool(false) => None,
-                                WithVector::Selector(vector_names) => {
-                                    let mut selected_vectors = NamedVectors::default();
-                                    for vector_name in vector_names {
-                                        if let Some(vector) = segment.vector(vector_name, id)? {
-                                            selected_vectors.insert(vector_name.into(), vector);
-                                        }
-                                    }
-                                    Some(selected_vectors.into())
+                        Record {
+                            id,
+                            payload: if with_payload.enable {
+                                if let Some(selector) = &with_payload.payload_selector {
+                                    Some(selector.process(segment.payload(id)?))
+                                } else {
+                                    Some(segment.payload(id)?)
                                 }
-                            };
-                            vector.map(Into::into)
+                            } else {
+                                None
+                            },
+                            vector: {
+                                let vector: Option<VectorStructInternal> = match with_vector {
+                                    WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
+                                    WithVector::Bool(false) => None,
+                                    WithVector::Selector(vector_names) => {
+                                        let mut selected_vectors = NamedVectors::default();
+                                        for vector_name in vector_names {
+                                            if let Some(vector) = segment.vector(vector_name, id)? {
+                                                selected_vectors.insert(vector_name.into(), vector);
+                                            }
+                                        }
+                                        Some(selected_vectors.into())
+                                    }
+                                };
+                                vector.map(Into::into)
+                            },
+                            shard_key: None,
+                            order_value: None,
                         },
-                        shard_key: None,
-                        order_value: None,
-                    },
-                );
-                point_version.insert(id, version);
-            }
-            Ok(true)
-        })?;
+                    );
+                    point_version.insert(id, version);
+                }
+                Ok(true)
+            })?;
 
         Ok(point_records)
     }
@@ -612,6 +644,7 @@ mod tests {
     use std::collections::HashSet;
 
     use api::rest::SearchRequestInternal;
+    use parking_lot::RwLock;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
     use segment::types::{Condition, HasIdCondition};
@@ -619,6 +652,7 @@ mod tests {
 
     use super::*;
     use crate::collection_manager::fixtures::{build_test_holder, random_segment};
+    use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::operations::types::CoreSearchRequest;
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
@@ -778,12 +812,12 @@ mod tests {
     fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-
-        let records = SegmentsSearcher::retrieve(
-            &segment_holder,
+        let records = SegmentsSearcher::retrieve_blocking(
+            Arc::new(segment_holder),
             &[1.into(), 2.into(), 3.into()],
             &WithPayload::from(true),
             &true.into(),
+            &AtomicBool::new(false),
         )
         .unwrap();
         assert_eq!(records.len(), 3);

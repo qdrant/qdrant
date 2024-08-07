@@ -115,10 +115,17 @@ impl ShardReplicaSet {
                 let request = request.clone();
                 let with_payload = with_payload.clone();
                 let with_vector = with_vector.clone();
+                let search_runtime = self.search_runtime.clone();
 
                 async move {
                     shard
-                        .retrieve(request, &with_payload, &with_vector, timeout)
+                        .retrieve(
+                            request,
+                            &with_payload,
+                            &with_vector,
+                            &search_runtime,
+                            timeout,
+                        )
                         .await
                 }
                 .boxed()

@@ -111,13 +111,16 @@ impl LocalShard {
             .map(|scored_point| scored_point.id)
             .collect();
 
+        // TODO tokio timeout
         // Collect retrieved records into a hashmap for fast lookup
         let records_map = SegmentsSearcher::retrieve(
-            self.segments(),
+            self.segments.clone(),
             &point_ids,
             &(&with_payload).into(),
             &with_vector,
-        )?;
+            &self.search_runtime,
+        )
+        .await?;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results
