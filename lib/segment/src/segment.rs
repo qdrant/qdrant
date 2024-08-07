@@ -1530,11 +1530,11 @@ impl SegmentEntry for Segment {
                 key: request.key.to_string(),
             })?;
 
-        let hits = if let Some(filter) = &request.filter {
+        let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let hits_iter = payload_index
+            let iter = payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
                 .check_stop(|| is_stopped.load(Ordering::Relaxed))
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
@@ -1547,16 +1547,19 @@ impl SegmentEntry for Segment {
                 .into_iter()
                 .map(|(value, count)| FacetHit { value, count });
 
-            peek_top_largest_iterable(hits_iter, request.limit)
+            Either::Left(iter)
         } else {
-            let hits_iter = facet_index
+            let iter = facet_index
                 .iter_counts_per_value()
-                .check_stop(|| !is_stopped.load(Ordering::Relaxed));
-            peek_top_largest_iterable(hits_iter, request.limit)
+                .check_stop(|| is_stopped.load(Ordering::Relaxed));
+            Either::Right(iter)
         };
 
-        let hits = hits
-            .into_iter()
+        // TODO(luis): We can't just select top values, because we need to aggregate across segments,
+        // which we can't assume to select the same best top.
+        //
+        // We need all values to be able to aggregate correctly across segments
+        let hits = hits_iter
             .map(|hit| FacetHit {
                 value: hit.value.to_owned(),
                 count: hit.count,
