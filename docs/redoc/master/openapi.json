@@ -10106,6 +10106,13 @@
             "enum": [
               "ChunkedMmap"
             ]
+          },
+          {
+            "description": "Same as `ChunkedMmap`, but vectors are forced to be locked in RAM In this way we avoid cold requests to disk, but risk to run out of memory\n\nDesigned as a replacement for `Memory`, which doesn't depend on RocksDB",
+            "type": "string",
+            "enum": [
+              "InRamChunkedMmap"
+            ]
           }
         ]
       },

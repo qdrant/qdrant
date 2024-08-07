@@ -18,8 +18,9 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
-use crate::vector_storage::chunked_vectors::{ChunkedVectors, CHUNK_SIZE};
-use crate::vector_storage::common::StoredRecord;
+use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
+use crate::vector_storage::common::{StoredRecord, CHUNK_SIZE};
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
@@ -27,8 +28,8 @@ type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
 /// All fields are counting vectors and not dimensions.
 #[derive(Debug, Clone, Default)]
 struct MultiVectorMetadata {
-    id: PointOffsetType,
-    start: PointOffsetType,
+    id: VectorOffsetType,
+    start: VectorOffsetType,
     inner_vectors_count: usize,
     inner_vector_capacity: usize,
 }
@@ -151,12 +152,12 @@ fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
         let metadata = &mut vectors_metadata[point_id_usize];
         metadata.inner_vectors_count = stored_record.vector.vectors_count();
         metadata.inner_vector_capacity = metadata.inner_vectors_count;
-        metadata.id = point_id;
+        metadata.id = point_id as VectorOffsetType;
 
-        metadata.start = vectors.len() as PointOffsetType;
+        metadata.start = vectors.len();
         let left_keys = vectors.get_chunk_left_keys(metadata.start);
         if stored_record.vector.vectors_count() > left_keys {
-            metadata.start += left_keys as PointOffsetType;
+            metadata.start += left_keys;
         }
         vectors.insert_many(
             metadata.start,
@@ -246,15 +247,15 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
                 .resize(key_usize + 1, Default::default());
         }
         let metadata = &mut self.vectors_metadata[key_usize];
-        metadata.id = key;
+        metadata.id = key as VectorOffsetType;
         metadata.inner_vectors_count = multi_vector.vectors_count();
 
         if multi_vector.vectors_count() > metadata.inner_vector_capacity {
             metadata.inner_vector_capacity = metadata.inner_vectors_count;
-            metadata.start = self.vectors.len() as PointOffsetType;
+            metadata.start = self.vectors.len();
             let left_keys = self.vectors.get_chunk_left_keys(metadata.start);
             if multi_vector.vectors_count() > left_keys {
-                metadata.start += left_keys as PointOffsetType;
+                metadata.start += left_keys;
             }
             self.vectors.insert_many(
                 metadata.start,
@@ -302,7 +303,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
-            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start as usize + i))
+            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start + i))
         })
     }
 
