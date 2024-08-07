@@ -6623,6 +6623,11 @@
             "description": "If true - used for tenant optimization.",
             "type": "boolean",
             "nullable": true
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

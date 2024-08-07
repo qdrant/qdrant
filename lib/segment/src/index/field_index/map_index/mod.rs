@@ -16,6 +16,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 use smol_str::SmolStr;
+use uuid::Uuid;
 
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
@@ -31,7 +32,7 @@ use crate::index::query_estimator::combine_should_estimations;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
-    PayloadKeyType, ValueVariants,
+    PayloadKeyType, UuidIntType, ValueVariants,
 };
 
 pub mod immutable_map_index;
@@ -56,6 +57,14 @@ impl MapIndexKey for str {
 
 impl MapIndexKey for IntPayloadType {
     type Owned = IntPayloadType;
+
+    fn to_owned(&self) -> Self::Owned {
+        *self
+    }
+}
+
+impl MapIndexKey for UuidIntType {
+    type Owned = UuidIntType;
 
     fn to_owned(&self) -> Self::Owned {
         *self
@@ -586,6 +595,83 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 }
 
+impl PayloadFieldIndex for MapIndex<UuidIntType> {
+    fn count_indexed_points(&self) -> usize {
+        self.get_indexed_points()
+    }
+
+    fn load(&mut self) -> OperationResult<bool> {
+        self.load_from_db()
+    }
+
+    fn clear(self) -> OperationResult<()> {
+        self.clear()
+    }
+
+    fn flusher(&self) -> Flusher {
+        MapIndex::flusher(self)
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                return Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()));
+            }
+        }
+
+        None
+    }
+
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        if let Some(Match::Value(MatchValue {
+            value: ValueVariants::Keyword(keyword),
+        })) = &condition.r#match
+        {
+            let keyword = keyword.as_str();
+            if let Ok(uuid) = Uuid::from_str(keyword) {
+                let mut estimation = self.match_cardinality(&uuid.as_u128());
+                estimation
+                    .primary_clauses
+                    .push(PrimaryCondition::Condition(condition.clone()));
+                return Some(estimation);
+            }
+        }
+
+        None
+    }
+
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        Box::new(
+            self.iter_values()
+                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
+                .filter(move |(_value, count)| *count >= threshold)
+                .map(move |(value, count)| PayloadBlockCondition {
+                    condition: FieldCondition::new_match(
+                        key.clone(),
+                        Uuid::from_u128(*value).to_string().into(),
+                    ),
+                    cardinality: count,
+                }),
+        )
+    }
+}
+
 impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn count_indexed_points(&self) -> usize {
         self.get_indexed_points()
@@ -751,6 +837,34 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
             return num.as_i64();
         }
         None
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.remove_point(id)
+    }
+}
+
+impl ValueIndexer for MapIndex<UuidIntType> {
+    type ValueType = UuidIntType;
+
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable map index",
+            )),
+            MapIndex::Mmap(_) => Err(OperationError::service_error(
+                "Can't add values to mmap map index",
+            )),
+        }
+    }
+
+    fn get_value(value: &Value) -> Option<Self::ValueType> {
+        Some(Uuid::parse_str(value.as_str()?).ok()?.as_u128())
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

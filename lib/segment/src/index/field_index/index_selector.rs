@@ -81,7 +81,9 @@ impl<'a> IndexSelector<'a> {
             PayloadSchemaParams::Datetime(_) => {
                 vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
             }
-            PayloadSchemaParams::Uuid(_) => vec![FieldIndex::UuidIndex(self.numeric_new(field)?)],
+            PayloadSchemaParams::Uuid(_) => {
+                vec![FieldIndex::UuidMapIndex(self.map_new(field)?)]
+            }
         })
     }
 
@@ -150,7 +152,7 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Uuid(_) => {
-                vec![self.numeric_builder(
+                vec![self.map_builder(
                     field,
                     FieldIndexBuilder::UuidIndex,
                     FieldIndexBuilder::UuidMmapIndex,
