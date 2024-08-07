@@ -81,7 +81,14 @@ impl<'a> IndexSelector<'a> {
             PayloadSchemaParams::Datetime(_) => {
                 vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
             }
-            PayloadSchemaParams::Uuid(_) => vec![FieldIndex::UuidMapIndex(self.map_new(field)?)],
+            PayloadSchemaParams::Uuid(_) => match self {
+                IndexSelector::RocksDb(_) => {
+                    vec![FieldIndex::UuidIndex(self.numeric_new(field)?)]
+                }
+                IndexSelector::OnDisk(_) => {
+                    vec![FieldIndex::UuidMapIndex(self.map_new(field)?)]
+                }
+            },
         })
     }
 

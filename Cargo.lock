@@ -1223,7 +1223,6 @@ dependencies = [
  "thiserror",
  "thread-priority",
  "tokio",
- "uuid",
  "validator",
  "zerocopy",
 ]
