@@ -424,7 +424,7 @@ pub enum FieldIndexBuilder {
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
-    UuidIndex(NumericIndexBuilder<UuidIntType, UuidPayloadType>),
+    UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
 }
 
@@ -469,7 +469,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
-            Self::UuidIndex(index) => FieldIndex::UuidIndex(index.finalize()?),
+            Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
         })
     }
