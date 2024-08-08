@@ -15,6 +15,8 @@ pub type HttpStatusCode = u16;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub collection_responses:
+        HashMap<String, HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -29,6 +31,14 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    #[allow(clippy::type_complexity)]
+    collections: HashMap<
+        String, /*collection name*/
+        HashMap<
+            String, /*method*/
+            HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
+        >,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -97,10 +107,22 @@ impl TonicWorkerTelemetryCollector {
 impl ActixWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
+        collection_name: Option<String>,
         method: String,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
     ) {
+        if let Some(collection_name) = collection_name {
+            let aggregator = self
+                .collections
+                .entry(collection_name)
+                .or_default()
+                .entry(method.clone())
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
         let aggregator = self
             .methods
             .entry(method)
@@ -119,7 +141,22 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+        let mut collection_responses = HashMap::new();
+        for (collection, methods) in &self.collections {
+            let mut methods_map = HashMap::new();
+            for (method, status_codes) in methods {
+                let mut status_codes_map = HashMap::new();
+                for (status_code, aggregator) in status_codes {
+                    status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+                }
+                methods_map.insert(method.clone(), status_codes_map);
+            }
+            collection_responses.insert(collection.clone(), methods_map);
+        }
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -139,6 +176,20 @@ impl WebApiTelemetry {
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
+            }
+        }
+        for (collection, methods) in &other.collection_responses {
+            for (method, status_codes) in methods {
+                let status_codes_map = self
+                    .collection_responses
+                    .entry(collection.clone())
+                    .or_default()
+                    .entry(method.clone())
+                    .or_default();
+                for (status_code, statistics) in status_codes {
+                    let entry = status_codes_map.entry(*status_code).or_default();
+                    *entry = entry.clone() + statistics.clone();
+                }
             }
         }
     }
@@ -184,7 +235,28 @@ impl Anonymize for WebApiTelemetry {
             })
             .collect();
 
-        WebApiTelemetry { responses }
+        let collection_responses = self
+            .collection_responses
+            .iter()
+            .map(|(collection, methods)| {
+                let methods = methods
+                    .iter()
+                    .map(|(method, value)| {
+                        let value: HashMap<_, _> = value
+                            .iter()
+                            .map(|(key, value)| (*key, value.anonymize()))
+                            .collect();
+                        (method.to_owned(), value)
+                    })
+                    .collect();
+                (collection.to_owned(), methods)
+            })
+            .collect();
+
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 

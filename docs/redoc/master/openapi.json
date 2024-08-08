@@ -10736,6 +10736,7 @@
       "WebApiTelemetry": {
         "type": "object",
         "required": [
+          "collection_responses",
           "responses"
         ],
         "properties": {
@@ -10745,6 +10746,18 @@
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/components/schemas/OperationDurationStatistics"
+              }
+            }
+          },
+          "collection_responses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OperationDurationStatistics"
+                }
               }
             }
           }
