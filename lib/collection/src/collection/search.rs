@@ -162,13 +162,9 @@ impl Collection {
                         )
                         .await?;
 
-                    if shard_key.is_none() {
-                        return Ok(records);
-                    }
-
-                    for batch in &mut records {
-                        for point in batch {
-                            common::clone_from_opt(&mut point.shard_key, *shard_key);
+                    if shard_key.is_some() {
+                        for point in &mut records.iter_mut().flatten() {
+                            point.shard_key = shard_key.cloned();
                         }
                     }
 

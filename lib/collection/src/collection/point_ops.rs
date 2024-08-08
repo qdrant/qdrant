@@ -269,12 +269,10 @@ impl Collection {
                         )
                         .await?;
 
-                    if shard_key.is_none() {
-                        return Ok(records);
-                    }
-
-                    for point in &mut records {
-                        common::clone_from_opt(&mut point.shard_key, *shard_key);
+                    if shard_key.is_some() {
+                        for point in &mut records {
+                            point.shard_key = shard_key.cloned();
+                        }
                     }
 
                     CollectionResult::Ok(records)
@@ -428,12 +426,10 @@ impl Collection {
                         records.retain(|record| !filter.check(record.id));
                     }
 
-                    if shard_key.is_none() {
-                        return Ok(records);
-                    }
-
-                    for point in &mut records {
-                        common::clone_from_opt(&mut point.shard_key, *shard_key);
+                    if shard_key.is_some() {
+                        for point in &mut records {
+                            point.shard_key = shard_key.cloned();
+                        }
                     }
 
                     CollectionResult::Ok(records)

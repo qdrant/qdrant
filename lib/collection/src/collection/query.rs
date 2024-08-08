@@ -80,12 +80,10 @@ impl Collection {
                     )
                     .await?;
 
-                if shard_key.is_none() {
-                    return Ok(responses);
-                }
-
-                for point in responses.iter_mut().flatten().flatten() {
-                    common::clone_from_opt(&mut point.shard_key, *shard_key);
+                if shard_key.is_some() {
+                    for point in responses.iter_mut().flatten().flatten() {
+                        point.shard_key = shard_key.cloned();
+                    }
                 }
 
                 CollectionResult::Ok(responses)
