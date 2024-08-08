@@ -83,12 +83,21 @@ To run Qdrant on local development environment you need to install below:
 
     ./target/release/qdrant
     ```
+- Install Python dependencies for testing
+    ```shell
+    poetry -C tests install --sync
+    ```
+    Then you could use `poetry -C run pytest tests/openapi` and `poetry -C run pytest tests/consensus_tests` to run the tests.
 - Use the web UI
 
     Web UI repo is [in a separate repo](https://github.com/qdrant/qdrant-web-ui), but there's a utility script to sync it to the `static` folder:
     ```shell
     ./tools/sync-web-ui.sh
     ```
+
+### Nix/NixOS
+If you are using [Nix package manager](https://nixos.org/) (available for Linux and MacOS), you can run `nix-shell` in the project root to get a shell with all dependencies installed.
+It includes dependencies to build Rust code as well as to run Python tests and various tools in the `./tools` directory.
 
 ## Profiling
 
@@ -210,7 +219,7 @@ Here is a quick step-by-step guide:
 2. change specs in `/openapi/*ytt.yaml`
 3. add new schema definitions to `src/schema_generator.rs`
 4. run `./tools/generate_openapi_models.sh` to generate specs
-5. update integration tests `tests/openapi` and run them with `poetry -C tests install --sync && poetry -C tests run pytest tests/openapi`
+5. update integration tests `tests/openapi` and run them with `pytest tests/openapi` (use poetry or nix to get `pytest`)
 6. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 7. validate specs by browsing redoc on `http://localhost:8000/?v=master`
 8. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
