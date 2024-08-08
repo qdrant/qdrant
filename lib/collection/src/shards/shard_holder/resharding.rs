@@ -374,11 +374,11 @@ impl ShardHolder {
         T: Clone + MergeFilter,
     {
         let Some(state) = self.resharding_state() else {
-            return request.into();
+            return From::from(request);
         };
 
         let Some(filter) = self.resharding_filter() else {
-            return request.into();
+            return From::from(request);
         };
 
         ReshardableReadRequest::new(state.shard_id, filter, request)

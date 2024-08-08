@@ -63,12 +63,6 @@ pub trait MergeFilter {
     fn merge_filter(&mut self, filter: Filter);
 }
 
-impl MergeFilter for CoreSearchRequestBatch {
-    fn merge_filter(&mut self, filter: Filter) {
-        self.searches.merge_filter(filter);
-    }
-}
-
 macro_rules! impl_merge_filter {
     ($type:ty) => {
         impl MergeFilter for $type {
@@ -92,6 +86,12 @@ where
         for item in self {
             item.merge_filter(filter.clone());
         }
+    }
+}
+
+impl MergeFilter for CoreSearchRequestBatch {
+    fn merge_filter(&mut self, filter: Filter) {
+        self.searches.merge_filter(filter);
     }
 }
 
