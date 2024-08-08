@@ -9,3 +9,10 @@ pub mod panic;
 pub mod top_k;
 pub mod types;
 pub mod validation;
+
+pub fn clone_from_opt<T: Clone>(this: &mut Option<T>, other: Option<&T>) {
+    match (this, other) {
+        (Some(this), Some(other)) => this.clone_from(other),
+        (this, other) => *this = other.cloned(),
+    }
+}

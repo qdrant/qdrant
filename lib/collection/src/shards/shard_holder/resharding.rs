@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use segment::types::{Condition, Filter, ShardKey};
 
-use super::reshardable_read_request::{EditFilter, ReshardableReadRequest};
+use super::reshardable_read_request::{MergeFilter, ReshardableReadRequest};
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -14,6 +14,10 @@ use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
 
 impl ShardHolder {
+    pub fn resharding_state(&self) -> Option<ReshardState> {
+        self.resharding_state.read().clone()
+    }
+
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
             direction,
@@ -365,6 +369,21 @@ impl ShardHolder {
         Ok(())
     }
 
+    pub fn reshardable_request<T>(&self, request: T) -> ReshardableReadRequest<T>
+    where
+        T: Clone + MergeFilter<Filter>,
+    {
+        let Some(state) = self.resharding_state() else {
+            return request.into();
+        };
+
+        let Some(filter) = self.resharding_filter() else {
+            return request.into();
+        };
+
+        ReshardableReadRequest::new(state.shard_id, filter, request)
+    }
+
     /// A filter that excludes points migrated to a different shard, as part of resharding.
     ///
     /// `None` if resharding is not active or if the read hash ring is not committed yet.
@@ -372,19 +391,6 @@ impl ShardHolder {
         let filter = self.resharding_filter_impl()?;
         let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
         Some(filter)
-    }
-
-    pub fn reshardable_request<T: EditFilter + Clone>(
-        &self,
-        request: Arc<T>,
-    ) -> ReshardableReadRequest<T> {
-        let resharding_id_and_filter = self
-            .resharding_state
-            .read()
-            .as_ref()
-            .map(|state| state.shard_id)
-            .and_then(|shard_id| self.resharding_filter().map(|filter| (shard_id, filter)));
-        ReshardableReadRequest::new(request, resharding_id_and_filter)
     }
 
     #[inline]

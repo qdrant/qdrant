@@ -7,103 +7,119 @@ use crate::operations::types::{CoreSearchRequest, CoreSearchRequestBatch, CountR
 use crate::operations::universal_query::shard_query::ShardQueryRequest;
 use crate::shards::shard::ShardId;
 
-pub trait EditFilter {
-    fn edit_filter<E>(&mut self, edit: E)
+pub enum ReshardableReadRequest<T> {
+    Filtered {
+        resharding_shard_id: ShardId,
+        filtered: T,
+        original: T,
+    },
+
+    Normal {
+        request: T,
+    },
+}
+
+impl<T> ReshardableReadRequest<T> {
+    pub fn new(resharding_shard_id: ShardId, resharding_filter: Filter, request: T) -> Self
     where
-        E: Clone + FnMut(Option<Filter>) -> Option<Filter>;
-}
+        T: Clone + MergeFilter<Filter>,
+    {
+        let mut filtered = request.clone();
+        filtered.merge_filter(resharding_filter);
 
-// Preserves original request, and optionally holds an edited one with the resharding filter.
-//
-// The edited request should be used on all shards, except the new resharding shard
-pub struct ReshardableReadRequest<T> {
-    /// Original request
-    pub original: Arc<T>,
-
-    /// Tuple of edited request and resharding shard id
-    pub edited: Option<(Arc<T>, u32)>,
-}
-
-impl<T: EditFilter + Clone> ReshardableReadRequest<T> {
-    pub fn new(request: Arc<T>, resharding_id_and_filter: Option<(u32, Filter)>) -> Self {
-        let Some((resharding_id, resharding_filter)) = resharding_id_and_filter else {
-            return Self {
-                original: request,
-                edited: None,
-            };
-        };
-
-        let mut edited = request.as_ref().clone();
-
-        edited.edit_filter(|filter| {
-            Some(match filter {
-                Some(filter) => filter.merge_owned(resharding_filter.clone()),
-                None => resharding_filter.clone(),
-            })
-        });
-
-        Self {
+        Self::Filtered {
+            resharding_shard_id,
+            filtered,
             original: request,
-            edited: Some((Arc::new(edited), resharding_id)),
         }
     }
 
-    /// If available, use edited request on all shards, except the new resharding shard
-    pub fn get_request(&self, shard_id: ShardId) -> Arc<T> {
-        if let Some((edited, resharding_id)) = self.edited.clone() {
-            // Use edited request on all shards, except the new resharding shard
-            if resharding_id != shard_id {
-                return edited;
+    pub fn get(&self, shard_id: ShardId) -> &T {
+        match self {
+            Self::Filtered {
+                resharding_shard_id,
+                filtered,
+                original,
+            } => {
+                if shard_id != *resharding_shard_id {
+                    filtered
+                } else {
+                    original
+                }
             }
+
+            Self::Normal { request } => request,
         }
-        self.original.clone()
     }
 }
 
-macro_rules! impl_edit_filter {
-    ($($type:ty),+ $(,)?) => {
-        $(impl EditFilter for $type {
-            fn edit_filter<E>(&mut self, mut edit: E)
-            where
-                E: Clone + FnMut(Option<Filter>) -> Option<Filter>
-            {
-                self.filter = edit(self.filter.take());
+impl<T> From<T> for ReshardableReadRequest<T> {
+    fn from(request: T) -> Self {
+        Self::Normal { request }
+    }
+}
+
+pub trait MergeFilter<F> {
+    fn merge_filter(&mut self, filter: F);
+}
+
+impl MergeFilter<Filter> for CoreSearchRequestBatch {
+    fn merge_filter(&mut self, filter: Filter) {
+        self.searches.merge_filter(filter);
+    }
+}
+
+macro_rules! impl_merge_filter {
+    ($type:ty) => {
+        impl MergeFilter<Filter> for $type {
+            fn merge_filter(&mut self, filter: Filter) {
+                self.filter.merge_filter(filter);
             }
-        })*
+        }
     };
 }
 
-impl_edit_filter!(
-    CoreSearchRequest,
-    CountRequestInternal,
-    FacetRequest,
-    ShardQueryRequest,
-);
+impl_merge_filter!(CoreSearchRequest);
+impl_merge_filter!(CountRequestInternal);
+impl_merge_filter!(FacetRequest);
+impl_merge_filter!(ShardQueryRequest);
 
-impl<T: EditFilter> EditFilter for Vec<T> {
-    fn edit_filter<E>(&mut self, edit: E)
-    where
-        E: Clone + FnMut(Option<Filter>) -> Option<Filter>,
-    {
-        self.iter_mut()
-            .for_each(|req| req.edit_filter(edit.clone()));
+impl MergeFilter<Filter> for Option<Filter> {
+    fn merge_filter(&mut self, filter: Filter) {
+        *self = self.take().map(|this| filter.merge_owned(this));
     }
 }
 
-impl EditFilter for CoreSearchRequestBatch {
-    fn edit_filter<E>(&mut self, edit: E)
-    where
-        E: Clone + FnMut(Option<Filter>) -> Option<Filter>,
-    {
-        self.searches.edit_filter(edit);
+impl<T> MergeFilter<Filter> for Vec<T>
+where
+    T: MergeFilter<Filter>,
+{
+    fn merge_filter(&mut self, filter: Filter) {
+        for item in self {
+            item.merge_filter(filter.clone());
+        }
     }
 }
 
-impl EditFilter for Option<Filter> {
-    fn edit_filter<E>(&mut self, mut edit: E)
-    where
-        E: Clone + FnMut(Option<Filter>) -> Option<Filter>,
-    {
-        *self = edit(self.take());
+impl<T> MergeFilter<Filter> for Arc<T>
+where
+    T: Clone + MergeFilter<Filter>,
+{
+    fn merge_filter(&mut self, filter: Filter) {
+        let mut request = self.as_ref().clone();
+        request.merge_filter(filter);
+
+        *self = Arc::new(request);
+    }
+}
+
+impl<F, T> MergeFilter<Option<F>> for T
+where
+    T: MergeFilter<F>,
+{
+    fn merge_filter(&mut self, filter: Option<F>) {
+        if let Some(filter) = filter {
+            self.merge_filter(filter);
+        }
     }
 }

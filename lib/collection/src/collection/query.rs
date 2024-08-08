@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::types::ScoreType;
-use futures::{future, TryFutureExt};
+use futures::future;
 use itertools::{Either, Itertools};
 use rand::Rng;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
@@ -64,32 +64,32 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
 
-        let reshardable_request = shard_holder.reshardable_request(batch_request);
+        let batch_request = shard_holder.reshardable_request(batch_request);
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             // Take resharding request if available on existing shards, otherwise take normal request
-            let batch = reshardable_request.get_request(shard.shard_id);
+            let batch = batch_request.get(shard.shard_id);
 
-            let shard_key = shard_key.cloned();
-            shard
-                .query_batch(
-                    batch,
-                    read_consistency,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                )
-                .and_then(move |mut shard_responses| async move {
-                    if shard_key.is_none() {
-                        return Ok(shard_responses);
-                    }
-                    shard_responses
-                        .iter_mut()
-                        .flatten()
-                        .flatten()
-                        .for_each(|point| point.shard_key.clone_from(&shard_key));
+            async {
+                let mut responses = shard
+                    .query_batch(
+                        batch.clone(),
+                        read_consistency,
+                        shard_selection.is_shard_id(),
+                        timeout,
+                    )
+                    .await?;
 
-                    Ok(shard_responses)
-                })
+                if shard_key.is_none() {
+                    return Ok(responses);
+                }
+
+                for point in responses.iter_mut().flatten().flatten() {
+                    common::clone_from_opt(&mut point.shard_key, *shard_key);
+                }
+
+                CollectionResult::Ok(responses)
+            }
         });
         future::try_join_all(all_searches).await
     }

@@ -3,7 +3,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{future, TryFutureExt};
+use futures::future;
 use itertools::{Either, Itertools};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
@@ -134,11 +134,12 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
-        let reshardable_request = {
-            // Apply resharding filter when resharding is active
-            let shards_holder = self.shards_holder.read().await;
-            shards_holder.reshardable_request(request.clone())
-        };
+        // Apply resharding filter when resharding is active
+        let reshardable_request = self
+            .shards_holder
+            .read()
+            .await
+            .reshardable_request(request.clone());
 
         let instant = Instant::now();
 
@@ -146,30 +147,35 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
+
             let all_searches = target_shards.iter().map(|(shard, shard_key)| {
                 // Take the filtered request, or the original request for the resharding shard
-                let request = reshardable_request.get_request(shard.shard_id);
+                let request = reshardable_request.get(shard.shard_id);
 
-                let shard_key = shard_key.cloned();
-                shard
-                    .core_search(
-                        request,
-                        read_consistency,
-                        shard_selection.is_shard_id(),
-                        timeout,
-                    )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
+                async {
+                    let mut records = shard
+                        .core_search(
+                            request.clone(),
+                            read_consistency,
+                            shard_selection.is_shard_id(),
+                            timeout,
+                        )
+                        .await?;
+
+                    if shard_key.is_none() {
+                        return Ok(records);
+                    }
+
+                    for batch in &mut records {
+                        for point in batch {
+                            common::clone_from_opt(&mut point.shard_key, *shard_key);
                         }
-                        for batch in &mut records {
-                            for point in batch {
-                                point.shard_key.clone_from(&shard_key);
-                            }
-                        }
-                        Ok(records)
-                    })
+                    }
+
+                    CollectionResult::Ok(records)
+                }
             });
+
             future::try_join_all(all_searches).await?
         };
 

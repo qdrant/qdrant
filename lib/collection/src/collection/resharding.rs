@@ -15,12 +15,7 @@ use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
     pub async fn resharding_state(&self) -> Option<ReshardState> {
-        self.shards_holder
-            .read()
-            .await
-            .resharding_state
-            .read()
-            .clone()
+        self.shards_holder.read().await.resharding_state()
     }
 
     /// Start a new resharding operation

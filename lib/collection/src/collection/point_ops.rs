@@ -249,26 +249,22 @@ impl Collection {
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
+            let filter = shards_holder.reshardable_request(request.filter);
 
-            let reshardable_filter = shards_holder.reshardable_request(Arc::new(request.filter));
+            let scroll_futures = target_shards.iter().map(|(shard, shard_key)| {
+                let filter = filter.get(shard.shard_id);
 
-            let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                let with_payload = &with_payload_interface;
-                let with_vector = &with_vector;
-                let filter = reshardable_filter.get_request(shard.shard_id);
-                let order_by = order_by.as_ref();
-
-                async move {
+                async {
                     let mut records = shard
                         .scroll_by(
                             id_offset,
                             limit,
-                            with_payload,
-                            with_vector,
-                            filter.as_ref().as_ref(),
+                            &with_payload_interface,
+                            &with_vector,
+                            filter.as_ref(),
                             read_consistency,
                             local_only,
-                            order_by,
+                            order_by.as_ref(),
                             timeout,
                         )
                         .await?;
@@ -365,16 +361,15 @@ impl Collection {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
 
+        let request = shards_holder.reshardable_request(Arc::new(request));
+
         // Requests received through internal gRPC *always* have `shard_selection`
         let local_only = shard_selection.is_shard_id();
-
-        let reshardable_request = shards_holder.reshardable_request(Arc::new(request));
 
         let mut requests: FuturesUnordered<_> = shards
             .into_iter()
             .map(|(shard, _shard_key)| {
-                let request = reshardable_request.get_request(shard.shard_id);
-
+                let request = request.get(shard.shard_id).clone();
                 shard.count(request, read_consistency, timeout, local_only)
             })
             .collect();
