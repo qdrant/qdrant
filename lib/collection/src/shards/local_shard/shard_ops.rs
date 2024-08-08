@@ -176,11 +176,19 @@ impl ShardOperation for LocalShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
-        _timeout: Option<Duration>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
-        // TODO run in spawn_blocking + timeout + cancellation
         let total_count = if request.exact {
-            let all_points = self.read_filtered(request.filter.as_ref())?;
+            let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+            let all_points = tokio::time::timeout(
+                timeout,
+                self.read_filtered(request.filter.as_ref(), search_runtime_handle),
+            )
+            .await
+            .map_err(|_: Elapsed| {
+                CollectionError::timeout(timeout.as_secs() as usize, "count")
+            })??;
             all_points.len()
         } else {
             self.estimate_cardinality(request.filter.as_ref())?.exp

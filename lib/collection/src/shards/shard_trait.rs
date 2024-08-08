@@ -44,6 +44,7 @@ pub trait ShardOperation {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult>;
 
