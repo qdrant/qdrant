@@ -115,6 +115,7 @@ impl ShardReplicaSet {
                 self.shared_storage_config.clone(),
                 self.payload_index_schema.clone(),
                 self.update_runtime.clone(),
+                self.search_runtime.clone(),
                 self.optimizer_cpu_budget.clone(),
             )
             .await

@@ -822,6 +822,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         let get_points = GetPoints {

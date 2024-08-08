@@ -86,6 +86,7 @@ pub struct LocalShard {
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
+    search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
 }
 
@@ -145,6 +146,7 @@ impl LocalShard {
         shard_path: &Path,
         clocks: LocalShardClocks,
         update_runtime: Handle,
+        search_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
@@ -195,6 +197,7 @@ impl LocalShard {
             update_tracker,
             path: shard_path.to_owned(),
             update_runtime,
+            search_runtime,
             optimizers,
             optimizers_log,
             disk_usage_watcher,
@@ -216,6 +219,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
+        search_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
@@ -351,6 +355,7 @@ impl LocalShard {
             shard_path,
             clocks,
             update_runtime,
+            search_runtime,
         )
         .await;
 
@@ -402,6 +407,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
+        search_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
@@ -415,6 +421,7 @@ impl LocalShard {
             shared_storage_config,
             payload_index_schema,
             update_runtime,
+            search_runtime,
             optimizer_cpu_budget,
             effective_optimizers_config,
         )
@@ -433,6 +440,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
+        search_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
@@ -521,6 +529,7 @@ impl LocalShard {
             shard_path,
             LocalShardClocks::default(),
             update_runtime,
+            search_runtime,
         )
         .await;
 

@@ -390,30 +390,33 @@ pub(crate) fn sync_points(
         .collect();
 
     let mut points_to_update: Vec<_> = Vec::new();
-    let _num_updated = segments.read_points(existing_point_ids.as_slice(), |id, segment| {
-        let all_vectors = match segment.all_vectors(id) {
-            Ok(v) => v,
-            Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
-            Err(e) => return Err(e),
-        };
-        let payload = segment.payload(id)?;
-        let point = id_to_point.get(&id).unwrap();
-        if point.get_vectors() != all_vectors {
-            points_to_update.push(*point);
-            Ok(true)
-        } else {
-            let payload_match = match point.payload {
-                Some(ref p) => p == &payload,
-                None => Payload::default() == payload,
+    // we don’t want to cancel this filtered read
+    let is_stopped = AtomicBool::new(false);
+    let _num_updated =
+        segments.read_points(existing_point_ids.as_slice(), &is_stopped, |id, segment| {
+            let all_vectors = match segment.all_vectors(id) {
+                Ok(v) => v,
+                Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
+                Err(e) => return Err(e),
             };
-            if !payload_match {
+            let payload = segment.payload(id)?;
+            let point = id_to_point.get(&id).unwrap();
+            if point.get_vectors() != all_vectors {
                 points_to_update.push(*point);
                 Ok(true)
             } else {
-                Ok(false)
+                let payload_match = match point.payload {
+                    Some(ref p) => p == &payload,
+                    None => Payload::default() == payload,
+                };
+                if !payload_match {
+                    points_to_update.push(*point);
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             }
-        }
-    })?;
+        })?;
 
     // 4. Select new points
     let num_updated = points_to_update.len();

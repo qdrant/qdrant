@@ -104,6 +104,7 @@ impl ShardOperation for DummyShard {
         _: Arc<PointRequestInternal>,
         _: &WithPayload,
         _: &WithVector,
+        _: &Handle,
         _: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()

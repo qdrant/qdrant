@@ -34,6 +34,7 @@ async fn test_fix_payload_indices() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         current_runtime.clone(),
+        current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),
     )
@@ -75,6 +76,7 @@ async fn test_fix_payload_indices() {
         config.optimizer_config.clone(),
         Arc::new(Default::default()),
         payload_index_schema,
+        current_runtime.clone(),
         current_runtime,
         CpuBudget::default(),
     )

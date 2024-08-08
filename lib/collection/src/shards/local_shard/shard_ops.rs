@@ -9,6 +9,7 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
+use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
@@ -192,11 +193,22 @@ impl ShardOperation for LocalShard {
         request: Arc<PointRequestInternal>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        _timeout: Option<Duration>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
-        // TODO run in spawn_blocking + timeout + cancellation
-        let records_map =
-            SegmentsSearcher::retrieve(self.segments(), &request.ids, with_payload, with_vector)?;
+        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                self.segments.clone(),
+                &request.ids,
+                with_payload,
+                with_vector,
+                search_runtime_handle,
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         let ordered_records = request
             .ids
