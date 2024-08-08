@@ -274,7 +274,7 @@ impl Collection {
                     }
 
                     for point in &mut records {
-                        point.shard_key = shard_key.cloned();
+                        common::clone_from_opt(&mut point.shard_key, *shard_key);
                     }
 
                     CollectionResult::Ok(records)
@@ -389,47 +389,39 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Record>> {
+        let request = Arc::new(request);
+
         let with_payload_interface = request
             .with_payload
             .as_ref()
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
-        let request = Arc::new(request);
 
         let all_shard_collection_results = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
 
             // Resharding filter to apply when resharding is active
+            let resharding_shard_id = shard_holder.resharding_state().map(|state| state.shard_id);
             let resharding_filter = shard_holder.resharding_filter_impl();
-            let reshard_shard_id = shard_holder
-                .resharding_state
-                .read()
-                .as_ref()
-                .map(|state| state.shard_id);
 
-            let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                // Explicitly borrow `request` and `with_payload`, so we can use them in `async move`
-                // block below without unnecessarily cloning anything
-                let request = &request;
-                let with_payload = &with_payload;
-
-                // If resharding, prepare filter to exclude migrated points from *old* shards
-                let resharding_filter = resharding_filter
-                    .as_ref()
-                    .filter(|_| Some(shard.shard_id) != reshard_shard_id);
-
-                async move {
+            let retrieve_futures = target_shards.iter().map(|(shard, shard_key)| {
+                async {
                     let mut records = shard
                         .retrieve(
                             request.clone(),
-                            with_payload,
+                            &with_payload,
                             &request.with_vector,
                             read_consistency,
                             timeout,
                             shard_selection.is_shard_id(),
                         )
                         .await?;
+
+                    // If resharding, prepare filter to exclude migrated points from *old* shards
+                    let resharding_filter = resharding_filter
+                        .as_ref()
+                        .filter(|_| Some(shard.shard_id) != resharding_shard_id);
 
                     // If resharding, exclude migrated points from *old* shards
                     if let Some(filter) = resharding_filter {
@@ -441,7 +433,7 @@ impl Collection {
                     }
 
                     for point in &mut records {
-                        point.shard_key.clone_from(&shard_key.cloned());
+                        common::clone_from_opt(&mut point.shard_key, *shard_key);
                     }
 
                     CollectionResult::Ok(records)

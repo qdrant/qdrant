@@ -182,7 +182,7 @@ impl Collection {
         let result = self
             .merge_from_shards(
                 all_searches_res,
-                Arc::clone(&request),
+                request.clone(),
                 !shard_selection.is_shard_id(),
             )
             .await;
