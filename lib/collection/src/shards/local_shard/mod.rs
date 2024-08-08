@@ -978,6 +978,7 @@ impl LocalShard {
         let mut status = CollectionStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         let mut optimizer_status = OptimizersStatus::Ok;
+        let comment = None;
 
         {
             let segments = self.segments().read();
@@ -1030,6 +1031,7 @@ impl LocalShard {
             segments_count,
             config: collection_config,
             payload_schema: schema,
+            comment,
         }
     }
 
