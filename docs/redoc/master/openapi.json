@@ -3345,6 +3345,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -4298,6 +4308,16 @@
             "schema": {
               "$ref": "#/components/schemas/ReadConsistency"
             }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -5178,6 +5198,16 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
             }
           }
         ],
