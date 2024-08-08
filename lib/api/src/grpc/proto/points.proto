@@ -512,11 +512,11 @@ enum Fusion {
     DBSF = 1; // Distribution-Based Score Fusion
 }
 
-/// Sample points from the collection
-///
-/// Available sampling methods:
-///
-/// * `random` - Random sampling
+// Sample points from the collection
+//
+// Available sampling methods:
+//
+// * `random` - Random sampling
 enum Sample {
     Random = 0;
 }

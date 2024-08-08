@@ -4275,10 +4275,10 @@ How to use positive and negative vectors to find the results, default is `Averag
 
 ### Sample
 Sample points from the collection
-/
-/ Available sampling methods:
-/
-/ * `random` - Random sampling
+
+Available sampling methods:
+
+* `random` - Random sampling
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
