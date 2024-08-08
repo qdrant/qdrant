@@ -47,6 +47,7 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder,
 };
 use crate::collection_manager::optimizers::TrackerLog;
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -86,7 +87,7 @@ pub struct LocalShard {
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
-    search_runtime: Handle,
+    pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
 }
 
@@ -874,11 +875,6 @@ impl LocalShard {
         filter: Option<&'a Filter>,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments().read();
-        let some_segment = segments.iter().next();
-
-        if some_segment.is_none() {
-            return Ok(CardinalityEstimation::exact(0));
-        }
         let cardinality = segments
             .iter()
             .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
@@ -893,22 +889,13 @@ impl LocalShard {
         Ok(cardinality)
     }
 
-    pub fn read_filtered<'a>(
+    pub async fn read_filtered<'a>(
         &'a self,
         filter: Option<&'a Filter>,
+        runtime_handle: &Handle,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
-        let segments = self.segments().read();
-        let is_stopped = AtomicBool::new(false);
-        let all_points: BTreeSet<_> = segments
-            .non_appendable_then_appendable_segments()
-            .flat_map(|segment| {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(None, None, filter, &is_stopped)
-            })
-            .collect();
-        Ok(all_points)
+        let segments = self.segments.clone();
+        SegmentsSearcher::read_filtered(segments, filter, runtime_handle).await
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {

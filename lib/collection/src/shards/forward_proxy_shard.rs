@@ -357,10 +357,13 @@ impl ShardOperation for ForwardProxyShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
-        local_shard.count(request, timeout).await
+        local_shard
+            .count(request, search_runtime_handle, timeout)
+            .await
     }
 
     async fn retrieve(

@@ -90,7 +90,9 @@ impl ShardReplicaSet {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
-                async move { shard.count(request, timeout).await }.boxed()
+                let search_runtime = self.search_runtime.clone();
+
+                async move { shard.count(request, &search_runtime, timeout).await }.boxed()
             },
             read_consistency,
             local_only,
@@ -152,7 +154,12 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         match &*local {
             None => Ok(None),
-            Some(shard) => Ok(Some(shard.get().count(request, timeout).await?)),
+            Some(shard) => {
+                let search_runtime = self.search_runtime.clone();
+                Ok(Some(
+                    shard.get().count(request, &search_runtime, timeout).await?,
+                ))
+            }
         }
     }
 

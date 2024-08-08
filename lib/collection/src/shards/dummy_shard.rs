@@ -94,6 +94,7 @@ impl ShardOperation for DummyShard {
     async fn count(
         &self,
         _: Arc<CountRequestInternal>,
+        _: &Handle,
         _: Option<Duration>,
     ) -> CollectionResult<CountResult> {
         self.dummy()
