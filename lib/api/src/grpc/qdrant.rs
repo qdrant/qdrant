@@ -6031,11 +6031,11 @@ impl Fusion {
         }
     }
 }
-/// / Sample points from the collection
-/// /
-/// / Available sampling methods:
-/// /
-/// / * `random` - Random sampling
+/// Sample points from the collection
+///
+/// Available sampling methods:
+///
+/// * `random` - Random sampling
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
