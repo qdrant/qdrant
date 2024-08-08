@@ -371,7 +371,7 @@ impl ShardHolder {
 
     pub fn reshardable_request<T>(&self, request: T) -> ReshardableReadRequest<T>
     where
-        T: Clone + MergeFilter<Filter>,
+        T: Clone + MergeFilter,
     {
         let Some(state) = self.resharding_state() else {
             return request.into();

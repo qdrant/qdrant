@@ -22,7 +22,7 @@ pub enum ReshardableReadRequest<T> {
 impl<T> ReshardableReadRequest<T> {
     pub fn new(resharding_shard_id: ShardId, resharding_filter: Filter, request: T) -> Self
     where
-        T: Clone + MergeFilter<Filter>,
+        T: Clone + MergeFilter,
     {
         let mut filtered = request.clone();
         filtered.merge_filter(resharding_filter);
@@ -59,11 +59,11 @@ impl<T> From<T> for ReshardableReadRequest<T> {
     }
 }
 
-pub trait MergeFilter<F> {
-    fn merge_filter(&mut self, filter: F);
+pub trait MergeFilter {
+    fn merge_filter(&mut self, filter: Filter);
 }
 
-impl MergeFilter<Filter> for CoreSearchRequestBatch {
+impl MergeFilter for CoreSearchRequestBatch {
     fn merge_filter(&mut self, filter: Filter) {
         self.searches.merge_filter(filter);
     }
@@ -71,7 +71,7 @@ impl MergeFilter<Filter> for CoreSearchRequestBatch {
 
 macro_rules! impl_merge_filter {
     ($type:ty) => {
-        impl MergeFilter<Filter> for $type {
+        impl MergeFilter for $type {
             fn merge_filter(&mut self, filter: Filter) {
                 self.filter.merge_filter(filter);
             }
@@ -84,15 +84,9 @@ impl_merge_filter!(CountRequestInternal);
 impl_merge_filter!(FacetRequest);
 impl_merge_filter!(ShardQueryRequest);
 
-impl MergeFilter<Filter> for Option<Filter> {
-    fn merge_filter(&mut self, filter: Filter) {
-        *self = self.take().map(|this| filter.merge_owned(this));
-    }
-}
-
-impl<T> MergeFilter<Filter> for Vec<T>
+impl<T> MergeFilter for Vec<T>
 where
-    T: MergeFilter<Filter>,
+    T: MergeFilter,
 {
     fn merge_filter(&mut self, filter: Filter) {
         for item in self {
@@ -101,9 +95,9 @@ where
     }
 }
 
-impl<T> MergeFilter<Filter> for Arc<T>
+impl<T> MergeFilter for Arc<T>
 where
-    T: Clone + MergeFilter<Filter>,
+    T: Clone + MergeFilter,
 {
     fn merge_filter(&mut self, filter: Filter) {
         let mut request = self.as_ref().clone();
@@ -113,13 +107,8 @@ where
     }
 }
 
-impl<F, T> MergeFilter<Option<F>> for T
-where
-    T: MergeFilter<F>,
-{
-    fn merge_filter(&mut self, filter: Option<F>) {
-        if let Some(filter) = filter {
-            self.merge_filter(filter);
-        }
+impl MergeFilter for Option<Filter> {
+    fn merge_filter(&mut self, filter: Filter) {
+        *self = self.take().map(|this| filter.merge_owned(this));
     }
 }
