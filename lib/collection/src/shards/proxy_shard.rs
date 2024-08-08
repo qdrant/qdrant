@@ -156,7 +156,10 @@ impl ShardOperation for ProxyShard {
                 if cardinality.max > MAX_CHANGES_TRACKED_COUNT {
                     PointsOperationEffect::Many
                 } else {
-                    let points = local_shard.read_filtered(Some(&filter))?;
+                    let runtime_handle = self.wrapped_shard.search_runtime.clone();
+                    let points = local_shard
+                        .read_filtered(Some(&filter), &runtime_handle)
+                        .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
             }
@@ -235,10 +238,13 @@ impl ShardOperation for ProxyShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
+        search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
-        local_shard.count(request, timeout).await
+        local_shard
+            .count(request, search_runtime_handle, timeout)
+            .await
     }
 
     /// Forward read-only `retrieve` to `wrapped_shard`

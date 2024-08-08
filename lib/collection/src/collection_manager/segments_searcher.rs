@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -428,6 +428,31 @@ impl SegmentsSearcher {
             })?;
 
         Ok(point_records)
+    }
+
+    pub async fn read_filtered(
+        segments: LockedSegmentHolder,
+        filter: Option<&Filter>,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<BTreeSet<PointIdType>> {
+        let stopping_guard = StoppingGuard::new();
+        let filter = filter.cloned();
+        runtime_handle
+            .spawn_blocking(move || {
+                let is_stopped = stopping_guard.get_is_stopped();
+                let segments = segments.read();
+                let all_points: BTreeSet<_> = segments
+                    .non_appendable_then_appendable_segments()
+                    .flat_map(|segment| {
+                        segment
+                            .get()
+                            .read()
+                            .read_filtered(None, None, filter.as_ref(), &is_stopped)
+                    })
+                    .collect();
+                Ok(all_points)
+            })
+            .await?
     }
 }
 

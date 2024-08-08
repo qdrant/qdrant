@@ -782,6 +782,7 @@ impl ShardOperation for RemoteShard {
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
+        _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
