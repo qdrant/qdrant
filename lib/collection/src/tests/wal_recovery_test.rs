@@ -34,6 +34,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         current_runtime.clone(),
+        current_runtime.clone(),
         CpuBudget::default(),
         config.optimizer_config.clone(),
     )
@@ -78,6 +79,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         payload_index_schema.clone(),
         current_runtime.clone(),
+        current_runtime.clone(),
         CpuBudget::default(),
     )
     .await
@@ -99,6 +101,7 @@ async fn test_delete_from_indexed_payload() {
         config.optimizer_config.clone(),
         Arc::new(Default::default()),
         payload_index_schema,
+        current_runtime.clone(),
         current_runtime,
         CpuBudget::default(),
     )

@@ -82,6 +82,7 @@ fn setup() -> (TempDir, LocalShard) {
             Default::default(),
             payload_index_schema,
             handle.clone(),
+            handle.clone(),
             CpuBudget::default(),
             optimizers_config,
         ))

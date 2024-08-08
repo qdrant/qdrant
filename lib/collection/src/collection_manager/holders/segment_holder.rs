@@ -2,11 +2,12 @@ use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use common::iterator_ext::IteratorExt;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
@@ -616,7 +617,12 @@ impl<'s> SegmentHolder {
         Ok(applied_points)
     }
 
-    pub fn read_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
+    pub fn read_points<F>(
+        &self,
+        ids: &[PointIdType],
+        is_stopped: &AtomicBool,
+        mut f: F,
+    ) -> OperationResult<usize>
     where
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
@@ -637,7 +643,12 @@ impl<'s> SegmentHolder {
         for segment in segments {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
-            for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
+            let points = ids
+                .iter()
+                .cloned()
+                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .filter(|id| read_segment.has_point(*id));
+            for point in points {
                 let is_ok = f(point, &read_segment)?;
                 read_points += usize::from(is_ok);
             }

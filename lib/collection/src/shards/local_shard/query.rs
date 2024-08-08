@@ -10,6 +10,7 @@ use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use tokio::runtime::Handle;
+use tokio::time::error::Elapsed;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -100,6 +101,7 @@ impl LocalShard {
         query_response: Vec<ScoredPoint>,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
+        timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
@@ -112,12 +114,18 @@ impl LocalShard {
             .collect();
 
         // Collect retrieved records into a hashmap for fast lookup
-        let records_map = SegmentsSearcher::retrieve(
-            self.segments(),
-            &point_ids,
-            &(&with_payload).into(),
-            &with_vector,
-        )?;
+        let records_map = tokio::time::timeout(
+            timeout,
+            SegmentsSearcher::retrieve(
+                self.segments.clone(),
+                &point_ids,
+                &(&with_payload).into(),
+                &with_vector,
+                &self.search_runtime,
+            ),
+        )
+        .await
+        .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "retrieve"))??;
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results
@@ -147,6 +155,7 @@ impl LocalShard {
         'shard: 'query,
     {
         async move {
+            let start_time = std::time::Instant::now();
             let max_len = merge_plan.sources.len();
             let mut sources = Vec::with_capacity(max_len);
 
@@ -174,6 +183,9 @@ impl LocalShard {
                     }
                 }
             }
+
+            // decrease timeout by the time spent so far (recursive calls)
+            let timeout = timeout.saturating_sub(start_time.elapsed());
 
             // Rescore or return plain sources
             if let Some(rescore_params) = merge_plan.rescore_params {
@@ -217,6 +229,7 @@ impl LocalShard {
                     limit,
                     with_payload,
                     with_vector,
+                    timeout,
                 )
                 .await
             }
@@ -320,6 +333,7 @@ impl LocalShard {
         limit: usize,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
+        timeout: Duration,
     ) -> Result<Vec<ScoredPoint>, CollectionError> {
         let fused = match fusion {
             Fusion::Rrf => rrf_scoring(sources),
@@ -337,7 +351,7 @@ impl LocalShard {
         };
 
         let filled_top_fused = self
-            .fill_with_payload_or_vectors(top_fused, with_payload, with_vector)
+            .fill_with_payload_or_vectors(top_fused, with_payload, with_vector, timeout)
             .await?;
 
         Ok(filled_top_fused)
