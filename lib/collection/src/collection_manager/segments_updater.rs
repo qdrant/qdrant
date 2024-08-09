@@ -82,6 +82,12 @@ pub(crate) fn update_vectors(
                 let vectors = points_map[&id].clone();
                 write_segment.update_vectors(op_num, id, vectors)
             },
+            |id, _, mut owned_vectors, payload| {
+                for i in points_map[&id].iter() {
+                    owned_vectors.insert(i.0.to_string(), i.1.to_owned());
+                }
+                Ok((true, owned_vectors, Some(payload)))
+            },
             |_| false,
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -148,6 +154,7 @@ pub(crate) fn overwrite_payload(
             op_num,
             batch,
             |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
+            |_, _, vectors, _| Ok((true, vectors, Some(payload.clone()))),
             |segment| segment.get_indexed_fields().is_empty(),
         )?;
 
@@ -182,6 +189,10 @@ pub(crate) fn set_payload(
             op_num,
             chunk,
             |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
+            |_, _, vectors, mut old_payload| {
+                old_payload.merge(payload);
+                Ok((true, vectors, Some(old_payload)))
+            },
             |segment| {
                 segment.get_indexed_fields().keys().all(|indexed_path| {
                     !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
@@ -241,6 +252,12 @@ pub(crate) fn delete_payload(
                 }
                 Ok(res)
             },
+            |_, _, vectors, mut payload| {
+                for key in keys {
+                    payload.remove(key);
+                }
+                Ok((true, vectors, Some(payload)))
+            },
             |segment| {
                 iproduct!(segment.get_indexed_fields().keys(), keys).all(
                     |(indexed_path, path_to_delete)| {
@@ -279,6 +296,7 @@ pub(crate) fn clear_payload(
             op_num,
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id),
+            |_, _, vectors, _| Ok((true, vectors, None)),
             |segment| segment.get_indexed_fields().is_empty(),
         )?;
         check_unprocessed_points(batch, &updated_points)?;
@@ -303,6 +321,7 @@ pub(crate) fn clear_payload_by_filter(
             op_num,
             batch,
             |id, write_segment| write_segment.clear_payload(op_num, id),
+            |_, _, vectors, _| Ok((true, vectors, None)),
             |segment| segment.get_indexed_fields().is_empty(),
         )?;
         total_updated_points += updated_points.len();
@@ -461,6 +480,13 @@ where
                 point.get_vectors(),
                 point.payload.as_ref(),
             )
+        },
+        |id, _, mut vectors, _| {
+            let point = points_map[&id];
+            for (name, vec) in point.get_vectors() {
+                vectors.insert(name.to_string(), vec.to_owned());
+            }
+            Ok((true, vectors, point.payload.clone()))
         },
         |_| false,
     )?;
