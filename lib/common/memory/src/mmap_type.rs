@@ -166,6 +166,16 @@ where
             }
         })
     }
+
+    /// Call [`memmap2::MmapMut::unchecked_advise`] on the underlying mmap.
+    ///
+    /// # Safety
+    ///
+    /// See [`memmap2::UncheckedAdvice`] doc.
+    #[cfg(unix)]
+    pub unsafe fn unchecked_advise(&self, advice: memmap2::UncheckedAdvice) -> std::io::Result<()> {
+        self.mmap.unchecked_advise(advice)
+    }
 }
 
 impl<T> Deref for MmapType<T>
