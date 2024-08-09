@@ -78,6 +78,8 @@ impl From<RecoQuery<Vector>> for QueryVector {
 
 #[cfg(test)]
 mod test {
+    use std::cmp::Ordering;
+
     use common::math::scaled_fast_sigmoid;
     use common::types::ScoreType;
     use proptest::prelude::*;
@@ -125,18 +127,41 @@ mod test {
         }
     }
 
+    fn ulps_eq(a: f32, b: f32, ulps: u32) -> bool {
+        if a.signum() != b.signum() {
+            return false;
+        }
+
+        let a = a.to_bits();
+        let b = b.to_bits();
+
+        a.abs_diff(b) <= ulps
+    }
+
+    /// Relaxes the comparison of floats to allow for a some difference in units of least precision
+    fn float_cmp(a: f32, b: f32) -> Ordering {
+        if ulps_eq(a, b, 80) {
+            Ordering::Equal
+        } else {
+            a.total_cmp(&b)
+        }
+    }
+
     proptest! {
         /// Checks that the negative-chosen scores invert the order of the candidates
         #[test]
         fn correct_negative_order(a in -100f32..=100f32, b in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
 
-            let ordering_before = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
+            let ordering_before = float_cmp(dummy_similarity(&a), dummy_similarity(&b));
 
             let query_a = RecoQuery::new(vec![], vec![a]);
             let query_b = RecoQuery::new(vec![], vec![b]);
 
-            let ordering_after = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
+            let score_a = query_a.score_by(dummy_similarity);
+            let score_b = query_b.score_by(dummy_similarity);
+
+            let ordering_after = float_cmp(score_a, score_b);
 
             if ordering_before == std::cmp::Ordering::Equal {
                 assert_eq!(ordering_before, ordering_after);
@@ -150,12 +175,15 @@ mod test {
         fn correct_positive_order(a in -100f32..=100f32, b in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
 
-            let ordering_before = dummy_similarity(&a).total_cmp(&dummy_similarity(&b));
+            let ordering_before = float_cmp(dummy_similarity(&a), dummy_similarity(&b));
 
             let query_a = RecoQuery::new(vec![a], vec![]);
             let query_b = RecoQuery::new(vec![b], vec![]);
 
-            let ordering_after = query_a.score_by(dummy_similarity).total_cmp(&query_b.score_by(dummy_similarity));
+            let score_a = query_a.score_by(dummy_similarity);
+            let score_b = query_b.score_by(dummy_similarity);
+
+            let ordering_after = float_cmp(score_a, score_b);
 
             assert_eq!(ordering_before, ordering_after);
         }
