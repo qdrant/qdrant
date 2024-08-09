@@ -10,9 +10,10 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
 pub type GeoHash = SmolStr;
+pub type GeoHashRef<'a> = &'a str;
 
 /// Max size of geo-hash used for indexing. size=12 is about 6cm2
-const GEOHASH_MAX_LENGTH: usize = 12;
+pub const GEOHASH_MAX_LENGTH: usize = 12;
 
 const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
@@ -81,7 +82,7 @@ pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError>
     encode((lon, lat).into(), GEOHASH_MAX_LENGTH).map(Into::into)
 }
 
-pub fn geo_hash_to_box(geo_hash: &GeoHash) -> GeoBoundingBox {
+pub fn geo_hash_to_box(geo_hash: GeoHashRef) -> GeoBoundingBox {
     let rectangle = decode_bbox(geo_hash).unwrap();
     let top_left = GeoPoint {
         lon: rectangle.min().x,
@@ -942,7 +943,7 @@ mod tests {
 
     #[test]
     fn turn_geo_hash_to_box() {
-        let geo_box = geo_hash_to_box(&"dr5ruj4477kd".into());
+        let geo_box = geo_hash_to_box("dr5ruj4477kd");
         let center = GeoPoint {
             lat: 40.76517460,
             lon: -74.00101399,

@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::mutable_geo_index::MutableGeoMapIndex;
+use super::mutable_geo_index::{DynamicGeoMapIndex, MutableGeoMapIndex};
 use super::GeoMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
@@ -25,9 +25,9 @@ pub struct ImmutableGeoMapIndex {
     counts_per_hash: Vec<Counts>,
     points_map: Vec<(GeoHash, HashSet<PointOffsetType>)>,
     point_to_values: ImmutablePointToValues<GeoPoint>,
-    pub points_count: usize,
-    pub points_values_count: usize,
-    pub max_values_per_point: usize,
+    points_count: usize,
+    points_values_count: usize,
+    max_values_per_point: usize,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
@@ -50,6 +50,18 @@ impl ImmutableGeoMapIndex {
 
     pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
+    }
+
+    pub fn get_points_count(&self) -> usize {
+        self.points_count
+    }
+
+    pub fn get_points_values_count(&self) -> usize {
+        self.points_values_count
+    }
+
+    pub fn get_max_values_per_point(&self) -> usize {
+        self.max_values_per_point
     }
 
     pub fn check_values_any(
@@ -95,7 +107,7 @@ impl ImmutableGeoMapIndex {
         );
         let result = mutable_geo_index.load()?;
 
-        let MutableGeoMapIndex {
+        let DynamicGeoMapIndex {
             points_per_hash,
             values_per_hash,
             points_map,
@@ -104,7 +116,7 @@ impl ImmutableGeoMapIndex {
             points_values_count,
             max_values_per_point,
             ..
-        } = mutable_geo_index;
+        } = mutable_geo_index.into_dynamic();
 
         let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
         for (hash, points) in points_per_hash {

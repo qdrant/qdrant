@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
+use delegate::delegate;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -14,6 +15,11 @@ use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
 use crate::types::GeoPoint;
 
 pub struct MutableGeoMapIndex {
+    dynamic_index: DynamicGeoMapIndex,
+    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+}
+
+pub struct DynamicGeoMapIndex {
     /*
     {
         "d": 10,
@@ -39,7 +45,6 @@ pub struct MutableGeoMapIndex {
     pub points_count: usize,
     pub points_values_count: usize,
     pub max_values_per_point: usize,
-    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl MutableGeoMapIndex {
@@ -49,6 +54,139 @@ impl MutableGeoMapIndex {
             store_cf_name,
         ));
         Self {
+            dynamic_index: DynamicGeoMapIndex::new(),
+            db_wrapper,
+        }
+    }
+
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+        &self.db_wrapper
+    }
+
+    pub fn load(&mut self) -> OperationResult<bool> {
+        if !self.db_wrapper.has_column_family()? {
+            return Ok(false);
+        };
+
+        let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
+
+        for (key, value) in self.db_wrapper.lock_db().iter()? {
+            let key_str = std::str::from_utf8(&key).map_err(|_| {
+                OperationError::service_error("Index load error: UTF8 error while DB parsing")
+            })?;
+
+            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
+            let geo_point = GeoMapIndex::decode_db_value(value)?;
+
+            if self.dynamic_index.point_to_values.len() <= idx as usize {
+                self.dynamic_index
+                    .point_to_values
+                    .resize_with(idx as usize + 1, Vec::new);
+            }
+
+            if self.dynamic_index.point_to_values[idx as usize].is_empty() {
+                self.dynamic_index.points_count += 1;
+            }
+
+            points_to_hashes
+                .entry(idx)
+                .or_default()
+                .push(geo_hash.clone());
+
+            self.dynamic_index.point_to_values[idx as usize].push(geo_point);
+            self.dynamic_index
+                .points_map
+                .entry(geo_hash.clone())
+                .or_default()
+                .insert(idx);
+
+            self.dynamic_index.points_values_count += 1;
+        }
+
+        for (_idx, geo_hashes) in points_to_hashes {
+            self.dynamic_index.max_values_per_point =
+                max(self.dynamic_index.max_values_per_point, geo_hashes.len());
+            self.dynamic_index.increment_hash_point_counts(&geo_hashes);
+            for geo_hash in geo_hashes {
+                self.dynamic_index.increment_hash_value_counts(&geo_hash);
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
+        if let Some(removed_geo_points) = self.dynamic_index.point_to_values.get(idx as usize) {
+            for removed_geo_point in removed_geo_points {
+                let removed_geo_hash: GeoHash =
+                    encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
+                        |e| OperationError::service_error(format!("Malformed geo points: {e}")),
+                    )?;
+                let key = GeoMapIndex::encode_db_key(&removed_geo_hash, idx);
+                self.db_wrapper.remove(key)?;
+            }
+            self.dynamic_index.remove_point(idx)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn add_many_geo_points(
+        &mut self,
+        idx: PointOffsetType,
+        values: &[GeoPoint],
+    ) -> OperationResult<()> {
+        for added_point in values {
+            let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
+                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+
+            let key = GeoMapIndex::encode_db_key(&added_geo_hash, idx);
+            let value = GeoMapIndex::encode_db_value(added_point);
+
+            self.db_wrapper.put(key, value)?;
+        }
+        self.dynamic_index.add_many_geo_points(idx, values)
+    }
+
+    pub fn get_points_count(&self) -> usize {
+        self.dynamic_index.points_count
+    }
+
+    pub fn get_points_values_count(&self) -> usize {
+        self.dynamic_index.points_values_count
+    }
+
+    pub fn get_max_values_per_point(&self) -> usize {
+        self.dynamic_index.max_values_per_point
+    }
+
+    pub fn into_dynamic(self) -> DynamicGeoMapIndex {
+        self.dynamic_index
+    }
+
+    delegate! {
+        to self.dynamic_index {
+            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
+            pub fn values_count(&self, idx: PointOffsetType) -> usize;
+            pub fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
+            pub fn get_points_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn get_values_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn get_stored_sub_regions(
+                &self,
+                geo: &GeoHash,
+            ) -> impl Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_;
+        }
+    }
+}
+
+impl Default for DynamicGeoMapIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DynamicGeoMapIndex {
+    pub fn new() -> Self {
+        Self {
             points_per_hash: Default::default(),
             values_per_hash: Default::default(),
             points_map: Default::default(),
@@ -56,12 +194,7 @@ impl MutableGeoMapIndex {
             points_count: 0,
             points_values_count: 0,
             max_values_per_point: 0,
-            db_wrapper,
         }
-    }
-
-    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        &self.db_wrapper
     }
 
     pub fn check_values_any(
@@ -96,53 +229,6 @@ impl MutableGeoMapIndex {
         self.values_per_hash.get(hash).cloned().unwrap_or(0)
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
-            return Ok(false);
-        };
-
-        let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
-
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
-
-            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
-            let geo_point = GeoMapIndex::decode_db_value(value)?;
-
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-            }
-
-            if self.point_to_values[idx as usize].is_empty() {
-                self.points_count += 1;
-            }
-
-            points_to_hashes
-                .entry(idx)
-                .or_default()
-                .push(geo_hash.clone());
-
-            self.point_to_values[idx as usize].push(geo_point);
-            self.points_map
-                .entry(geo_hash.clone())
-                .or_default()
-                .insert(idx);
-
-            self.points_values_count += 1;
-        }
-
-        for (_idx, geo_hashes) in points_to_hashes {
-            self.max_values_per_point = max(self.max_values_per_point, geo_hashes.len());
-            self.increment_hash_point_counts(&geo_hashes);
-            for geo_hash in geo_hashes {
-                self.increment_hash_value_counts(&geo_hash);
-            }
-        }
-        Ok(true)
-    }
-
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
         if self.point_to_values.len() <= idx as usize {
             return Ok(()); // Already removed or never actually existed
@@ -160,11 +246,10 @@ impl MutableGeoMapIndex {
 
         for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
+                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
+                    |e| OperationError::service_error(format!("Malformed geo points: {e}")),
+                )?;
             removed_geo_hashes.push(removed_geo_hash.clone());
-
-            let key = GeoMapIndex::encode_db_key(&removed_geo_hash, idx);
-            self.db_wrapper.remove(key)?;
 
             let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
                 hash_ids.remove(&idx);
@@ -209,13 +294,7 @@ impl MutableGeoMapIndex {
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
                 .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
-
-            let key = GeoMapIndex::encode_db_key(&added_geo_hash, idx);
-            let value = GeoMapIndex::encode_db_value(added_point);
-
             geo_hashes.push(added_geo_hash);
-
-            self.db_wrapper.put(key, value)?;
         }
 
         for geo_hash in &geo_hashes {
