@@ -4,6 +4,7 @@ use std::io::Write;
 use std::iter::zip;
 use std::path::{Path, PathBuf};
 
+use io::file_operations::advise_dontneed;
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
@@ -234,7 +235,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     ) -> Result<(), OperationError> {
         let mut it = 0..self.len();
 
-        for chunk in self.chunks.iter() {
+        for (chunk_idx, chunk) in self.chunks.iter().enumerate() {
             for (i, _) in zip(0..self.config.chunk_size_vectors, &mut it) {
                 let idx = i * self.config.dim;
                 f(&chunk[idx..idx + self.config.dim])?;
@@ -254,6 +255,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             unsafe {
                 chunk.unchecked_advise(memmap2::UncheckedAdvice::DontNeed)?;
             }
+
+            // We need both madvise and posix_fadvise to discard the page cache.
+            advise_dontneed(&chunk_name(&self.directory, chunk_idx))?;
         }
         Ok(())
     }
