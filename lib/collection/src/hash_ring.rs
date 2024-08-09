@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::shards::shard::ShardId;
 
-const HASH_RING_SHARD_SCALE: u32 = 100;
+pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum HashRingRouter<T = ShardId> {
