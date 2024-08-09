@@ -33,6 +33,9 @@ pub enum ClusterOperations {
     /// Abort resharding
     #[schemars(skip)]
     AbortResharding(AbortReshardingOperation),
+    /// Finish resharding
+    #[schemars(skip)]
+    FinishResharding(FinishReshardingOperation),
 
     #[schemars(skip)]
     CommitReadHashRing(CommitReadHashRingOperation),
@@ -104,6 +107,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::RestartTransfer(op) => op.validate(),
             ClusterOperations::StartResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
+            ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::CommitReadHashRing(op) => op.validate(),
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
         }
@@ -150,6 +154,11 @@ pub struct StartReshardingOperation {
 pub struct AbortReshardingOperation {
     #[validate]
     pub abort_resharding: AbortResharding,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishReshardingOperation {
+    pub finish_resharding: FinishResharding,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -247,6 +256,9 @@ pub enum ReshardingDirection {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct AbortResharding {}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishResharding {}
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
