@@ -17,7 +17,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetRequestInternal, FacetResponse};
 use segment::json_path::JsonPath;
 use segment::types::Filter;
 use storage::content_manager::toc::TableOfContent;
@@ -108,7 +108,7 @@ async fn facet_counts_internal(
 
     let shard_selection = ShardSelectorInternal::ShardId(shard_id);
 
-    let request = FacetRequest {
+    let request = FacetRequestInternal {
         key: JsonPath::from_str(&key)
             .map_err(|_| Status::invalid_argument("Failed to parse facet key"))?,
         limit: limit as usize,

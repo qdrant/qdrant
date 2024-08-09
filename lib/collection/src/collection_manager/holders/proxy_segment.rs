@@ -8,7 +8,9 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
-use segment::data_types::facets::{aggregate_facet_hits, FacetHit, FacetRequest, FacetValueHit};
+use segment::data_types::facets::{
+    aggregate_facet_hits, FacetHit, FacetRequestInternal, FacetValueHit,
+};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -715,7 +717,7 @@ impl SegmentEntry for ProxySegment {
 
     fn facet(
         &self,
-        request: &FacetRequest,
+        request: &FacetRequestInternal,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<FacetValueHit>> {
         let deleted_points = self.deleted_points.read();
@@ -729,7 +731,7 @@ impl SegmentEntry for ProxySegment {
                 request.filter.as_ref(),
                 &deleted_points,
             );
-            let new_request = FacetRequest {
+            let new_request = FacetRequestInternal {
                 key: request.key.clone(),
                 limit: request.limit,
                 filter: Some(wrapped_filter),

@@ -4,7 +4,7 @@ use std::time::Duration;
 use futures::future;
 use itertools::Itertools;
 use segment::data_types::facets::{
-    aggregate_facet_hits, FacetRequest, FacetResponse, FacetValueHit,
+    aggregate_facet_hits, FacetRequestInternal, FacetResponse, FacetValueHit,
 };
 
 use super::Collection;
@@ -15,7 +15,7 @@ use crate::operations::types::CollectionResult;
 impl Collection {
     pub async fn facet(
         &self,
-        request: FacetRequest,
+        request: FacetRequestInternal,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,

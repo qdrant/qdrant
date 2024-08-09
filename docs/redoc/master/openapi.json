@@ -12642,6 +12642,43 @@
             ]
           }
         }
+      },
+      "FacetRequest": {
+        "type": "object",
+        "required": [
+          "key",
+          "limit"
+        ],
+        "properties": {
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
       }
     }
   }
