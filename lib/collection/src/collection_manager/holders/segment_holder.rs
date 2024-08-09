@@ -568,17 +568,13 @@ impl<'s> SegmentHolder {
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut point_operation: F,
-        mut cow_op: H,
+        mut point_cow_operation: H,
         update_nonappendable: G,
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        for<'n> H: FnMut(
-            PointIdType,
-            &mut RwLockWriteGuard<dyn SegmentEntry>,
-            NamedVectors<'n>,
-            Payload,
-        ) -> OperationResult<(bool, NamedVectors<'n>, Option<Payload>)>,
+        for<'n, 'o, 'p> H:
+            FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload) -> OperationResult<bool>,
         G: FnMut(&dyn SegmentEntry) -> bool,
     {
         let _update_guard = self.update_tracker.update();
@@ -605,21 +601,21 @@ impl<'s> SegmentHolder {
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
-                            let all_vectors = write_segment.all_vectors(point_id)?;
-                            let payload = write_segment.payload(point_id)?;
+                            let mut all_vectors = write_segment.all_vectors(point_id)?;
+                            let mut payload = write_segment.payload(point_id)?;
 
-                            let (_, new_vectors, _new_payload) =
-                                cow_op(point_id, appendable_write_segment, all_vectors, payload)?;
+                            let apply_payload =
+                                point_cow_operation(point_id, &mut all_vectors, &mut payload)?;
 
                             let mut applied = true;
 
                             applied &= appendable_write_segment.upsert_point(
                                 op_num,
                                 point_id,
-                                new_vectors,
+                                all_vectors,
                             )?;
 
-                            if let Some(payload) = _new_payload {
+                            if apply_payload {
                                 applied &= appendable_write_segment
                                     .set_full_payload(op_num, point_id, &payload)?;
                             } else {
@@ -1361,10 +1357,9 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
-                |point_id, _, vectors, payload| {
+                |point_id, _, _| {
                     processed_points2.push(point_id);
-                    // assert!(segment.has_point(point_id));
-                    Ok((true, vectors, Some(payload)))
+                    Ok(true)
                 },
                 |_| update_nonappendable,
             )
@@ -1376,6 +1371,10 @@ mod tests {
         let read_segment_1 = locked_segment_1.read();
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
+
+        for i in processed_points2.iter() {
+            assert!(read_segment_1.has_point(*i));
+        }
 
         assert!(read_segment_1.has_point(1.into()));
         assert!(read_segment_1.has_point(2.into()));
@@ -1476,10 +1475,9 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
-                |point_id, _, vectors, payload| {
+                |point_id, _, _| {
                     processed_points2.push(point_id);
-                    // assert!(segment.has_point(point_id));
-                    Ok((true, vectors, Some(payload)))
+                    Ok(true)
                 },
                 |_| false,
             )
@@ -1490,6 +1488,10 @@ mod tests {
         let read_segment_1 = locked_segment_1.read();
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
+
+        for i in processed_points2.iter() {
+            assert!(read_segment_2.has_point(*i));
+        }
 
         // Point 123 and 456 should have moved from segment 1 into 2
         assert!(!read_segment_1.has_point(123.into()));

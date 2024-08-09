@@ -1006,6 +1006,10 @@ impl Payload {
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
 }
 
 impl PayloadContainer for Map<String, Value> {
