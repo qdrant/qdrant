@@ -3,7 +3,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{future, TryFutureExt};
+use futures::future;
 use itertools::{Either, Itertools};
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
@@ -132,35 +132,14 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // Resharding filter to apply when resharding is active
-        let (resharding_filter, reshard_shard_id) = {
-            let shards_holder = self.shards_holder.read().await;
-            let resharding_filter = shards_holder.resharding_filter();
-            let reshard_shard_id = shards_holder
-                .resharding_state
-                .read()
-                .as_ref()
-                .map(|state| state.shard_id);
-            (resharding_filter, reshard_shard_id)
-        };
+        let request = Arc::new(request);
 
-        // Create filtered request, which has resharding filter applied
-        // Should be used on all shards, except the new resharding shard
-        let mut filtered_request = request.clone();
-        if let Some(resharding_filter) = resharding_filter {
-            for search in &mut filtered_request.searches {
-                match &mut search.filter {
-                    Some(filter) => {
-                        *filter = filter.merge(&resharding_filter);
-                    }
-
-                    None => {
-                        search.filter = Some(resharding_filter.clone());
-                    }
-                }
-            }
-        }
-        let filtered_request = Arc::new(filtered_request);
+        // Apply resharding filter when resharding is active
+        let reshardable_request = self
+            .shards_holder
+            .read()
+            .await
+            .reshardable_request(request.clone());
 
         let instant = Instant::now();
 
@@ -168,41 +147,38 @@ impl Collection {
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
             let target_shards = shard_holder.select_shards(shard_selection)?;
+
             let all_searches = target_shards.iter().map(|(shard, shard_key)| {
                 // Take the filtered request, or the original request for the resharding shard
-                let request = if Some(shard.shard_id) == reshard_shard_id {
-                    Arc::new(request.clone())
-                } else {
-                    filtered_request.clone()
-                };
+                let request = reshardable_request.get(shard.shard_id);
 
-                let shard_key = shard_key.cloned();
-                shard
-                    .core_search(
-                        request,
-                        read_consistency,
-                        shard_selection.is_shard_id(),
-                        timeout,
-                    )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
+                async {
+                    let mut records = shard
+                        .core_search(
+                            request.clone(),
+                            read_consistency,
+                            shard_selection.is_shard_id(),
+                            timeout,
+                        )
+                        .await?;
+
+                    if shard_key.is_some() {
+                        for point in &mut records.iter_mut().flatten() {
+                            point.shard_key = shard_key.cloned();
                         }
-                        for batch in &mut records {
-                            for point in batch {
-                                point.shard_key.clone_from(&shard_key);
-                            }
-                        }
-                        Ok(records)
-                    })
+                    }
+
+                    CollectionResult::Ok(records)
+                }
             });
+
             future::try_join_all(all_searches).await?
         };
 
         let result = self
             .merge_from_shards(
                 all_searches_res,
-                Arc::clone(&filtered_request),
+                request.clone(),
                 !shard_selection.is_shard_id(),
             )
             .await;

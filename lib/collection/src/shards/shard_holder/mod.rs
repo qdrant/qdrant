@@ -1,3 +1,4 @@
+mod reshardable_read_request;
 mod resharding;
 
 use std::collections::{HashMap, HashSet};
