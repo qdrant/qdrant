@@ -294,8 +294,9 @@ message FacetCountsInternal {
     string key = 2;
     optional Filter filter = 3;
     uint64 limit = 4;
-    uint32 shard_id = 5;
-    optional uint64 timeout = 6;
+    bool exact = 5;
+    uint32 shard_id = 6;
+    optional uint64 timeout = 7;
 }
 
 message FacetResponseInternal {

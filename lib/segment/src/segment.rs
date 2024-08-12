@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -1515,6 +1515,42 @@ impl SegmentEntry for Segment {
         }
     }
 
+    fn unique_values(
+        &self,
+        key: &JsonPath,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<BTreeSet<FacetValue>> {
+        let payload_index = self.payload_index.borrow();
+
+        let facet_index = payload_index.get_facet_index(key)?;
+
+        let values = if let Some(filter) = filter {
+            let id_tracker = self.id_tracker.borrow();
+            let filter_cardinality = payload_index.estimate_cardinality(filter);
+
+            payload_index
+                .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
+                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
+                .fold(BTreeSet::new(), |mut set, point_id| {
+                    set.extend(facet_index.get_values(point_id));
+                    set
+                })
+                .into_iter()
+                .map(|value| value.to_owned())
+                .collect()
+        } else {
+            facet_index
+                .iter_values()
+                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .map(|value_ref| value_ref.to_owned())
+                .collect()
+        };
+
+        Ok(values)
+    }
+
     fn facet(
         &self,
         request: &FacetParams,
@@ -1522,13 +1558,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let payload_index = self.payload_index.borrow();
 
-        let facet_index = payload_index
-            .field_indexes
-            .get(&request.key)
-            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
-            .ok_or_else(|| OperationError::MissingMapIndexForFacet {
-                key: request.key.to_string(),
-            })?;
+        let facet_index = payload_index.get_facet_index(&request.key)?;
 
         let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();

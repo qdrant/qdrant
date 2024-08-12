@@ -182,7 +182,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = &N> + '_> {
         match self {
             MapIndex::Mutable(index) => index.iter_values(),
             MapIndex::Immutable(index) => index.iter_values(),

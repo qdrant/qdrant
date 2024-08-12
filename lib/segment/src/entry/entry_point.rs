@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -145,6 +145,14 @@ pub trait SegmentEntry {
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;
+
+    /// Return all unique values for the given key.
+    fn unique_values(
+        &self,
+        key: &JsonPath,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<BTreeSet<FacetValue>>;
 
     /// Return the largest counts for the given facet request.
     fn facet(

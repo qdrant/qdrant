@@ -7,15 +7,17 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::json_path::JsonPath;
-use crate::types::Filter;
+use crate::types::{Filter, ValueVariants};
 
-#[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
+#[derive(Clone, Debug, JsonSchema, Serialize, Deserialize, Validate)]
 pub struct FacetParams {
     pub key: JsonPath,
 
     #[validate(range(min = 1))]
     pub limit: usize,
     pub filter: Option<Filter>,
+    #[serde(default)]
+    pub exact: bool,
 }
 
 impl FacetParams {
@@ -84,4 +86,12 @@ pub fn aggregate_facet_hits<T: FacetValueTrait>(
             *map.entry(value).or_insert(0) += count;
             map
         })
+}
+
+impl From<FacetValue> for ValueVariants {
+    fn from(value: FacetValue) -> Self {
+        match value {
+            FacetValue::Keyword(s) => ValueVariants::Keyword(s),
+        }
+    }
 }
