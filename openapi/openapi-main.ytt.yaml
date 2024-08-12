@@ -614,6 +614,36 @@ paths:
             minimum: 1
       responses: #@ response(reference("CountResult"))
 
+  /collections/{collection_name}/points/facet:
+    post:
+      tags:
+        - points
+      summary: Facet a payload key with a given filter.
+      description: Count points that satisfy the given filter for each unique value of a payload key.
+      operationId: facet_points
+      requestBody:
+        description: Request counts of points for each unique value of a payload key
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FacetRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to facet in
+          required: true
+          schema:
+            type: string
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("FacetResponse"))
+      
   /collections/{collection_name}/points/query:
     post:
       tags:
