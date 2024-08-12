@@ -280,11 +280,10 @@ impl JsonPath {
     }
 
     /// Convert the path into a string suitable for use as a filename by adhering to the following
-    /// restrictions: max length, limited character set, but still being unique.
-    // TODO(1.11): Avoid creating long paths, see https://github.com/qdrant/qdrant/pull/4677.
+    /// restrictions: max length, limited character set, but still being relatively unique.
     pub fn filename(&self) -> String {
-        const MAX_LENGTH: usize = 64;
-        const HASH_LENGTH: usize = 32; // In base32 characters, i.e. 5 bits per character.
+        const MAX_LENGTH: usize = 33;
+        const HASH_LENGTH: usize = 24; // In base32 characters, i.e. 5 bits per character.
 
         let text = self.to_string();
         let mut result = String::with_capacity(MAX_LENGTH);
@@ -1349,19 +1348,23 @@ mod tests {
     fn test_filename() {
         assert_eq!(
             JsonPath::new("foo").filename(),
-            "5gjb8qr8vv38vucr8ku1qc216g9k4bbg-foo",
+            "5gjb8qr8vv38vucr8ku1qc21-foo",
         );
         assert_eq!(
-            JsonPath::new("foo.\"bar baz\".qoox[0][]").filename(),
-            "jkdf7941qdcjau3f7mgqrb4ka2pua7p0-foo_bar_baz_qoox_0_",
+            JsonPath::new("a.\"b c\".d").filename(),
+            "59if87e118rvurkl7j0q10mc-a_b_c_d",
+        );
+        assert_eq!(
+            JsonPath::new("a.b[0][]").filename(),
+            "vk82udqfa8drecufa7j5mo6v-a_b_0_",
         );
         assert_eq!(
             JsonPath::new("really.loooooooooooooooooooooooooooooooooooooooooooong.path").filename(),
-            "sh47i3hjfgn44gch5jvm3bumltqfc531-really_looooooooooooooooooooooo",
+            "sh47i3hjfgn44gch5jvm3bum-really_l",
         );
         assert_eq!(
             JsonPath::new("Müesli").filename(),
-            "4huj4rn1fflrtriqo0tieqhhu6hp5lci-m_esli",
+            "4huj4rn1fflrtriqo0tieqhh-m_esli",
         );
     }
 }
