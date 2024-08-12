@@ -1238,7 +1238,7 @@ fn test_keyword_facet() {
         .unwrap();
 
     validate_facet_result(
-        &test_segments.mmap_segment.as_ref().unwrap(),
+        test_segments.mmap_segment.as_ref().unwrap(),
         facet_hits,
         None,
     );
@@ -1273,7 +1273,7 @@ fn test_keyword_facet() {
         .unwrap();
 
     validate_facet_result(
-        &test_segments.mmap_segment.as_ref().unwrap(),
+        test_segments.mmap_segment.as_ref().unwrap(),
         facet_hits,
         Some(filter),
     );
