@@ -469,6 +469,7 @@ fn create_segment(
     let mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
+    log::debug!("{:?}.IdTracker: start", segment_path.file_name());
     let id_tracker = if mutable_id_tracker {
         sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
             database.clone(),
@@ -478,6 +479,7 @@ fn create_segment(
             create_immutable_id_tracker(segment_path)?,
         ))
     };
+    log::debug!("{:?}.IdTracker: end", segment_path.file_name());
 
     let payload_index_path = get_payload_index_path(segment_path);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
@@ -656,6 +658,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 
     let app_version = SegmentVersion::current();
 
+    log::debug!("migrating_segment.{:?}: start", path.file_name());
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
 
@@ -682,6 +685,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 
         SegmentVersion::save(path)?
     }
+    log::debug!("migrating_segment.{:?}: end", path.file_name());
 
     log::debug!(
         "load_segment.{:?}.Segment.load_state: start",

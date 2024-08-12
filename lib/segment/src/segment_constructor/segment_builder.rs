@@ -71,13 +71,20 @@ impl SegmentBuilder {
 
         let database = open_segment_db(&temp_path, segment_config)?;
 
+        log::debug!("{:?}.IdTracker: start", segment_path.file_name());
         let id_tracker = if segment_config.is_appendable() {
             IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
+        log::debug!("{:?}.IdTracker: end", segment_path.file_name());
 
+        log::debug!(
+            "{:?}.create_payload_storage: start",
+            segment_path.file_name()
+        );
         let payload_storage = create_payload_storage(database.clone(), segment_config)?;
+        log::debug!("{:?}.create_payload_storage: end", segment_path.file_name());
 
         let mut vector_storages = HashMap::new();
 
