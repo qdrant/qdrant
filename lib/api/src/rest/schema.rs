@@ -79,6 +79,26 @@ pub enum BatchVectorStruct {
     Named(HashMap<String, Vec<Vector>>),
 }
 
+impl BatchVectorStruct {
+    pub fn swap_remove(&mut self, vector_index: usize) {
+        match self {
+            Self::Single(vectors) => {
+                vectors.swap_remove(vector_index);
+            }
+
+            Self::MultiDense(vectors) => {
+                vectors.swap_remove(vector_index);
+            }
+
+            Self::Named(vector_batches) => {
+                for vector_batch in vector_batches.values_mut() {
+                    vector_batch.swap_remove(vector_index);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
 #[serde(untagged)]
 pub enum ShardKeySelector {

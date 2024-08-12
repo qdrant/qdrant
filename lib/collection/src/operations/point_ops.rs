@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use api::rest::{BatchVectorStruct, ShardKeySelector, VectorStruct};
 use itertools::izip;
@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{MultiDenseVectorInternal, Vector, DEFAULT_VECTOR_NAME};
-use segment::types::{Filter, Payload, PointIdType};
+use segment::types::{ExtendedPointId, Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
@@ -216,6 +216,34 @@ pub enum PointInsertOperationsInternal {
     PointsList(Vec<PointStruct>),
 }
 
+impl PointInsertOperationsInternal {
+    pub fn point_ids(&self) -> Vec<ExtendedPointId> {
+        match self {
+            Self::PointsBatch(batch) => batch.ids.clone(),
+            Self::PointsList(points) => points.iter().map(|point| point.id).collect(),
+        }
+    }
+
+    pub fn remove_point_ids(&mut self, point_ids: &HashSet<ExtendedPointId>) {
+        match self {
+            Self::PointsBatch(batch) => {
+                for index in (0..point_ids.len()).rev() {
+                    if point_ids.contains(&batch.ids[index]) {
+                        batch.ids.swap_remove(index);
+                        batch.vectors.swap_remove(index);
+
+                        if let Some(payloads) = &mut batch.payloads {
+                            payloads.swap_remove(index);
+                        }
+                    }
+                }
+            }
+
+            Self::PointsList(points) => points.retain(|point| !point_ids.contains(&point.id)),
+        }
+    }
+}
+
 impl Validate for PointInsertOperationsInternal {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
@@ -348,6 +376,31 @@ impl PointOperations {
             PointOperations::DeletePoints { .. } => false,
             PointOperations::DeletePointsByFilter(_) => false,
             PointOperations::SyncPoints(_) => true,
+        }
+    }
+
+    pub fn is_delete_points(&self) -> bool {
+        matches!(
+            self,
+            Self::DeletePoints { .. } | Self::DeletePointsByFilter(_)
+        )
+    }
+
+    pub fn point_ids(&self) -> Vec<ExtendedPointId> {
+        match self {
+            Self::UpsertPoints(op) => op.point_ids(),
+            Self::DeletePoints { ids } => ids.clone(),
+            Self::DeletePointsByFilter(_) => Vec::new(),
+            Self::SyncPoints(op) => op.points.iter().map(|point| point.id).collect(),
+        }
+    }
+
+    pub fn remove_point_ids(&mut self, point_ids: &HashSet<ExtendedPointId>) {
+        match self {
+            Self::UpsertPoints(op) => op.remove_point_ids(point_ids),
+            Self::DeletePoints { ids } => ids.retain(|point_id| !point_ids.contains(point_id)),
+            Self::DeletePointsByFilter(_) => (),
+            Self::SyncPoints(op) => op.points.retain(|point| !point_ids.contains(&point.id)),
         }
     }
 }

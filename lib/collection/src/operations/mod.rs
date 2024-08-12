@@ -17,7 +17,7 @@ pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
@@ -285,6 +285,31 @@ impl CollectionUpdateOperations {
             CollectionUpdateOperations::FieldIndexOperation(operation) => {
                 operation.is_write_operation()
             }
+        }
+    }
+
+    pub fn is_delete_points(&self) -> bool {
+        match self {
+            Self::PointOperation(op) => op.is_delete_points(),
+            _ => false,
+        }
+    }
+
+    pub fn point_ids(&self) -> Vec<ExtendedPointId> {
+        match self {
+            Self::PointOperation(op) => op.point_ids(),
+            Self::VectorOperation(op) => op.point_ids(),
+            Self::PayloadOperation(op) => op.point_ids(),
+            Self::FieldIndexOperation(_) => Vec::new(),
+        }
+    }
+
+    pub fn remove_point_ids(&mut self, point_ids: &HashSet<ExtendedPointId>) {
+        match self {
+            Self::PointOperation(op) => op.remove_point_ids(point_ids),
+            Self::VectorOperation(op) => op.remove_point_ids(point_ids),
+            Self::PayloadOperation(op) => op.remove_point_ids(point_ids),
+            Self::FieldIndexOperation(_) => (),
         }
     }
 }

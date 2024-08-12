@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use api::rest::schema::ShardKeySelector;
 use schemars::JsonSchema;
-use segment::types::{Filter, PointIdType};
+use segment::types::{ExtendedPointId, Filter, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -86,6 +86,26 @@ impl VectorOperations {
             VectorOperations::UpdateVectors(_) => true,
             VectorOperations::DeleteVectors(..) => false,
             VectorOperations::DeleteVectorsByFilter(..) => false,
+        }
+    }
+
+    pub fn point_ids(&self) -> Vec<ExtendedPointId> {
+        match self {
+            Self::UpdateVectors(op) => op.points.iter().map(|point| point.id).collect(),
+            Self::DeleteVectors(points, _) => points.points.clone(),
+            Self::DeleteVectorsByFilter(_, _) => Vec::new(),
+        }
+    }
+
+    pub fn remove_point_ids(&mut self, point_ids: &HashSet<ExtendedPointId>) {
+        match self {
+            VectorOperations::UpdateVectors(op) => {
+                op.points.retain(|point| !point_ids.contains(&point.id))
+            }
+            VectorOperations::DeleteVectors(points, _) => {
+                points.points.retain(|point| !point_ids.contains(point))
+            }
+            VectorOperations::DeleteVectorsByFilter(_, _) => (),
         }
     }
 }

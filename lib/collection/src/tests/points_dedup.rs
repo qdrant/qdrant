@@ -127,7 +127,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true)
+            .update_local(op, true, None)
             .await
             .expect("failed to insert points");
     }

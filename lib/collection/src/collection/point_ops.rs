@@ -49,7 +49,7 @@ impl Collection {
                     //
                     // We update *all* shards with a single operation, but each shard has it's own clock,
                     // so it's *impossible* to assign any single clock tag to this operation.
-                    shard.update_local(OperationWithClockTag::from(operation.clone()), wait)
+                    shard.update_local(OperationWithClockTag::from(operation.clone()), wait, None)
                 })
                 .collect();
 
@@ -96,8 +96,18 @@ impl Collection {
                 return Ok(None);
             };
 
+            let resharding_shard_id = shard_holder
+                .resharding_state
+                .read()
+                .as_ref()
+                .map(|state| state.shard_id);
+
+            let resharding_filter = resharding_shard_id
+                .filter(|&resharding_shard_id| shard_selection == resharding_shard_id)
+                .and_then(|_| shard_holder.resharding_filter_impl());
+
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, resharding_filter).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(

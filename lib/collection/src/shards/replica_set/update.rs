@@ -1,13 +1,18 @@
+use std::collections::HashSet;
 use std::ops::Deref as _;
 use std::time::Duration;
 
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
+use segment::types::CustomIdCheckerCondition;
 
 use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
+use crate::hash_ring;
 use crate::operations::point_ops::WriteOrdering;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
+use crate::operations::types::{
+    CollectionError, CollectionResult, PointRequestInternal, UpdateResult, UpdateStatus,
+};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
@@ -28,8 +33,9 @@ impl ShardReplicaSet {
     /// This method is *not* cancel safe.
     pub async fn update_local(
         &self,
-        operation: OperationWithClockTag,
+        mut operation: OperationWithClockTag,
         wait: bool,
+        resharding_filter: Option<hash_ring::HashRingFilter>,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
@@ -43,16 +49,61 @@ impl ShardReplicaSet {
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
                     | ReplicaState::Resharding,
-                ) => Ok(Some(local_shard.get().update(operation, wait).await?)),
+                ) => {
+                    match resharding_filter {
+                        Some(filter) if !operation.operation.is_delete_points() => {
+                            let resharded_point_ids: Vec<_> = operation
+                                .operation
+                                .point_ids()
+                                .into_iter()
+                                .filter(|&point_id| filter.check(point_id))
+                                .collect();
+
+                            let retrieve = PointRequestInternal {
+                                ids: resharded_point_ids.clone(),
+                                with_payload: None,
+                                with_vector: false.into(),
+                            };
+
+                            let points = local_shard
+                                .get()
+                                .retrieve(
+                                    retrieve.into(),
+                                    &false.into(),
+                                    &false.into(),
+                                    &self.search_runtime,
+                                    None, // TODO(resharding)?
+                                )
+                                .await?;
+
+                            let present_point_ids: HashSet<_> =
+                                points.into_iter().map(|point| point.id).collect();
+
+                            let missing_point_ids: HashSet<_> = resharded_point_ids
+                                .into_iter()
+                                .filter(|point_id| !present_point_ids.contains(point_id))
+                                .collect();
+
+                            operation.operation.remove_point_ids(&missing_point_ids);
+                        }
+
+                        _ => (),
+                    }
+
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+
                 Some(ReplicaState::Listener) => {
                     Ok(Some(local_shard.get().update(operation, false).await?))
                 }
+
                 // In recovery state, only allow operations with force flag
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
                     if operation.clock_tag.map_or(false, |tag| tag.force) =>
                 {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
+
                 Some(
                     ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
                 )

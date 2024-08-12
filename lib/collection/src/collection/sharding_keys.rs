@@ -114,7 +114,7 @@ impl Collection {
                 );
 
                 replica_set
-                    .update_local(OperationWithClockTag::from(create_index_op), true) // TODO: Assign clock tag!? 🤔
+                    .update_local(OperationWithClockTag::from(create_index_op), true, None) // TODO: Assign clock tag!? 🤔
                     .await?;
             }
 

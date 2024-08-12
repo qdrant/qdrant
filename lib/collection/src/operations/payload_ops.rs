@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use api::rest::ShardKeySelector;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
+use segment::types::{ExtendedPointId, Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
@@ -158,6 +160,32 @@ impl PayloadOps {
             PayloadOps::ClearPayload { .. } => false,
             PayloadOps::ClearPayloadByFilter(_) => false,
             PayloadOps::OverwritePayload(_) => true,
+        }
+    }
+
+    pub fn point_ids(&self) -> Vec<ExtendedPointId> {
+        match self {
+            Self::SetPayload(op) => op.points.clone().unwrap_or(Vec::new()),
+            Self::DeletePayload(op) => op.points.clone().unwrap_or(Vec::new()),
+            Self::ClearPayload { points } => points.clone(),
+            Self::ClearPayloadByFilter(_) => Vec::new(),
+            Self::OverwritePayload(op) => op.points.clone().unwrap_or(Vec::new()),
+        }
+    }
+
+    pub fn remove_point_ids(&mut self, point_ids: &HashSet<ExtendedPointId>) {
+        let points = match self {
+            Self::SetPayload(op) => op.points.as_mut(),
+            Self::DeletePayload(op) => op.points.as_mut(),
+            Self::ClearPayload { points } => Some(points),
+            Self::OverwritePayload(op) => op.points.as_mut(),
+            Self::ClearPayloadByFilter(_) => {
+                return;
+            }
+        };
+
+        if let Some(points) = points {
+            points.retain(|point_id| !point_ids.contains(point_id));
         }
     }
 }
