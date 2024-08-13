@@ -9,7 +9,6 @@ struct DiskPoolConfig {
     chunk_size_bytes: usize,
 }
 
-
 struct DiskPool<FR: FileReader> {
     file_reader: FR,
     config: DiskPoolConfig,
