@@ -55,7 +55,7 @@ where
             for (index, value) in pending_updates {
                 mmap_slice_write[index] = value;
             }
-            mmap_slice_write.flusher()()
+            Ok(mmap_slice_write.flusher()()?)
         })
     }
 }

@@ -9,7 +9,7 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use crate::common::operation_error::{check_process_stopped, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -229,7 +229,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
 
     fn flusher(&self) -> Flusher {
         match &self.mmap_store {
-            Some(mmap_store) => mmap_store.flusher(),
+            Some(mmap_store) => {
+                let mmap_flusher = mmap_store.flusher();
+                Box::new(move || mmap_flusher().map_err(OperationError::from))
+            }
             None => Box::new(|| Ok(())),
         }
     }
