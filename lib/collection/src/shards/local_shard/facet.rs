@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use futures::future::try_join_all;
 use itertools::process_results;
-use segment::data_types::facets::{aggregate_facet_hits, FacetRequestInternal, FacetValueHit};
+use segment::data_types::facets::{FacetRequestInternal, FacetValueHit};
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
@@ -50,8 +50,14 @@ impl LocalShard {
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "facet"))??;
 
-        let merged_hits =
-            process_results(all_reads, |reads| aggregate_facet_hits(reads.flatten()))?;
+        let merged_hits = process_results(all_reads, |reads| {
+            reads
+                .reduce(|mut acc, map| {
+                    acc.extend(map);
+                    acc
+                })
+                .unwrap_or_default()
+        })?;
 
         // TODO(luis): We can't just select top values, because we need to aggregate across segments,
         // which we can't assume to select the same best top.

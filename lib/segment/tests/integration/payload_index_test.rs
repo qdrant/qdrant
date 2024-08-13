@@ -12,7 +12,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::facets::{FacetRequestInternal, FacetValue, FacetValueHit};
+use segment::data_types::facets::{FacetRequestInternal, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
     KeywordIndexType,
@@ -1175,17 +1175,12 @@ fn test_any_matcher_cardinality_estimation() {
 /// each value exactly.
 fn validate_facet_result(
     segment: &Segment,
-    facet_hits: Vec<FacetValueHit>,
+    facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
 ) {
-    // TODO(facets): Re-enable this check?
-    // let mut expected = facet_hits.clone();
-    // expected.sort_by_key(|hit| Reverse(hit.clone()));
-    // assert_eq!(facet_hits, expected);
-
-    for hit in facet_hits {
+    for (value, count) in facet_hits {
         // Compare against exact count
-        let FacetValue::Keyword(value) = hit.value;
+        let FacetValue::Keyword(value) = value;
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),
@@ -1197,7 +1192,7 @@ fn validate_facet_result(
             .read_filtered(None, None, count_filter.as_ref(), &Default::default())
             .len();
 
-        assert_eq!(hit.count, exact);
+        assert_eq!(count, exact);
     }
 }
 

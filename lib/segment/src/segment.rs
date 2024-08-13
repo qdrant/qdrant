@@ -27,7 +27,7 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
-use crate::data_types::facets::{FacetHit, FacetRequestInternal, FacetValueHit};
+use crate::data_types::facets::{FacetHit, FacetRequestInternal, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -1519,7 +1519,7 @@ impl SegmentEntry for Segment {
         &self,
         request: &FacetRequestInternal,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<FacetValueHit>> {
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index
@@ -1560,10 +1560,7 @@ impl SegmentEntry for Segment {
         //
         // We need all values to be able to aggregate correctly across segments
         let hits = hits_iter
-            .map(|hit| FacetHit {
-                value: hit.value.to_owned(),
-                count: hit.count,
-            })
+            .map(|hit| (hit.value.to_owned(), hit.count))
             .collect();
 
         Ok(hits)

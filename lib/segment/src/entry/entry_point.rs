@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
-use crate::data_types::facets::{FacetHit, FacetRequestInternal, FacetValue};
+use crate::data_types::facets::{FacetRequestInternal, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -151,7 +151,7 @@ pub trait SegmentEntry {
         &self,
         request: &FacetRequestInternal,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<FacetHit<FacetValue>>>;
+    ) -> OperationResult<HashMap<FacetValue, usize>>;
 
     /// Check if there is point with `point_id` in this segment.
     fn has_point(&self, point_id: PointIdType) -> bool;
