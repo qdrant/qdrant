@@ -9,6 +9,7 @@ use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
+use super::resharding_update_pre_filter::ReshardingUpdatePreFilter;
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
@@ -96,18 +97,13 @@ impl Collection {
                 return Ok(None);
             };
 
-            let resharding_shard_id = shard_holder
-                .resharding_state
-                .read()
-                .as_ref()
-                .map(|state| state.shard_id);
-
-            let resharding_filter = resharding_shard_id
-                .filter(|&resharding_shard_id| shard_selection == resharding_shard_id)
-                .and_then(|_| shard_holder.resharding_filter_impl());
+            let pre_filter = ReshardingUpdatePreFilter::new(&shard_holder, shard_selection);
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait, resharding_filter).await,
+                WriteOrdering::Weak => {
+                    shard.update_local(operation, wait, pre_filter).await
+                }
+
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
@@ -118,7 +114,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering)
+                        .update_with_consistency(operation.operation, wait, ordering, pre_filter)
                         .await
                         .map(Some)
                 }
@@ -158,8 +154,9 @@ impl Collection {
             let updates: FuturesUnordered<_> = shard_holder
                 .split_by_shard(operation, &shard_keys_selection)?
                 .into_iter()
-                .map(move |(shard, operation)| {
-                    shard.update_with_consistency(operation, wait, ordering)
+                .map(|(shard, operation)| {
+                    let pre_filter = ReshardingUpdatePreFilter::new(&shard_holder, shard.shard_id);
+                    shard.update_with_consistency(operation, wait, ordering, pre_filter)
                 })
                 .collect();
 

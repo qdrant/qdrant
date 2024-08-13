@@ -353,7 +353,7 @@ async fn drive_down(
             // Wait on all updates here, not just the last batch
             // If we don't wait on all updates it somehow results in inconsistent results
             target_replica_set
-                .update_with_consistency(operation, true, WriteOrdering::Weak)
+                .update_with_consistency(operation, true, WriteOrdering::Weak, None)
                 .await?;
 
             if offset.is_none() {

@@ -379,13 +379,6 @@ impl PointOperations {
         }
     }
 
-    pub fn is_delete_points(&self) -> bool {
-        matches!(
-            self,
-            Self::DeletePoints { .. } | Self::DeletePointsByFilter(_)
-        )
-    }
-
     pub fn point_ids(&self) -> Vec<ExtendedPointId> {
         match self {
             Self::UpsertPoints(op) => op.point_ids(),

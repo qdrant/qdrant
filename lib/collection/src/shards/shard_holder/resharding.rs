@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref as _;
-use std::sync::Arc;
 
-use segment::types::{Condition, Filter, ShardKey};
+use segment::types::ShardKey;
 
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
@@ -13,6 +12,10 @@ use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
 
 impl ShardHolder {
+    pub fn resharding_state(&self) -> Option<ReshardState> {
+        self.resharding_state.read().clone()
+    }
+
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
             direction,
@@ -364,26 +367,13 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// A filter that excludes points migrated to a different shard, as part of resharding.
-    ///
-    /// `None` if resharding is not active or if the read hash ring is not committed yet.
-    pub fn resharding_filter(&self) -> Option<Filter> {
-        let filter = self.resharding_filter_impl()?;
-        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
-        Some(filter)
-    }
-
     #[inline]
-    pub fn resharding_filter_impl(&self) -> Option<hash_ring::HashRingFilter> {
+    pub fn resharding_filter(&self) -> Option<hash_ring::HashRingFilter> {
         let state = self.resharding_state.read();
 
         let Some(state) = state.deref() else {
             return None;
         };
-
-        if state.stage < ReshardStage::ReadHashRingCommitted {
-            return None;
-        }
 
         let Some(ring) = self.rings.get(&state.shard_key) else {
             return None; // TODO(resharding): Return error?

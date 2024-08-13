@@ -5,6 +5,7 @@ pub mod payload_index_schema;
 mod point_ops;
 pub mod query;
 mod resharding;
+pub mod resharding_update_pre_filter;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
@@ -515,7 +516,7 @@ impl Collection {
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
-        let resharding = shards_holder.resharding_state.read().clone();
+        let resharding = shards_holder.resharding_state();
         State {
             config: self.collection_config.read().await.clone(),
             shards: shards_holder

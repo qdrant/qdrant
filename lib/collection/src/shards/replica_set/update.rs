@@ -1,21 +1,17 @@
-use std::collections::HashSet;
 use std::ops::Deref as _;
 use std::time::Duration;
 
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
-use segment::types::CustomIdCheckerCondition;
 
 use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
-use crate::hash_ring;
+use crate::collection::resharding_update_pre_filter::ReshardingUpdatePreFilter;
 use crate::operations::point_ops::WriteOrdering;
-use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, UpdateResult, UpdateStatus,
-};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
-use crate::shards::shard_trait::ShardOperation as _;
+use crate::shards::shard_trait::ShardOperation;
 
 /// Maximum number of attempts for applying an update with a new clock.
 ///
@@ -35,82 +31,62 @@ impl ShardReplicaSet {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
-        resharding_filter: Option<hash_ring::HashRingFilter>,
+        pre_filter: Option<ReshardingUpdatePreFilter>,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
 
         let local = self.local.read().await;
 
-        if let Some(local_shard) = local.deref() {
-            match self.peer_state(&self.this_peer_id()) {
-                Some(
-                    ReplicaState::Active
-                    | ReplicaState::Partial
-                    | ReplicaState::Initializing
-                    | ReplicaState::Resharding,
-                ) => {
-                    match resharding_filter {
-                        Some(filter) if !operation.operation.is_delete_points() => {
-                            let resharded_point_ids: Vec<_> = operation
-                                .operation
-                                .point_ids()
-                                .into_iter()
-                                .filter(|&point_id| filter.check(point_id))
-                                .collect();
+        let Some(local_shard) = local.deref() else {
+            return Ok(None);
+        };
 
-                            let retrieve = PointRequestInternal {
-                                ids: resharded_point_ids.clone(),
-                                with_payload: None,
-                                with_vector: false.into(),
-                            };
+        let Some(peer_state) = self.peer_state(&self.this_peer_id()) else {
+            return Ok(None);
+        };
 
-                            let points = local_shard
-                                .get()
-                                .retrieve(
-                                    retrieve.into(),
-                                    &false.into(),
-                                    &false.into(),
-                                    &self.search_runtime,
-                                    None, // TODO(resharding)?
-                                )
-                                .await?;
-
-                            let present_point_ids: HashSet<_> =
-                                points.into_iter().map(|point| point.id).collect();
-
-                            let missing_point_ids: HashSet<_> = resharded_point_ids
-                                .into_iter()
-                                .filter(|point_id| !present_point_ids.contains(point_id))
-                                .collect();
-
-                            operation.operation.remove_point_ids(&missing_point_ids);
-                        }
-
-                        _ => (),
-                    }
-
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-
-                Some(ReplicaState::Listener) => {
-                    Ok(Some(local_shard.get().update(operation, false).await?))
-                }
-
-                // In recovery state, only allow operations with force flag
-                Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
-                    if operation.clock_tag.map_or(false, |tag| tag.force) =>
-                {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-
-                Some(
-                    ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
+        match peer_state {
+            ReplicaState::Active
+            | ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Resharding => {
+                self.apply_update_pre_filter(
+                    &mut operation.operation,
+                    pre_filter,
+                    local_shard.get(),
                 )
-                | None => Ok(None),
+                .await?;
+
+                Ok(Some(local_shard.get().update(operation, wait).await?))
             }
-        } else {
-            Ok(None)
+
+            ReplicaState::Listener => {
+                self.apply_update_pre_filter(
+                    &mut operation.operation,
+                    pre_filter,
+                    local_shard.get(),
+                )
+                .await?;
+
+                Ok(Some(local_shard.get().update(operation, false).await?))
+            }
+
+            // In recovery state, only allow operations with force flag
+            ReplicaState::PartialSnapshot | ReplicaState::Recovery
+                if operation.clock_tag.map_or(false, |tag| tag.force) =>
+            {
+                self.apply_update_pre_filter(
+                    &mut operation.operation,
+                    pre_filter,
+                    local_shard.get(),
+                )
+                .await?;
+
+                Ok(Some(local_shard.get().update(operation, wait).await?))
+            }
+
+            ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead => Ok(None),
         }
     }
 
@@ -122,6 +98,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        pre_filter: Option<ReshardingUpdatePreFilter>,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -142,7 +119,7 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(operation, wait).await
+            self.update(operation, wait, pre_filter).await
         } else {
             // Forward the update to the designated leader
             self.forward_update(leader_peer, operation, wait, ordering)
@@ -161,6 +138,21 @@ impl ShardReplicaSet {
                     }
                 })
         }
+    }
+
+    async fn apply_update_pre_filter(
+        &self,
+        operation: &mut CollectionUpdateOperations,
+        pre_filter: Option<ReshardingUpdatePreFilter>,
+        local_shard: &(dyn ShardOperation + Sync),
+    ) -> CollectionResult<()> {
+        if let Some(pre_filter) = pre_filter {
+            pre_filter
+                .apply(operation, local_shard, &self.search_runtime)
+                .await?;
+        }
+
+        Ok(())
     }
 
     /// Designated a leader replica for the update based on the WriteOrdering
@@ -194,6 +186,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        pre_filter: Option<ReshardingUpdatePreFilter>,
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
@@ -209,7 +202,7 @@ impl ShardReplicaSet {
             let is_non_zero_tick = clock.current_tick().is_some();
 
             let res = self
-                .update_impl(operation.clone(), wait, &mut clock)
+                .update_impl(operation.clone(), wait, &mut clock, pre_filter.clone())
                 .await?;
 
             if let Some(res) = res {
@@ -241,6 +234,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         clock: &mut clock_set::ClockGuard,
+        pre_filter: Option<ReshardingUpdatePreFilter>,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
@@ -281,9 +275,17 @@ impl ShardReplicaSet {
                     wait
                 };
 
-                let operation = operation.clone();
+                let mut operation = operation.clone();
+                let search_runtime = self.search_runtime.clone();
 
                 let local_update = async move {
+                    if let Some(filter) = pre_filter {
+                        filter
+                            .apply(&mut operation.operation, local.get(), &search_runtime)
+                            .await
+                            .map_err(|err| (this_peer_id, err))?;
+                    }
+
                     local
                         .get()
                         .update(operation, local_wait)

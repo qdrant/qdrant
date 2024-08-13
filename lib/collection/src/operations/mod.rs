@@ -288,11 +288,18 @@ impl CollectionUpdateOperations {
         }
     }
 
+    pub fn is_upsert_points(&self) -> bool {
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::UpsertPoints(_))
+        )
+    }
+
     pub fn is_delete_points(&self) -> bool {
-        match self {
-            Self::PointOperation(op) => op.is_delete_points(),
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::DeletePoints { .. })
+        )
     }
 
     pub fn point_ids(&self) -> Vec<ExtendedPointId> {

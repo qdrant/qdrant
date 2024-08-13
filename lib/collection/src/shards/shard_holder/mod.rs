@@ -470,11 +470,10 @@ impl ShardHolder {
                 for (&shard_id, shard) in self.shards.iter() {
                     // Ignore a new resharding shard until it completed point migration
                     // The shard will be marked as active at the end of the migration stage
-                    let resharding_migrating =
-                        self.resharding_state.read().clone().map_or(false, |state| {
-                            state.shard_id == shard_id
-                                && state.stage < ReshardStage::ReadHashRingCommitted
-                        });
+                    let resharding_migrating = self.resharding_state().map_or(false, |state| {
+                        state.shard_id == shard_id
+                            && state.stage < ReshardStage::ReadHashRingCommitted
+                    });
                     if resharding_migrating {
                         continue;
                     }
