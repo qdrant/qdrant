@@ -13,6 +13,6 @@ publish = false
 workspace = true
 
 [dependencies]
-thiserror = "1.0"
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
