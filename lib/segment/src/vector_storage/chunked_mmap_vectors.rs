@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
@@ -58,7 +58,10 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 create_and_ensure_length(&status_file, length as usize)?;
             }
         }
-        Ok(open_write_mmap(&status_file, AdviceSetting::Global)?)
+        Ok(open_write_mmap(
+            &status_file,
+            AdviceSetting::from(Advice::Normal),
+        )?)
     }
 
     fn ensure_config(
