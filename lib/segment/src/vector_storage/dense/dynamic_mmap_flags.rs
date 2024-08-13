@@ -5,6 +5,7 @@ use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
@@ -68,12 +69,8 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
     if !status_file.exists() {
         let length = std::mem::size_of::<DynamicMmapStatus>();
         create_and_ensure_length(&status_file, length)?;
-        let mmap = open_write_mmap(&status_file)?;
-        Ok(mmap)
-    } else {
-        let mmap = open_write_mmap(&status_file)?;
-        Ok(mmap)
     }
+    Ok(open_write_mmap(&status_file, AdviceSetting::Global)?)
 }
 
 pub struct DynamicMmapFlags {
@@ -145,7 +142,8 @@ impl DynamicMmapFlags {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
         let mmap_path = Self::file_id_to_file(directory, new_file_id);
         create_and_ensure_length(&mmap_path, capacity_bytes)?;
-        let flags_mmap = open_write_mmap(&mmap_path).describe("Open mmap flags for writing")?;
+        let flags_mmap = open_write_mmap(&mmap_path, AdviceSetting::Global)
+            .describe("Open mmap flags for writing")?;
         #[cfg(unix)]
         if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);

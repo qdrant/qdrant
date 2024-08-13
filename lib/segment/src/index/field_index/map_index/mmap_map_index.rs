@@ -9,6 +9,7 @@ use common::mmap_hashmap::{Key, MmapHashMap};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::MmapBitSlice;
 use serde::{Deserialize, Serialize};
@@ -48,7 +49,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path)?;
         let point_to_values = MmapPointToValues::open(path)?;
 
-        let deleted = mmap_ops::open_write_mmap(&deleted_path)?;
+        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 

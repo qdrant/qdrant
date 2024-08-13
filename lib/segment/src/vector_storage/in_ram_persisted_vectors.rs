@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use memory::madvise::AdviceSetting;
+
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
@@ -14,7 +16,8 @@ pub struct InRamPersistedVectors<T: Sized + 'static> {
 
 impl<T: Sized + Copy + Clone + Default + 'static> InRamPersistedVectors<T> {
     pub fn open(directory: &Path, dim: usize) -> OperationResult<Self> {
-        let mmap_storage = ChunkedMmapVectors::open(directory, dim, Some(false))?;
+        let mmap_storage =
+            ChunkedMmapVectors::open(directory, dim, Some(false), AdviceSetting::Global)?;
 
         let mut vectors = ChunkedVectors::new(dim);
 

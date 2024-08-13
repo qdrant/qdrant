@@ -7,8 +7,7 @@ use std::{io, mem, ops, ptr, time};
 
 use memmap2::{Mmap, MmapMut};
 
-use crate::madvise;
-use crate::madvise::Madviseable;
+use crate::madvise::{self, AdviceSetting, Madviseable};
 
 pub const TEMP_FILE_EXTENSION: &str = "tmp";
 
@@ -50,7 +49,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
     }
 }
 
-pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {
+pub fn open_read_mmap(path: &Path, advice: AdviceSetting) -> io::Result<Mmap> {
     let file = OpenOptions::new()
         .read(true)
         .write(false)
@@ -60,12 +59,12 @@ pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {
         .open(path)?;
 
     let mmap = unsafe { Mmap::map(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
+    madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }
 
-pub fn open_write_mmap(path: &Path) -> io::Result<MmapMut> {
+pub fn open_write_mmap(path: &Path, advice: AdviceSetting) -> io::Result<MmapMut> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -73,7 +72,7 @@ pub fn open_write_mmap(path: &Path) -> io::Result<MmapMut> {
         .open(path)?;
 
     let mmap = unsafe { MmapMut::map_mut(&file)? };
-    madvise::madvise(&mmap, madvise::get_global())?;
+    madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
 }

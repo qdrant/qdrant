@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
@@ -56,12 +57,8 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 let length = std::mem::size_of::<usize>() as u64;
                 create_and_ensure_length(&status_file, length as usize)?;
             }
-            let mmap = open_write_mmap(&status_file)?;
-            Ok(mmap)
-        } else {
-            let mmap = open_write_mmap(&status_file)?;
-            Ok(mmap)
         }
+        Ok(open_write_mmap(&status_file, AdviceSetting::Global)?)
     }
 
     fn ensure_config(
@@ -106,13 +103,18 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    pub fn open(directory: &Path, dim: usize, mlock: Option<bool>) -> OperationResult<Self> {
+    pub fn open(
+        directory: &Path,
+        dim: usize,
+        mlock: Option<bool>,
+        advice: AdviceSetting,
+    ) -> OperationResult<Self> {
         create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim, mlock)?;
-        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default())?;
+        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default(), advice)?;
 
         let vectors = Self {
             status,
@@ -350,7 +352,8 @@ mod tests {
 
         {
             let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
+                    .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec).unwrap();
@@ -376,7 +379,8 @@ mod tests {
 
         {
             let chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
+                    .unwrap();
 
             assert!(
                 chunked_mmap.chunks.len() > 1,
