@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
-use crate::common::mmap_type::MmapSlice;
+use memory::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";

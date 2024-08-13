@@ -17,3 +17,9 @@ memmap2 = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
+bitvec = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+tempfile = { workspace = true }

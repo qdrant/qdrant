@@ -470,7 +470,7 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
-    use memory::mmap_ops;
+    use crate::mmap_ops;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use tempfile::{Builder, NamedTempFile};

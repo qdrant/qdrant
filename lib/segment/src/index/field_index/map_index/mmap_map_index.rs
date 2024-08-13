@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdRefIter, MapIndexKey};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::mmap_type::MmapBitSlice;
+use memory::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;

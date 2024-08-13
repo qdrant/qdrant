@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::mutable_numeric_index::DynamicNumericIndex;
 use super::Encodable;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
+use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};

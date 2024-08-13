@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
-use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
+use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;

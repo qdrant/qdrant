@@ -9,7 +9,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 

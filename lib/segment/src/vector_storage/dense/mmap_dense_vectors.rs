@@ -11,7 +11,7 @@ use memory::mmap_ops;
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_type::{MmapBitSlice, MmapFlusher};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 #[cfg(target_os = "linux")]

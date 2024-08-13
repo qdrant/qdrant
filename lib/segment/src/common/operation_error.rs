@@ -8,7 +8,7 @@ use io::file_operations::FileStorageError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
-use crate::common::mmap_type::Error as MmapError;
+use memory::mmap_type::Error as MmapError;
 use crate::types::{PayloadKeyType, PointIdType, SeqNumberType};
 use crate::utils::mem::Mem;
 

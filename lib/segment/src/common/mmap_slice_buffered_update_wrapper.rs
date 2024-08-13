@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 
-use crate::common::mmap_type::MmapSlice;
+use memory::mmap_type::MmapSlice;
 use crate::common::Flusher;
 
 /// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get
