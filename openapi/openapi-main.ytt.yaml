@@ -727,6 +727,114 @@ paths:
 
       responses: #@ response(reference("GroupsResult"))
 
+  /collections/{collection_name}/points/search/matrix/pairs:
+    post:
+      tags:
+        - points
+      summary: Search points matrix distance pairs
+      description: Retrieve distance matrix with a pair based output format
+      operationId: search_points_matrix_pairs
+      requestBody:
+        description: Search matrix request with optional filtering
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchMatrixRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("SearchMatrixPairsResponse"))
+
+  /collections/{collection_name}/points/search/matrix/offsets:
+    post:
+      tags:
+        - points
+      summary: Search points matrix distance offsets
+      description: Retrieve distance matrix with an offset based output format
+      operationId: search_points_matrix_offsets
+      requestBody:
+        description: Search matrix request with optional filtering
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchMatrixRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("SearchMatrixOffsetsResponse"))
+
+  /collections/{collection_name}/points/search/matrix/rows:
+    post:
+      tags:
+        - points
+      summary: Search points matrix distance rows
+      description: Retrieve distance matrix with a row based output format
+      operationId: search_points_matrix_rows
+      requestBody:
+        description: Search matrix request with optional filtering
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchMatrixRequest"
+
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to search in
+          required: true
+          schema:
+            type: string
+        - name: consistency
+          in: query
+          description: Define read consistency guarantees for the operation
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReadConsistency"
+        - name: timeout
+          in: query
+          description: If set, overrides global timeout for this request. Unit is seconds.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses: #@ response(reference("SearchMatrixRowsResponse"))
+
 components:
   securitySchemes:
     api-key:

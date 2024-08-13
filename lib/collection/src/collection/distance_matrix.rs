@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use segment::data_types::vectors::NamedVectorStruct;
+use api::rest::{
+    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequestInternal,
+    SearchMatrixRow, SearchMatrixRowsResponse,
+};
+use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
 
 use crate::collection::Collection;
@@ -12,26 +16,140 @@ use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRe
 use crate::operations::universal_query::shard_query::{Sample, ScoringQuery, ShardQueryRequest};
 
 #[derive(Debug, Default)]
-pub struct DistanceMatrixResponse {
-    pub sample_ids: Vec<PointIdType>,   // sampled point ids
-    pub nearest: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
+pub struct CollectionSearchMatrixResponse {
+    pub sample_ids: Vec<PointIdType>,    // sampled point ids
+    pub nearests: Vec<Vec<ScoredPoint>>, // nearest points for each sampled point
+}
+
+/// Internal representation of the distance matrix request, used to convert from REST and gRPC.
+pub struct CollectionSearchMatrixRequest {
+    pub sample_size: usize,
+    pub limit_per_sample: usize,
+    pub filter: Option<Filter>,
+    pub using: String,
+}
+
+impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
+    fn from(request: SearchMatrixRequestInternal) -> Self {
+        let SearchMatrixRequestInternal {
+            sample,
+            limit,
+            filter,
+            using,
+        } = request;
+        Self {
+            sample_size: sample,
+            limit_per_sample: limit,
+            filter,
+            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        }
+    }
+}
+
+impl From<CollectionSearchMatrixResponse> for SearchMatrixRowsResponse {
+    fn from(response: CollectionSearchMatrixResponse) -> Self {
+        let CollectionSearchMatrixResponse {
+            sample_ids,
+            nearests,
+        } = response;
+        let offset_by_id = sample_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id, i))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut rows = Vec::with_capacity(sample_ids.len());
+        for scored_point in nearests {
+            let row = SearchMatrixRow {
+                offsets_id: scored_point
+                    .iter()
+                    .map(|p| offset_by_id[&p.id] as u64)
+                    .collect(),
+                scores: scored_point.into_iter().map(|p| p.score).collect(),
+            };
+            rows.push(row);
+        }
+        Self {
+            rows,
+            ids: sample_ids,
+        }
+    }
+}
+
+impl From<CollectionSearchMatrixResponse> for SearchMatrixOffsetsResponse {
+    fn from(response: CollectionSearchMatrixResponse) -> Self {
+        let CollectionSearchMatrixResponse {
+            sample_ids,
+            nearests,
+        } = response;
+        let offset_by_id = sample_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id, i))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut offsets_row = Vec::with_capacity(sample_ids.len());
+        let mut offsets_col = Vec::with_capacity(sample_ids.len());
+        for (row_offset, scored_points) in nearests.iter().enumerate() {
+            for p in scored_points {
+                offsets_row.push(row_offset as u64);
+                offsets_col.push(offset_by_id[&p.id] as u64);
+            }
+        }
+        let scores = nearests
+            .iter()
+            .flat_map(|row| row.iter().map(|p| p.score))
+            .collect();
+        Self {
+            offsets_row,
+            offsets_col,
+            scores,
+            ids: sample_ids,
+        }
+    }
+}
+
+impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
+    fn from(response: CollectionSearchMatrixResponse) -> Self {
+        let CollectionSearchMatrixResponse {
+            sample_ids,
+            nearests,
+        } = response;
+        let offset_by_id = sample_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id, i))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut rows = Vec::with_capacity(sample_ids.len());
+        for scored_point in nearests {
+            let row = scored_point
+                .into_iter()
+                .map(|p| (offset_by_id[&p.id] as u64, p.score))
+                .collect();
+            rows.push(row);
+        }
+        Self {
+            rows,
+            ids: sample_ids,
+        }
+    }
 }
 
 // TODO introduce HasVector condition to avoid iterative sampling
 const SAMPLING_TRIES: usize = 3;
 
 impl Collection {
-    #[allow(clippy::too_many_arguments)] // TODO use request object
-    pub async fn distance_matrix(
+    pub async fn search_points_matrix(
         &self,
-        sample_size: usize,
-        limit_per_sample: usize,
-        filter: Option<&Filter>,
-        using: String,
-        shard_selector: ShardSelectorInternal,
+        request: CollectionSearchMatrixRequest,
+        shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<DistanceMatrixResponse> {
+    ) -> CollectionResult<CollectionSearchMatrixResponse> {
+        let CollectionSearchMatrixRequest {
+            sample_size,
+            limit_per_sample,
+            filter,
+            using,
+        } = request;
         if limit_per_sample == 0 || sample_size == 0 {
             return Ok(Default::default());
         }
@@ -40,6 +158,7 @@ impl Collection {
 
         // Sampling multiple times because we might not have enough points with the named vector
         for _ in 0..SAMPLING_TRIES {
+            let filter = filter.clone();
             // check if we have enough samples with right named vector
             if sampled_points.len() >= sample_size {
                 break;
@@ -48,12 +167,11 @@ impl Collection {
             // exclude already sampled points
             let exclude_ids: HashSet<_> = sampled_points.iter().map(|(id, _)| *id).collect();
             let filter = if exclude_ids.is_empty() {
-                filter.cloned()
+                filter
             } else {
                 let exclude_ids = Filter::new_must_not(Condition::HasId(exclude_ids.into()));
                 Some(
                     filter
-                        .as_ref()
                         .map(|filter| filter.merge(&exclude_ids))
                         .unwrap_or(exclude_ids),
                 )
@@ -76,7 +194,7 @@ impl Collection {
                 .query(
                     sampling_query.clone(),
                     read_consistency,
-                    shard_selector.clone(),
+                    shard_selection.clone(),
                     timeout,
                 )
                 .await?;
@@ -93,6 +211,8 @@ impl Collection {
         }
 
         sampled_points.truncate(sample_size);
+        // sort by id for a deterministic order
+        sampled_points.sort_unstable_by(|(id1, _), (id2, _)| id1.cmp(id2));
         let sampled_point_ids: Vec<_> = sampled_points.iter().map(|(id, _)| *id).collect();
 
         // Perform nearest neighbor search for each sampled point
@@ -132,12 +252,98 @@ impl Collection {
         // run batch search request
         let batch_request = CoreSearchRequestBatch { searches };
         let nearest = self
-            .core_search_batch(batch_request, read_consistency, shard_selector, timeout)
+            .core_search_batch(batch_request, read_consistency, shard_selection, timeout)
             .await?;
 
-        Ok(DistanceMatrixResponse {
+        Ok(CollectionSearchMatrixResponse {
             sample_ids: sampled_point_ids,
-            nearest,
+            nearests: nearest,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use api::rest::{SearchMatrixRow, SearchMatrixRowsResponse};
+    use segment::types::ScoredPoint;
+
+    use super::*;
+
+    fn make_scored_point(id: u64, score: f32) -> ScoredPoint {
+        ScoredPoint {
+            id: id.into(),
+            version: 0,
+            score,
+            payload: None,
+            vector: None,
+            shard_key: None,
+            order_value: None,
+        }
+    }
+
+    // 3 samples, 2 results per sample
+    fn fixture_response() -> CollectionSearchMatrixResponse {
+        CollectionSearchMatrixResponse {
+            sample_ids: vec![1.into(), 2.into(), 3.into()],
+            nearests: vec![
+                vec![make_scored_point(1, 0.2), make_scored_point(2, 0.1)],
+                vec![make_scored_point(2, 0.4), make_scored_point(3, 0.3)],
+                vec![make_scored_point(1, 0.6), make_scored_point(3, 0.5)],
+            ],
+        }
+    }
+
+    #[test]
+    fn test_matrix_row_response_conversion() {
+        let response = fixture_response();
+        let expected = SearchMatrixRowsResponse {
+            rows: vec![
+                SearchMatrixRow {
+                    offsets_id: vec![0, 1],
+                    scores: vec![0.2, 0.1],
+                },
+                SearchMatrixRow {
+                    offsets_id: vec![1, 2],
+                    scores: vec![0.4, 0.3],
+                },
+                SearchMatrixRow {
+                    offsets_id: vec![0, 2],
+                    scores: vec![0.6, 0.5],
+                },
+            ],
+            ids: vec![1.into(), 2.into(), 3.into()],
+        };
+        let actual = SearchMatrixRowsResponse::from(response);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_matrix_pairs_response_conversion() {
+        let response = fixture_response();
+        let expected = SearchMatrixPairsResponse {
+            rows: vec![
+                vec![(0, 0.2), (1, 0.1)],
+                vec![(1, 0.4), (2, 0.3)],
+                vec![(0, 0.6), (2, 0.5)],
+            ],
+            ids: vec![1.into(), 2.into(), 3.into()],
+        };
+
+        let actual = SearchMatrixPairsResponse::from(response);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_matrix_offsets_response_conversion() {
+        let response = fixture_response();
+        let expected = SearchMatrixOffsetsResponse {
+            offsets_row: vec![0, 0, 1, 1, 2, 2],
+            offsets_col: vec![0, 1, 1, 2, 0, 2],
+            scores: vec![0.2, 0.1, 0.4, 0.3, 0.6, 0.5],
+            ids: vec![1.into(), 2.into(), 3.into()],
+        };
+
+        let actual = SearchMatrixOffsetsResponse::from(response);
+        assert_eq!(actual, expected);
     }
 }

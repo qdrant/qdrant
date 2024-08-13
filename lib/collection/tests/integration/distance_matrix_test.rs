@@ -1,3 +1,4 @@
+use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
@@ -19,22 +20,20 @@ async fn distance_matrix_empty() {
 
     let sample_size = 100;
     let limit_per_sample = 10;
+    let request = CollectionSearchMatrixRequest {
+        sample_size,
+        limit_per_sample,
+        filter: None,
+        using: "".to_string(), // default vector name
+    };
     let matrix = collection
-        .distance_matrix(
-            sample_size,
-            limit_per_sample,
-            None,
-            "".to_string(), // default vector name
-            ShardSelectorInternal::All,
-            None,
-            None,
-        )
+        .search_points_matrix(request, ShardSelectorInternal::All, None, None)
         .await
         .unwrap();
 
     // assert all empty
     assert!(matrix.sample_ids.is_empty());
-    assert!(matrix.nearest.is_empty());
+    assert!(matrix.nearests.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -67,16 +66,14 @@ async fn distance_matrix_anonymous_vector() {
 
     let sample_size = 100;
     let limit_per_sample = 10;
+    let request = CollectionSearchMatrixRequest {
+        sample_size,
+        limit_per_sample,
+        filter: None,
+        using: "".to_string(), // default vector name
+    };
     let matrix = collection
-        .distance_matrix(
-            sample_size,
-            limit_per_sample,
-            None,
-            "".to_string(), // default vector name
-            ShardSelectorInternal::All,
-            None,
-            None,
-        )
+        .search_points_matrix(request, ShardSelectorInternal::All, None, None)
         .await
         .unwrap();
 
@@ -91,8 +88,8 @@ async fn distance_matrix_anonymous_vector() {
         sample_size
     );
 
-    assert_eq!(matrix.nearest.len(), sample_size);
-    for nearest in matrix.nearest {
+    assert_eq!(matrix.nearests.len(), sample_size);
+    for nearest in matrix.nearests {
         assert_eq!(nearest.len(), limit_per_sample);
         // assert each row sorted by scores
         nearest.iter().tuple_windows().for_each(|(prev, next)| {
