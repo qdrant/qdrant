@@ -4934,6 +4934,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bf2521270932c3c7bed1a59151222bd7643c79310f2916f01925e1e16255698"
 
 [[package]]
+name = "remote-mmap"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "memmap2 0.9.4",
+ "parking_lot",
+ "thiserror",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.11.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
