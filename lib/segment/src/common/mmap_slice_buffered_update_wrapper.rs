@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use memory::mmap_type::MmapSlice;
 use parking_lot::{Mutex, RwLock};
 
-use memory::mmap_type::MmapSlice;
 use crate::common::Flusher;
 
 /// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get

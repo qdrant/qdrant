@@ -6,10 +6,10 @@ use std::{fmt, fs};
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 

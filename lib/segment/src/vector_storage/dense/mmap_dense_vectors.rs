@@ -8,10 +8,10 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::mmap_ops;
+use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 #[cfg(target_os = "linux")]
