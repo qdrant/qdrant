@@ -696,7 +696,7 @@ paths:
         - points
       summary: Query points, grouped by a given payload field
       description: Universally query points, grouped by a given payload field
-      operationId: query_points_groups
+      operationId: query_point_groups
       requestBody:
         description: Describes the query to make to the collection
         content:
