@@ -36,6 +36,9 @@ pub enum ClusterOperations {
     /// Commit write hashring
     #[schemars(skip)]
     CommitWriteHashRing(CommitWriteHashRingOperation),
+    /// Finish resharding
+    #[schemars(skip)]
+    FinishResharding(FinishReshardingOperation),
     /// Abort resharding
     #[schemars(skip)]
     AbortResharding(AbortReshardingOperation),
@@ -106,6 +109,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::StartResharding(op) => op.validate(),
             ClusterOperations::CommitReadHashRing(op) => op.validate(),
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
+            ClusterOperations::FinishResharding(op) => op.validate(),
             ClusterOperations::AbortResharding(op) => op.validate(),
         }
     }
@@ -155,6 +159,12 @@ pub struct CommitReadHashRingOperation {
 pub struct CommitWriteHashRingOperation {
     #[validate]
     pub commit_write_hash_ring: CommitWriteHashRing,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishReshardingOperation {
+    #[validate]
+    pub finish_resharding: FinishResharding,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -247,6 +257,9 @@ pub struct CommitReadHashRing {}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitWriteHashRing {}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishResharding {}
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct AbortResharding {}
