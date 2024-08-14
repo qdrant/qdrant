@@ -29,10 +29,10 @@ use std::{fmt, mem, slice};
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
-use crate::common::Flusher;
-
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
+
+pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
 /// Type `T` on a memory mapped file
 ///
@@ -155,7 +155,7 @@ where
     T: ?Sized + 'static,
 {
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> MmapFlusher {
         // TODO: if we explicitly flush when dropping this type, we can switch to a weak reference
         // here to only flush if it hasn't been done already
         Box::new({
@@ -253,7 +253,7 @@ impl<T> MmapSlice<T> {
     }
 
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
     }
 }
@@ -320,7 +320,7 @@ impl MmapBitSlice {
     }
 
     /// Get flusher to explicitly flush mmap at a later time
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
     }
 }
@@ -340,12 +340,14 @@ impl DerefMut for MmapBitSlice {
 }
 
 /// Typed mmap errors.
-#[derive(thiserror::Error, Clone, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Mmap length must be {0} to match the size of type, but it is {1}")]
     SizeExact(usize, usize),
     #[error("Mmap length must be multiple of {0} to match the size of type, but it is {1}")]
     SizeMultiple(usize, usize),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Get a second mutable reference for type `T` from the given mmap
@@ -468,12 +470,12 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
-    use memory::mmap_ops;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use tempfile::{Builder, NamedTempFile};
 
     use super::*;
+    use crate::mmap_ops;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
         let tempfile = Builder::new()

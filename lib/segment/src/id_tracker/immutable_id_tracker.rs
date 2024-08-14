@@ -9,11 +9,11 @@ use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use uuid::Uuid;
 
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
-use crate::common::mmap_type::{MmapBitSlice, MmapSlice};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;

@@ -49,7 +49,7 @@ rusty-hook = "^0.11.2"
 [dependencies]
 parking_lot = { workspace = true, optional = true }
 
-thiserror = "1.0"
+thiserror = { workspace = true }
 log = { workspace = true }
 colored = "2"
 serde = { workspace = true }
@@ -196,6 +196,8 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e2088
 zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
+thiserror = "1.0.63"
+bitvec = "1.0.1"
 
 [[bin]]
 name = "schema_generator"

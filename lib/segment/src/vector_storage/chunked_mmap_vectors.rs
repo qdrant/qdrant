@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};

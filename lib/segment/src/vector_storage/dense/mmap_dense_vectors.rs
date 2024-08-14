@@ -8,12 +8,11 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::mmap_ops;
+use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
-use crate::common::Flusher;
 use crate::data_types::primitive::PrimitiveVectorElement;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
@@ -95,7 +94,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         self.uring_reader.lock().is_some()
     }
 
-    pub fn flusher(&self) -> Flusher {
+    pub fn flusher(&self) -> MmapFlusher {
         self.deleted.flusher()
     }
 

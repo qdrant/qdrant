@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::Error as AtomicIoError;
 use io::file_operations::FileStorageError;
+use memory::mmap_type::Error as MmapError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
-use crate::common::mmap_type::Error as MmapError;
 use crate::types::{PayloadKeyType, PointIdType, SeqNumberType};
 use crate::utils::mem::Mem;
 

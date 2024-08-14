@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
+use memory::mmap_type::MmapSlice;
 use quantization::{EncodedVectors, VectorParameters};
 use serde::{Deserialize, Serialize};
 
-use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};

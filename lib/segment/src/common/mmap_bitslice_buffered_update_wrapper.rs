@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use memory::mmap_type::MmapBitSlice;
 use parking_lot::{Mutex, RwLock};
 
-use crate::common::mmap_type::MmapBitSlice;
 use crate::common::Flusher;
 
 /// A wrapper around `MmapBitSlice` that delays writing changes to the underlying file until they get
@@ -63,7 +63,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
             for (index, value) in pending_updates {
                 mmap_slice_write.set(index, value);
             }
-            mmap_slice_write.flusher()()
+            Ok(mmap_slice_write.flusher()()?)
         })
     }
 }
