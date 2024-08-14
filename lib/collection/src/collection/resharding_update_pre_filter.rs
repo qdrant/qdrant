@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use segment::types::CustomIdCheckerCondition as _;
 
 use crate::hash_ring;
-use crate::operations::types::{CollectionResult, PointRequestInternal};
+use crate::operations::cluster_ops::ReshardingDirection;
+use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::resharding::ReshardStage;
 use crate::shards::shard::ShardId;
@@ -11,22 +12,27 @@ use crate::shards::shard_holder::ShardHolder;
 use crate::shards::shard_trait::ShardOperation;
 
 #[derive(Clone, Debug)]
-pub enum ReshardingUpdatePreFilter {
-    NewShard,
-    OldShard(hash_ring::HashRingFilter),
+pub struct ReshardingUpdatePreFilter {
+    this_shard_id: ShardId,
+    new_shard_id: ShardId,
+    direction: ReshardingDirection,
+    stage: ReshardStage,
+    filter: Option<hash_ring::HashRingFilter>,
 }
 
 impl ReshardingUpdatePreFilter {
     pub fn new(shard_holder: &ShardHolder, shard_id: ShardId) -> Option<Self> {
         let state = shard_holder.resharding_state()?;
 
-        if state.shard_id == shard_id && state.stage == ReshardStage::MigratingPoints {
-            Some(Self::NewShard)
-        } else if state.shard_id != shard_id && state.stage >= ReshardStage::ReadHashRingCommitted {
-            shard_holder.resharding_filter().map(Self::OldShard)
-        } else {
-            None
-        }
+        let pre_filter = Self {
+            this_shard_id: shard_id,
+            new_shard_id: state.shard_id,
+            direction: state.direction,
+            stage: state.stage,
+            filter: shard_holder.resharding_filter(),
+        };
+
+        Some(pre_filter)
     }
 
     pub async fn apply(
@@ -35,30 +41,47 @@ impl ReshardingUpdatePreFilter {
         local_shard: &(dyn ShardOperation + Sync),
         runtime: &tokio::runtime::Handle,
     ) -> CollectionResult<()> {
+        // We must *not* pre-filter point upsert operations on *receiver* shards
+        if self.is_receiver_shard() && operation.is_upsert_points() {
+            return Ok(());
+        }
+
         // There's no need to pre-filter point delete operations
         if operation.is_delete_points() {
             return Ok(());
         }
 
-        let points_to_filter = match self {
-            Self::NewShard => {
-                // We must *not* pre-filter point upsert operations
-                if operation.is_upsert_points() {
-                    return Ok(());
-                }
+        // We apply filter on *receiver* shards during `MigratingPoints` stage
+        let is_receiver_migrating_points =
+            self.is_receiver_shard() && self.stage == ReshardStage::MigratingPoints;
 
-                // Select *all* points
-                operation.point_ids()
-            }
+        // And on *source* shards during `ReadHashRingCommitted` stage
+        let is_old_source_read_hash_ring_committed = !self.is_new_shard()
+            && !self.is_receiver_shard()
+            && self.stage >= ReshardStage::ReadHashRingCommitted;
 
-            Self::OldShard(filter) => {
-                // Select points that are hashed into *new* shard
-                operation
-                    .point_ids()
-                    .into_iter()
-                    .filter(|&point_id| filter.check(point_id))
-                    .collect()
-            }
+        let apply_filter = is_receiver_migrating_points || is_old_source_read_hash_ring_committed;
+
+        if !apply_filter {
+            return Ok(());
+        }
+
+        let points_to_filter = if self.is_new_shard() {
+            // If we pre-filter points on *new* shard, we select *all* points
+            operation.point_ids()
+        } else {
+            // If we pre-filter points on *old* shard, we select points that are hashed into *new* shard
+
+            let filter = self
+                .filter
+                .as_ref()
+                .ok_or_else(|| CollectionError::service_error("TODO"))?; // TODO(resharding)!
+
+            operation
+                .point_ids()
+                .into_iter()
+                .filter(|&point_id| filter.check(point_id))
+                .collect()
         };
 
         if points_to_filter.is_empty() {
@@ -92,5 +115,16 @@ impl ReshardingUpdatePreFilter {
         operation.remove_point_ids(&missing_points);
 
         Ok(())
+    }
+
+    fn is_receiver_shard(&self) -> bool {
+        match self.direction {
+            ReshardingDirection::Up => self.is_new_shard(),
+            ReshardingDirection::Down => !self.is_new_shard(),
+        }
+    }
+
+    fn is_new_shard(&self) -> bool {
+        self.this_shard_id == self.new_shard_id
     }
 }
