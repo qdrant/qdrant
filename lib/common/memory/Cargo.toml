@@ -13,7 +13,9 @@ publish = false
 workspace = true
 
 [dependencies]
+anyhow = "1.0.86" # Will be removed
 memmap2 = { workspace = true }
+mmap-rs = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
