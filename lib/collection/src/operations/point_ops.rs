@@ -229,11 +229,11 @@ impl PointInsertOperationsInternal {
             Self::PointsBatch(batch) => {
                 for index in (0..point_ids.len()).rev() {
                     if point_ids.contains(&batch.ids[index]) {
-                        batch.ids.swap_remove(index);
-                        batch.vectors.swap_remove(index);
+                        batch.ids.remove(index);
+                        batch.vectors.remove(index);
 
                         if let Some(payloads) = &mut batch.payloads {
-                            payloads.swap_remove(index);
+                            payloads.remove(index);
                         }
                     }
                 }

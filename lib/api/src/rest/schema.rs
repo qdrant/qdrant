@@ -80,19 +80,19 @@ pub enum BatchVectorStruct {
 }
 
 impl BatchVectorStruct {
-    pub fn swap_remove(&mut self, vector_index: usize) {
+    pub fn remove(&mut self, index: usize) {
         match self {
             Self::Single(vectors) => {
-                vectors.swap_remove(vector_index);
+                vectors.remove(index);
             }
 
             Self::MultiDense(vectors) => {
-                vectors.swap_remove(vector_index);
+                vectors.remove(index);
             }
 
             Self::Named(vector_batches) => {
                 for vector_batch in vector_batches.values_mut() {
-                    vector_batch.swap_remove(vector_index);
+                    vector_batch.remove(index);
                 }
             }
         }
