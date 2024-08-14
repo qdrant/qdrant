@@ -1,16 +1,16 @@
 use std::cmp::max;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
-use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 
@@ -19,7 +19,6 @@ const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 #[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
-// We need to switch between files to prevent loss of mmap in case of a error.
 const FLAGS_FILE_A: &str = "flags_a.dat";
 const FLAGS_FILE_B: &str = "flags_b.dat";
 
@@ -40,15 +39,6 @@ pub enum FileId {
 }
 
 impl FileId {
-    /// Rotate to the next file variant.
-    #[must_use = "rotated FileID is returned, not mutated in-place"]
-    pub fn rotate(self) -> Self {
-        match self {
-            Self::A => Self::B,
-            Self::B => Self::A,
-        }
-    }
-
     /// Get filename for this FileId.
     pub fn file_name(self) -> &'static str {
         match self {
@@ -141,9 +131,19 @@ impl DynamicMmapFlags {
     ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
         let mmap_path = Self::file_id_to_file(directory, new_file_id);
-        create_and_ensure_length(&mmap_path, capacity_bytes)?;
-        let flags_mmap = open_write_mmap(&mmap_path, AdviceSetting::Global)
-            .describe("Open mmap flags for writing")?;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(mmap_path)?;
+        file.set_len(capacity_bytes as u64)?;
+
+        let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
+        drop(file);
+        flags_mmap.madvise(madvise::get_global())?;
+
         #[cfg(unix)]
         if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
             log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
@@ -152,26 +152,6 @@ impl DynamicMmapFlags {
         let flags = MmapBitSlice::try_from(flags_mmap, 0)?;
         let flusher = flags.flusher();
         Ok((flags, flusher))
-    }
-
-    pub fn reopen_mmap(&mut self, num_flags: usize, new_file_id: FileId) -> OperationResult<()> {
-        // We can only open file which is not currently used
-        debug_assert_ne!(
-            new_file_id, self.status.current_file_id,
-            "reopen cannot open same file as current",
-        );
-
-        // Open new mmap
-        let (flags, flusher) = Self::open_mmap(num_flags, &self.directory, new_file_id)?;
-
-        // Swap operation. It is important this section is not interrupted by errors.
-        {
-            let mut flags_flusher_lock = self.flags_flusher.lock();
-            self.flags = flags;
-            flags_flusher_lock.replace(flusher);
-        }
-
-        Ok(())
     }
 
     /// Set the length of the vector to the given value.
@@ -193,18 +173,15 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
-            let old_file_id = self.status.current_file_id;
-            let new_file_id = old_file_id.rotate();
+            let (flags, flags_flusher) =
+                Self::open_mmap(new_len, &self.directory, self.status.current_file_id)?;
 
-            let old_mmap_file = Self::file_id_to_file(&self.directory, old_file_id);
-            let new_mmap_file = Self::file_id_to_file(&self.directory, new_file_id);
-
-            // Flush old mmap, then copy it to new one
-            self.flags.flusher()()?;
-            fs::copy(old_mmap_file, new_mmap_file)?;
-
-            self.reopen_mmap(new_len, new_file_id)?;
-            self.status.current_file_id = new_file_id;
+            // Swap operation. It is important this section is not interrupted by errors.
+            {
+                let mut flags_flusher_lock = self.flags_flusher.lock();
+                self.flags = flags;
+                flags_flusher_lock.replace(flags_flusher);
+            }
         }
 
         self.status.len = new_len;
@@ -298,17 +275,6 @@ mod tests {
                 .enumerate()
                 .filter(|(_, flag)| **flag)
                 .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true)));
-            // File swapping happens every 1024 (MINIMAL_MMAP_SIZE) flags
-            // < 1024 -> A
-            // < 2048 -> B
-            // < 4096 -> A
-            // < 8192 -> B
-            // < 16384 -> A
-            let expected_current_file_id = FileId::B;
-            assert_eq!(
-                dynamic_flags.status.current_file_id,
-                expected_current_file_id,
-            );
 
             dynamic_flags.set_len(num_flags * 2).unwrap();
             random_flags
@@ -316,12 +282,6 @@ mod tests {
                 .enumerate()
                 .filter(|(_, flag)| !*flag)
                 .for_each(|(i, _)| assert!(!dynamic_flags.set(num_flags + i, true)));
-
-            let expected_current_file_id = FileId::A;
-            assert_eq!(
-                dynamic_flags.status.current_file_id,
-                expected_current_file_id,
-            );
 
             dynamic_flags.flusher()().unwrap();
         }
