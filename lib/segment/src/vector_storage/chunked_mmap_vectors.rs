@@ -1,9 +1,12 @@
 use std::cmp::max;
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
+use std::iter::zip;
 use std::path::{Path, PathBuf};
 
+use io::file_operations::advise_dontneed;
 use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
@@ -56,12 +59,11 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 let length = std::mem::size_of::<usize>() as u64;
                 create_and_ensure_length(&status_file, length as usize)?;
             }
-            let mmap = open_write_mmap(&status_file)?;
-            Ok(mmap)
-        } else {
-            let mmap = open_write_mmap(&status_file)?;
-            Ok(mmap)
         }
+        Ok(open_write_mmap(
+            &status_file,
+            AdviceSetting::from(Advice::Normal),
+        )?)
     }
 
     fn ensure_config(
@@ -106,13 +108,18 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    pub fn open(directory: &Path, dim: usize, mlock: Option<bool>) -> OperationResult<Self> {
+    pub fn open(
+        directory: &Path,
+        dim: usize,
+        mlock: Option<bool>,
+        advice: AdviceSetting,
+    ) -> OperationResult<Self> {
         create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
         let config = Self::ensure_config(directory, dim, mlock)?;
-        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default())?;
+        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default(), advice)?;
 
         let vectors = Self {
             status,
@@ -219,6 +226,40 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
     pub fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
         self.get_many(key, 1)
+    }
+
+    /// Call `f` for each vector in the storage, then discard the page cache.
+    pub fn for_each_vector_then_discard_page_cache(
+        &mut self, // Don't replace `&mut` with `&`, see the safety comment below.
+        mut f: impl FnMut(&[T]) -> Result<(), OperationError>,
+    ) -> Result<(), OperationError> {
+        let mut it = 0..self.len();
+
+        for (chunk_idx, chunk) in self.chunks.iter().enumerate() {
+            for (i, _) in zip(0..self.config.chunk_size_vectors, &mut it) {
+                let idx = i * self.config.dim;
+                f(&chunk[idx..idx + self.config.dim])?;
+            }
+
+            chunk.flusher()()?;
+            #[cfg(unix)]
+            // Safety: as per `man 2 madvise`, calling `madvise(…, …, MADV_DONTNEED)` is not safe
+            // because the kernel may drop the page cache even if there are unflushed changes.
+            // Rephrasing [`memmap2::UncheckedAdvice::DontNeed`] documentation, using it, then
+            // reading from the page is conceptually a write operation.
+            //
+            // However, in our case, it is safe because:
+            // 1. We have just called `flusher()()`.
+            // 2. This method is marked as `&mut self`, so we have a guarantee that there are no
+            //    other references to the storage.
+            unsafe {
+                chunk.unchecked_advise(memmap2::UncheckedAdvice::DontNeed)?;
+            }
+
+            // We need both madvise and posix_fadvise to discard the page cache.
+            advise_dontneed(&chunk_name(&self.directory, chunk_idx))?;
+        }
+        Ok(())
     }
 
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
@@ -329,6 +370,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
 
 #[cfg(test)]
 mod tests {
+    use std::iter::zip;
+
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use tempfile::Builder;
@@ -350,7 +393,8 @@ mod tests {
 
         {
             let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
+                    .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec).unwrap();
@@ -375,20 +419,34 @@ mod tests {
         }
 
         {
-            let chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false)).unwrap();
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
+                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
+                    .unwrap();
+
+            let mut loaded_vectors = Vec::new();
+            chunked_mmap
+                .for_each_vector_then_discard_page_cache(|v| {
+                    loaded_vectors.push(v.to_vec());
+                    Ok(())
+                })
+                .unwrap();
 
             assert!(
                 chunked_mmap.chunks.len() > 1,
                 "must have multiple chunks to test",
             );
             assert_eq!(chunked_mmap.len(), vectors.len());
+            assert_eq!(loaded_vectors.len(), vectors.len());
 
-            for (i, vec) in vectors.iter().enumerate() {
+            for (i, (vec, loaded_vec)) in zip(&vectors, &loaded_vectors).enumerate() {
                 assert_eq!(
                     chunked_mmap.get(i).unwrap(),
                     vec,
-                    "Vectors at index {i} are not equal"
+                    "Vectors at index {i} in chunked_mmap are not equal to vectors",
+                );
+                assert_eq!(
+                    loaded_vec, vec,
+                    "Loaded vectors at index {i} are not equal to vectors",
                 );
             }
         }

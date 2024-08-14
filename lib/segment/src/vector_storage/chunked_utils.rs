@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapSlice;
 
@@ -21,7 +22,11 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps<T: Sized>(directory: &Path, mlock: bool) -> OperationResult<Vec<MmapChunk<T>>> {
+pub fn read_mmaps<T: Sized>(
+    directory: &Path,
+    mlock: bool,
+    advice: AdviceSetting,
+) -> OperationResult<Vec<MmapChunk<T>>> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -47,7 +52,7 @@ pub fn read_mmaps<T: Sized>(directory: &Path, mlock: bool) -> OperationResult<Ve
                 directory.display(),
             ))
         })?;
-        let mmap = open_write_mmap(&mmap_file)?;
+        let mmap = open_write_mmap(&mmap_file, advice)?;
         // If unix, lock the memory
         #[cfg(unix)]
         if mlock {
@@ -78,7 +83,7 @@ pub fn create_chunk<T: Sized>(
 ) -> OperationResult<MmapChunk<T>> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
-    let mmap = open_write_mmap(&chunk_file_path)?;
+    let mmap = open_write_mmap(&chunk_file_path, AdviceSetting::Global)?;
     #[cfg(unix)]
     if mlock {
         mmap.lock()?;

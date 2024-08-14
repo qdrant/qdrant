@@ -61,6 +61,32 @@ impl From<Advice> for memmap2::Advice {
     }
 }
 
+/// Either the global [`Advice`] value or a specific [`Advice`] value.
+#[derive(Copy, Clone, Debug)]
+pub enum AdviceSetting {
+    /// Use the global [`Advice`] value (see [`set_global`] and [`get_global`]).
+    Global,
+
+    /// Use the specific [`Advice`] value.
+    Advice(Advice),
+}
+
+impl From<Advice> for AdviceSetting {
+    fn from(advice: Advice) -> Self {
+        AdviceSetting::Advice(advice)
+    }
+}
+
+impl AdviceSetting {
+    /// Get the specific [`Advice`] value.
+    pub fn resolve(self) -> Advice {
+        match self {
+            AdviceSetting::Global => get_global(),
+            AdviceSetting::Advice(advice) => advice,
+        }
+    }
+}
+
 /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
 pub fn madvise(madviseable: &impl Madviseable, advice: Advice) -> io::Result<()> {
     madviseable.madvise(advice)

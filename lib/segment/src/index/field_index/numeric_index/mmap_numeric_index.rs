@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
@@ -148,10 +149,15 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
-        let deleted = mmap_ops::open_write_mmap(&deleted_path)?;
+        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
-        let map = unsafe { MmapSlice::try_from(mmap_ops::open_write_mmap(&pairs_path)?)? };
+        let map = unsafe {
+            MmapSlice::try_from(mmap_ops::open_write_mmap(
+                &pairs_path,
+                AdviceSetting::Global,
+            )?)?
+        };
         let point_to_values = MmapPointToValues::open(path)?;
 
         Ok(Self {

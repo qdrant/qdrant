@@ -9,7 +9,7 @@ use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::StorageVersion;
 use memmap2::Mmap;
-use memory::madvise;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{
     create_and_ensure_length, open_read_mmap, transmute_from_u8_to_slice, transmute_to_u8,
     transmute_to_u8_slice,
@@ -258,7 +258,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         Ok(Self {
             path: path.as_ref().to_owned(),
-            mmap: Arc::new(open_read_mmap(file_path.as_ref())?),
+            mmap: Arc::new(open_read_mmap(file_path.as_ref(), AdviceSetting::Global)?),
             file_header,
             _phantom: PhantomData,
         })
@@ -271,8 +271,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
         // read index data into mmap
         let file_path = Self::index_file_path(path.as_ref());
-        let mmap = open_read_mmap(file_path.as_ref())?;
-        madvise::madvise(&mmap, madvise::Advice::Normal)?;
+        let mmap = open_read_mmap(file_path.as_ref(), AdviceSetting::from(Advice::Normal))?;
         Ok(Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),
