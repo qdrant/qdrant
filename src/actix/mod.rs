@@ -5,6 +5,7 @@ mod auth;
 mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
+pub mod request_verification;
 pub mod web_ui;
 
 use std::io;
