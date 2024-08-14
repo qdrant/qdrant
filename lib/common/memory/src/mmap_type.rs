@@ -358,6 +358,8 @@ pub enum Error {
     SizeMultiple(usize, usize),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    #[error("File not found: {0}")]
+    MissingFile(String),
 }
 
 /// Get a second mutable reference for type `T` from the given mmap
