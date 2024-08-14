@@ -5,6 +5,7 @@ use std::mem::size_of;
 use std::path::Path;
 
 use memmap2::Mmap;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{open_read_mmap, transmute_from_u8, transmute_from_u8_to_slice};
 use validator::ValidationErrors;
 
@@ -34,7 +35,10 @@ const CSR_HEADER_SIZE: usize = size_of::<u64>() * 3;
 
 impl Csr {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        Self::from_mmap(open_read_mmap(path.as_ref())?)
+        Self::from_mmap(open_read_mmap(
+            path.as_ref(),
+            AdviceSetting::from(Advice::Normal),
+        )?)
     }
 
     #[inline]

@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
+use memory::madvise::AdviceSetting;
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;
@@ -336,8 +337,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, Some(false))?;
-    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, Some(false))?;
+    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, Some(false), AdviceSetting::Global)?;
+    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, Some(false), AdviceSetting::Global)?;
 
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();

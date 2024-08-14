@@ -29,6 +29,31 @@ pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
     )?))?)
 }
 
+/// Advise the operating system that the file is no longer needed to be in the page cache.
+pub fn advise_dontneed(path: &Path) -> Result<()> {
+    _ = path;
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "emscripten",
+        target_os = "fuchsia",
+        target_os = "wasi",
+        target_env = "uclibc",
+        target_os = "freebsd",
+    ))] // https://github.com/nix-rust/nix/blob/v0.29.0/src/fcntl.rs#L35-L42
+    {
+        nix::fcntl::posix_fadvise(
+            std::os::fd::AsRawFd::as_raw_fd(&File::open(path)?),
+            0,
+            0,
+            nix::fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED,
+        )?;
+    }
+
+    Ok(())
+}
+
 pub type FileOperationResult<T> = Result<T>;
 pub type FileStorageError = Error;
 
@@ -38,6 +63,10 @@ pub type Result<T, E = Error> = result::Result<T, E>;
 pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
+
+    #[cfg(unix)]
+    #[error("{0}")]
+    Errno(#[from] nix::errno::Errno),
 
     #[error("{0}")]
     Bincode(#[from] bincode::ErrorKind),
