@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-2019, ubuntu-latest, macos-latest]
+        toolchain:
+          - stable
+          - 1.67
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        components: rustfmt, clippy
+        target: ${{ matrix.target.rust }}
+    - name: Build
+      run: cargo build
+    - name: Run tests
+      run: cargo test
+
+  cross-windows:
+    runs-on: windows-2019
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - 1.67
+        target:
+          - rust: 'aarch64-pc-windows-msvc'
+          - rust: 'i686-pc-windows-msvc'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        components: rustfmt, clippy
+        target: ${{ matrix.target.rust }}
+    - name: Build
+      run: cargo build --target ${{ matrix.target.rust }}
+
+  cross-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - 1.67
+        target:
+        - arch: 'aarch64'
+          rust: 'aarch64-unknown-linux-gnu'
+          os: 'aarch64-linux-gnu'
+        - arch: 'arm'
+          rust: 'armv7-unknown-linux-gnueabihf'
+          os: 'arm-linux-gnueabihf'
+        - arch: 'i386'
+          rust: 'i686-unknown-linux-gnu'
+          os: 'i686-linux-gnu'
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        components: rustfmt, clippy
+        target: ${{ matrix.target.rust }}
+    - name: Install QEMU and toolchain
+      run: |
+        sudo apt update
+        sudo apt -y install qemu-user qemu-user-static gcc-${{ matrix.target.os }} binutils-${{ matrix.target.os }} binutils-${{ matrix.target.os }}-dbg
+    - name: Append .cargo config
+      run: |
+        echo "[target.${{ matrix.target.rust }}]" >> ~/.cargo/config
+        echo "runner = \"qemu-${{ matrix.target.arch }} -L /usr/${{ matrix.target.os }}/\"" >> ~/.cargo/config
+        echo "linker = \"${{ matrix.target.os }}-gcc\"" >> ~/.cargo/config
+    - name: Build
+      run: cargo build --target ${{ matrix.target.rust }}
+    - name: Examples
+      run: |
+        cargo run --target ${{ matrix.target.rust }} --example areas
+        cargo run --target ${{ matrix.target.rust }} --example map_anon
+    - name: Run tests
+      run: cargo test
+
+  freebsd:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os:
+        - release: '14.0'
+        - release: '13.2'
+        toolchain:
+          - stable
+          - 1.67
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build (freebsd-${{ matrix.os.release }})
+      uses: vmactions/freebsd-vm@v1
+      with:
+        release: ${{ matrix.os.release }}
+        envs: 'RUSTFLAGS'
+        usesh: true
+        prepare: |
+          pkg install -y curl
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- --profile minimal -y
+          . "$HOME/.cargo/env"
+          rustup install ${{ matrix.toolchain }}
+          rustup default ${{ matrix.toolchain }}
+          cargo build
+          cargo test
+
+  android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - 1.67
+        target:
+        - rust: 'aarch64-linux-android'
+        - rust: 'armv7-linux-androideabi'
+        - rust: 'x86_64-linux-android'
+        - rust: 'i686-linux-android'
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        components: rustfmt, clippy
+        target: ${{ matrix.target.rust }}
+    - name: Build
+      run: cargo build --target ${{ matrix.target.rust }}
+
+  aarch64-apple-ios:
+    runs-on: macos-12
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - 1.67
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+        components: rustfmt, clippy
+        target: aarch64-apple-ios
+    - name: Build
+      run: cargo build --target aarch64-apple-ios

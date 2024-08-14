@@ -3661,8 +3661,6 @@ dependencies = [
 [[package]]
 name = "mmap-rs"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86968d85441db75203c34deefd0c88032f275aaa85cee19a1dcfff6ae9df56da"
 dependencies = [
  "bitflags 1.3.2",
  "combine",
@@ -3670,6 +3668,7 @@ dependencies = [
  "mach2",
  "nix 0.26.2",
  "sysctl",
+ "tempfile",
  "thiserror",
  "widestring",
  "windows 0.48.0",

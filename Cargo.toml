@@ -164,7 +164,7 @@ indicatif = "0.17.8"
 itertools = "0.13.0"
 log = "0.4.22"
 memmap2 = "0.9.4"
-mmap-rs = "0.6.1"
+mmap-rs = { path = "vendor/mmap-rs" }
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 ph = "0.8.3"

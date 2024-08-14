@@ -1,0 +1,42 @@
+[package]
+name = "mmap-rs"
+version = "0.6.1"
+edition = "2021"
+authors = ["Stephan van Schaik <stephan@synkhronix.com>"]
+license = "Apache-2.0 OR MIT"
+description = "A cross-platform and safe Rust API to create and manage memory mappings in the virtual address space of the calling process."
+homepage = "https://codentium.com"
+repository = "https://github.com/StephanvanSchaik/mmap-rs"
+keywords = ["mmap", "memory", "mapping", "VirtualAlloc"]
+rust-version = "1.67"
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+bitflags = "1"
+combine = "4"
+libc = "0.2"
+thiserror = "1"
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.26"
+sysctl = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+widestring = "1"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.48"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Memory",
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+]
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+mach2 = "0.4"
