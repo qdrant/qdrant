@@ -4,7 +4,7 @@ use segment::types::CustomIdCheckerCondition as _;
 
 use crate::hash_ring;
 use crate::operations::cluster_ops::ReshardingDirection;
-use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal};
+use crate::operations::types::{CollectionResult, PointRequestInternal};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::resharding::ReshardStage;
 use crate::shards::shard::ShardId;
