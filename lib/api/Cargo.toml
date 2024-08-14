@@ -25,7 +25,7 @@ uuid = { workspace = true }
 tokio = { workspace = true }
 rand = { workspace = true }
 chrono = { workspace = true }
-thiserror = "1.0"
+thiserror = { workspace = true }
 parking_lot = { workspace = true }
 validator = { workspace = true }
 itertools = { workspace = true }

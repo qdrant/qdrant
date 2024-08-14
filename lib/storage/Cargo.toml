@@ -19,7 +19,7 @@ proptest = "1.5.0"
 env_logger = "0.11"
 
 [dependencies]
-thiserror = "1.0"
+thiserror = { workspace = true }
 rand = { workspace = true }
 wal = { workspace = true }
 tokio = { workspace = true }

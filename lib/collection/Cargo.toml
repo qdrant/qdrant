@@ -32,7 +32,7 @@ pprof = { workspace = true }
 parking_lot = { workspace = true }
 
 rand = { workspace = true }
-thiserror = "1.0"
+thiserror = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
@@ -42,7 +42,7 @@ wal = { workspace = true }
 ordered-float = "4.2"
 hashring = "0.3.6"
 tinyvec = { version = "1.8.0", features = ["alloc"] }
-bitvec = "1.0.1"
+bitvec = { workspace = true }
 lazy_static = "1.5.0"
 smallvec = "1.13.2"
 
@@ -60,7 +60,7 @@ uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
 validator = { workspace = true }
 actix-web-validator = "5.0.1"
-actix-web = {version = "4.9.0"}
+actix-web = { version = "4.9.0" }
 actix-files = "0.6.6"
 
 common = { path = "../common/common" }

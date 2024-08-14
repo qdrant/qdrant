@@ -6,10 +6,10 @@ use std::{fmt, fs};
 use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
 use crate::common::error_logging::LogError;
-use crate::common::mmap_type::{MmapBitSlice, MmapType};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 
@@ -80,7 +80,7 @@ pub struct DynamicMmapFlags {
     /// Current mmap'ed BitSlice for flags
     flags: MmapBitSlice,
     /// Flusher to flush current flags mmap
-    flags_flusher: Arc<Mutex<Option<Flusher>>>,
+    flags_flusher: Arc<Mutex<Option<MmapFlusher>>>,
     status: MmapType<DynamicMmapStatus>,
     directory: PathBuf,
 }
@@ -141,7 +141,7 @@ impl DynamicMmapFlags {
         num_flags: usize,
         directory: &Path,
         new_file_id: FileId,
-    ) -> OperationResult<(MmapBitSlice, Flusher)> {
+    ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
         let mmap_path = Self::file_id_to_file(directory, new_file_id);
         create_and_ensure_length(&mmap_path, capacity_bytes)?;

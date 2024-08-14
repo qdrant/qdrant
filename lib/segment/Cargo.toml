@@ -52,7 +52,7 @@ serde-value = "0.7"
 serde_variant = { workspace = true }
 serde-untagged = "0.1.6"
 ordered-float = "4.2"
-thiserror = "1.0"
+thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = "0.4.3"
 memmap2 = { workspace = true }
@@ -64,7 +64,7 @@ num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = { workspace = true }
-bitvec = "1.0.1"
+bitvec = { workspace = true }
 seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }

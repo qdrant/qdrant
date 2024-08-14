@@ -10,11 +10,11 @@ use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
 use memory::mmap_ops::{self, create_and_ensure_length};
+use memory::mmap_type::MmapBitSlice;
 use serde::{Deserialize, Serialize};
 
 use super::{IdRefIter, MapIndexKey};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
-use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
