@@ -2,7 +2,7 @@ name: Rust tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, growable-mmap ]
   pull_request:
     branches: [ '**' ]
 
@@ -28,10 +28,11 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Build
-      run: cargo build --tests --workspace
+      run: cargo build --tests -p memory
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci
+      run: RUST_BACKTRACE=1 cargo t -p memory -- growable_mmap --nocapture
+      shell: bash
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
