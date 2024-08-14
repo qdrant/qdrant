@@ -607,9 +607,7 @@ impl<'s> SegmentHolder {
                             let apply_payload =
                                 point_cow_operation(point_id, &mut all_vectors, &mut payload)?;
 
-                            let mut applied = true;
-
-                            applied &= appendable_write_segment.upsert_point(
+                            let applied = appendable_write_segment.upsert_point(
                                 op_num,
                                 point_id,
                                 all_vectors,
