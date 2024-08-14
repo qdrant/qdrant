@@ -297,9 +297,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-validator"
-version = "5.0.1"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f40ee5ed4e266dad8d980f964c5ddd746f1f4f85b7f3b54f7099ab861ec6d746"
+checksum = "0f65804955af25ad36225100983ec8d92f14795e7f8080073f8147d0b768c78e"
 dependencies = [
  "actix-http",
  "actix-router",
@@ -314,7 +314,7 @@ dependencies = [
  "serde_qs",
  "serde_urlencoded",
  "thiserror",
- "validator",
+ "validator 0.18.1",
 ]
 
 [[package]]
@@ -486,7 +486,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.16.1",
 ]
 
 [[package]]
@@ -1186,7 +1186,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.16.1",
  "wal",
 ]
 
@@ -1224,7 +1224,7 @@ dependencies = [
  "thiserror",
  "thread-priority",
  "tokio",
- "validator",
+ "validator 0.16.1",
  "zerocopy",
 ]
 
@@ -4621,7 +4621,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "uuid",
- "validator",
+ "validator 0.16.1",
  "wal",
 ]
 
@@ -5616,7 +5616,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.16.1",
  "walkdir",
  "zerocopy",
 ]
@@ -5716,9 +5716,9 @@ dependencies = [
 
 [[package]]
 name = "serde_qs"
-version = "0.10.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cac3f1e2ca2fe333923a1ae72caca910b98ed0630bb35ef6f8c8517d6e81afa"
+checksum = "cd34f36fe4c5ba9654417139a9b3a20d2e1de6012ee678ad14d240c22c78d8d6"
 dependencies = [
  "actix-web",
  "futures",
@@ -5980,7 +5980,7 @@ dependencies = [
  "serde_json",
  "sparse",
  "tempfile",
- "validator",
+ "validator 0.16.1",
 ]
 
 [[package]]
@@ -6048,7 +6048,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.16.1",
  "wal",
 ]
 
@@ -6942,6 +6942,21 @@ dependencies = [
  "serde_json",
  "url",
  "validator_derive",
+]
+
+[[package]]
+name = "validator"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db79c75af171630a3148bd3e6d7c4f42b6a9a014c2945bc5ed0020cbb8d9478e"
+dependencies = [
+ "idna 0.5.0",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
