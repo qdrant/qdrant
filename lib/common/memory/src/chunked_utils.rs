@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{Error as MmapError, MmapSlice};
+use crate::madvise::AdviceSetting;
+use crate::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::mmap_type::{Error as MmapError, MmapSlice};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
