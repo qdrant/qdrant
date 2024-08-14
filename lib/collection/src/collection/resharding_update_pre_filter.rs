@@ -13,23 +13,81 @@ use crate::shards::shard_trait::ShardOperation;
 
 #[derive(Clone, Debug)]
 pub struct ReshardingUpdatePreFilter {
-    this_shard_id: ShardId,
-    new_shard_id: ShardId,
-    direction: ReshardingDirection,
-    stage: ReshardStage,
-    filter: Option<hash_ring::HashRingFilter>,
+    /// Target shard of the resharding operation. This is the shard that:
+    /// - *created* during resharding *up*
+    /// - *deleted* during resharding *down*
+    is_target_shard: bool,
+
+    /// Shard that will be *receiving* migrated points during resharding:
+    /// - *target* shard during resharding *up*
+    /// - *non* target shards during resharding *down*
+    is_receiver_shard: bool,
+
+    /// Hashring filter, that selects points that are hashed into *target* shard
+    filter: hash_ring::HashRingFilter,
 }
 
 impl ReshardingUpdatePreFilter {
     pub fn new(shard_holder: &ShardHolder, shard_id: ShardId) -> Option<Self> {
         let state = shard_holder.resharding_state()?;
 
+        // Resharding *UP*
+        // ┌────────────┐   ┌──────────┐
+        // │            │   │          │
+        // │ Shard 1    │   │ Shard 2  │
+        // │ Non-Target ├──►│ Target   │
+        // │ Sender     │   │ Receiver │
+        // │            │   │          │
+        // └────────────┘   └──────────┘
+        //
+        // Resharding *DOWN*
+        // ┌────────────┐   ┌──────────┐
+        // │            │   │          │
+        // │ Shard 1    │   │ Shard 2  │
+        // │ Non-Target │◄──┤ Target   │
+        // │ Receiver   │   │ Sender   │
+        // │            │   │          │
+        // └────────────┘   └──────────┘
+
+        // Target shard of the resharding operation. This is the shard that:
+        // - *created* during resharding *up*
+        // - *deleted* during resharding *down*
+        let is_target_shard = shard_id == state.shard_id;
+
+        // Shard that will be *receiving* migrated points during resharding:
+        // - *target* shard during resharding *up*
+        // - *non* target shards during resharding *down*
+        let is_receiver_shard = match state.direction {
+            ReshardingDirection::Up => is_target_shard,
+            ReshardingDirection::Down => !is_target_shard,
+        };
+
+        // Shard that will be *sending* migrated points during resharding:
+        // - *non* target shards during resharding *up*
+        // - *target* shard during resharding *down*
+        let is_sender_shard = !is_receiver_shard;
+
+        // We apply resharding pre-filter:
+        //
+        // - on *receiver* shards during `MigratingPoints` stage
+        // - and on *sender* shards during `ReadHashRingCommitted` stage when resharding *up*
+        let should_filter = (is_receiver_shard && state.stage == ReshardStage::MigratingPoints)
+            || (is_sender_shard
+                && state.stage >= ReshardStage::ReadHashRingCommitted
+                && state.direction == ReshardingDirection::Up);
+
+        if !should_filter {
+            return None;
+        }
+
+        let filter = shard_holder
+            .resharding_filter()
+            .expect("resharding filter is available when resharding is in progress");
+
         let pre_filter = Self {
-            this_shard_id: shard_id,
-            new_shard_id: state.shard_id,
-            direction: state.direction,
-            stage: state.stage,
-            filter: shard_holder.resharding_filter(),
+            is_target_shard,
+            is_receiver_shard,
+            filter,
         };
 
         Some(pre_filter)
@@ -42,7 +100,7 @@ impl ReshardingUpdatePreFilter {
         runtime: &tokio::runtime::Handle,
     ) -> CollectionResult<()> {
         // We must *not* pre-filter point upsert operations on *receiver* shards
-        if self.is_receiver_shard() && operation.is_upsert_points() {
+        if self.is_receiver_shard && operation.is_upsert_points() {
             return Ok(());
         }
 
@@ -51,36 +109,16 @@ impl ReshardingUpdatePreFilter {
             return Ok(());
         }
 
-        // We apply filter on *receiver* shards during `MigratingPoints` stage
-        let is_receiver_migrating_points =
-            self.is_receiver_shard() && self.stage == ReshardStage::MigratingPoints;
-
-        // And on *source* shards during `ReadHashRingCommitted` stage
-        let is_old_source_read_hash_ring_committed = !self.is_new_shard()
-            && !self.is_receiver_shard()
-            && self.stage >= ReshardStage::ReadHashRingCommitted;
-
-        let apply_filter = is_receiver_migrating_points || is_old_source_read_hash_ring_committed;
-
-        if !apply_filter {
-            return Ok(());
-        }
-
-        let points_to_filter = if self.is_new_shard() {
-            // If we pre-filter points on *new* shard, we select *all* points
+        let points_to_filter = if self.is_target_shard {
+            // When pre-filtering points on *target* shard, select *all* points for pre-filtering
             operation.point_ids()
         } else {
-            // If we pre-filter points on *old* shard, we select points that are hashed into *new* shard
-
-            let filter = self
-                .filter
-                .as_ref()
-                .ok_or_else(|| CollectionError::service_error("TODO"))?; // TODO(resharding)!
-
+            // When pre-filtering points on *non* target shard, only select points
+            // that are *hashed into target shard* for pre-filtering
             operation
                 .point_ids()
                 .into_iter()
-                .filter(|&point_id| filter.check(point_id))
+                .filter(|&point_id| self.filter.check(point_id))
                 .collect()
         };
 
@@ -115,16 +153,5 @@ impl ReshardingUpdatePreFilter {
         operation.remove_point_ids(&missing_points);
 
         Ok(())
-    }
-
-    fn is_receiver_shard(&self) -> bool {
-        match self.direction {
-            ReshardingDirection::Up => self.is_new_shard(),
-            ReshardingDirection::Down => !self.is_new_shard(),
-        }
-    }
-
-    fn is_new_shard(&self) -> bool {
-        self.this_shard_id == self.new_shard_id
     }
 }
