@@ -468,6 +468,7 @@ impl<'a> MmapOptions<'a> {
                 )
             }?;
 
+            eprintln!("do_map: self.address = {:?}", self.address.map(|a| format!("{:#x}", a)));
             let ptr = unsafe {
                 MapViewOfFileEx(
                     file_mapping,
@@ -475,10 +476,12 @@ impl<'a> MmapOptions<'a> {
                     ((offset >> 32) & 0xffff_ffff) as u32,
                     (offset & 0xffff_ffff) as u32,
                     size,
-                    None,
+                    self.address
+                        .map(|address| address as *const std::ffi::c_void),
                 )
             }?
             .0 as *mut u8;
+            eprintln!("do_map: ptr = {:?}", ptr);
 
             unsafe { CloseHandle(file_mapping) };
 
