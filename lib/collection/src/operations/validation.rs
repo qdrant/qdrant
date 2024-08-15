@@ -198,7 +198,7 @@ mod tests {
             describe_errors(&errors),
             vec![(
                 "things[0].idx".into(),
-                "value 0 invalid, must be 1.0 or larger".into()
+                "value 0 invalid, must be 1 or larger".into()
             )]
         );
     }

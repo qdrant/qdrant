@@ -58,7 +58,7 @@ mod tests {
         assert_eq!(validation.code(), Code::InvalidArgument);
         assert_eq!(
             validation.message(),
-            "Validation error in body: [things[0].idx: value 0 invalid, must be 1.0 or larger]"
+            "Validation error in body: [things[0].idx: value 0 invalid, must be 1 or larger]"
         )
     }
 }
