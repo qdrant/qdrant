@@ -573,8 +573,7 @@ impl<'s> SegmentHolder {
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
-        for<'n, 'o, 'p> H:
-            FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload) -> OperationResult<bool>,
+        for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
         G: FnMut(&dyn SegmentEntry) -> bool,
     {
         let _update_guard = self.update_tracker.update();
@@ -604,27 +603,15 @@ impl<'s> SegmentHolder {
                             let mut all_vectors = write_segment.all_vectors(point_id)?;
                             let mut payload = write_segment.payload(point_id)?;
 
-                            let apply_payload =
-                                point_cow_operation(point_id, &mut all_vectors, &mut payload)?;
+                            point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
-                            let mut applied = appendable_write_segment.upsert_point(
-                                op_num,
-                                point_id,
-                                all_vectors,
-                            )?;
-
-                            if apply_payload {
-                                applied &= appendable_write_segment
-                                    .set_full_payload(op_num, point_id, &payload)?;
-                            } else {
-                                // In case the segment already has some old payload, we need to clear it.
-                                applied &=
-                                    appendable_write_segment.clear_payload(op_num, point_id)?;
-                            }
+                            appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
+                            appendable_write_segment
+                                .set_full_payload(op_num, point_id, &payload)?;
 
                             write_segment.delete_point(op_num, point_id)?;
 
-                            Ok(applied)
+                            Ok(true)
                         },
                     )?
                 };
@@ -1358,10 +1345,7 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
-                |point_id, _, _| {
-                    processed_points2.push(point_id);
-                    Ok(true)
-                },
+                |point_id, _, _| processed_points2.push(point_id),
                 |_| update_nonappendable,
             )
             .unwrap();
@@ -1476,10 +1460,7 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
-                |point_id, _, _| {
-                    processed_points2.push(point_id);
-                    Ok(true)
-                },
+                |point_id, _, _| processed_points2.push(point_id),
                 |_| false,
             )
             .unwrap();
@@ -1557,7 +1538,6 @@ mod tests {
                 |_point_id, vectors, payload| {
                     vectors.insert("".to_string(), Vector::Dense(vec![9.0; 4]));
                     payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
-                    Ok(true)
                 },
                 |_| false,
             )
