@@ -13,11 +13,11 @@ pub struct VectorParams {
     pub distance: i32,
     /// Configuration of vector HNSW graph. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of vector quantization config. If omitted - the collection configuration will be used
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
     #[prost(bool, optional, tag = "5")]
@@ -36,11 +36,11 @@ pub struct VectorParams {
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Update quantization params. If none - it is left unchanged.
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
     /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
     #[prost(bool, optional, tag = "3")]
@@ -52,7 +52,7 @@ pub struct VectorParamsDiff {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsMap {
     #[prost(map = "string, message", tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub map: ::std::collections::HashMap<::prost::alloc::string::String, VectorParams>,
 }
 #[derive(validator::Validate)]
@@ -61,7 +61,7 @@ pub struct VectorParamsMap {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorParamsDiffMap {
     #[prost(map = "string, message", tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub map: ::std::collections::HashMap<
         ::prost::alloc::string::String,
         VectorParamsDiff,
@@ -73,7 +73,7 @@ pub struct VectorParamsDiffMap {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfig {
     #[prost(oneof = "vectors_config::Config", tags = "1, 2")]
-    #[validate]
+    #[validate(nested)]
     pub config: ::core::option::Option<vectors_config::Config>,
 }
 /// Nested message and enum types in `VectorsConfig`.
@@ -94,7 +94,7 @@ pub mod vectors_config {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorsConfigDiff {
     #[prost(oneof = "vectors_config_diff::Config", tags = "1, 2")]
-    #[validate]
+    #[validate(nested)]
     pub config: ::core::option::Option<vectors_config_diff::Config>,
 }
 /// Nested message and enum types in `VectorsConfigDiff`.
@@ -226,7 +226,7 @@ pub struct HnswConfigDiff {
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_4")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_4"))]
     pub ef_construct: ::core::option::Option<u64>,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
@@ -269,7 +269,7 @@ pub struct SparseIndexConfig {
 pub struct WalConfigDiff {
     /// Size of a single WAL block file
     #[prost(uint64, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub wal_capacity_mb: ::core::option::Option<u64>,
     /// Number of segments to create in advance
     #[prost(uint64, optional, tag = "2")]
@@ -282,11 +282,11 @@ pub struct WalConfigDiff {
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_f64_range_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_f64_range_1"))]
     pub deleted_threshold: ::core::option::Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_100")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_100"))]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     /// Target amount of segments the optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
@@ -347,7 +347,9 @@ pub struct ScalarQuantization {
     pub r#type: i32,
     /// Number of bits to use for quantization
     #[prost(float, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_f32_range_min_0_5_max_1")]
+    #[validate(
+        custom(function = "crate::grpc::validate::validate_f32_range_min_0_5_max_1")
+    )]
     pub quantile: ::core::option::Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "3")]
@@ -380,7 +382,7 @@ pub struct BinaryQuantization {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfig {
     #[prost(oneof = "quantization_config::Quantization", tags = "1, 2, 3")]
-    #[validate]
+    #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfig`.
@@ -408,7 +410,7 @@ pub struct Disabled {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QuantizationConfigDiff {
     #[prost(oneof = "quantization_config_diff::Quantization", tags = "1, 2, 3, 4")]
-    #[validate]
+    #[validate(nested)]
     pub quantization: ::core::option::Option<quantization_config_diff::Quantization>,
 }
 /// Nested message and enum types in `QuantizationConfigDiff`.
@@ -436,20 +438,20 @@ pub struct CreateCollection {
     #[prost(string, tag = "1")]
     #[validate(
         length(min = 1, max = 255),
-        custom = "common::validation::validate_collection_name"
+        custom(function = "common::validation::validate_collection_name")
     )]
     pub collection_name: ::prost::alloc::string::String,
     /// Configuration of vector index
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "5")]
-    #[validate]
+    #[validate(nested)]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "6")]
-    #[validate]
+    #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Number of shards in the collection, default is 1 for standalone, otherwise equal to the number of nodes. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
@@ -462,7 +464,7 @@ pub struct CreateCollection {
     pub timeout: ::core::option::Option<u64>,
     /// Configuration for vectors
     #[prost(message, optional, tag = "10")]
-    #[validate]
+    #[validate(nested)]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain, default = 1
     #[prost(uint32, optional, tag = "11")]
@@ -475,7 +477,7 @@ pub struct CreateCollection {
     pub init_from_collection: ::core::option::Option<::prost::alloc::string::String>,
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "14")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Sharding method
     #[prost(enumeration = "ShardingMethod", optional, tag = "15")]
@@ -495,27 +497,27 @@ pub struct UpdateCollection {
     pub collection_name: ::prost::alloc::string::String,
     /// New configuration parameters for the collection. This operation is blocking, it will only proceed once all current optimizations are complete
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// New configuration parameters for the collection
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<CollectionParamsDiff>,
     /// New HNSW parameters for the collection index
     #[prost(message, optional, tag = "5")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// New vector parameters
     #[prost(message, optional, tag = "6")]
-    #[validate]
+    #[validate(nested)]
     pub vectors_config: ::core::option::Option<VectorsConfigDiff>,
     /// Quantization configuration of vector
     #[prost(message, optional, tag = "7")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfigDiff>,
     /// New sparse vector parameters
     #[prost(message, optional, tag = "8")]
@@ -532,7 +534,7 @@ pub struct DeleteCollection {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -559,7 +561,7 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
     /// Configuration for vectors
     #[prost(message, optional, tag = "5")]
-    #[validate]
+    #[validate(nested)]
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain
     #[prost(uint32, optional, tag = "6")]
@@ -602,11 +604,11 @@ pub struct CollectionParamsDiff {
 pub struct CollectionConfig {
     /// Collection parameters
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<CollectionParams>,
     /// Configuration of vector index
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "3")]
@@ -616,7 +618,7 @@ pub struct CollectionConfig {
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
 }
 #[derive(serde::Serialize)]
@@ -803,7 +805,7 @@ pub struct ChangeAliases {
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -1112,13 +1114,13 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
         tags = "2, 3, 4, 5, 7, 8, 9"
     )]
-    #[validate]
+    #[validate(nested)]
     pub operation: ::core::option::Option<
         update_collection_cluster_setup_request::Operation,
     >,
@@ -3868,7 +3870,7 @@ pub struct UpsertPoints {
     #[prost(bool, optional, tag = "2")]
     pub wait: ::core::option::Option<bool>,
     #[prost(message, repeated, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub points: ::prost::alloc::vec::Vec<PointStruct>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
@@ -4150,7 +4152,7 @@ pub mod with_payload_selector {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NamedVectors {
     #[prost(map = "string, message", tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
 #[derive(validator::Validate)]
@@ -4159,7 +4161,7 @@ pub struct NamedVectors {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vectors {
     #[prost(oneof = "vectors::VectorsOptions", tags = "1, 2")]
-    #[validate]
+    #[validate(nested)]
     pub vectors_options: ::core::option::Option<vectors::VectorsOptions>,
 }
 /// Nested message and enum types in `Vectors`.
@@ -4222,7 +4224,7 @@ pub struct QuantizationSearchParams {
     /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
     /// and then top-100 will be returned after re-scoring.
     #[prost(double, optional, tag = "3")]
-    #[validate(custom = "crate::grpc::validate::validate_f64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_f64_range_min_1"))]
     pub oversampling: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
@@ -4239,7 +4241,7 @@ pub struct SearchParams {
     pub exact: ::core::option::Option<bool>,
     /// If set to true, search will ignore quantized vector data
     #[prost(message, optional, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub quantization: ::core::option::Option<QuantizationSearchParams>,
     /// If enabled, the engine will only perform search among indexed or small segments.
     /// Using this option prevents slow searches in case of delayed index, but does not
@@ -4261,7 +4263,7 @@ pub struct SearchPoints {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "4")]
@@ -4272,7 +4274,7 @@ pub struct SearchPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
@@ -4291,7 +4293,7 @@ pub struct SearchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "13")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
@@ -4309,14 +4311,14 @@ pub struct SearchBatchPoints {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -4347,7 +4349,7 @@ pub struct SearchPointGroups {
     pub vector: ::prost::alloc::vec::Vec<f32>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint32, tag = "4")]
@@ -4358,7 +4360,7 @@ pub struct SearchPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "6")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "7")]
@@ -4385,7 +4387,7 @@ pub struct SearchPointGroups {
     pub with_lookup: ::core::option::Option<WithLookup>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "14")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "15")]
@@ -4440,14 +4442,14 @@ pub struct ScrollPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Start with this ID
     #[prost(message, optional, tag = "3")]
     pub offset: ::core::option::Option<PointId>,
     /// Max number of result
     #[prost(uint32, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u32_range_min_1"))]
     pub limit: ::core::option::Option<u32>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -4498,7 +4500,7 @@ pub struct RecommendPoints {
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
@@ -4508,7 +4510,7 @@ pub struct RecommendPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "8")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "9")]
@@ -4533,15 +4535,15 @@ pub struct RecommendPoints {
     pub strategy: ::core::option::Option<i32>,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "17")]
-    #[validate]
+    #[validate(nested)]
     pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "18")]
-    #[validate]
+    #[validate(nested)]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "19")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "20")]
@@ -4557,14 +4559,14 @@ pub struct RecommendBatchPoints {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub recommend_points: ::prost::alloc::vec::Vec<RecommendPoints>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -4584,7 +4586,7 @@ pub struct RecommendPointGroups {
     pub negative: ::prost::alloc::vec::Vec<PointId>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of groups in result
     #[prost(uint32, tag = "5")]
@@ -4595,7 +4597,7 @@ pub struct RecommendPointGroups {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// If provided - cut off results with worse scores
     #[prost(float, optional, tag = "8")]
@@ -4628,15 +4630,15 @@ pub struct RecommendPointGroups {
     pub strategy: ::core::option::Option<i32>,
     /// Look for vectors closest to those
     #[prost(message, repeated, tag = "18")]
-    #[validate]
+    #[validate(nested)]
     pub positive_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// Try to avoid vectors like this
     #[prost(message, repeated, tag = "19")]
-    #[validate]
+    #[validate(nested)]
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "20")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "21")]
@@ -4704,7 +4706,7 @@ pub struct DiscoverPoints {
     pub context: ::prost::alloc::vec::Vec<ContextExamplePair>,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of result
     #[prost(uint64, tag = "5")]
@@ -4715,7 +4717,7 @@ pub struct DiscoverPoints {
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Search config
     #[prost(message, optional, tag = "7")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// Offset of the result
     #[prost(uint64, optional, tag = "8")]
@@ -4734,7 +4736,7 @@ pub struct DiscoverPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "13")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
@@ -4750,14 +4752,14 @@ pub struct DiscoverBatchPoints {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub discover_points: ::prost::alloc::vec::Vec<DiscoverPoints>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -4771,7 +4773,7 @@ pub struct CountPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// If `true` - return exact count, if `false` - return approximate count
     #[prost(bool, optional, tag = "3")]
@@ -4915,18 +4917,18 @@ pub struct QueryPoints {
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[prost(message, optional, tag = "5")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "6")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// Return points with scores better than this threshold.
     #[prost(float, optional, tag = "7")]
     pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10.
     #[prost(uint64, optional, tag = "8")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub limit: ::core::option::Option<u64>,
     /// Offset of the result. Skip this many points. Default is 0.
     #[prost(uint64, optional, tag = "9")]
@@ -4948,7 +4950,7 @@ pub struct QueryPoints {
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "15")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -4960,14 +4962,14 @@ pub struct QueryBatchPoints {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub query_points: ::prost::alloc::vec::Vec<QueryPoints>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "3")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -5524,15 +5526,15 @@ pub struct UpdateBatchResponse {
 pub struct Filter {
     /// At least one of those conditions should match
     #[prost(message, repeated, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub should: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must match
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub must: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must NOT match
     #[prost(message, repeated, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
     /// At least minimum amount of given conditions should match
     #[prost(message, optional, tag = "4")]
@@ -5553,7 +5555,7 @@ pub struct MinShould {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
     #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
-    #[validate]
+    #[validate(nested)]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
 /// Nested message and enum types in `Condition`.
@@ -5607,7 +5609,7 @@ pub struct NestedCondition {
     pub key: ::prost::alloc::string::String,
     /// Filter condition
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
 }
 #[derive(serde::Serialize)]
@@ -5710,16 +5712,16 @@ pub struct Range {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DatetimeRange {
     #[prost(message, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub lt: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub gt: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "3")]
-    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub gte: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
 #[derive(serde::Serialize)]
@@ -5761,11 +5763,15 @@ pub struct GeoLineString {
 pub struct GeoPolygon {
     /// The exterior line bounds the surface
     #[prost(message, optional, tag = "1")]
-    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_exterior")]
+    #[validate(
+        custom(function = "crate::grpc::validate::validate_geo_polygon_exterior")
+    )]
     pub exterior: ::core::option::Option<GeoLineString>,
     /// Interior lines (if present) bound holes within the surface
     #[prost(message, repeated, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_geo_polygon_interiors")]
+    #[validate(
+        custom(function = "crate::grpc::validate::validate_geo_polygon_interiors")
+    )]
     pub interiors: ::prost::alloc::vec::Vec<GeoLineString>,
 }
 #[derive(serde::Serialize)]
@@ -5819,7 +5825,7 @@ pub struct PointStruct {
     #[prost(map = "string, message", tag = "3")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
-    #[validate]
+    #[validate(nested)]
     pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(serde::Serialize)]
@@ -8270,7 +8276,7 @@ pub struct SyncPoints {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub sync_points: ::core::option::Option<SyncPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8283,7 +8289,7 @@ pub struct SyncPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpsertPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub upsert_points: ::core::option::Option<UpsertPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8296,7 +8302,7 @@ pub struct UpsertPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub delete_points: ::core::option::Option<DeletePoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8309,7 +8315,7 @@ pub struct DeletePointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateVectorsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub update_vectors: ::core::option::Option<UpdatePointVectors>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8322,7 +8328,7 @@ pub struct UpdateVectorsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteVectorsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub delete_vectors: ::core::option::Option<DeletePointVectors>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8335,7 +8341,7 @@ pub struct DeleteVectorsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SetPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub set_payload_points: ::core::option::Option<SetPayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8348,7 +8354,7 @@ pub struct SetPayloadPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeletePayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub delete_payload_points: ::core::option::Option<DeletePayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8361,7 +8367,7 @@ pub struct DeletePayloadPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClearPayloadPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub clear_payload_points: ::core::option::Option<ClearPayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8374,7 +8380,7 @@ pub struct ClearPayloadPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateFieldIndexCollectionInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub create_field_index_collection: ::core::option::Option<
         CreateFieldIndexCollection,
     >,
@@ -8389,7 +8395,7 @@ pub struct CreateFieldIndexCollectionInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteFieldIndexCollectionInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub delete_field_index_collection: ::core::option::Option<
         DeleteFieldIndexCollection,
     >,
@@ -8444,7 +8450,7 @@ pub struct ClockTag {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub search_points: ::core::option::Option<SearchPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8458,7 +8464,7 @@ pub struct SearchBatchPointsInternal {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub search_points: ::prost::alloc::vec::Vec<SearchPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8471,10 +8477,10 @@ pub struct SearchBatchPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoQuery {
     #[prost(message, repeated, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub positives: ::prost::alloc::vec::Vec<Vector>,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub negatives: ::prost::alloc::vec::Vec<Vector>,
 }
 #[derive(serde::Serialize)]
@@ -8483,10 +8489,10 @@ pub struct RecoQuery {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextPair {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub positive: ::core::option::Option<Vector>,
     #[prost(message, optional, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub negative: ::core::option::Option<Vector>,
 }
 #[derive(serde::Serialize)]
@@ -8495,10 +8501,10 @@ pub struct ContextPair {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoveryQuery {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub target: ::core::option::Option<Vector>,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
 #[derive(serde::Serialize)]
@@ -8507,7 +8513,7 @@ pub struct DiscoveryQuery {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextQuery {
     #[prost(message, repeated, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
 #[derive(serde::Serialize)]
@@ -8549,7 +8555,7 @@ pub struct CoreSearchPoints {
     #[prost(message, optional, tag = "2")]
     pub query: ::core::option::Option<QueryEnum>,
     #[prost(message, optional, tag = "3")]
-    #[validate]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     #[prost(uint64, tag = "4")]
     #[validate(range(min = 1))]
@@ -8557,7 +8563,7 @@ pub struct CoreSearchPoints {
     #[prost(message, optional, tag = "5")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     #[prost(message, optional, tag = "6")]
-    #[validate]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     #[prost(float, optional, tag = "7")]
     pub score_threshold: ::core::option::Option<f32>,
@@ -8579,7 +8585,7 @@ pub struct CoreSearchBatchPointsInternal {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
-    #[validate]
+    #[validate(nested)]
     pub search_points: ::prost::alloc::vec::Vec<CoreSearchPoints>,
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8592,7 +8598,7 @@ pub struct CoreSearchBatchPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScrollPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub scroll_points: ::core::option::Option<ScrollPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8603,7 +8609,7 @@ pub struct ScrollPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub recommend_points: ::core::option::Option<RecommendPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8614,7 +8620,7 @@ pub struct RecommendPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub get_points: ::core::option::Option<GetPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8625,7 +8631,7 @@ pub struct GetPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPointsInternal {
     #[prost(message, optional, tag = "1")]
-    #[validate]
+    #[validate(nested)]
     pub count_points: ::core::option::Option<CountPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
@@ -8801,7 +8807,7 @@ pub struct QueryBatchPointsInternal {
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -8845,7 +8851,7 @@ pub struct FacetCountsInternal {
     #[prost(uint32, tag = "5")]
     pub shard_id: u32,
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom = "crate::grpc::validate::validate_u64_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -10918,10 +10924,10 @@ pub struct Peer {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddPeerToKnownMessage {
     #[prost(string, optional, tag = "1")]
-    #[validate(custom = "common::validation::validate_not_empty")]
+    #[validate(custom(function = "common::validation::validate_not_empty"))]
     pub uri: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint32, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_u32_range_min_1")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u32_range_min_1"))]
     pub port: ::core::option::Option<u32>,
     #[prost(uint64, tag = "3")]
     pub id: u64,
@@ -11517,7 +11523,7 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
-    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    #[validate(custom(function = "crate::grpc::validate::validate_timestamp"))]
     pub creation_time: ::core::option::Option<::prost_wkt_types::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
@@ -12302,7 +12308,7 @@ pub struct RecoverShardSnapshotRequest {
     pub snapshot_priority: i32,
     /// SHA256 checksum for verifying snapshot integrity
     #[prost(string, optional, tag = "5")]
-    #[validate(custom = "common::validation::validate_sha256_hash_option")]
+    #[validate(custom(function = "common::validation::validate_sha256_hash"))]
     pub checksum: ::core::option::Option<::prost::alloc::string::String>,
     /// Optional API key used when fetching the snapshot from a remote URL
     #[prost(string, optional, tag = "6")]
@@ -13217,3 +13223,4 @@ pub mod qdrant_server {
     }
 }
 use super::validate::ValidateExt;
+use validator::Validate;

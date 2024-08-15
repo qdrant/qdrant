@@ -138,7 +138,7 @@ mod tests {
 
     #[derive(Validate, Debug)]
     struct OtherThing {
-        #[validate]
+        #[validate(nested)]
         pub things: Vec<SomeThing>,
     }
 
@@ -198,7 +198,7 @@ mod tests {
             describe_errors(&errors),
             vec![(
                 "things[0].idx".into(),
-                "value 0 invalid, must be 1.0 or larger".into()
+                "value 0 invalid, must be 1 or larger".into()
             )]
         );
     }

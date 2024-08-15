@@ -58,10 +58,10 @@ pub struct ClusterConfig {
     #[validate(range(min = 1))]
     pub connection_timeout_ms: u64,
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub p2p: P2pConfig,
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub consensus: ConsensusConfig,
 }
 
@@ -130,16 +130,16 @@ pub struct Settings {
     pub log_level: Option<String>,
     #[serde(default)]
     pub logger: tracing::LoggerConfig,
-    #[validate]
+    #[validate(nested)]
     pub storage: StorageConfig,
-    #[validate]
+    #[validate(nested)]
     pub service: ServiceConfig,
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub cluster: ClusterConfig,
     #[serde(default = "default_telemetry_disabled")]
     pub telemetry_disabled: bool,
-    #[validate]
+    #[validate(nested)]
     pub tls: Option<TlsConfig>,
     #[serde(default)]
     pub debugger: DebuggerConfig,

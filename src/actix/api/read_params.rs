@@ -9,7 +9,7 @@ use validator::Validate;
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, JsonSchema, Validate)]
 pub struct ReadParams {
     #[serde(default, deserialize_with = "deserialize_read_consistency")]
-    #[validate]
+    #[validate(nested)]
     pub consistency: Option<ReadConsistency>,
     /// If set, overrides global timeout for this request. Unit is seconds.
     pub timeout: Option<NonZeroU64>,
