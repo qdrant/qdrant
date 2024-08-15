@@ -30,14 +30,18 @@ pub enum ClusterOperations {
     /// Start resharding
     #[schemars(skip)]
     StartResharding(StartReshardingOperation),
+    /// Commit read hashring
+    #[schemars(skip)]
+    CommitReadHashRing(CommitReadHashRingOperation),
+    /// Commit write hashring
+    #[schemars(skip)]
+    CommitWriteHashRing(CommitWriteHashRingOperation),
+    /// Finish resharding
+    #[schemars(skip)]
+    FinishResharding(FinishReshardingOperation),
     /// Abort resharding
     #[schemars(skip)]
     AbortResharding(AbortReshardingOperation),
-
-    #[schemars(skip)]
-    CommitReadHashRing(CommitReadHashRingOperation),
-    #[schemars(skip)]
-    CommitWriteHashRing(CommitWriteHashRingOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -103,9 +107,10 @@ impl Validate for ClusterOperations {
             ClusterOperations::DropShardingKey(op) => op.validate(),
             ClusterOperations::RestartTransfer(op) => op.validate(),
             ClusterOperations::StartResharding(op) => op.validate(),
-            ClusterOperations::AbortResharding(op) => op.validate(),
             ClusterOperations::CommitReadHashRing(op) => op.validate(),
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
+            ClusterOperations::FinishResharding(op) => op.validate(),
+            ClusterOperations::AbortResharding(op) => op.validate(),
         }
     }
 }
@@ -139,29 +144,33 @@ pub struct AbortTransferOperation {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
 pub struct StartReshardingOperation {
     #[validate]
     pub start_resharding: StartResharding,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct AbortReshardingOperation {
-    #[validate]
-    pub abort_resharding: AbortResharding,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitReadHashRingOperation {
+    #[validate]
     pub commit_read_hash_ring: CommitReadHashRing,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitWriteHashRingOperation {
+    #[validate]
     pub commit_write_hash_ring: CommitWriteHashRing,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishReshardingOperation {
+    #[validate]
+    pub finish_resharding: FinishResharding,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct AbortReshardingOperation {
+    #[validate]
+    pub abort_resharding: AbortResharding,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -227,7 +236,6 @@ pub struct AbortShardTransfer {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
 pub struct StartResharding {
     pub direction: ReshardingDirection,
     pub peer_id: Option<PeerId>,
@@ -235,7 +243,7 @@ pub struct StartResharding {
 }
 
 /// Resharding direction, scale up or down in number of shards
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReshardingDirection {
     /// Scale up, add a new shard
@@ -244,14 +252,14 @@ pub enum ReshardingDirection {
     Down,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
-pub struct AbortResharding {}
-
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitReadHashRing {}
 
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitWriteHashRing {}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishResharding {}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct AbortResharding {}

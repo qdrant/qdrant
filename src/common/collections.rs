@@ -659,6 +659,26 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
+        ClusterOperations::FinishResharding(_) => {
+            // TODO(resharding): Deduplicate resharding operations handling?
+
+            let Some(state) = collection.resharding_state().await else {
+                return Err(StorageError::bad_request(format!(
+                    "resharding is not in progress for collection {collection_name}"
+                )));
+            };
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::Finish(state.key()),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
 
         ClusterOperations::CommitReadHashRing(_) => {
             // TODO(reshading): Deduplicate resharding operations handling?
