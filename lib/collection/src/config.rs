@@ -69,7 +69,7 @@ pub enum ShardingMethod {
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
-    #[validate]
+    #[validate(nested)]
     #[serde(default)]
     pub vectors: VectorsConfig,
     /// Number of shards the collection has
@@ -104,7 +104,7 @@ pub struct CollectionParams {
     pub on_disk_payload: bool,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[validate]
+    #[validate(nested)]
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
 }
 
@@ -151,13 +151,13 @@ const fn default_on_disk_payload() -> bool {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct CollectionConfig {
-    #[validate]
+    #[validate(nested)]
     pub params: CollectionParams,
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: HnswConfig,
-    #[validate]
+    #[validate(nested)]
     pub optimizer_config: OptimizersConfig,
-    #[validate]
+    #[validate(nested)]
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,

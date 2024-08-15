@@ -15,7 +15,7 @@ use crate::hash_ring::HashRingRouter;
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct UpdateVectors {
     /// Points with named vectors
-    #[validate]
+    #[validate(nested)]
     #[validate(length(min = 1, message = "must specify points to update"))]
     pub points: Vec<PointVectors>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,7 +63,7 @@ pub struct DeleteVectors {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct UpdateVectorsOp {
     /// Points with named vectors
-    #[validate]
+    #[validate(nested)]
     #[validate(length(min = 1, message = "must specify points to update"))]
     pub points: Vec<PointVectors>,
 }

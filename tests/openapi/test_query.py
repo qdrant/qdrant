@@ -85,7 +85,7 @@ def test_query_validation():
         },
     )
     assert not response.ok, response.text
-    assert response.json()["status"]["error"] == ("Validation error in JSON body: [internal.limit: value 0 invalid, must be 1.0 or larger]")
+    assert response.json()["status"]["error"] == ("Validation error in JSON body: [internal.limit: value 0 invalid, must be 1 or larger]")
 
 
 def root_and_rescored_query(query, limit=None, with_payload=None):

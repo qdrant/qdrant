@@ -196,24 +196,24 @@ pub enum VectorInput {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryRequestInternal {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
     /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
-    #[validate]
+    #[validate(nested)]
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
@@ -240,7 +240,7 @@ pub struct QueryRequestInternal {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryRequest {
-    #[validate]
+    #[validate(nested)]
     #[serde(flatten)]
     pub internal: QueryRequestInternal,
     pub shard_key: Option<ShardKeySelector>,
@@ -248,7 +248,7 @@ pub struct QueryRequest {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryRequestBatch {
-    #[validate]
+    #[validate(nested)]
     pub searches: Vec<QueryRequest>,
 }
 
@@ -334,24 +334,24 @@ pub struct SampleQuery {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct Prefetch {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
     /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
-    #[validate]
+    #[validate(nested)]
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
@@ -408,11 +408,11 @@ impl RecommendInput {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct DiscoverInput {
     /// Use this as the primary search objective
-    #[validate]
+    #[validate(nested)]
     pub target: VectorInput,
 
     /// Search space will be constrained by these pairs of vectors
-    #[validate]
+    #[validate(nested)]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
     pub context: Option<Vec<ContextPair>>,
@@ -429,11 +429,11 @@ pub struct ContextInput(
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ContextPair {
     /// A positive vector
-    #[validate]
+    #[validate(nested)]
     pub positive: VectorInput,
 
     /// Repel from this vector
-    #[validate]
+    #[validate(nested)]
     pub negative: VectorInput,
 }
 
@@ -517,15 +517,15 @@ pub struct BaseGroupRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequestInternal {
     /// Look for vectors closest to this
-    #[validate]
+    #[validate(nested)]
     pub vector: NamedVectorStruct,
 
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Additional search params
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default is false.
@@ -542,7 +542,7 @@ pub struct SearchGroupsRequestInternal {
     pub score_threshold: Option<ScoreType>,
 
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub group_request: BaseGroupRequest,
 }
 
@@ -553,13 +553,13 @@ pub struct SearchGroupsRequestInternal {
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestInternal {
     /// Look for vectors closest to this
-    #[validate]
+    #[validate(nested)]
     pub vector: NamedVectorStruct,
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
     /// Additional search params
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
     /// Max number of result to return
     #[serde(alias = "top")]
@@ -604,24 +604,24 @@ pub struct QueryBaseGroupRequest {
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryGroupsRequestInternal {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
     /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
-    #[validate]
+    #[validate(nested)]
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Return points with scores better than this threshold.
@@ -639,13 +639,13 @@ pub struct QueryGroupsRequestInternal {
     pub lookup_from: Option<LookupLocation>,
 
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub group_request: QueryBaseGroupRequest,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryGroupsRequest {
-    #[validate]
+    #[validate(nested)]
     #[serde(flatten)]
     pub search_group_request: QueryGroupsRequestInternal,
 

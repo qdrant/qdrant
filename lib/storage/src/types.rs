@@ -64,15 +64,15 @@ pub struct StorageConfig {
     pub temp_path: Option<String>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
-    #[validate]
+    #[validate(nested)]
     pub optimizers: OptimizersConfig,
-    #[validate]
+    #[validate(nested)]
     #[serde(default)]
     pub optimizers_overwrite: Option<OptimizersConfigDiff>,
-    #[validate]
+    #[validate(nested)]
     pub wal: WalConfig,
     pub performance: PerformanceConfig,
-    #[validate]
+    #[validate(nested)]
     pub hnsw_index: HnswConfig,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,

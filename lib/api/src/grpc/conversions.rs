@@ -1472,7 +1472,9 @@ impl TryFrom<GeoPolygon> for segment::types::GeoPolygon {
                 exterior: e.into(),
                 interiors: Some(interiors.into_iter().map(Into::into).collect()),
             }),
-            _ => Err(Status::invalid_argument("Malformed GeoPolygon type")),
+            _ => Err(Status::invalid_argument(
+                "Malformed GeoPolygon type - field `exterior` is required",
+            )),
         }
     }
 }
