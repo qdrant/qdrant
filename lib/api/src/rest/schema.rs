@@ -658,7 +658,7 @@ pub struct QueryGroupsRequest {
 #[serde(rename_all = "snake_case")]
 pub struct SearchMatrixRequestInternal {
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
     /// How many points to select and search within.
     #[validate(range(min = 1))]
@@ -674,7 +674,7 @@ pub struct SearchMatrixRequestInternal {
 #[serde(rename_all = "snake_case")]
 pub struct SearchMatrixRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub search_request: SearchMatrixRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
