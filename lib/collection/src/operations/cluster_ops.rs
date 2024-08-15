@@ -30,6 +30,9 @@ pub enum ClusterOperations {
     /// Start resharding
     #[schemars(skip)]
     StartResharding(StartReshardingOperation),
+    /// Finish migrating points on specified shard, mark shard as `Active`
+    #[schemars(skip)]
+    FinishMigratingPoints(FinishMigratingPointsOperation),
     /// Commit read hashring
     #[schemars(skip)]
     CommitReadHashRing(CommitReadHashRingOperation),
@@ -107,6 +110,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::DropShardingKey(op) => op.validate(),
             ClusterOperations::RestartTransfer(op) => op.validate(),
             ClusterOperations::StartResharding(op) => op.validate(),
+            ClusterOperations::FinishMigratingPoints(op) => op.validate(),
             ClusterOperations::CommitReadHashRing(op) => op.validate(),
             ClusterOperations::CommitWriteHashRing(op) => op.validate(),
             ClusterOperations::FinishResharding(op) => op.validate(),
@@ -147,6 +151,12 @@ pub struct AbortTransferOperation {
 pub struct StartReshardingOperation {
     #[validate]
     pub start_resharding: StartResharding,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishMigratingPointsOperation {
+    #[validate]
+    pub finish_migrating_points: FinishMigratingPoints,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -250,6 +260,12 @@ pub enum ReshardingDirection {
     Up,
     /// Scale down, remove a shard
     Down,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct FinishMigratingPoints {
+    pub shard_id: Option<ShardId>,
+    pub peer_id: Option<PeerId>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
