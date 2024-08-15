@@ -24,16 +24,18 @@ const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
 
 const STATUS_FILE_NAME: &str = "status.dat";
 
-pub fn status_file(directory: &Path) -> PathBuf {
+fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
 #[repr(C)]
-pub struct DynamicMmapStatus {
-    pub len: usize,
+struct DynamicMmapStatus {
+    /// Amount of flags (bits)
+    len: usize,
+
     /// Should be 0 in the current version.  Old versions used it to indicate which flags file
     /// (flags_a.dat or flags_b.dat) is currently in use.
-    pub current_file_id: usize,
+    current_file_id: usize,
 }
 
 fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
@@ -66,7 +68,7 @@ impl fmt::Debug for DynamicMmapFlags {
 
 /// Based on the number of flags determines the size of the mmap file.
 fn mmap_capacity_bytes(num_flags: usize) -> usize {
-    let number_of_bytes = num_flags.div_ceil(8);
+    let number_of_bytes = num_flags.div_ceil(u8::BITS as usize);
 
     max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
 }
@@ -74,7 +76,7 @@ fn mmap_capacity_bytes(num_flags: usize) -> usize {
 /// Based on the current length determines how many flags can fit into the mmap file without resizing it.
 fn mmap_max_current_size(len: usize) -> usize {
     let mmap_capacity_bytes = mmap_capacity_bytes(len);
-    mmap_capacity_bytes * 8
+    mmap_capacity_bytes * u8::BITS as usize
 }
 
 impl DynamicMmapFlags {
