@@ -41,7 +41,7 @@ mod tests {
 
     #[derive(Validate, Debug)]
     struct OtherThing {
-        #[validate]
+        #[validate(nested)]
         pub things: Vec<SomeThing>,
     }
 

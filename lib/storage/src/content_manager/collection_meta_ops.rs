@@ -108,7 +108,7 @@ pub struct CreateCollection {
     /// Vector data config.
     /// It is possible to provide one config for single vector mode and list of configs for multiple vectors mode.
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub vectors: VectorsConfig,
     /// For auto sharding:
     /// Number of shards in collection.
@@ -147,24 +147,24 @@ pub struct CreateCollection {
     #[serde(default)]
     pub on_disk_payload: Option<bool>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for WAL. If none - values from service configuration file are used.
-    #[validate]
+    #[validate(nested)]
     pub wal_config: Option<WalConfigDiff>,
     /// Custom params for Optimizers.  If none - values from service configuration file are used.
     #[serde(alias = "optimizer_config")]
-    #[validate]
+    #[validate(nested)]
     pub optimizers_config: Option<OptimizersConfigDiff>,
     /// Specify other collection to copy data from.
     #[serde(default)]
     pub init_from: Option<InitFrom>,
     /// Quantization parameters. If none - quantization is disabled.
     #[serde(default, alias = "quantization")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
     /// Sparse vector data config.
-    #[validate]
+    #[validate(nested)]
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
 }
 
@@ -205,7 +205,7 @@ impl CreateCollectionOperation {
 pub struct UpdateCollection {
     /// Map of vector data parameters to update for each named vector.
     /// To update parameters in a collection having a single unnamed vector, use an empty string as name.
-    #[validate]
+    #[validate(nested)]
     pub vectors: Option<VectorsConfigDiff>,
     /// Custom params for Optimizers.  If none - it is left unchanged.
     /// This operation is blocking, it will only proceed once all current optimizations are complete
@@ -214,14 +214,14 @@ pub struct UpdateCollection {
     /// Collection base params. If none - it is left unchanged.
     pub params: Option<CollectionParamsDiff>,
     /// HNSW parameters to update for the collection index. If none - it is left unchanged.
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Quantization parameters to update. If none - it is left unchanged.
     #[serde(default, alias = "quantization")]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
     /// Map of sparse vector data parameters to update for each sparse vector.
-    #[validate]
+    #[validate(nested)]
     pub sparse_vectors: Option<SparseVectorsConfig>,
 }
 

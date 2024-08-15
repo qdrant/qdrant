@@ -50,49 +50,49 @@ pub struct CreateFieldIndex {
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpsertOperation {
-    #[validate]
+    #[validate(nested)]
     upsert: PointInsertOperations,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteOperation {
-    #[validate]
+    #[validate(nested)]
     delete: PointsSelector,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SetPayloadOperation {
-    #[validate]
+    #[validate(nested)]
     set_payload: SetPayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct OverwritePayloadOperation {
-    #[validate]
+    #[validate(nested)]
     overwrite_payload: SetPayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeletePayloadOperation {
-    #[validate]
+    #[validate(nested)]
     delete_payload: DeletePayload,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct ClearPayloadOperation {
-    #[validate]
+    #[validate(nested)]
     clear_payload: PointsSelector,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateVectorsOperation {
-    #[validate]
+    #[validate(nested)]
     update_vectors: UpdateVectors,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct DeleteVectorsOperation {
-    #[validate]
+    #[validate(nested)]
     delete_vectors: DeleteVectors,
 }
 

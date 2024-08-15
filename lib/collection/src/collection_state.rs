@@ -18,7 +18,7 @@ pub struct ShardInfo {
 
 #[derive(Debug, Serialize, Deserialize, Validate, Clone, PartialEq)]
 pub struct State {
-    #[validate]
+    #[validate(nested)]
     pub config: CollectionConfig,
     pub shards: HashMap<ShardId, ShardInfo>,
     pub resharding: Option<ReshardState>,

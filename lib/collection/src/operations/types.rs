@@ -312,7 +312,7 @@ pub struct UpdateResult {
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub scroll_request: ScrollRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -331,7 +331,7 @@ pub struct ScrollRequestInternal {
     pub limit: Option<usize>,
 
     /// Look only for points which satisfies this conditions. If not provided - all points.
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Select which payload to return with the response. Default is true.
@@ -441,7 +441,7 @@ pub struct ScrollResult {
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub search_request: SearchRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -451,7 +451,7 @@ pub struct SearchRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestBatch {
-    #[validate]
+    #[validate(nested)]
     pub searches: Vec<SearchRequest>,
 }
 
@@ -484,7 +484,7 @@ pub struct CoreSearchRequestBatch {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct SearchGroupsRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub search_group_request: SearchGroupsRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -494,7 +494,7 @@ pub struct SearchGroupsRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct PointRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub point_request: PointRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -570,7 +570,7 @@ impl From<String> for UsingVector {
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub recommend_request: RecommendRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -589,23 +589,23 @@ pub struct RecommendRequest {
 pub struct RecommendRequestInternal {
     /// Look for vectors closest to those
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub positive: Vec<RecommendExample>,
 
     /// Try to avoid vectors like this
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
     pub strategy: Option<api::rest::RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Additional search params
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Max number of result to return
@@ -644,7 +644,7 @@ pub struct RecommendRequestInternal {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestBatch {
-    #[validate]
+    #[validate(nested)]
     pub searches: Vec<RecommendRequest>,
 }
 
@@ -652,7 +652,7 @@ pub struct RecommendRequestBatch {
 #[serde(rename_all = "snake_case")]
 pub struct RecommendGroupsRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub recommend_group_request: RecommendGroupsRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -674,11 +674,11 @@ pub struct RecommendGroupsRequestInternal {
     pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Additional search params
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Select which payload to return with the response. Default is false.
@@ -709,9 +709,9 @@ pub struct RecommendGroupsRequestInternal {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct ContextExamplePair {
-    #[validate]
+    #[validate(nested)]
     pub positive: RecommendExample,
-    #[validate]
+    #[validate(nested)]
     pub negative: RecommendExample,
 }
 
@@ -724,7 +724,7 @@ impl ContextExamplePair {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub discover_request: DiscoverRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -739,7 +739,7 @@ pub struct DiscoverRequestInternal {
     /// When using the target (with or without context), the integer part of the score represents
     /// the rank with respect to the context, while the decimal part of the score relates to the
     /// distance to the target.
-    #[validate]
+    #[validate(nested)]
     pub target: Option<RecommendExample>,
 
     /// Pairs of { positive, negative } examples to constrain the search.
@@ -755,15 +755,15 @@ pub struct DiscoverRequestInternal {
     /// For discovery search (when including a target), the context part of the score for each pair
     /// is calculated +1 if the point is closer to a positive than to a negative part of a pair,
     /// and -1 otherwise.
-    #[validate]
+    #[validate(nested)]
     pub context: Option<Vec<ContextExamplePair>>,
 
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
 
     /// Additional search params
-    #[validate]
+    #[validate(nested)]
     pub params: Option<SearchParams>,
 
     /// Max number of result to return
@@ -794,7 +794,7 @@ pub struct DiscoverRequestInternal {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct DiscoverRequestBatch {
-    #[validate]
+    #[validate(nested)]
     pub searches: Vec<DiscoverRequest>,
 }
 
@@ -818,7 +818,7 @@ pub struct GroupsResult {
 #[serde(rename_all = "snake_case")]
 pub struct CountRequest {
     #[serde(flatten)]
-    #[validate]
+    #[validate(nested)]
     pub count_request: CountRequestInternal,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -832,7 +832,7 @@ pub struct CountRequest {
 #[serde(rename_all = "snake_case")]
 pub struct CountRequestInternal {
     /// Look only for points which satisfies this conditions
-    #[validate]
+    #[validate(nested)]
     pub filter: Option<Filter>,
     /// If true, count exact number of points. If false, count approximate number of points faster.
     /// Approximate count might be unreliable during the indexing process. Default: true
@@ -1270,13 +1270,13 @@ impl From<Datatype> for VectorStorageDatatype {
 #[serde(rename_all = "snake_case")]
 pub struct VectorParams {
     /// Size of a vectors used
-    #[validate(custom = "validate_nonzerou64_range_min_1_max_65536")]
+    #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
     pub size: NonZeroU64,
     /// Type of distance function used for measuring distance between vectors
     pub distance: Distance,
     /// Custom params for HNSW index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Custom params for quantization. If none - values from collection configuration are used.
     #[serde(
@@ -1284,7 +1284,7 @@ pub struct VectorParams {
         alias = "quantization",
         skip_serializing_if = "Option::is_none"
     )]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: Option<QuantizationConfig>,
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     /// Default: false
@@ -1667,7 +1667,7 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
-    #[validate]
+    #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Update params for quantization. If none - it is left unchanged.
     #[serde(
@@ -1675,7 +1675,7 @@ pub struct VectorParamsDiff {
         alias = "quantization",
         skip_serializing_if = "Option::is_none"
     )]
-    #[validate]
+    #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     #[serde(default, skip_serializing_if = "Option::is_none")]

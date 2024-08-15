@@ -23,13 +23,15 @@ pub enum Access {
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct CollectionAccessList(pub Vec<CollectionAccess>);
 
+pub struct ExistingCollections {
+    inner: HashSet<String>,
+}
+
 #[derive(Serialize, Deserialize, Validate, PartialEq, Clone, Debug)]
+#[validate(context = ExistingCollections, mutable)]
 pub struct CollectionAccess {
     /// Collection names that are allowed to be accessed
-    #[validate(custom(
-        function = "validate_unique_collections",
-        arg = "&'v_a mut HashSet<String>"
-    ))]
+    #[validate(custom(function = "validate_unique_collections", use_context))]
     pub collection: String,
 
     pub access: CollectionAccessMode,
@@ -274,14 +276,16 @@ impl Access {
         match self {
             Access::Global(_) => Vec::new(),
             Access::Collection(list) => {
-                let mut used_collections = HashSet::new();
+                let mut used_collections = ExistingCollections {
+                    inner: HashSet::new(),
+                };
                 list.0
                     .iter()
                     .map(|x| {
                         ValidationErrors::merge(
                             Ok(()),
                             "access",
-                            x.validate_args(&mut used_collections),
+                            x.validate_with_args(&mut used_collections),
                         )
                     })
                     .collect::<Vec<_>>()
@@ -292,9 +296,9 @@ impl Access {
 
 fn validate_unique_collections(
     collection: &str,
-    used_collections: &mut HashSet<String>,
+    used_collections: &mut ExistingCollections,
 ) -> Result<(), ValidationError> {
-    let unique = used_collections.insert(collection.to_owned());
+    let unique = used_collections.inner.insert(collection.to_owned());
     if unique {
         Ok(())
     } else {

@@ -122,65 +122,67 @@ impl Validate for ClusterOperations {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct MoveShardOperation {
-    #[validate]
+    #[validate(nested)]
     pub move_shard: MoveShard,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ReplicateShardOperation {
-    #[validate]
+    #[validate(nested)]
     pub replicate_shard: ReplicateShard,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct DropReplicaOperation {
-    #[validate]
+    #[validate(nested)]
     pub drop_replica: Replica,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct AbortTransferOperation {
-    #[validate]
+    #[validate(nested)]
     pub abort_transfer: AbortShardTransfer,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartReshardingOperation {
-    #[validate]
+    #[validate(nested)]
     pub start_resharding: StartResharding,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct FinishMigratingPointsOperation {
-    #[validate]
+    #[validate(nested)]
     pub finish_migrating_points: FinishMigratingPoints,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct AbortReshardingOperation {
+    #[validate(nested)]
+    pub abort_resharding: AbortResharding,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
 pub struct CommitReadHashRingOperation {
-    #[validate]
+    #[validate(nested)]
     pub commit_read_hash_ring: CommitReadHashRing,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CommitWriteHashRingOperation {
-    #[validate]
+    #[validate(nested)]
     pub commit_write_hash_ring: CommitWriteHashRing,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct FinishReshardingOperation {
-    #[validate]
+    #[validate(nested)]
     pub finish_resharding: FinishResharding,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
-pub struct AbortReshardingOperation {
-    #[validate]
-    pub abort_resharding: AbortResharding,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

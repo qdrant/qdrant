@@ -382,7 +382,7 @@ pub struct SearchParams {
 
     /// Quantization params
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub quantization: Option<QuantizationSearchParams>,
 
     /// If enabled, the engine will only perform search among indexed or small segments.
@@ -398,7 +398,7 @@ pub struct CollectionConfigDefaults {
     #[serde(default)]
     pub vectors: Option<VectorsConfigDefaults>,
 
-    #[validate]
+    #[validate(nested)]
     pub quantization: Option<QuantizationConfig>,
 
     #[validate(range(min = 1))]
@@ -562,7 +562,7 @@ impl ScalarQuantizationConfig {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ScalarQuantization {
-    #[validate]
+    #[validate(nested)]
     pub scalar: ScalarQuantizationConfig,
 }
 
@@ -588,7 +588,7 @@ impl ProductQuantizationConfig {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct ProductQuantization {
-    #[validate]
+    #[validate(nested)]
     pub product: ProductQuantizationConfig,
 }
 
@@ -610,7 +610,7 @@ pub struct BinaryQuantizationConfig {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
 pub struct BinaryQuantization {
-    #[validate]
+    #[validate(nested)]
     pub binary: BinaryQuantizationConfig,
 }
 
@@ -1949,13 +1949,13 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct Nested {
     pub key: PayloadKeyType,
-    #[validate]
+    #[validate(nested)]
     pub filter: Filter,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct NestedCondition {
-    #[validate]
+    #[validate(nested)]
     pub nested: Nested,
 }
 
@@ -2238,20 +2238,20 @@ pub struct MinShould {
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
-    #[validate]
+    #[validate(nested)]
     pub min_should: Option<MinShould>,
     /// All conditions must match
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
-    #[validate]
+    #[validate(nested)]
     #[serde(default, with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must_not: Option<Vec<Condition>>,

@@ -502,7 +502,7 @@ pub struct NamedSparseVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
-    #[validate]
+    #[validate(nested)]
     pub vector: SparseVector,
 }
 

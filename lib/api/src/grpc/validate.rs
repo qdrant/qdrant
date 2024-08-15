@@ -40,19 +40,6 @@ where
     }
 }
 
-impl<V> ValidateExt for Vec<V>
-where
-    V: Validate,
-{
-    #[inline]
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self.iter().find_map(|v| v.validate().err()) {
-            Some(err) => ValidationErrors::merge(Err(Default::default()), "[]", Err(err)),
-            None => Ok(()),
-        }
-    }
-}
-
 impl<K, V> ValidateExt for HashMap<K, V>
 where
     V: Validate,
@@ -269,49 +256,49 @@ impl Validate for super::qdrant::query_enum::Query {
     }
 }
 
-/// Validate the value is in `[1, ]` or `None`.
-pub fn validate_u64_range_min_1(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
+/// Validate the value is in `[1, ]`.
+pub fn validate_u64_range_min_1(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&1), None)
 }
 
-/// Validate the value is in `[1, ]` or `None`.
-pub fn validate_u32_range_min_1(value: &Option<u32>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1), None))
+/// Validate the value is in `[1, ]`.
+pub fn validate_u32_range_min_1(value: &u32) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&1), None)
 }
 
-/// Validate the value is in `[100, ]` or `None`.
-pub fn validate_u64_range_min_100(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(100), None))
+/// Validate the value is in `[100, ]`.
+pub fn validate_u64_range_min_100(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&100), None)
 }
 
-/// Validate the value is in `[1000, ]` or `None`.
-pub fn validate_u64_range_min_1000(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1000), None))
+/// Validate the value is in `[1000, ]`.
+pub fn validate_u64_range_min_1000(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&1000), None)
 }
 
-/// Validate the value is in `[4, ]` or `None`.
-pub fn validate_u64_range_min_4(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), None))
+/// Validate the value is in `[4, ]`.
+pub fn validate_u64_range_min_4(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&4), None)
 }
 
-/// Validate the value is in `[4, 10000]` or `None`.
-pub fn validate_u64_range_min_4_max_10000(value: &Option<u64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(4), Some(10_000)))
+/// Validate the value is in `[4, 10000]`.
+pub fn validate_u64_range_min_4_max_10000(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&4), Some(&10_000))
 }
 
-/// Validate the value is in `[0.5, 1.0]` or `None`.
-pub fn validate_f32_range_min_0_5_max_1(value: &Option<f32>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.5), Some(1.0)))
+/// Validate the value is in `[0.5, 1.0]`.
+pub fn validate_f32_range_min_0_5_max_1(value: &f32) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&0.5), Some(&1.0))
 }
 
-/// Validate the value is in `[0.0, 1.0]` or `None`.
-pub fn validate_f64_range_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(0.0), Some(1.0)))
+/// Validate the value is in `[0.0, 1.0]`.
+pub fn validate_f64_range_1(value: &f64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&0.0), Some(&1.0))
 }
 
-/// Validate the value is in `[1.0, ]` or `None`.
-pub fn validate_f64_range_min_1(value: &Option<f64>) -> Result<(), ValidationError> {
-    value.map_or(Ok(()), |v| validate_range_generic(v, Some(1.0), None))
+/// Validate the value is in `[1.0, ]`.
+pub fn validate_f64_range_min_1(value: &f64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&1.0), None)
 }
 
 /// Validate the list of named vectors is not empty.
@@ -349,19 +336,12 @@ pub fn validate_geo_polygon_line_helper(line: &grpc::GeoLineString) -> Result<()
     Ok(())
 }
 
-pub fn validate_geo_polygon_exterior(
-    line: &Option<grpc::GeoLineString>,
-) -> Result<(), ValidationError> {
-    match line {
-        Some(l) => {
-            if l.points.is_empty() {
-                return Err(ValidationError::new("not_empty"));
-            }
-            validate_geo_polygon_line_helper(l)?;
-            Ok(())
-        }
-        _ => Err(ValidationError::new("not_empty")),
+pub fn validate_geo_polygon_exterior(line: &grpc::GeoLineString) -> Result<(), ValidationError> {
+    if line.points.is_empty() {
+        return Err(ValidationError::new("not_empty"));
     }
+    validate_geo_polygon_line_helper(line)?;
+    Ok(())
 }
 
 pub fn validate_geo_polygon_interiors(
@@ -375,10 +355,7 @@ pub fn validate_geo_polygon_interiors(
 
 /// Validate that the timestamp is within the range specified in the protobuf docs.
 /// <https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp>
-pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
-    let Some(ts) = ts else {
-        return Ok(());
-    };
+pub fn validate_timestamp(ts: &prost_wkt_types::Timestamp) -> Result<(), ValidationError> {
     validate_range_generic(
         ts.seconds,
         Some(TIMESTAMP_MIN_SECONDS),

@@ -30,7 +30,10 @@ fn main() -> std::io::Result<()> {
         )?;
 
     // Append trait extension imports to generated gRPC output
-    append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
+    append_to_file(
+        "src/grpc/qdrant.rs",
+        "use super::validate::ValidateExt;\nuse validator::Validate;",
+    );
 
     // Fetch git commit ID and pass it to the compiler
     let git_commit_id =
@@ -91,7 +94,7 @@ impl BuilderExt for Builder {
 
     fn field_validate(self, path: &str, constraint: &str) -> Self {
         if constraint.is_empty() {
-            self.field_attribute(path, "#[validate]")
+            self.field_attribute(path, "#[validate(nested)]")
         } else {
             self.field_attribute(path, format!("#[validate({constraint})]"))
         }
@@ -116,7 +119,7 @@ fn configure_validation(builder: Builder) -> Builder {
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
             ("CollectionExistsRequest.collection_name", "length(min = 1, max = 255)"),
-            ("CreateCollection.collection_name", "length(min = 1, max = 255), custom = \"common::validation::validate_collection_name\""),
+            ("CreateCollection.collection_name", "length(min = 1, max = 255), custom(function =\"common::validation::validate_collection_name\")"),
             ("CreateCollection.hnsw_config", ""),
             ("CreateCollection.wal_config", ""),
             ("CreateCollection.optimizers_config", ""),
@@ -125,23 +128,23 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollection.collection_name", "length(min = 1, max = 255)"),
             ("UpdateCollection.optimizers_config", ""),
             ("UpdateCollection.params", ""),
-            ("UpdateCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("UpdateCollection.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("UpdateCollection.hnsw_config", ""),
             ("UpdateCollection.vectors_config", ""),
             ("UpdateCollection.quantization_config", ""),
             ("DeleteCollection.collection_name", "length(min = 1, max = 255)"),
-            ("DeleteCollection.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("DeleteCollection.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("CollectionConfig.params", ""),
             ("CollectionConfig.hnsw_config", ""),
             ("CollectionConfig.optimizers_config", ""),
             ("CollectionConfig.quantization_config", ""),
             ("CollectionParams.vectors_config", ""),
-            ("ChangeAliases.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("ChangeAliases.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1, max = 255)"),
-            ("HnswConfigDiff.ef_construct", "custom = \"crate::grpc::validate::validate_u64_range_min_4\""),
-            ("WalConfigDiff.wal_capacity_mb", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
-            ("OptimizersConfigDiff.deleted_threshold", "custom = \"crate::grpc::validate::validate_f64_range_1\""),
-            ("OptimizersConfigDiff.vacuum_min_vector_number", "custom = \"crate::grpc::validate::validate_u64_range_min_100\""),
+            ("HnswConfigDiff.ef_construct", "custom(function =\"crate::grpc::validate::validate_u64_range_min_4\")"),
+            ("WalConfigDiff.wal_capacity_mb", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
+            ("OptimizersConfigDiff.deleted_threshold", "custom(function =\"crate::grpc::validate::validate_f64_range_1\")"),
+            ("OptimizersConfigDiff.vacuum_min_vector_number", "custom(function =\"crate::grpc::validate::validate_u64_range_min_100\")"),
             ("VectorsConfig.config", ""),
             ("VectorsConfigDiff.config", ""),
             ("VectorParams.size", "range(min = 1, max = 65536)"),
@@ -153,8 +156,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("VectorParamsDiffMap.map", ""),
             ("QuantizationConfig.quantization", ""),
             ("QuantizationConfigDiff.quantization", ""),
-            ("ScalarQuantization.quantile", "custom = \"crate::grpc::validate::validate_f32_range_min_0_5_max_1\""),
-            ("UpdateCollectionClusterSetupRequest.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("ScalarQuantization.quantile", "custom(function =\"crate::grpc::validate::validate_f32_range_min_0_5_max_1\")"),
+            ("UpdateCollectionClusterSetupRequest.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("UpdateCollectionClusterSetupRequest.operation", ""),
         ], &[
             "ListCollectionsRequest",
@@ -201,52 +204,52 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchPoints.filter", ""),
             ("SearchPoints.limit", "range(min = 1)"),
             ("SearchPoints.params", ""),
-            ("SearchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("SearchPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
-            ("SearchBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("SearchBatchPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
             ("SearchPointGroups.filter", ""),
             ("SearchPointGroups.params", ""),
             ("SearchPointGroups.group_size", "range(min = 1)"),
             ("SearchPointGroups.limit", "range(min = 1)"),
-            ("SearchPointGroups.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("SearchPointGroups.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("SearchParams.quantization", ""),
-            ("QuantizationSearchParams.oversampling", "custom = \"crate::grpc::validate::validate_f64_range_min_1\""),
+            ("QuantizationSearchParams.oversampling", "custom(function =\"crate::grpc::validate::validate_f64_range_min_1\")"),
             ("ScrollPoints.collection_name", "length(min = 1, max = 255)"),
             ("ScrollPoints.filter", ""),
-            ("ScrollPoints.limit", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
+            ("ScrollPoints.limit", "custom(function =\"crate::grpc::validate::validate_u32_range_min_1\")"),
             ("RecommendPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendPoints.filter", ""),
             ("RecommendPoints.params", ""),
-            ("RecommendPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("RecommendPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("RecommendPoints.positive_vectors", ""),
             ("RecommendPoints.negative_vectors", ""),
             ("RecommendBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("RecommendBatchPoints.recommend_points", ""),
-            ("RecommendBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("RecommendBatchPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("RecommendPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("RecommendPointGroups.filter", ""),
             ("RecommendPointGroups.group_by", "length(min = 1)"),
             ("RecommendPointGroups.group_size", "range(min = 1)"),
             ("RecommendPointGroups.limit", "range(min = 1)"),
             ("RecommendPointGroups.params", ""),
-            ("RecommendPointGroups.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("RecommendPointGroups.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("RecommendPointGroups.positive_vectors", ""),
             ("RecommendPointGroups.negative_vectors", ""),
             ("DiscoverPoints.collection_name", "length(min = 1, max = 255)"),
             ("DiscoverPoints.filter", ""),
             ("DiscoverPoints.params", ""),
             ("DiscoverPoints.limit", "range(min = 1)"),
-            ("DiscoverPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("DiscoverPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("DiscoverBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("DiscoverBatchPoints.discover_points", ""),
-            ("DiscoverBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("DiscoverBatchPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("CountPoints.collection_name", "length(min = 1, max = 255)"),
             ("CountPoints.filter", ""),
-            ("GeoPolygon.exterior", "custom = \"crate::grpc::validate::validate_geo_polygon_exterior\""),
-            ("GeoPolygon.interiors", "custom = \"crate::grpc::validate::validate_geo_polygon_interiors\""),
+            ("GeoPolygon.exterior", "custom(function =\"crate::grpc::validate::validate_geo_polygon_exterior\")"),
+            ("GeoPolygon.interiors", "custom(function =\"crate::grpc::validate::validate_geo_polygon_interiors\")"),
             ("Filter.should", ""),
             ("Filter.must", ""),
             ("Filter.must_not", ""),
@@ -255,18 +258,18 @@ fn configure_validation(builder: Builder) -> Builder {
             ("PointStruct.vectors", ""),
             ("Vectors.vectors_options", ""),
             ("NamedVectors.vectors", ""),
-            ("DatetimeRange.lt", "custom = \"crate::grpc::validate::validate_timestamp\""),
-            ("DatetimeRange.gt", "custom = \"crate::grpc::validate::validate_timestamp\""),
-            ("DatetimeRange.lte", "custom = \"crate::grpc::validate::validate_timestamp\""),
-            ("DatetimeRange.gte", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.lt", "custom(function =\"crate::grpc::validate::validate_timestamp\")"),
+            ("DatetimeRange.gt", "custom(function =\"crate::grpc::validate::validate_timestamp\")"),
+            ("DatetimeRange.lte", "custom(function =\"crate::grpc::validate::validate_timestamp\")"),
+            ("DatetimeRange.gte", "custom(function =\"crate::grpc::validate::validate_timestamp\")"),
             ("QueryPoints.collection_name", "length(min = 1, max = 255)"),
-            ("QueryPoints.limit", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("QueryPoints.limit", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("QueryPoints.filter", ""),
             ("QueryPoints.params", ""),
-            ("QueryPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("QueryPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("QueryBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("QueryBatchPoints.query_points", ""),
-            ("QueryBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("QueryBatchPoints.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
@@ -303,14 +306,14 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SyncPointsInternal.sync_points", ""),
             ("SyncPoints.collection_name", "length(min = 1, max = 255)"),
             ("QueryBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
-            ("QueryBatchPointsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("QueryBatchPointsInternal.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("FacetCountsInternal.collection_name", "length(min = 1, max = 255)"),
-            ("FacetCountsInternal.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
+            ("FacetCountsInternal.timeout", "custom(function =\"crate::grpc::validate::validate_u64_range_min_1\")"),
         ], &[])
         // Service: raft_service.proto
         .validates(&[
-            ("AddPeerToKnownMessage.uri", "custom = \"common::validation::validate_not_empty\""),
-            ("AddPeerToKnownMessage.port", "custom = \"crate::grpc::validate::validate_u32_range_min_1\""),
+            ("AddPeerToKnownMessage.uri", "custom(function =\"common::validation::validate_not_empty\")"),
+            ("AddPeerToKnownMessage.port", "custom(function =\"crate::grpc::validate::validate_u32_range_min_1\")"),
         ], &[])
         // Service: snapshot_service.proto
         .validates(&[
@@ -325,8 +328,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
-            ("RecoverShardSnapshotRequest.checksum", "custom = \"common::validation::validate_sha256_hash_option\""),
-            ("SnapshotDescription.creation_time", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("RecoverShardSnapshotRequest.checksum", "custom(function =\"common::validation::validate_sha256_hash\")"),
+            ("SnapshotDescription.creation_time", "custom(function =\"crate::grpc::validate::validate_timestamp\")"),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",

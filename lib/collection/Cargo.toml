@@ -59,7 +59,7 @@ tonic = { workspace = true }
 uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
 validator = { workspace = true }
-actix-web-validator = "5.0.1"
+actix-web-validator = "6.0.0"
 actix-web = { version = "4.9.0" }
 actix-files = "0.6.6"
 
