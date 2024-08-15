@@ -1297,10 +1297,13 @@ impl<'s> SegmentHolder {
 #[cfg(test)]
 mod tests {
     use std::fs::read_dir;
+    use std::str::FromStr;
 
+    use segment::data_types::vectors::Vector;
+    use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use segment::types::Distance;
-    use serde_json::json;
+    use segment::types::{Distance, PayloadContainer};
+    use serde_json::{json, Value};
     use tempfile::Builder;
 
     use super::*;
@@ -1498,6 +1501,80 @@ mod tests {
         assert!(read_segment_2.has_point(123.into()));
         assert!(read_segment_2.has_point(456.into()));
         assert!(read_segment_2.has_point(789.into()));
+    }
+
+    #[test]
+    fn test_cow_operation() {
+        const PAYLOAD_KEY: &str = "test-value";
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let mut segment2 = build_segment_1(dir.path());
+
+        segment2
+            .upsert_point(
+                100,
+                123.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            )
+            .unwrap();
+        let mut payload = Payload::default();
+        payload.0.insert(PAYLOAD_KEY.to_string(), 42.into());
+        segment2
+            .set_full_payload(100, 123.into(), &payload)
+            .unwrap();
+        segment2.appendable_flag = false;
+
+        let mut holder = SegmentHolder::default();
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
+
+        {
+            let locked_segment_1 = holder.get(sid1).unwrap().get();
+            let read_segment_1 = locked_segment_1.read();
+            assert!(!read_segment_1.has_point(123.into()));
+
+            let locked_segment_2 = holder.get(sid2).unwrap().get();
+            let read_segment_2 = locked_segment_2.read();
+            assert!(read_segment_2.has_point(123.into()));
+            let vector = read_segment_2.vector("", 123.into()).unwrap().unwrap();
+            assert_ne!(vector, Vector::Dense(vec![9.0; 4]));
+            assert_eq!(
+                read_segment_2
+                    .payload(123.into())
+                    .unwrap()
+                    .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
+                &Value::from(42)
+            );
+        }
+
+        holder
+            .apply_points_with_conditional_move(
+                1010,
+                &[123.into()],
+                |_, _| unreachable!(),
+                |_point_id, vectors, payload| {
+                    vectors.insert("".to_string(), Vector::Dense(vec![9.0; 4]));
+                    payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
+                    Ok(true)
+                },
+                |_| false,
+            )
+            .unwrap();
+
+        let locked_segment_1 = holder.get(sid1).unwrap().get();
+        let read_segment_1 = locked_segment_1.read();
+
+        assert!(read_segment_1.has_point(123.into()));
+
+        let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
+        assert_eq!(new_vector, Vector::Dense(vec![9.0; 4]));
+        let new_payload_value = read_segment_1.payload(123.into()).unwrap();
+        assert_eq!(
+            new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
+            &Value::from(2)
+        );
     }
 
     #[test]
