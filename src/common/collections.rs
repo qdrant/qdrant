@@ -696,7 +696,7 @@ pub async fn do_update_collection_cluster(
                 (None, ReshardingDirection::Up) => state.shard_id,
                 (None, ReshardingDirection::Down) => {
                     return Err(StorageError::bad_request(
-                        "shard ID must be specified when resharding down".to_string(),
+                        "shard ID must be specified when resharding down",
                     ));
                 }
             };
@@ -706,7 +706,7 @@ pub async fn do_update_collection_cluster(
                 (None, ReshardingDirection::Up) => state.peer_id,
                 (None, ReshardingDirection::Down) => {
                     return Err(StorageError::bad_request(
-                        "peer ID must be specified when resharding down".to_string(),
+                        "peer ID must be specified when resharding down",
                     ));
                 }
             };
