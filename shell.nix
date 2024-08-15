@@ -38,10 +38,8 @@ let
     preferWheels = true; # wheels speed up building of the environment
   };
 
-  # Use mold linker to speed up builds
-  mkShellMold = pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; };
 in
-mkShellMold {
+pkgs.mkShell {
   buildInputs = [
     # Rust toolchain
     cargo-wrapper # should be before rust-combined
@@ -60,6 +58,10 @@ mkShellMold {
     pkgs.jq # used in ./tests and ./tools
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
+    pkgs.iconv
+    pkgs.ccache # compile cache for c/cxx code
+    pkgs.sccache # compile cache for rust code
+    pkgs.mold # mold linker
     pkgs.poetry # used to update poetry.lock
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
@@ -68,10 +70,18 @@ mkShellMold {
   ];
 
   shellHook = ''
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      # Override minimally supported macos version
+      export CFLAGS="-mmacosx-version-min=10.13"
+      export CXXFLAGS="-mmacosx-version-min=10.13"
+      export MACOSX_DEPLOYMENT_TARGET="10.13"
+    fi
     # Caching for C/C++ deps, particularly for librocksdb-sys
-    PATH="${pkgs.ccache}/bin:$PATH"
     export CC="ccache $CC"
     export CXX="ccache $CXX"
+
+    # use mold linker
+    export LD="${pkgs.mold}/bin/ld.mold"
 
     # Caching for Rust
     PATH="${pkgs.sccache}/bin:$PATH"
