@@ -19,8 +19,8 @@ const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags
 #[cfg(not(debug_assertions))]
 const MINIMAL_MMAP_SIZE: usize = 1024 * 1024; // 1Mb
 
-const FLAGS_FILE_A: &str = "flags_a.dat";
-const FLAGS_FILE_B: &str = "flags_b.dat";
+const FLAGS_FILE: &str = "flags_a.dat";
+const FLAGS_FILE_LEGACY: &str = "flags_b.dat";
 
 const STATUS_FILE_NAME: &str = "status.dat";
 
@@ -28,30 +28,12 @@ pub fn status_file(directory: &Path) -> PathBuf {
     directory.join(STATUS_FILE_NAME)
 }
 
-/// Identifies A/B variant of file being used.
-#[derive(Clone, Copy, Eq, PartialEq, Default, Debug)]
-#[repr(usize)]
-pub enum FileId {
-    // Must be 0usize because default value of mmap file on disk is all zeroes.
-    #[default]
-    A = 0,
-    B = 1,
-}
-
-impl FileId {
-    /// Get filename for this FileId.
-    pub fn file_name(self) -> &'static str {
-        match self {
-            Self::A => FLAGS_FILE_A,
-            Self::B => FLAGS_FILE_B,
-        }
-    }
-}
-
 #[repr(C)]
 pub struct DynamicMmapStatus {
     pub len: usize,
-    pub current_file_id: FileId,
+    /// Should be 0 in the current version.  Old versions used it to indicate which flags file
+    /// (flags_a.dat or flags_b.dat) is currently in use.
+    pub current_file_id: usize,
 }
 
 fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
@@ -96,10 +78,6 @@ fn mmap_max_current_size(len: usize) -> usize {
 }
 
 impl DynamicMmapFlags {
-    fn file_id_to_file(directory: &Path, file_id: FileId) -> PathBuf {
-        directory.join(file_id.file_name())
-    }
-
     pub fn len(&self) -> usize {
         self.status.len
     }
@@ -111,11 +89,20 @@ impl DynamicMmapFlags {
     pub fn open(directory: &Path) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
-        let status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
+        let mut status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
+
+        if status.current_file_id != 0 {
+            // Migrate
+            fs::copy(
+                directory.join(FLAGS_FILE_LEGACY),
+                directory.join(FLAGS_FILE),
+            )?;
+            status.current_file_id = 0;
+            status.flusher()()?;
+        }
 
         // Open first mmap
-        let (flags, flags_flusher) =
-            Self::open_mmap(status.len, directory, status.current_file_id)?;
+        let (flags, flags_flusher) = Self::open_mmap(status.len, directory)?;
         Ok(Self {
             flags,
             flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
@@ -127,17 +114,15 @@ impl DynamicMmapFlags {
     fn open_mmap(
         num_flags: usize,
         directory: &Path,
-        new_file_id: FileId,
     ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
-        let mmap_path = Self::file_id_to_file(directory, new_file_id);
 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
-            .open(mmap_path)?;
+            .open(directory.join(FLAGS_FILE))?;
         file.set_len(capacity_bytes as u64)?;
 
         let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
@@ -173,8 +158,7 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
-            let (flags, flags_flusher) =
-                Self::open_mmap(new_len, &self.directory, self.status.current_file_id)?;
+            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             {
@@ -244,7 +228,7 @@ impl DynamicMmapFlags {
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             status_file(&self.directory),
-            Self::file_id_to_file(&self.directory, self.status.current_file_id),
+            self.directory.join(FLAGS_FILE),
         ]
     }
 }
