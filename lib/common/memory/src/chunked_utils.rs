@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::MmapSlice;
-
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::madvise::AdviceSetting;
+use crate::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use crate::mmap_type::{Error as MmapError, MmapSlice};
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
@@ -26,7 +24,7 @@ pub fn read_mmaps<T: Sized>(
     directory: &Path,
     mlock: bool,
     advice: AdviceSetting,
-) -> OperationResult<Vec<MmapChunk<T>>> {
+) -> Result<Vec<MmapChunk<T>>, MmapError> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -47,7 +45,7 @@ pub fn read_mmaps<T: Sized>(
     let mut result = Vec::with_capacity(num_chunks);
     for chunk_id in 0..num_chunks {
         let mmap_file = mmap_files.remove(&chunk_id).ok_or_else(|| {
-            OperationError::service_error(format!(
+            MmapError::MissingFile(format!(
                 "Missing mmap chunk {chunk_id} in {}",
                 directory.display(),
             ))
@@ -80,7 +78,7 @@ pub fn create_chunk<T: Sized>(
     chunk_id: usize,
     chunk_length_bytes: usize,
     mlock: bool,
-) -> OperationResult<MmapChunk<T>> {
+) -> Result<MmapChunk<T>, MmapError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path, AdviceSetting::Global)?;

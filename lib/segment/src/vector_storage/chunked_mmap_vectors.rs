@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::advise_dontneed;
 use memmap2::MmapMut;
+use memory::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
@@ -14,7 +15,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::CHUNK_SIZE;
 
