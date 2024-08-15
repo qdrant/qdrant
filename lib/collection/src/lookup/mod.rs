@@ -24,6 +24,9 @@ pub struct WithLookup {
 
     /// Options for specifying which vectors to include (or not)
     pub with_vectors: Option<WithVector>,
+
+    /// Options for shard selection
+    pub shard_selection: ShardSelectorInternal,
 }
 
 pub async fn lookup_ids<'a, F, Fut>(
@@ -31,7 +34,6 @@ pub async fn lookup_ids<'a, F, Fut>(
     values: Vec<PseudoId>,
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: &ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<HashMap<PseudoId, Record>>
 where
@@ -60,7 +62,12 @@ where
     };
 
     let result = collection
-        .retrieve(point_request, read_consistency, shard_selection, timeout)
+        .retrieve(
+            point_request,
+            read_consistency,
+            &request.shard_selection,
+            timeout,
+        )
         .await?
         .into_iter()
         .map(|point| (PseudoId::from(point.id), point))

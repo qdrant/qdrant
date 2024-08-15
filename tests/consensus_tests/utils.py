@@ -663,3 +663,60 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
     for peer_uri in peer_api_uris:
         # Collection is active on all peers
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri, headers=headers)
+
+def create_collection_with_custom_sharding(
+        peer_url,
+        collection,
+        shard_number=1,
+        size=4,
+        replication_factor=1,
+        write_consistency_factor=1,
+        timeout=10
+):
+    # Create collection in peer_url
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection}?timeout={timeout}", json={
+            "vectors": {
+                "size": size,
+                "distance": "Dot"
+            },
+            "shard_number": shard_number,
+            "replication_factor": replication_factor,
+            "write_consistency_factor": write_consistency_factor,
+            "sharding_method": "custom",
+        })
+    assert_http_ok(r_batch)
+
+
+def create_shard(
+        peer_url,
+        collection,
+        shard_key,
+        shard_number=1,
+        replication_factor=1,
+        placement=None,
+        timeout=10
+):
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection}/shards?timeout={timeout}", json={
+            "shard_key": shard_key,
+            "shards_number": shard_number,
+            "replication_factor": replication_factor,
+            "placement": placement,
+        })
+    assert_http_ok(r_batch)
+
+
+def delete_shard(
+        peer_url,
+        collection,
+        shard_key,
+        timeout=10
+):
+    r_batch = requests.post(
+        f"{peer_url}/collections/{collection}/shards/delete?timeout={timeout}",
+        json={
+            "shard_key": shard_key,
+        }
+    )
+    assert_http_ok(r_batch)

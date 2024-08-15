@@ -4,7 +4,6 @@ use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{Batch, WriteOrdering};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
@@ -24,7 +23,6 @@ struct Resources {
     request: WithLookup,
     collection: RwLock<Collection>,
     read_consistency: Option<ReadConsistency>,
-    shard_selection: Option<ShardId>,
 }
 
 async fn setup() -> Resources {
@@ -32,6 +30,7 @@ async fn setup() -> Resources {
         collection_name: "test".to_string(),
         with_payload: None,
         with_vectors: None,
+        shard_selection: ShardSelectorInternal::All,
     };
 
     let collection_dir = Builder::new().prefix("storage").tempdir().unwrap();
@@ -71,13 +70,10 @@ async fn setup() -> Resources {
 
     let read_consistency = None;
 
-    let shard_selection = None;
-
     Resources {
         request,
         collection: RwLock::new(collection),
         read_consistency,
-        shard_selection,
     }
 }
 
@@ -87,7 +83,6 @@ async fn happy_lookup_ids() {
         mut request,
         collection,
         read_consistency,
-        shard_selection,
     } = setup().await;
 
     let collection = collection.read().await;
@@ -106,17 +101,11 @@ async fn happy_lookup_ids() {
     request.with_payload = Some(true.into());
     request.with_vectors = Some(true.into());
 
-    let shard_selection = match shard_selection {
-        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
-        None => ShardSelectorInternal::All,
-    };
-
     let result = lookup_ids(
         request.clone(),
         values.clone(),
         collection_by_name,
         read_consistency,
-        &shard_selection,
         None,
     )
     .await;
@@ -184,13 +173,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         mut request,
         collection,
         read_consistency,
-        shard_selection,
     } = setup().await;
-
-    let shard_selection = match shard_selection {
-        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
-        None => ShardSelectorInternal::All,
-    };
 
     let collection = collection.read().await;
 
@@ -200,15 +183,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
     request.with_payload = Some(true.into());
     request.with_vectors = Some(true.into());
 
-    let result = lookup_ids(
-        request,
-        values,
-        collection_by_name,
-        read_consistency,
-        &shard_selection,
-        None,
-    )
-    .await;
+    let result = lookup_ids(request, values, collection_by_name, read_consistency, None).await;
 
     assert!(result.is_ok());
 
@@ -222,26 +197,12 @@ async fn err_when_collection_by_name_returns_none() {
     let Resources {
         request,
         read_consistency,
-        shard_selection,
         ..
     } = setup().await;
 
-    let shard_selection = match shard_selection {
-        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
-        None => ShardSelectorInternal::All,
-    };
-
     let collection_by_name = |_: String| async { None };
 
-    let result = lookup_ids(
-        request,
-        vec![],
-        collection_by_name,
-        read_consistency,
-        &shard_selection,
-        None,
-    )
-    .await;
+    let result = lookup_ids(request, vec![], collection_by_name, read_consistency, None).await;
 
     assert!(result.is_err());
     assert_eq!(

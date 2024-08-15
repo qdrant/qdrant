@@ -4332,6 +4332,9 @@ pub struct WithLookup {
     /// Options for specifying which vectors to include (or not)
     #[prost(message, optional, tag = "3")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Specify in which shards to look for the ids, if not specified - look in all shards
+    #[prost(message, optional, tag = "4")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

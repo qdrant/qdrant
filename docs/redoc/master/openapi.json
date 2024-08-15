@@ -11491,6 +11491,17 @@
                 "nullable": true
               }
             ]
+          },
+          "shard_key": {
+            "description": "Shard key for lookup. If not specified, all shards would be searched",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

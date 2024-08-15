@@ -308,6 +308,7 @@ message WithLookup {
   string collection = 1; // Name of the collection to use for points lookup
   optional WithPayloadSelector with_payload = 2; // Options for specifying which payload to include (or not)
   optional WithVectorsSelector with_vectors = 3; // Options for specifying which vectors to include (or not)
+  optional ShardKeySelector shard_key_selector = 4; // Specify in which shards to look for the ids, if not specified - look in all shards
 }
 
 

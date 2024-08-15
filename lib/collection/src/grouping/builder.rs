@@ -115,7 +115,6 @@ where
                     pseudo_ids,
                     self.collection_by_name,
                     self.read_consistency,
-                    &self.shard_selection,
                     timeout,
                 )
                 .await?

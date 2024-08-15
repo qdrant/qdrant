@@ -5,6 +5,7 @@ use segment::types::PointIdType;
 use uuid::Uuid;
 
 use super::WithLookup;
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WithLookupInterface {
@@ -32,6 +33,7 @@ impl From<api::rest::WithLookupInterface> for WithLookup {
                 collection_name,
                 with_payload: Some(true.into()),
                 with_vectors: Some(false.into()),
+                shard_selection: ShardSelectorInternal::All,
             },
             api::rest::WithLookupInterface::WithLookup(with_lookup) => {
                 WithLookup::from(with_lookup)
@@ -46,6 +48,10 @@ impl From<api::rest::WithLookup> for WithLookup {
             collection_name: with_lookup.collection_name,
             with_payload: with_lookup.with_payload.map(Into::into),
             with_vectors: with_lookup.with_vectors.map(Into::into),
+            shard_selection: with_lookup
+                .shard_key
+                .map(Into::into)
+                .unwrap_or(ShardSelectorInternal::All),
         }
     }
 }

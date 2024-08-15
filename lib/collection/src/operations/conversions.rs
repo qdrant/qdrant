@@ -1134,6 +1134,10 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
                 .transpose()?
                 .or_else(with_default_payload),
             with_vectors: value.with_vectors.map(|wv| wv.into()),
+            shard_selection: value
+                .shard_key_selector
+                .map(Into::into)
+                .unwrap_or(ShardSelectorInternal::All),
         })
     }
 }

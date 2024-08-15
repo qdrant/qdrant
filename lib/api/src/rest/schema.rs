@@ -463,6 +463,10 @@ pub struct WithLookup {
     #[serde(alias = "with_vector")]
     #[serde(default)]
     pub with_vectors: Option<WithVector>,
+
+    /// Shard key for lookup. If not specified, all shards would be searched
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[allow(clippy::unnecessary_wraps)] // Used as serde default

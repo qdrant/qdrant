@@ -643,6 +643,7 @@ mod tests_ops {
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
     use collection::operations::query_enum::QueryEnum;
+    use collection::operations::shard_selector_internal::ShardSelectorInternal;
     use collection::operations::types::UsingVector;
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
@@ -905,6 +906,7 @@ mod tests_ops {
                 collection_name: "col2".to_string(),
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vectors: Some(WithVector::Bool(true)),
+                shard_selection: ShardSelectorInternal::All,
             }),
         };
 

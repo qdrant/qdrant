@@ -438,6 +438,7 @@ mod group_by_builder {
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;
+    use collection::operations::shard_selector_internal::ShardSelectorInternal;
     use segment::data_types::vectors::BatchVectorStructInternal;
     use segment::json_path::JsonPath;
     use tokio::sync::RwLock;
@@ -584,6 +585,7 @@ mod group_by_builder {
             collection_name: "test".to_string(),
             with_payload: Some(true.into()),
             with_vectors: Some(true.into()),
+            shard_selection: ShardSelectorInternal::All,
         });
 
         let collection_by_name = |_: String| async { Some(lookup_collection.read().await) };
