@@ -386,6 +386,27 @@ impl ShardHolder {
 
         Some(hash_ring::HashRingFilter::new(ring.clone(), state.shard_id))
     }
+
+    #[inline]
+    pub fn resharding_moved_filter(&self) -> Option<hash_ring::HashRingMovedFilter> {
+        let state = self.resharding_state.read();
+
+        let Some(state) = state.deref() else {
+            return None;
+        };
+
+        let Some(ring) = self.rings.get(&state.shard_key) else {
+            return None; // TODO(resharding): Return error?
+        };
+
+        match ring {
+            HashRingRouter::Resharding { old, new } => Some(hash_ring::HashRingMovedFilter::new(
+                old.clone(),
+                new.clone(),
+            )),
+            HashRingRouter::Single(_) => None,
+        }
+    }
 }
 
 fn get_ring<'a>(

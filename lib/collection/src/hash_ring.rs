@@ -324,6 +324,34 @@ impl CustomIdCheckerCondition for HashRingFilter {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct HashRingMovedFilter {
+    old_ring: HashRing<ShardId>,
+    new_ring: HashRing<ShardId>,
+}
+
+impl HashRingMovedFilter {
+    pub fn new(old_ring: HashRing<ShardId>, new_ring: HashRing<ShardId>) -> Self {
+        Self { old_ring, new_ring }
+    }
+}
+
+impl CustomIdCheckerCondition for HashRingMovedFilter {
+    fn estimate_cardinality(&self, points: usize) -> CardinalityEstimation {
+        CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: points / self.new_ring.len(),
+            max: points,
+        }
+    }
+
+    /// Returns true if a point ID is moved according to resharding hash rings.
+    fn check(&self, point_id: PointIdType) -> bool {
+        self.old_ring.get(&point_id) != self.new_ring.get(&point_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

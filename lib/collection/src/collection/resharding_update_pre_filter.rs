@@ -23,8 +23,11 @@ pub struct ReshardingUpdatePreFilter {
     /// - *non* target shards during resharding *down*
     is_receiver_shard: bool,
 
-    /// Hashring filter, that selects points that are hashed into *target* shard
-    filter: hash_ring::HashRingFilter,
+    /// Filter that selects point IDs that are moved, based on resharding hash rings.
+    filter: hash_ring::HashRingMovedFilter,
+
+    /// Resharding direction
+    direction: ReshardingDirection,
 }
 
 impl ReshardingUpdatePreFilter {
@@ -62,32 +65,33 @@ impl ReshardingUpdatePreFilter {
             ReshardingDirection::Down => !is_target_shard,
         };
 
-        // Shard that will be *sending* migrated points during resharding:
-        // - *non* target shards during resharding *up*
-        // - *target* shard during resharding *down*
-        let is_sender_shard = !is_receiver_shard;
-
-        // We apply resharding pre-filter:
-        //
-        // - on *receiver* shards during `MigratingPoints` stage
-        // - and on *sender* shards during `ReadHashRingCommitted` stage when resharding *up*
-        let should_filter = (is_receiver_shard && state.stage == ReshardStage::MigratingPoints)
-            || (is_sender_shard
-                && state.stage >= ReshardStage::ReadHashRingCommitted
-                && state.direction == ReshardingDirection::Up);
-
-        if !should_filter {
+        // After write hash ring commit, we stop filtering
+        if state.stage >= ReshardStage::WriteHashRingCommitted {
             return None;
         }
 
+        // TODO(timvisee): validate this logic, being alternative to above?
+        // // We apply resharding pre-filter:
+        // //
+        // // - on *receiver* shards during `MigratingPoints` stage
+        // // - and on *sender* shards during `ReadHashRingCommitted` stage when resharding *up*
+        // let should_filter = (is_receiver_shard && state.stage == ReshardStage::MigratingPoints)
+        //     || (!is_sender_shard
+        //         && state.stage >= ReshardStage::ReadHashRingCommitted
+        //         && state.direction == ReshardingDirection::Up);
+        // if !should_filter {
+        //     return None;
+        // }
+
         let filter = shard_holder
-            .resharding_filter()
+            .resharding_moved_filter()
             .expect("resharding filter is available when resharding is in progress");
 
         let pre_filter = Self {
             is_target_shard,
             is_receiver_shard,
             filter,
+            direction: state.direction,
         };
 
         Some(pre_filter)
@@ -99,58 +103,50 @@ impl ReshardingUpdatePreFilter {
         local_shard: &(dyn ShardOperation + Sync),
         runtime: &tokio::runtime::Handle,
     ) -> CollectionResult<()> {
-        // We must *not* pre-filter point upsert operations on *receiver* shards
-        if self.is_receiver_shard && operation.is_upsert_points() {
+        // Always apply on source shard if resharding down, we drop the shard at the end
+        if !self.is_receiver_shard && matches!(self.direction, ReshardingDirection::Down) {
             return Ok(());
         }
 
-        // There's no need to pre-filter point delete operations
+        // Deletes: always apply
         if operation.is_delete_points() {
             return Ok(());
         }
 
-        let points_to_filter = if self.is_target_shard {
-            // When pre-filtering points on *target* shard, select *all* points for pre-filtering
-            operation.point_ids()
-        } else {
-            // When pre-filtering points on *non* target shard, only select points
-            // that are *hashed into target shard* for pre-filtering
-            operation
-                .point_ids()
-                .into_iter()
-                .filter(|&point_id| self.filter.check(point_id))
-                .collect()
-        };
-
-        if points_to_filter.is_empty() {
+        // Insertions: always apply in receiver shard
+        if self.is_receiver_shard && operation.is_upsert_points() {
             return Ok(());
         }
 
-        let retrieve = PointRequestInternal {
-            ids: points_to_filter.clone(),
-            with_payload: None,
-            with_vector: false.into(),
-        };
+        // Create list of point IDs to exclude, only exclude points being moved
+        let mut exclude_points = operation.point_ids();
+        exclude_points.retain(|&point_id| self.filter.check(point_id));
 
-        let retrieved_points = local_shard
+        // Only exclude points that are not in the shard yet
+        let existing_points = local_shard
             .retrieve(
-                retrieve.into(),
+                PointRequestInternal {
+                    ids: exclude_points.clone(),
+                    with_payload: None,
+                    with_vector: false.into(),
+                }
+                .into(),
                 &false.into(),
                 &false.into(),
                 runtime,
                 None, // TODO(resharding)?
             )
-            .await?;
-
-        let retrieved_points: HashSet<_> =
-            retrieved_points.into_iter().map(|point| point.id).collect();
-
-        let missing_points: HashSet<_> = points_to_filter
+            .await?
             .into_iter()
-            .filter(|point_id| !retrieved_points.contains(point_id))
-            .collect();
+            .map(|point| point.id)
+            .collect::<HashSet<_>>();
+        exclude_points.retain(|point_id| existing_points.contains(point_id));
 
-        operation.remove_point_ids(&missing_points);
+        // Remove points to exclude from our operation
+        if !exclude_points.is_empty() {
+            let point_ids_to_remove = exclude_points.into_iter().collect();
+            operation.remove_point_ids(&point_ids_to_remove);
+        }
 
         Ok(())
     }
