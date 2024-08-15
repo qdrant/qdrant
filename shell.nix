@@ -58,7 +58,7 @@ pkgs.mkShell {
     pkgs.jq # used in ./tests and ./tools
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
-    pkgs.iconv
+    pkgs.iconv # needed to build rustls -> ring dependency
     pkgs.ccache # compile cache for c/cxx code
     pkgs.sccache # compile cache for rust code
     pkgs.mold # mold linker
