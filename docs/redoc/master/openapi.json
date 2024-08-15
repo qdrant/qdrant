@@ -12967,7 +12967,7 @@
             "description": "How many points to select and search within.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1
+            "minimum": 2
           },
           "limit": {
             "description": "How many neighbours per sample to find",

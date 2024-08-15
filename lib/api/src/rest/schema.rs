@@ -661,7 +661,7 @@ pub struct SearchMatrixRequestInternal {
     #[validate(nested)]
     pub filter: Option<Filter>,
     /// How many points to select and search within.
-    #[validate(range(min = 1))]
+    #[validate(range(min = 2))]
     pub sample: usize,
     /// How many neighbours per sample to find
     #[validate(range(min = 1))]
