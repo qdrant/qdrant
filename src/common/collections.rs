@@ -25,7 +25,7 @@ use rand::seq::IteratorRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
-    ShardTransferOperations, UpdateCollectionOperation,
+    SetShardReplicaState, ShardTransferOperations, UpdateCollectionOperation,
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -674,6 +674,52 @@ pub async fn do_update_collection_cluster(
                         collection_name.clone(),
                         ReshardingOperation::Finish(state.key()),
                     ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+
+        ClusterOperations::FinishMigratingPoints(op) => {
+            // TODO(resharding): Deduplicate resharding operations handling?
+
+            let Some(state) = collection.resharding_state().await else {
+                return Err(StorageError::bad_request(format!(
+                    "resharding is not in progress for collection {collection_name}"
+                )));
+            };
+
+            let op = op.finish_migrating_points;
+
+            let shard_id = match (op.shard_id, state.direction) {
+                (Some(shard_id), _) => shard_id,
+                (None, ReshardingDirection::Up) => state.shard_id,
+                (None, ReshardingDirection::Down) => {
+                    return Err(StorageError::bad_request(
+                        "shard ID must be specified when resharding down",
+                    ));
+                }
+            };
+
+            let peer_id = match (op.peer_id, state.direction) {
+                (Some(peer_id), _) => peer_id,
+                (None, ReshardingDirection::Up) => state.peer_id,
+                (None, ReshardingDirection::Down) => {
+                    return Err(StorageError::bad_request(
+                        "peer ID must be specified when resharding down",
+                    ));
+                }
+            };
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
+                        collection_name: collection_name.clone(),
+                        shard_id,
+                        peer_id,
+                        state: replica_set::ReplicaState::Active,
+                        from_state: Some(replica_set::ReplicaState::Resharding),
+                    }),
                     access,
                     wait_timeout,
                 )
