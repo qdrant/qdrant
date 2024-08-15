@@ -1402,9 +1402,9 @@ dependencies = [
 
 [[package]]
 name = "crc32c"
-version = "0.6.5"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89254598aa9b9fa608de44b3ae54c810f0f06d755e24c50177f1f8f31ff50ce2"
+checksum = "3a47af21622d091a8f0fb295b88bc886ac74efcc613efc19f5d0b21de5c89e47"
 dependencies = [
  "rustc_version",
 ]
@@ -2014,9 +2014,9 @@ dependencies = [
 
 [[package]]
 name = "fs4"
-version = "0.8.4"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7e180ac76c23b45e767bd7ae9579bc0bb458618c4bc71835926e098e61d15f8"
+checksum = "e8c6b3bd49c37d2aa3f3f2220233b29a7cd23f79d1fe70e5337d25fb390793de"
 dependencies = [
  "rustix 0.38.31",
  "windows-sys 0.52.0",
@@ -7005,7 +7005,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=a7870900f29811a24e20882887d60e6a2febf945#a7870900f29811a24e20882887d60e6a2febf945"
+source = "git+https://github.com/qdrant/wal.git?rev=7c9202d0874b719212e6eacedaa795bfdf43199c#7c9202d0874b719212e6eacedaa795bfdf43199c"
 dependencies = [
  "byteorder",
  "crc32c",
