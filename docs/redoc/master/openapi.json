@@ -5267,7 +5267,7 @@
         ],
         "summary": "Facet a payload key with a given filter.",
         "description": "Count points that satisfy the given filter for each unique value of a payload key.",
-        "operationId": "facet_points",
+        "operationId": "facet",
         "requestBody": {
           "description": "Request counts of points for each unique value of a payload key",
           "content": {
