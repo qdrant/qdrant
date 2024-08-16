@@ -12,10 +12,11 @@ use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
+use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -562,15 +563,17 @@ impl<'s> SegmentHolder {
     /// It's always safe to pass a closure that always returns false (i.e. `|_| false`).
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
-    pub fn apply_points_with_conditional_move<F, G>(
+    pub fn apply_points_with_conditional_move<F, G, H>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut point_operation: F,
+        mut point_cow_operation: H,
         update_nonappendable: G,
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
         G: FnMut(&dyn SegmentEntry) -> bool,
     {
         let _update_guard = self.update_tracker.update();
@@ -597,8 +600,10 @@ impl<'s> SegmentHolder {
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
-                            let all_vectors = write_segment.all_vectors(point_id)?;
-                            let payload = write_segment.payload(point_id)?;
+                            let mut all_vectors = write_segment.all_vectors(point_id)?;
+                            let mut payload = write_segment.payload(point_id)?;
+
+                            point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
                             appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
                             appendable_write_segment
@@ -606,7 +611,7 @@ impl<'s> SegmentHolder {
 
                             write_segment.delete_point(op_num, point_id)?;
 
-                            point_operation(point_id, appendable_write_segment)
+                            Ok(true)
                         },
                     )?
                 };
@@ -1279,10 +1284,13 @@ impl<'s> SegmentHolder {
 #[cfg(test)]
 mod tests {
     use std::fs::read_dir;
+    use std::str::FromStr;
 
+    use segment::data_types::vectors::Vector;
+    use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use segment::types::Distance;
-    use serde_json::json;
+    use segment::types::{Distance, PayloadContainer};
+    use serde_json::{json, Value};
     use tempfile::Builder;
 
     use super::*;
@@ -1327,6 +1335,7 @@ mod tests {
 
         let op_num = 100;
         let mut processed_points: Vec<PointIdType> = vec![];
+        let mut processed_points2: Vec<PointIdType> = vec![];
         holder
             .apply_points_with_conditional_move(
                 op_num,
@@ -1336,16 +1345,21 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
+                |point_id, _, _| processed_points2.push(point_id),
                 |_| update_nonappendable,
             )
             .unwrap();
 
-        assert_eq!(4, processed_points.len());
+        assert_eq!(4, processed_points.len() + processed_points2.len());
 
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
+
+        for i in processed_points2.iter() {
+            assert!(read_segment_1.has_point(*i));
+        }
 
         assert!(read_segment_1.has_point(1.into()));
         assert!(read_segment_1.has_point(2.into()));
@@ -1436,6 +1450,7 @@ mod tests {
         // Update point 123, 456 and 789 in the non-appendable segment to move it to segment 2
         let op_num = 101;
         let mut processed_points: Vec<PointIdType> = vec![];
+        let mut processed_points2: Vec<PointIdType> = vec![];
         holder
             .apply_points_with_conditional_move(
                 op_num,
@@ -1445,15 +1460,20 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
+                |point_id, _, _| processed_points2.push(point_id),
                 |_| false,
             )
             .unwrap();
-        assert_eq!(3, processed_points.len());
+        assert_eq!(3, processed_points.len() + processed_points2.len());
 
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
         let locked_segment_2 = holder.get(sid2).unwrap().get();
         let read_segment_2 = locked_segment_2.read();
+
+        for i in processed_points2.iter() {
+            assert!(read_segment_2.has_point(*i));
+        }
 
         // Point 123 and 456 should have moved from segment 1 into 2
         assert!(!read_segment_1.has_point(123.into()));
@@ -1462,6 +1482,79 @@ mod tests {
         assert!(read_segment_2.has_point(123.into()));
         assert!(read_segment_2.has_point(456.into()));
         assert!(read_segment_2.has_point(789.into()));
+    }
+
+    #[test]
+    fn test_cow_operation() {
+        const PAYLOAD_KEY: &str = "test-value";
+
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let segment1 = build_segment_1(dir.path());
+        let mut segment2 = build_segment_1(dir.path());
+
+        segment2
+            .upsert_point(
+                100,
+                123.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            )
+            .unwrap();
+        let mut payload = Payload::default();
+        payload.0.insert(PAYLOAD_KEY.to_string(), 42.into());
+        segment2
+            .set_full_payload(100, 123.into(), &payload)
+            .unwrap();
+        segment2.appendable_flag = false;
+
+        let mut holder = SegmentHolder::default();
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
+
+        {
+            let locked_segment_1 = holder.get(sid1).unwrap().get();
+            let read_segment_1 = locked_segment_1.read();
+            assert!(!read_segment_1.has_point(123.into()));
+
+            let locked_segment_2 = holder.get(sid2).unwrap().get();
+            let read_segment_2 = locked_segment_2.read();
+            assert!(read_segment_2.has_point(123.into()));
+            let vector = read_segment_2.vector("", 123.into()).unwrap().unwrap();
+            assert_ne!(vector, Vector::Dense(vec![9.0; 4]));
+            assert_eq!(
+                read_segment_2
+                    .payload(123.into())
+                    .unwrap()
+                    .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
+                &Value::from(42)
+            );
+        }
+
+        holder
+            .apply_points_with_conditional_move(
+                1010,
+                &[123.into()],
+                |_, _| unreachable!(),
+                |_point_id, vectors, payload| {
+                    vectors.insert("".to_string(), Vector::Dense(vec![9.0; 4]));
+                    payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
+                },
+                |_| false,
+            )
+            .unwrap();
+
+        let locked_segment_1 = holder.get(sid1).unwrap().get();
+        let read_segment_1 = locked_segment_1.read();
+
+        assert!(read_segment_1.has_point(123.into()));
+
+        let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
+        assert_eq!(new_vector, Vector::Dense(vec![9.0; 4]));
+        let new_payload_value = read_segment_1.payload(123.into()).unwrap();
+        assert_eq!(
+            new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
+            &Value::from(2)
+        );
     }
 
     #[test]
