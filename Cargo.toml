@@ -193,7 +193,7 @@ tonic-reflection = "0.11.0"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 validator = { version = "0.18.1", features = ["derive"] }
-wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "7c9202d0874b719212e6eacedaa795bfdf43199c" }
 zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
