@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use api::rest::{
-    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequestInternal,
-    SearchMatrixRow, SearchMatrixRowsResponse,
+    SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
+    SearchMatrixRequestInternal, SearchMatrixRow, SearchMatrixRowsResponse,
 };
 use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
@@ -113,23 +113,20 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
             sample_ids,
             nearests,
         } = response;
-        let offset_by_id = sample_ids
-            .iter()
-            .enumerate()
-            .map(|(i, id)| (id, i))
-            .collect::<std::collections::HashMap<_, _>>();
-        let mut rows = Vec::with_capacity(sample_ids.len());
-        for scored_point in nearests {
-            let row = scored_point
-                .into_iter()
-                .map(|p| (offset_by_id[&p.id] as u64, p.score))
-                .collect();
-            rows.push(row);
+
+        let mut pairs = vec![];
+
+        for (a, scored_points) in sample_ids.into_iter().zip(nearests.into_iter()) {
+            for scored_point in scored_points {
+                pairs.push(SearchMatrixPair {
+                    a,
+                    b: scored_point.id,
+                    score: scored_point.score,
+                });
+            }
         }
-        Self {
-            rows,
-            ids: sample_ids,
-        }
+
+        Self { pairs }
     }
 }
 
@@ -321,12 +318,14 @@ mod tests {
     fn test_matrix_pairs_response_conversion() {
         let response = fixture_response();
         let expected = SearchMatrixPairsResponse {
-            rows: vec![
-                vec![(0, 0.2), (1, 0.1)],
-                vec![(1, 0.4), (2, 0.3)],
-                vec![(0, 0.6), (2, 0.5)],
+            pairs: vec![
+                SearchMatrixPair::new(1, 1, 0.2),
+                SearchMatrixPair::new(1, 2, 0.1),
+                SearchMatrixPair::new(2, 2, 0.4),
+                SearchMatrixPair::new(2, 3, 0.3),
+                SearchMatrixPair::new(3, 1, 0.6),
+                SearchMatrixPair::new(3, 3, 0.5),
             ],
-            ids: vec![1.into(), 2.into(), 3.into()],
         };
 
         let actual = SearchMatrixPairsResponse::from(response);

@@ -13029,39 +13029,36 @@
       "SearchMatrixPairsResponse": {
         "type": "object",
         "required": [
-          "ids",
-          "rows"
+          "pairs"
         ],
         "properties": {
-          "rows": {
-            "description": "Rows of pairs (id offset, score)",
+          "pairs": {
+            "description": "List of pairs of points with scores",
             "type": "array",
             "items": {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": [
-                  {
-                    "type": "integer",
-                    "format": "uint64",
-                    "minimum": 0
-                  },
-                  {
-                    "type": "number",
-                    "format": "float"
-                  }
-                ],
-                "maxItems": 2,
-                "minItems": 2
-              }
+              "$ref": "#/components/schemas/SearchMatrixPair"
             }
+          }
+        }
+      },
+      "SearchMatrixPair": {
+        "description": "Pair of points (a, b) with score",
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "score"
+        ],
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/ExtendedPointId"
           },
-          "ids": {
-            "description": "Ids of the points in order",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtendedPointId"
-            }
+          "b": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
           }
         }
       },

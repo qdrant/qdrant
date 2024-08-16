@@ -696,11 +696,28 @@ pub struct SearchMatrixOffsetsResponse {
 
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
+/// Pair of points (a, b) with score
+pub struct SearchMatrixPair {
+    pub a: PointIdType,
+    pub b: PointIdType,
+    pub score: ScoreType,
+}
+
+impl SearchMatrixPair {
+    pub fn new(a: impl Into<PointIdType>, b: impl Into<PointIdType>, score: ScoreType) -> Self {
+        Self {
+            a: a.into(),
+            b: b.into(),
+            score,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub struct SearchMatrixPairsResponse {
-    /// Rows of pairs (id offset, score)
-    pub rows: Vec<Vec<(u64, ScoreType)>>,
-    /// Ids of the points in order
-    pub ids: Vec<PointIdType>,
+    /// List of pairs of points with scores
+    pub pairs: Vec<SearchMatrixPair>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
