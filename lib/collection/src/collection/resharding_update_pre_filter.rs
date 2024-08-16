@@ -109,18 +109,12 @@ impl ReshardingUpdatePreFilter {
             return Ok(());
         }
 
-        let points_to_filter = if self.is_target_shard {
-            // When pre-filtering points on *target* shard, select *all* points for pre-filtering
-            operation.point_ids()
-        } else {
-            // When pre-filtering points on *non* target shard, only select points
-            // that are *hashed into target shard* for pre-filtering
-            operation
-                .point_ids()
-                .into_iter()
-                .filter(|&point_id| self.filter.check(point_id))
-                .collect()
-        };
+        // Only pre-filter points, that are *hashed into target shard*
+        let points_to_filter: Vec<_> = operation
+            .point_ids()
+            .into_iter()
+            .filter(|&point_id| self.filter.check(point_id))
+            .collect();
 
         if points_to_filter.is_empty() {
             return Ok(());
