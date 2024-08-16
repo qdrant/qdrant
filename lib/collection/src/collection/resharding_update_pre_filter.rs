@@ -13,11 +13,6 @@ use crate::shards::shard_trait::ShardOperation;
 
 #[derive(Clone, Debug)]
 pub struct ReshardingUpdatePreFilter {
-    /// Target shard of the resharding operation. This is the shard that:
-    /// - *created* during resharding *up*
-    /// - *deleted* during resharding *down*
-    is_target_shard: bool,
-
     /// Shard that will be *receiving* migrated points during resharding:
     /// - *target* shard during resharding *up*
     /// - *non* target shards during resharding *down*
@@ -85,7 +80,6 @@ impl ReshardingUpdatePreFilter {
             .expect("resharding filter is available when resharding is in progress");
 
         let pre_filter = Self {
-            is_target_shard,
             is_receiver_shard,
             filter,
         };
