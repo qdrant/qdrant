@@ -227,14 +227,14 @@ impl ShardHolder {
         }
 
         // - it's safe to run, if write hash ring was not committed yet
-        if state.stage < ReshardStage::WriteHashRingCommitted {
+        if state.stage < ReshardStage::ReadHashRingCommitted {
             return Ok(());
         }
 
-        // - but resharding can't be aborted, after write hash ring has been committed
+        // - but resharding can't be aborted, after read hash ring has been committed
         Err(CollectionError::bad_request(format!(
             "can't abort resharding {resharding_key}, \
-             because write hash ring has been committed already, \
+             because read hash ring has been committed already, \
              resharding must be completed",
         )))
     }
@@ -253,10 +253,10 @@ impl ShardHolder {
 
         let is_in_progress = match self.resharding_state.read().deref() {
             Some(state) if state.matches(&resharding_key) => {
-                if !force && state.stage >= ReshardStage::WriteHashRingCommitted {
+                if !force && state.stage >= ReshardStage::ReadHashRingCommitted {
                     return Err(CollectionError::bad_request(format!(
                         "can't abort resharding {resharding_key}, \
-                         because write hash ring has been committed already, \
+                         because read hash ring has been committed already, \
                          resharding must be completed",
                     )));
                 }
