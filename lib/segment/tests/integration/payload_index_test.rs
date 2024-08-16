@@ -1177,9 +1177,9 @@ fn validate_facet_result(
     facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
 ) {
-    for (value, count) in facet_hits {
+    for (value, count) in facet_hits.iter() {
         // Compare against exact count
-        let FacetValue::Keyword(value) = value;
+        let FacetValue::Keyword(value) = value.to_owned();
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),
@@ -1191,7 +1191,7 @@ fn validate_facet_result(
             .read_filtered(None, None, count_filter.as_ref(), &Default::default())
             .len();
 
-        assert_eq!(count, exact);
+        assert_eq!(*count, exact);
     }
 }
 

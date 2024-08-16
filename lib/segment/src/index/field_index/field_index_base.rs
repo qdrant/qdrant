@@ -3,12 +3,13 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use delegate::delegate;
+use itertools::Itertools;
 use serde_json::Value;
 
 use super::binary_index::BinaryIndexBuilder;
 use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
-use super::map_index::{IdRefIter, MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
+use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
     NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
 };
@@ -21,6 +22,8 @@ use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::struct_filter_context::StructFilterContext;
+use crate::payload_storage::FilterContext;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
@@ -529,6 +532,12 @@ pub enum FacetIndex<'a> {
 }
 
 impl<'a> FacetIndex<'a> {
+    // pub fn get_unique_values_count(&self) -> usize {
+    //     match self {
+    //         FacetIndex::KeywordIndex(index) => index.get_unique_values_count(),
+    //     }
+    // }
+
     pub fn get_values(
         &self,
         point_id: PointOffsetType,
@@ -555,20 +564,20 @@ impl<'a> FacetIndex<'a> {
         }
     }
 
-    pub fn iter_values_map<F>(
-        &'a self,
-        f: &'a F,
-    ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + '_>
-    where
-        F: for<'b> Fn(IdRefIter<'b>) -> usize,
-    {
+    pub fn iter_filtered_counts_per_value(
+        &self,
+        context: &'a StructFilterContext,
+    ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'a> {
         match self {
             FacetIndex::KeywordIndex(index) => {
                 let iter = index
                     .iter_values_map()
                     .map(|(value, internal_ids_iter)| FacetHit {
                         value: FacetValueRef::Keyword(value),
-                        count: f(internal_ids_iter),
+                        count: internal_ids_iter
+                            .unique()
+                            .filter(|point_id| context.check(**point_id))
+                            .count(),
                     });
                 Box::new(iter)
             }

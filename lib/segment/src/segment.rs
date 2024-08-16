@@ -1559,39 +1559,70 @@ impl SegmentEntry for Segment {
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index.get_facet_index(&request.key)?;
+        let context;
 
         let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let iter = payload_index
-                .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
-                .check_stop(|| is_stopped.load(Ordering::Relaxed))
-                .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
-                .fold(HashMap::new(), |mut map, point_id| {
-                    facet_index.get_values(point_id).unique().for_each(|value| {
-                        *map.entry(value).or_insert(0) += 1;
-                    });
-                    map
-                })
-                .into_iter()
-                .map(|(value, count)| FacetHit { value, count });
+            let available = self.available_point_count();
+            let percentage_filtered = filter_cardinality.exp as f64 / available as f64;
 
+            // TODO(facets): define a better estimate for this decision, the question is:
+            // What is more expensive, to hash the same value excessively or to check with filter too many times?
+            //
+            // For now this is defined from some rudimentary benchmarking
+            // a collection with few keys and a collection with almost unique key per point
+            let use_iterative_approach = percentage_filtered < 0.3;
+
+            let iter = if use_iterative_approach {
+                // go over the filtered points and aggregate the values
+                // aka. read from other indexes
+                let iter = payload_index
+                    .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
+                    .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                    .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
+                    .fold(HashMap::new(), |mut map, point_id| {
+                        facet_index.get_values(point_id).unique().for_each(|value| {
+                            *map.entry(value).or_insert(0) += 1;
+                        });
+                        map
+                    })
+                    .into_iter()
+                    .map(|(value, count)| FacetHit { value, count });
+
+                Either::Left(iter)
+            } else {
+                // go over the values and filter the points
+                // aka. read from facet index
+                //
+                // This is more similar to a full-scan, but we won't be hashing so many times.
+                context = payload_index.struct_filtered_context(filter);
+
+                let iter = facet_index
+                    .iter_filtered_counts_per_value(&context)
+                    .check_stop(|| is_stopped.load(Ordering::Relaxed));
+
+                Either::Right(iter)
+            };
             Either::Left(iter)
         } else {
+            // just count how many points each value has
             let iter = facet_index
                 .iter_counts_per_value()
                 .check_stop(|| is_stopped.load(Ordering::Relaxed));
+
             Either::Right(iter)
         };
 
-        // TODO(luis): We can't just select top values, because we need to aggregate across segments,
+        // We can't just select top values, because we need to aggregate across segments,
         // which we can't assume to select the same best top.
         //
         // We need all values to be able to aggregate correctly across segments
-        let hits = hits_iter
-            .map(|hit| (hit.value.to_owned(), hit.count))
-            .collect();
+        let hits = hits_iter.fold(HashMap::new(), |mut acc, hit| {
+            acc.insert(hit.value.to_owned(), hit.count);
+            acc
+        });
 
         Ok(hits)
     }
