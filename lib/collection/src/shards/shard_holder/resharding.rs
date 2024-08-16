@@ -317,7 +317,7 @@ impl ShardHolder {
                     None => {
                         log::warn!(
                             "aborting resharding {resharding_key}, \
-                         but peer {peer_id} does not exist in {shard_id} replica set"
+                             but peer {peer_id} does not exist in {shard_id} replica set"
                         );
                     }
                 }
@@ -343,7 +343,7 @@ impl ShardHolder {
             } else {
                 log::warn!(
                     "aborting resharding {resharding_key}, \
-                 but shard holder does not contain {shard_id} replica set",
+                     but shard holder does not contain {shard_id} replica set",
                 );
             }
         }
