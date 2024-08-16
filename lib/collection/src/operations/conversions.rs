@@ -23,6 +23,7 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
+use super::config_diff::StrictModeConfigDiff;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
@@ -428,6 +429,13 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
+                strict_mode_config: config.strict_mode_config.map(|i| {
+                    api::grpc::qdrant::StrictModeConfigDiff {
+                        enabled: i.enabled,
+                        max_filter_limit: i.max_filter_limit.map(|i| i as u32),
+                        max_timeout: i.max_timeout.map(|i| i as u32),
+                    }
+                }),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -760,6 +768,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
+            strict_mode_config: config.strict_mode_config.map(|i| i.into()),
         })
     }
 }
@@ -806,6 +815,16 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                     .try_collect()?,
             }),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfigDiff {
+    fn from(value: api::grpc::qdrant::StrictModeConfigDiff) -> Self {
+        Self {
+            enabled: value.enabled,
+            max_filter_limit: value.max_filter_limit.map(|i| i as usize),
+            max_timeout: value.max_timeout.map(|i| i as usize),
         }
     }
 }

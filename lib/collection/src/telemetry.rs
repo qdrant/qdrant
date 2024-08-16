@@ -46,6 +46,7 @@ impl Anonymize for CollectionConfig {
             optimizer_config: self.optimizer_config.clone(),
             wal_config: self.wal_config.clone(),
             quantization_config: self.quantization_config.clone(),
+            strict_mode_config: self.strict_mode_config.clone(),
         }
     }
 }

@@ -88,6 +88,17 @@ pub struct HnswConfigDiff {
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
 )]
+pub struct StrictModeConfigDiff {
+    pub enabled: Option<bool>,
+
+    pub max_filter_limit: Option<usize>,
+
+    pub max_timeout: Option<usize>,
+}
+
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
+)]
 pub struct WalConfigDiff {
     /// Size of a single WAL segment in MB
     #[validate(range(min = 1))]

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use collection::operations::types::CollectionInfo;
+use collection::operations::config_diff::StrictModeConfigDiff;
+use collection::operations::types::SearchRequest;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -32,11 +33,18 @@ pub trait CollectionRequestVerification {
         collection: &str,
     ) -> Result<(), StorageError> {
         let collection_info = do_get_collection(toc, access.clone(), collection, None).await?;
-        self.check_strict_mode_inner(collection_info).await
+
+        if let Some(strict_mode_config) = &collection_info.config.strict_mode_config {
+            self.check_strict_mode_inner(strict_mode_config).await?;
+        }
+
+        Ok(())
     }
 
-    async fn check_strict_mode_inner(&self, collection: CollectionInfo)
-        -> Result<(), StorageError>;
+    async fn check_strict_mode_inner(
+        &self,
+        strict_mode_config: &StrictModeConfigDiff,
+    ) -> Result<(), StorageError>;
 }
 
 /// Returns the `TableOfContents` from `dispatcher` without needing a validity check.
@@ -56,20 +64,37 @@ pub fn new_pass() -> VerificationPass {
 
 /// A pass, created on successful verification.
 pub struct VerificationPass {
-    // Private field, so we can't instanciate it from somewhere else.
+    // Private field, so we can't instantiate it from somewhere else.
+    #[allow(dead_code)]
     inner: (),
 }
 
-/*
 #[async_trait]
 impl CollectionRequestVerification for SearchRequest {
     async fn check_strict_mode_inner(
         &self,
-        collection: CollectionInfo,
+        strict_mode_config: &StrictModeConfigDiff,
     ) -> Result<(), StorageError> {
-        let limit = self.search_request.limit;
-        // TODO: check strict mode here!
-        todo!()
+        if let Some(filter_limit) = strict_mode_config.max_filter_limit {
+            if self.search_request.filter.is_some() {
+                let limit = self.search_request.limit;
+                if filter_limit > limit {
+                    return Err(new_error(
+                        format!("Max search filter limit of {filter_limit} exceeded"),
+                        "Reduce the filter limit",
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 }
-*/
+
+fn new_error<S>(description: S, solution: &str) -> StorageError
+where
+    S: ToString,
+{
+    let description = format!("{}. Help: {solution}", description.to_string());
+    StorageError::forbidden(description)
+}

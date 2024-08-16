@@ -310,6 +310,12 @@ enum ShardingMethod {
   Custom = 1; // Shard by user-defined key
 }
 
+message StrictModeConfigDiff {
+  optional bool enabled = 1;
+  optional uint32 max_filter_limit = 2;
+  optional uint32 max_timeout = 3;
+}
+
 message CreateCollection {
   string collection_name = 1; // Name of the collection
   reserved 2; // Deprecated
@@ -327,6 +333,7 @@ message CreateCollection {
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
+  optional StrictModeConfigDiff strict_mode_config = 17; // Configuration for strict mode
 }
 
 message UpdateCollection {
@@ -375,7 +382,8 @@ message CollectionConfig {
   HnswConfigDiff hnsw_config = 2; // Configuration of vector index
   OptimizersConfigDiff optimizer_config = 3; // Configuration of the optimizers
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
-  optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
+  optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantizationcollection
+  optional StrictModeConfigDiff strict_mode_config = 6; // Configuration of strict mode.
 }
 
 enum TokenizerType {
