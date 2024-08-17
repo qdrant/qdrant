@@ -50,10 +50,12 @@ impl<'a> IndexSelector<'a> {
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
                 integer_params
                     .lookup
+                    .unwrap_or(true)
                     .then(|| OperationResult::Ok(FieldIndex::IntMapIndex(self.map_new(field)?)))
                     .transpose()?,
                 integer_params
                     .range
+                    .unwrap_or(true)
                     .then(|| OperationResult::Ok(FieldIndex::IntIndex(self.numeric_new(field)?)))
                     .transpose()?,
             )
@@ -102,14 +104,14 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
-                integer_params.lookup.then(|| {
+                integer_params.lookup.unwrap_or(true).then(|| {
                     self.map_builder(
                         field,
                         FieldIndexBuilder::IntMapIndex,
                         FieldIndexBuilder::IntMapMmapIndex,
                     )
                 }),
-                integer_params.range.then(|| {
+                integer_params.range.unwrap_or(true).then(|| {
                     self.numeric_builder(
                         field,
                         FieldIndexBuilder::IntIndex,
