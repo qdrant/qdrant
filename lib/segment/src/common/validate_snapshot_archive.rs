@@ -5,10 +5,7 @@ use tar::Archive;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
-pub fn open_snapshot_archive_with_validation<P: AsRef<Path>>(
-    snapshot_path: P,
-) -> OperationResult<Archive<File>> {
-    let path = snapshot_path.as_ref();
+pub fn open_snapshot_archive_with_validation(path: &Path) -> OperationResult<Archive<File>> {
     {
         let archive_file = File::open(path).map_err(|err| {
             OperationError::service_error(format!(

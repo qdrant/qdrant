@@ -5,12 +5,12 @@ use std::path::Path;
 use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
+use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 
 use super::Collection;
 use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::collection::CollectionVersion;
 use crate::common::snapshots_manager::SnapshotStorageManager;
-use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod, COLLECTION_CONFIG_FILE};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -160,7 +160,7 @@ impl Collection {
         is_distributed: bool,
     ) -> CollectionResult<()> {
         // decompress archive
-        let mut ar = validate_open_snapshot_archive(snapshot_path)?;
+        let mut ar = open_snapshot_archive_with_validation(snapshot_path)?;
         ar.unpack(target_dir)?;
 
         let config = CollectionConfig::load(target_dir)?;
