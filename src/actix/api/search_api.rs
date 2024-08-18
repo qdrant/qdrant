@@ -3,7 +3,6 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest,
-    SearchMatrixRowsResponse,
 };
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -218,47 +217,11 @@ async fn search_points_matrix_offsets(
     process_response(response, timing)
 }
 
-#[post("/collections/{name}/points/search/matrix/rows")]
-async fn search_points_matrix_rows(
-    dispatcher: web::Data<Dispatcher>,
-    collection: Path<CollectionPath>,
-    request: Json<SearchMatrixRequest>,
-    params: Query<ReadParams>,
-    ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-
-    let SearchMatrixRequest {
-        search_request,
-        shard_key,
-    } = request.into_inner();
-
-    let shard_selection = match shard_key {
-        None => ShardSelectorInternal::All,
-        Some(shard_keys) => shard_keys.into(),
-    };
-
-    let response = do_search_points_matrix(
-        dispatcher.toc(&access),
-        &collection.name,
-        CollectionSearchMatrixRequest::from(search_request),
-        params.consistency,
-        shard_selection,
-        access,
-        params.timeout(),
-    )
-    .await
-    .map(SearchMatrixRowsResponse::from);
-
-    process_response(response, timing)
-}
-
 // Configure services
 pub fn config_search_api(cfg: &mut web::ServiceConfig) {
     cfg.service(search_points)
         .service(batch_search_points)
         .service(search_point_groups)
         .service(search_points_matrix_pairs)
-        .service(search_points_matrix_offsets)
-        .service(search_points_matrix_rows);
+        .service(search_points_matrix_offsets);
 }

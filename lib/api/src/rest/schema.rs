@@ -719,21 +719,3 @@ pub struct SearchMatrixPairsResponse {
     /// List of pairs of points with scores
     pub pairs: Vec<SearchMatrixPair>,
 }
-
-#[derive(Debug, Serialize, JsonSchema, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct SearchMatrixRow {
-    /// Offsets of the id of the points in order
-    pub offsets_id: Vec<u64>,
-    /// Scores of the points
-    pub scores: Vec<ScoreType>,
-}
-
-#[derive(Debug, Serialize, JsonSchema, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct SearchMatrixRowsResponse {
-    /// Rows of scores
-    pub rows: Vec<SearchMatrixRow>,
-    /// Ids of the points in order
-    pub ids: Vec<PointIdType>,
-}
