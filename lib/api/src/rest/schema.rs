@@ -5,7 +5,9 @@ use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, PointIdType, SearchParams, ShardKey, WithPayloadInterface, WithVector,
+};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
@@ -99,13 +101,13 @@ fn score_example() -> common::types::ScoreType {
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
-    pub id: segment::types::PointIdType,
+    pub id: PointIdType,
     /// Point version
     #[schemars(example = "version_example")]
     pub version: segment::types::SeqNumberType,
     /// Points vector distance to the query vector
     #[schemars(example = "score_example")]
-    pub score: common::types::ScoreType,
+    pub score: ScoreType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<segment::types::Payload>,
@@ -114,7 +116,7 @@ pub struct ScoredPoint {
     pub vector: Option<VectorStruct>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shard_key: Option<segment::types::ShardKey>,
+    pub shard_key: Option<ShardKey>,
     /// Order-by value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_value: Option<segment::data_types::order_by::OrderValue>,
@@ -650,4 +652,70 @@ pub struct QueryGroupsRequest {
     pub search_group_request: QueryGroupsRequestInternal,
 
     pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Validate, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchMatrixRequestInternal {
+    /// Look only for points which satisfies this conditions
+    #[validate(nested)]
+    pub filter: Option<Filter>,
+    /// How many points to select and search within.
+    #[validate(range(min = 2))]
+    pub sample: usize,
+    /// How many neighbours per sample to find
+    #[validate(range(min = 1))]
+    pub limit: usize,
+    /// Define which vector name to use for querying. If missing, the default vector is used.
+    pub using: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchMatrixRequest {
+    #[serde(flatten)]
+    #[validate(nested)]
+    pub search_request: SearchMatrixRequestInternal,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchMatrixOffsetsResponse {
+    /// Row coordinates of the CRS matrix
+    pub offsets_row: Vec<u64>,
+    /// Column coordinates ids of the matrix
+    pub offsets_col: Vec<u64>,
+    /// Scores associate with coordinates
+    pub scores: Vec<ScoreType>,
+    /// Ids of the points in order
+    pub ids: Vec<PointIdType>,
+}
+
+#[derive(Debug, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+/// Pair of points (a, b) with score
+pub struct SearchMatrixPair {
+    pub a: PointIdType,
+    pub b: PointIdType,
+    pub score: ScoreType,
+}
+
+impl SearchMatrixPair {
+    pub fn new(a: impl Into<PointIdType>, b: impl Into<PointIdType>, score: ScoreType) -> Self {
+        Self {
+            a: a.into(),
+            b: b.into(),
+            score,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchMatrixPairsResponse {
+    /// List of pairs of points with scores
+    pub pairs: Vec<SearchMatrixPair>,
 }

@@ -537,6 +537,24 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/query/groups",
         "qdrant.Points/QueryGroups",
     ),
+    "search_points_matrix_offsets": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search/matrix/offsets",
+    ),
+    "search_points_matrix_rows": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search/matrix/rows",
+    ),
+    "search_points_matrix_pairs": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search/matrix/pairs"
+    ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
     "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
@@ -1782,6 +1800,30 @@ def test_query_points_groups():
             "group_size": 2,
             "group_by": FIELD_NAME
         },
+    )
+
+def test_search_points_matrix_offsets():
+    check_access(
+        "search_points_matrix_offsets",
+        rest_request={"sample": 10, "limit": 2},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
+    )
+
+def test_search_points_matrix_rows():
+    check_access(
+        "search_points_matrix_rows",
+        rest_request={"sample": 10, "limit": 2},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
+    )
+
+def test_search_points_matrix_pairs():
+    check_access(
+        "search_points_matrix_pairs",
+        rest_request={"sample": 10, "limit": 2},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
     )
 
 def test_root():

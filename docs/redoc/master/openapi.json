@@ -5553,6 +5553,200 @@
           }
         }
       }
+    },
+    "/collections/{collection_name}/points/search/matrix/pairs": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Search points matrix distance pairs",
+        "description": "Retrieve distance matrix with a pair based output format",
+        "operationId": "search_points_matrix_pairs",
+        "requestBody": {
+          "description": "Search matrix request with optional filtering",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchMatrixRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/SearchMatrixPairsResponse"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_name}/points/search/matrix/offsets": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Search points matrix distance offsets",
+        "description": "Retrieve distance matrix with an offset based output format",
+        "operationId": "search_points_matrix_offsets",
+        "requestBody": {
+          "description": "Search matrix request with optional filtering",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchMatrixRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to search in",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "description": "If set, overrides global timeout for this request. Unit is seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request",
+                      "example": 0.002
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/SearchMatrixOffsetsResponse"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "openapi": "3.0.1",
@@ -12640,6 +12834,134 @@
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "SearchMatrixRequest": {
+        "type": "object",
+        "required": [
+          "limit",
+          "sample"
+        ],
+        "properties": {
+          "shard_key": {
+            "description": "Specify in which shards to look for the points, if not specified - look in all shards",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "filter": {
+            "description": "Look only for points which satisfies this conditions",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "sample": {
+            "description": "How many points to select and search within.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 2
+          },
+          "limit": {
+            "description": "How many neighbours per sample to find",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1
+          },
+          "using": {
+            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SearchMatrixOffsetsResponse": {
+        "type": "object",
+        "required": [
+          "ids",
+          "offsets_col",
+          "offsets_row",
+          "scores"
+        ],
+        "properties": {
+          "offsets_row": {
+            "description": "Row coordinates of the CRS matrix",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "offsets_col": {
+            "description": "Column coordinates ids of the matrix",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "scores": {
+            "description": "Scores associate with coordinates",
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "ids": {
+            "description": "Ids of the points in order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtendedPointId"
+            }
+          }
+        }
+      },
+      "SearchMatrixPairsResponse": {
+        "type": "object",
+        "required": [
+          "pairs"
+        ],
+        "properties": {
+          "pairs": {
+            "description": "List of pairs of points with scores",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchMatrixPair"
+            }
+          }
+        }
+      },
+      "SearchMatrixPair": {
+        "description": "Pair of points (a, b) with score",
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "score"
+        ],
+        "properties": {
+          "a": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "b": {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
           }
         }
       }
