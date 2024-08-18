@@ -1,9 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use api::rest::{
-    SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest,
-};
+use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{

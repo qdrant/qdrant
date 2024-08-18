@@ -5,7 +5,7 @@ use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
     SearchMatrixRequestInternal,
 };
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedVectorStruct};
+use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
 
 use crate::collection::Collection;
