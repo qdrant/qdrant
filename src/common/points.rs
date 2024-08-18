@@ -2,6 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use api::rest::{SearchGroupsRequestInternal, ShardKeySelector};
+use collection::collection::distance_matrix::{
+    CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
+};
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
@@ -1013,6 +1016,26 @@ pub async fn do_query_point_groups(
     toc.group(
         collection_name,
         GroupRequest::from(request),
+        read_consistency,
+        shard_selection,
+        access,
+        timeout,
+    )
+    .await
+}
+
+pub async fn do_search_points_matrix(
+    toc: &TableOfContent,
+    collection_name: &str,
+    request: CollectionSearchMatrixRequest,
+    read_consistency: Option<ReadConsistency>,
+    shard_selection: ShardSelectorInternal,
+    access: Access,
+    timeout: Option<Duration>,
+) -> Result<CollectionSearchMatrixResponse, StorageError> {
+    toc.search_points_matrix(
+        collection_name,
+        request,
         read_consistency,
         shard_selection,
         access,
