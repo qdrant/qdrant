@@ -40,7 +40,6 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{name}/points/search/groups",
     "/collections/{name}/points/search/matrix/offsets",
     "/collections/{name}/points/search/matrix/pairs",
-    "/collections/{name}/points/search/matrix/rows",
     "/collections/{name}/points/vectors",
     "/collections/{name}/points/vectors/delete",
 ];
