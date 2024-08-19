@@ -874,8 +874,8 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| lookup | [bool](#bool) |  | If true - support direct lookups. |
-| range | [bool](#bool) |  | If true - support ranges filters. |
+| lookup | [bool](#bool) | optional | If true - support direct lookups. |
+| range | [bool](#bool) | optional | If true - support ranges filters. |
 | is_principal | [bool](#bool) | optional | If true - use this key to organize storage of the collection data. This option assumes that this key will be used in majority of filtered requests. |
 | on_disk | [bool](#bool) | optional | If true - store index on disk. |
 

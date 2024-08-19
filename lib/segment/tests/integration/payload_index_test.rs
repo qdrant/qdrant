@@ -114,8 +114,8 @@ impl TestSegments {
                 Some(&FieldParams(PayloadSchemaParams::Integer(
                     IntegerIndexParams {
                         r#type: IntegerIndexType::Integer,
-                        lookup: true,
-                        range: false,
+                        lookup: Some(true),
+                        range: Some(false),
                         is_principal: None,
                         on_disk: None,
                     },
@@ -129,8 +129,8 @@ impl TestSegments {
                 Some(&FieldParams(PayloadSchemaParams::Integer(
                     IntegerIndexParams {
                         r#type: IntegerIndexType::Integer,
-                        lookup: false,
-                        range: true,
+                        lookup: Some(false),
+                        range: Some(true),
                         is_principal: None,
                         on_disk: None,
                     },
@@ -273,8 +273,8 @@ impl TestSegments {
                 Some(&FieldParams(PayloadSchemaParams::Integer(
                     IntegerIndexParams {
                         r#type: IntegerIndexType::Integer,
-                        lookup: true,
-                        range: true,
+                        lookup: Some(true),
+                        range: Some(true),
                         is_principal: None,
                         on_disk: Some(true),
                     },
@@ -288,8 +288,8 @@ impl TestSegments {
                 Some(&FieldParams(PayloadSchemaParams::Integer(
                     IntegerIndexParams {
                         r#type: IntegerIndexType::Integer,
-                        lookup: true,
-                        range: false,
+                        lookup: Some(true),
+                        range: Some(false),
                         is_principal: None,
                         on_disk: Some(true),
                     },
@@ -303,8 +303,8 @@ impl TestSegments {
                 Some(&FieldParams(PayloadSchemaParams::Integer(
                     IntegerIndexParams {
                         r#type: IntegerIndexType::Integer,
-                        lookup: false,
-                        range: true,
+                        lookup: Some(false),
+                        range: Some(true),
                         is_principal: None,
                         on_disk: Some(true),
                     },
