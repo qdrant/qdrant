@@ -160,7 +160,11 @@ impl InvertedIndexMmap {
         let file_path = Self::index_file_path(path.as_ref());
         create_and_ensure_length(file_path.as_ref(), file_length)?;
 
-        let mut mmap = open_write_mmap(file_path.as_ref(), AdviceSetting::from(Advice::Normal))?;
+        let mut mmap = open_write_mmap(
+            file_path.as_ref(),
+            AdviceSetting::from(Advice::Normal),
+            false,
+        )?;
 
         // file index data
         Self::save_posting_headers(&mut mmap, inverted_index_ram, total_posting_headers_size);

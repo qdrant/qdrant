@@ -1,9 +1,12 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
+use std::hint::black_box;
 use std::io;
 
 use serde::Deserialize;
+
+const PAGE_SIZE: usize = 4096;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
 /// used by all memmaps created by the `segment` crate.
@@ -97,6 +100,8 @@ pub fn madvise(madviseable: &impl Madviseable, advice: Advice) -> io::Result<()>
 pub trait Madviseable {
     /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
     fn madvise(&self, advice: Advice) -> io::Result<()>;
+
+    fn populate(&self);
 }
 
 impl Madviseable for memmap2::Mmap {
@@ -107,6 +112,23 @@ impl Madviseable for memmap2::Mmap {
         log::debug!("Ignore {advice:?} on this platform");
         Ok(())
     }
+
+    fn populate(&self) {
+        // #[cfg(unix)]
+        // self.advise(memmap2::Advice::PopulateRead)?;
+        // #[cfg(not(unix))]
+        {
+            // On non-Unix platforms, we just iterate over the memory to populate it.
+            // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
+            let mut dst = [0; PAGE_SIZE * 2];
+
+            for chunk in self.chunks(dst.len()) {
+                dst[..chunk.len()].copy_from_slice(chunk);
+            }
+
+            black_box(dst);
+        }
+    }
 }
 
 impl Madviseable for memmap2::MmapMut {
@@ -116,5 +138,22 @@ impl Madviseable for memmap2::MmapMut {
         #[cfg(not(unix))]
         log::debug!("Ignore {advice:?} on this platform");
         Ok(())
+    }
+
+    fn populate(&self) {
+        // #[cfg(unix)]
+        // self.advise(memmap2::Advice::PopulateRead)?;
+        // #[cfg(not(unix))]
+        {
+            // On non-Unix platforms, we just iterate over the memory to populate it.
+            // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
+            let mut dst = [0; PAGE_SIZE * 2];
+
+            for chunk in self.chunks(dst.len()) {
+                dst[..chunk.len()].copy_from_slice(chunk);
+            }
+
+            black_box(dst);
+        }
     }
 }

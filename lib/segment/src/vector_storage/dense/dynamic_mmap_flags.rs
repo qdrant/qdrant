@@ -44,7 +44,7 @@ fn ensure_status_file(directory: &Path) -> OperationResult<MmapMut> {
         let length = std::mem::size_of::<DynamicMmapStatus>();
         create_and_ensure_length(&status_file, length)?;
     }
-    Ok(open_write_mmap(&status_file, AdviceSetting::Global)?)
+    Ok(open_write_mmap(&status_file, AdviceSetting::Global, false)?)
 }
 
 pub struct DynamicMmapFlags {

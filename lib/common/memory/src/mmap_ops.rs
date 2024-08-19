@@ -1,5 +1,4 @@
 use std::fs::{File, OpenOptions};
-use std::hint::black_box;
 use std::mem::{align_of, size_of};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -64,7 +63,7 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting) -> io::Result<Mmap> {
     Ok(mmap)
 }
 
-pub fn open_write_mmap(path: &Path, advice: AdviceSetting) -> io::Result<MmapMut> {
+pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<MmapMut> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -72,6 +71,13 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting) -> io::Result<MmapMut
         .open(path)?;
 
     let mmap = unsafe { MmapMut::map_mut(&file)? };
+
+    // Populate before advising
+    // Because we want to read data with normal advice
+    if populate {
+        mmap.populate();
+    }
+
     madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
@@ -107,13 +113,7 @@ where
 
     let instant = time::Instant::now();
 
-    let mut dst = [0; 8096];
-
-    for chunk in mmap.chunks(dst.len()) {
-        dst[..chunk.len()].copy_from_slice(chunk);
-    }
-
-    black_box(dst);
+    mmap.populate();
 
     log::trace!(
         "Reading mmap{separator}{path:?} to populate cache took {:?}",
