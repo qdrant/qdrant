@@ -532,12 +532,6 @@ pub enum FacetIndex<'a> {
 }
 
 impl<'a> FacetIndex<'a> {
-    // pub fn get_unique_values_count(&self) -> usize {
-    //     match self {
-    //         FacetIndex::KeywordIndex(index) => index.get_unique_values_count(),
-    //     }
-    // }
-
     pub fn get_values(
         &self,
         point_id: PointOffsetType,

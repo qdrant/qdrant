@@ -1556,6 +1556,8 @@ impl SegmentEntry for Segment {
         request: &FacetParams,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
+        const STOP_CHECK_INTERVAL: usize = 100;
+
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index.get_facet_index(&request.key)?;
@@ -1580,7 +1582,7 @@ impl SegmentEntry for Segment {
                 // aka. read from other indexes
                 let iter = payload_index
                     .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
-                    .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                    .check_stop_every(STOP_CHECK_INTERVAL, || is_stopped.load(Ordering::Relaxed))
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
                         facet_index.get_values(point_id).unique().for_each(|value| {
@@ -1619,10 +1621,9 @@ impl SegmentEntry for Segment {
         // which we can't assume to select the same best top.
         //
         // We need all values to be able to aggregate correctly across segments
-        let hits = hits_iter.fold(HashMap::new(), |mut acc, hit| {
-            acc.insert(hit.value.to_owned(), hit.count);
-            acc
-        });
+        let hits: HashMap<_, _> = hits_iter
+            .map(|hit| (hit.value.to_owned(), hit.count))
+            .collect();
 
         Ok(hits)
     }

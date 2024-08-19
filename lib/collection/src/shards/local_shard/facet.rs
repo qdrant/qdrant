@@ -4,16 +4,18 @@ use std::time::Duration;
 
 use futures::future;
 use futures::future::try_join_all;
-use itertools::{process_results, Itertools};
-use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
-use segment::types::{Condition, FieldCondition, Filter, Match};
+use itertools::{Itertools, process_results};
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
-use super::LocalShard;
+use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
+use segment::types::{Condition, FieldCondition, Filter, Match};
+
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{CollectionError, CollectionResult};
+
+use super::LocalShard;
 
 impl LocalShard {
     /// Returns values with approximate counts for the given facet request.
