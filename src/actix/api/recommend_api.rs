@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
+use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
@@ -92,7 +93,7 @@ async fn recommend_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
+    helpers::time(
         do_recommend_batch_points(
             dispatcher.toc(&access),
             &collection.name,
@@ -101,8 +102,7 @@ async fn recommend_batch_points(
             access,
             params.timeout(),
         )
-        .await
-        .map(|batch_scored_points| {
+        .map_ok(|batch_scored_points| {
             batch_scored_points
                 .into_iter()
                 .map(|scored_points| {
@@ -112,8 +112,8 @@ async fn recommend_batch_points(
                         .collect_vec()
                 })
                 .collect_vec()
-        })
-    })
+        }),
+    )
     .await
 }
 
