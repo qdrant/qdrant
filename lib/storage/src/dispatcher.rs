@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
+use collection::operations::verification::VerificationPass;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use segment::types::default_shard_number_per_node_const;
 
@@ -39,6 +40,13 @@ impl Dispatcher {
     /// The `_access` parameter is not used, but it's required to verify caller's possession
     /// of the [Access] object.
     pub fn toc(&self, _access: &Access) -> &Arc<TableOfContent> {
+        &self.toc
+    }
+
+    /// Get the table of content.
+    /// The `_access` and `_pass` parameters are not used, but are required to verify caller's possession
+    /// of the [Access] and [VerificationPass] object.
+    pub fn toc_new(&self, _access: &Access, _pass: &VerificationPass) -> &Arc<TableOfContent> {
         &self.toc
     }
 
