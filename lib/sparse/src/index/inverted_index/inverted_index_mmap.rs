@@ -199,7 +199,11 @@ impl InvertedIndexMmap {
         let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
         // read index data into mmap
         let file_path = Self::index_file_path(path.as_ref());
-        let mmap = open_read_mmap(file_path.as_ref(), AdviceSetting::from(Advice::Normal))?;
+        let mmap = open_read_mmap(
+            file_path.as_ref(),
+            AdviceSetting::from(Advice::Normal),
+            false,
+        )?;
         Ok(Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),

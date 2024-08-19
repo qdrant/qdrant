@@ -48,7 +48,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
     }
 }
 
-pub fn open_read_mmap(path: &Path, advice: AdviceSetting) -> io::Result<Mmap> {
+pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<Mmap> {
     let file = OpenOptions::new()
         .read(true)
         .write(false)
@@ -58,6 +58,13 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting) -> io::Result<Mmap> {
         .open(path)?;
 
     let mmap = unsafe { Mmap::map(&file)? };
+
+    // Populate before advising
+    // Because we want to read data with normal advice
+    if populate {
+        mmap.populate();
+    }
+
     madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
