@@ -1,4 +1,4 @@
-use actix_web::{post, web, HttpResponse};
+use actix_web::{post, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
@@ -8,11 +8,12 @@ use collection::operations::types::{
 };
 use itertools::Itertools;
 use storage::dispatcher::Dispatcher;
+use tokio::time::Instant;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response};
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
