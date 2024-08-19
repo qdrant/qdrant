@@ -114,9 +114,9 @@ impl Madviseable for memmap2::Mmap {
     }
 
     fn populate(&self) {
-        // #[cfg(unix)]
-        // self.advise(memmap2::Advice::PopulateRead)?;
-        // #[cfg(not(unix))]
+        #[cfg(unix)]
+        self.advise(memmap2::Advice::PopulateRead)?;
+        #[cfg(not(unix))]
         {
             // On non-Unix platforms, we just iterate over the memory to populate it.
             // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
@@ -141,9 +141,9 @@ impl Madviseable for memmap2::MmapMut {
     }
 
     fn populate(&self) {
-        // #[cfg(unix)]
-        // self.advise(memmap2::Advice::PopulateRead)?;
-        // #[cfg(not(unix))]
+        #[cfg(unix)]
+        self.advise(memmap2::Advice::PopulateRead)?;
+        #[cfg(not(unix))]
         {
             // On non-Unix platforms, we just iterate over the memory to populate it.
             // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
