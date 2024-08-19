@@ -54,6 +54,7 @@ POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
 SHARD_KEY = "existing_shard_key"
+FACET_KEY = "a"
 
 _cached_grpc_clients = None
 
@@ -554,6 +555,9 @@ ACTION_ACCESS = {
         True,
         True,
         "POST /collections/{collection_name}/points/search/matrix/pairs"
+    ),
+    "facet": EndpointAccess(
+        True, True, True, "POST /collections/{collection_name}/facet", # TODO(facet): enable grpc "qdrant.Points/Facet"
     ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
@@ -1802,6 +1806,7 @@ def test_query_points_groups():
         },
     )
 
+
 def test_search_points_matrix_offsets():
     check_access(
         "search_points_matrix_offsets",
@@ -1809,6 +1814,7 @@ def test_search_points_matrix_offsets():
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
     )
+
 
 def test_search_points_matrix_rows():
     check_access(
@@ -1818,6 +1824,7 @@ def test_search_points_matrix_rows():
         grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
     )
 
+
 def test_search_points_matrix_pairs():
     check_access(
         "search_points_matrix_pairs",
@@ -1825,6 +1832,18 @@ def test_search_points_matrix_pairs():
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
     )
+
+
+def test_facet():
+    check_access(
+        "facet",
+        path_params={"collection_name": COLL_NAME},
+        rest_request={
+            "key": FACET_KEY,
+        },
+        # TODO(facet): grpc request
+    )
+
 
 def test_root():
     check_access("root")

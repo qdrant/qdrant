@@ -8,6 +8,7 @@ use ahash::HashMap;
 use common::mmap_hashmap::{Key, MmapHashMap};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Itertools;
 use memmap2::MmapMut;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{self, create_and_ensure_length};
@@ -219,7 +220,14 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
-        self.value_to_points.iter().map(|(k, v)| (k, v.len()))
+        self.value_to_points.iter().map(|(k, v)| {
+            let count = v
+                .iter()
+                .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(true))
+                .unique()
+                .count();
+            (k, count)
+        })
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {

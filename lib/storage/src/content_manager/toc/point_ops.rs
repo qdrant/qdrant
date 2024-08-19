@@ -15,7 +15,7 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
-use segment::data_types::facets::{FacetRequest, FacetResponse};
+use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
@@ -335,7 +335,7 @@ impl TableOfContent {
     pub async fn facet(
         &self,
         collection_name: &str,
-        mut request: FacetRequest,
+        mut request: FacetParams,
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         access: Access,

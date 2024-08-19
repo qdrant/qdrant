@@ -27,7 +27,7 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
-use crate::data_types::facets::{FacetHit, FacetRequest, FacetValueHit};
+use crate::data_types::facets::{FacetHit, FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -1517,9 +1517,9 @@ impl SegmentEntry for Segment {
 
     fn facet(
         &self,
-        request: &FacetRequest,
+        request: &FacetParams,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<FacetValueHit>> {
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
         let payload_index = self.payload_index.borrow();
 
         let facet_index = payload_index
@@ -1530,11 +1530,11 @@ impl SegmentEntry for Segment {
                 key: request.key.to_string(),
             })?;
 
-        let hits = if let Some(filter) = &request.filter {
+        let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let hits_iter = payload_index
+            let iter = payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
                 .check_stop(|| is_stopped.load(Ordering::Relaxed))
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
@@ -1547,20 +1547,20 @@ impl SegmentEntry for Segment {
                 .into_iter()
                 .map(|(value, count)| FacetHit { value, count });
 
-            peek_top_largest_iterable(hits_iter, request.limit)
+            Either::Left(iter)
         } else {
-            let hits_iter = facet_index
+            let iter = facet_index
                 .iter_counts_per_value()
-                .check_stop(|| !is_stopped.load(Ordering::Relaxed));
-            peek_top_largest_iterable(hits_iter, request.limit)
+                .check_stop(|| is_stopped.load(Ordering::Relaxed));
+            Either::Right(iter)
         };
 
-        let hits = hits
-            .into_iter()
-            .map(|hit| FacetHit {
-                value: hit.value.to_owned(),
-                count: hit.count,
-            })
+        // TODO(luis): We can't just select top values, because we need to aggregate across segments,
+        // which we can't assume to select the same best top.
+        //
+        // We need all values to be able to aggregate correctly across segments
+        let hits = hits_iter
+            .map(|hit| (hit.value.to_owned(), hit.count))
             .collect();
 
         Ok(hits)

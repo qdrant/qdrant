@@ -8,7 +8,7 @@ use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
-use segment::data_types::facets::{aggregate_facet_hits, FacetHit, FacetRequest, FacetValueHit};
+use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -16,7 +16,6 @@ use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
 use segment::json_path::JsonPath;
-use segment::spaces::tools::peek_top_largest_iterable;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
@@ -715,11 +714,11 @@ impl SegmentEntry for ProxySegment {
 
     fn facet(
         &self,
-        request: &FacetRequest,
+        request: &FacetParams,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<FacetValueHit>> {
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
         let deleted_points = self.deleted_points.read();
-        let read_segment_hits = if deleted_points.is_empty() {
+        let mut segment_hits = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -729,7 +728,7 @@ impl SegmentEntry for ProxySegment {
                 request.filter.as_ref(),
                 &deleted_points,
             );
-            let new_request = FacetRequest {
+            let new_request = FacetParams {
                 key: request.key.clone(),
                 limit: request.limit,
                 filter: Some(wrapped_filter),
@@ -739,14 +738,12 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .facet(&new_request, is_stopped)?
         };
+
         let write_segment_hits = self.write_segment.get().read().facet(request, is_stopped)?;
 
-        let hits_iter =
-            aggregate_facet_hits(read_segment_hits.into_iter().chain(write_segment_hits))
-                .into_iter()
-                .map(|(value, count)| FacetHit { value, count });
-        let hits = peek_top_largest_iterable(hits_iter, request.limit);
-        Ok(hits)
+        segment_hits.extend(write_segment_hits);
+
+        Ok(segment_hits)
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
