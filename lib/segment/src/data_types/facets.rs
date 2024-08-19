@@ -10,12 +10,16 @@ use crate::json_path::JsonPath;
 use crate::types::Filter;
 
 #[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
-pub struct FacetRequestInternal {
+pub struct FacetParams {
     pub key: JsonPath,
 
     #[validate(range(min = 1))]
     pub limit: usize,
     pub filter: Option<Filter>,
+}
+
+impl FacetParams {
+    pub const DEFAULT_LIMIT: usize = 10;
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use common::types::ScoreType;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
-use segment::data_types::facets::FacetRequestInternal;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -719,6 +718,16 @@ impl SearchMatrixPair {
 pub struct SearchMatrixPairsResponse {
     /// List of pairs of points with scores
     pub pairs: Vec<SearchMatrixPair>,
+}
+
+#[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
+pub struct FacetRequestInternal {
+    pub key: JsonPath,
+
+    #[validate(range(min = 1))]
+    pub limit: Option<usize>,
+
+    pub filter: Option<Filter>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

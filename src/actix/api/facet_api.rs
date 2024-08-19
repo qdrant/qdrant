@@ -25,6 +25,8 @@ async fn facet(
         shard_key,
     } = request.into_inner();
 
+    let facet_params = From::from(facet_request);
+
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => shard_keys.into(),
@@ -34,7 +36,7 @@ async fn facet(
         .toc(&access)
         .facet(
             &collection.name,
-            facet_request,
+            facet_params,
             shard_selection,
             params.consistency,
             access,

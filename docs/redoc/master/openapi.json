@@ -13056,8 +13056,7 @@
       "FacetRequest": {
         "type": "object",
         "required": [
-          "key",
-          "limit"
+          "key"
         ],
         "properties": {
           "shard_key": {
@@ -13076,7 +13075,8 @@
           "limit": {
             "type": "integer",
             "format": "uint",
-            "minimum": 1
+            "minimum": 1,
+            "nullable": true
           },
           "filter": {
             "anyOf": [

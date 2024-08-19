@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
-use crate::data_types::facets::{FacetRequestInternal, FacetValue};
+use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
@@ -149,7 +149,7 @@ pub trait SegmentEntry {
     /// Return the largest counts for the given facet request.
     fn facet(
         &self,
-        request: &FacetRequestInternal,
+        request: &FacetParams,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>>;
 

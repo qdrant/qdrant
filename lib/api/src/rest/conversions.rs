@@ -3,7 +3,8 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
 use super::{
-    FacetResponse, FacetValue, FacetValueHit, NearestQuery, OrderByInterface, Query, QueryInterface,
+    FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, OrderByInterface,
+    Query, QueryInterface,
 };
 use crate::rest::{DenseVector, NamedVectorStruct};
 
@@ -255,6 +256,16 @@ impl From<segment::data_types::facets::FacetResponse> for FacetResponse {
     fn from(value: segment::data_types::facets::FacetResponse) -> Self {
         Self {
             hits: value.hits.into_iter().map(From::from).collect(),
+        }
+    }
+}
+
+impl From<FacetRequestInternal> for segment::data_types::facets::FacetParams {
+    fn from(value: FacetRequestInternal) -> Self {
+        Self {
+            key: value.key,
+            limit: value.limit.unwrap_or(Self::DEFAULT_LIMIT),
+            filter: value.filter,
         }
     }
 }
