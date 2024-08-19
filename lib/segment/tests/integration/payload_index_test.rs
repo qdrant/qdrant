@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::create_dir;
 use std::path::Path;
@@ -13,7 +12,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::facets::{FacetRequest, FacetValue, FacetValueHit};
+use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
     KeywordIndexType,
@@ -1176,17 +1175,12 @@ fn test_any_matcher_cardinality_estimation() {
 /// each value exactly.
 fn validate_facet_result(
     segment: &Segment,
-    facet_hits: Vec<FacetValueHit>,
+    facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
 ) {
-    let is_stopped = AtomicBool::new(false);
-    let mut expected = facet_hits.clone();
-    expected.sort_by_key(|hit| Reverse(hit.clone()));
-    assert_eq!(facet_hits, expected);
-
-    for hit in facet_hits {
+    for (value, count) in facet_hits {
         // Compare against exact count
-        let FacetValue::Keyword(value) = hit.value;
+        let FacetValue::Keyword(value) = value;
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),
@@ -1195,22 +1189,22 @@ fn validate_facet_result(
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
         let exact = segment
-            .read_filtered(None, None, count_filter.as_ref(), &is_stopped)
+            .read_filtered(None, None, count_filter.as_ref(), &Default::default())
             .len();
 
-        assert_eq!(hit.count, exact);
+        assert_eq!(count, exact);
     }
 }
 
 #[test]
 fn test_keyword_facet() {
-    let test_segments = TestSegments::new(false);
+    let test_segments = TestSegments::new(true);
 
     let limit = 100;
     let key: JsonPath = STR_KEY.try_into().unwrap();
 
-    // *** No filter ***
-    let request = FacetRequest {
+    // *** Without filter ***
+    let request = FacetParams {
         key: key.clone(),
         limit,
         filter: None,
@@ -1222,6 +1216,7 @@ fn test_keyword_facet() {
         .facet(&request, &Default::default())
         .is_err());
 
+    // Struct segment
     let facet_hits = test_segments
         .struct_segment
         .facet(&request, &Default::default())
@@ -1229,19 +1224,52 @@ fn test_keyword_facet() {
 
     validate_facet_result(&test_segments.struct_segment, facet_hits, None);
 
+    // Mmap segment
+    let facet_hits = test_segments
+        .mmap_segment
+        .as_ref()
+        .unwrap()
+        .facet(&request, &Default::default())
+        .unwrap();
+
+    validate_facet_result(
+        test_segments.mmap_segment.as_ref().unwrap(),
+        facet_hits,
+        None,
+    );
+
     // *** With filter ***
     let mut rng = rand::thread_rng();
     let filter = random_filter(&mut rng, 3);
-    let request = FacetRequest {
+    let request = FacetParams {
         key,
         limit,
         filter: Some(filter.clone()),
     };
 
+    // Struct segment
     let facet_hits = test_segments
         .struct_segment
         .facet(&request, &Default::default())
         .unwrap();
 
-    validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter));
+    validate_facet_result(
+        &test_segments.struct_segment,
+        facet_hits,
+        Some(filter.clone()),
+    );
+
+    // Mmap segment
+    let facet_hits = test_segments
+        .mmap_segment
+        .as_ref()
+        .unwrap()
+        .facet(&request, &Default::default())
+        .unwrap();
+
+    validate_facet_result(
+        test_segments.mmap_segment.as_ref().unwrap(),
+        facet_hits,
+        Some(filter),
+    );
 }

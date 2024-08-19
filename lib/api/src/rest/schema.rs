@@ -719,3 +719,39 @@ pub struct SearchMatrixPairsResponse {
     /// List of pairs of points with scores
     pub pairs: Vec<SearchMatrixPair>,
 }
+
+#[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
+pub struct FacetRequestInternal {
+    pub key: JsonPath,
+
+    #[validate(range(min = 1))]
+    pub limit: Option<usize>,
+
+    pub filter: Option<Filter>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+pub struct FacetRequest {
+    #[validate(nested)]
+    #[serde(flatten)]
+    pub facet_request: FacetRequestInternal,
+
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum FacetValue {
+    Keyword(String),
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FacetValueHit {
+    pub value: FacetValue,
+    pub count: usize,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FacetResponse {
+    pub hits: Vec<FacetValueHit>,
+}

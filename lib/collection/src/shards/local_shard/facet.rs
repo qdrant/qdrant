@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future::try_join_all;
-use itertools::{process_results, Itertools};
-use segment::data_types::facets::{aggregate_facet_hits, FacetRequest, FacetValueHit};
+use itertools::process_results;
+use segment::data_types::facets::{FacetParams, FacetValueHit};
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
@@ -15,7 +15,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 impl LocalShard {
     pub async fn do_facet(
         &self,
-        request: Arc<FacetRequest>,
+        request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -50,13 +50,22 @@ impl LocalShard {
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout.as_secs() as usize, "facet"))??;
 
-        let merged_hits =
-            process_results(all_reads, |reads| aggregate_facet_hits(reads.flatten()))?;
+        let merged_hits = process_results(all_reads, |reads| {
+            reads
+                .reduce(|mut acc, map| {
+                    acc.extend(map);
+                    acc
+                })
+                .unwrap_or_default()
+        })?;
 
+        // TODO(luis): We can't just select top values, because we need to aggregate across segments,
+        // which we can't assume to select the same best top.
+        //
+        // We need all values to be able to aggregate correctly across segments
         let top_hits = merged_hits
             .into_iter()
             .map(|(value, count)| FacetValueHit { value, count })
-            .k_largest(request.limit)
             .collect();
 
         Ok(top_hits)

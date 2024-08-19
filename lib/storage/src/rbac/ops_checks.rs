@@ -17,7 +17,7 @@ use collection::operations::universal_query::collection_query::{
 };
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
-use segment::data_types::facets::FacetRequest;
+use segment::data_types::facets::FacetParams;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
@@ -367,7 +367,7 @@ fn check_access_for_prefetch(
     Ok(())
 }
 
-impl CheckableCollectionOperation for FacetRequest {
+impl CheckableCollectionOperation for FacetParams {
     fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
