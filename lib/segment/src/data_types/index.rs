@@ -34,17 +34,17 @@ pub enum IntegerIndexType {
     Integer,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct IntegerIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
     pub r#type: IntegerIndexType,
 
     /// If true - support direct lookups.
-    pub lookup: bool,
+    pub lookup: Option<bool>,
 
     /// If true - support ranges filters.
-    pub range: bool,
+    pub range: Option<bool>,
 
     /// If true - use this key to organize storage of the collection data.
     /// This option assumes that this key will be used in majority of filtered requests.
@@ -53,18 +53,6 @@ pub struct IntegerIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
-}
-
-impl Default for IntegerIndexParams {
-    fn default() -> Self {
-        Self {
-            r#type: Default::default(),
-            lookup: true,
-            range: true,
-            is_principal: None,
-            on_disk: None,
-        }
-    }
 }
 
 // UUID

@@ -83,8 +83,8 @@ fn test_on_disk_segment_snapshot() {
             Some(&PayloadFieldSchema::FieldParams(
                 PayloadSchemaParams::Integer(IntegerIndexParams {
                     r#type: segment::data_types::index::IntegerIndexType::Integer,
-                    lookup: true,
-                    range: true,
+                    lookup: Some(true),
+                    range: Some(true),
                     is_principal: None,
                     on_disk: Some(true),
                 }),
