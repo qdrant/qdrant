@@ -18,27 +18,24 @@ async fn count_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let CountRequest {
-            count_request,
-            shard_key,
-        } = request.into_inner();
+    let CountRequest {
+        count_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selector = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
-        };
+    let shard_selector = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
+    };
 
-        do_count_points(
-            dispatcher.toc(&access),
-            &collection.name,
-            count_request,
-            params.consistency,
-            params.timeout(),
-            shard_selector,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_count_points(
+        dispatcher.toc(&access),
+        &collection.name,
+        count_request,
+        params.consistency,
+        params.timeout(),
+        shard_selector,
+        access,
+    ))
     .await
 }
