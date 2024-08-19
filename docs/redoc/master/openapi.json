@@ -5260,7 +5260,7 @@
         }
       }
     },
-    "/collections/{collection_name}/points/facet": {
+    "/collections/{collection_name}/facet": {
       "post": {
         "tags": [
           "points"

@@ -557,7 +557,7 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/search/matrix/pairs"
     ),
     "facet": EndpointAccess(
-        True, True, True, "POST /collections/{collection_name}/points/facet", # TODO(facet): enable grpc "qdrant.Points/Facet"
+        True, True, True, "POST /collections/{collection_name}/facet", # TODO(facet): enable grpc "qdrant.Points/Facet"
     ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),

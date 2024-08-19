@@ -10,7 +10,7 @@ use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 
-#[post("/collections/{name}/points/facet")]
+#[post("/collections/{name}/facet")]
 async fn facet(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
