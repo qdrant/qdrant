@@ -73,7 +73,9 @@ pub async fn get_snapshot_description(
 pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionResult<usize> {
     const DEFAULT_CHUNK_SIZE: usize = 50 * 1024 * 1024;
     const MAX_PART_NUMBER: usize = 10000;
-    const MAX_UPLOAD_SIZE: usize = 5 * 1024 * 1024 * 1024;
+    /// 5TB as maximum object size.
+    /// Source: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>
+    const MAX_UPLOAD_SIZE: usize = 5 * 1024 * 1024 * 1024 * 1024;
 
     let file_meta = tokio::fs::metadata(local_source_path).await?;
     let file_size = file_meta.len() as usize;
