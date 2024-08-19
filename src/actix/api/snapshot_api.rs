@@ -143,7 +143,7 @@ async fn list_snapshots(
     path: web::Path<String>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async { do_list_snapshots(dispatcher.toc(&access), access, &path).await }).await
+    helpers::time(do_list_snapshots(dispatcher.toc(&access), access, &path)).await
 }
 
 #[post("/collections/{name}/snapshots")]
@@ -251,7 +251,7 @@ async fn list_full_snapshots(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async { do_list_full_snapshots(dispatcher.toc(&access), access).await }).await
+    helpers::time(do_list_full_snapshots(dispatcher.toc(&access), access)).await
 }
 
 #[post("/snapshots")]
