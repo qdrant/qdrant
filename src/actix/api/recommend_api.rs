@@ -28,17 +28,17 @@ async fn recommend_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let RecommendRequest {
-            recommend_request,
-            shard_key,
-        } = request.into_inner();
+    let RecommendRequest {
+        recommend_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selection = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => shard_keys.into(),
-        };
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
 
+    helpers::time(
         dispatcher
             .toc(&access)
             .recommend(
@@ -49,14 +49,13 @@ async fn recommend_points(
                 access,
                 params.timeout(),
             )
-            .await
-            .map(|scored_points| {
+            .map_ok(|scored_points| {
                 scored_points
                     .into_iter()
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
-            })
-    })
+            }),
+    )
     .await
 }
 
@@ -125,28 +124,25 @@ async fn recommend_point_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let RecommendGroupsRequest {
-            recommend_group_request,
-            shard_key,
-        } = request.into_inner();
+    let RecommendGroupsRequest {
+        recommend_group_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selection = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => shard_keys.into(),
-        };
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
 
-        crate::common::points::do_recommend_point_groups(
-            dispatcher.toc(&access),
-            &collection.name,
-            recommend_group_request,
-            params.consistency,
-            shard_selection,
-            access,
-            params.timeout(),
-        )
-        .await
-    })
+    helpers::time(crate::common::points::do_recommend_point_groups(
+        dispatcher.toc(&access),
+        &collection.name,
+        recommend_group_request,
+        params.consistency,
+        shard_selection,
+        access,
+        params.timeout(),
+    ))
     .await
 }
 // Configure services

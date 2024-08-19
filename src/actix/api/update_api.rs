@@ -39,23 +39,20 @@ async fn upsert_points(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_upsert_points(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_upsert_points(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -67,23 +64,20 @@ async fn delete_points(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_delete_points(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_delete_points(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -95,23 +89,20 @@ async fn update_vectors(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_update_vectors(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_update_vectors(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -150,23 +141,20 @@ async fn set_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_set_payload(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_set_payload(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -178,23 +166,20 @@ async fn overwrite_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_overwrite_payload(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_overwrite_payload(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -206,23 +191,20 @@ async fn delete_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_delete_payload(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_delete_payload(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 
@@ -234,23 +216,20 @@ async fn clear_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let operation = operation.into_inner();
-        let wait = params.wait.unwrap_or(false);
-        let ordering = params.ordering.unwrap_or_default();
+    let operation = operation.into_inner();
+    let wait = params.wait.unwrap_or(false);
+    let ordering = params.ordering.unwrap_or_default();
 
-        do_clear_payload(
-            dispatcher.toc(&access).clone(),
-            collection.into_inner().name,
-            operation,
-            None,
-            None,
-            wait,
-            ordering,
-            access,
-        )
-        .await
-    })
+    helpers::time(do_clear_payload(
+        dispatcher.toc(&access).clone(),
+        collection.into_inner().name,
+        operation,
+        None,
+        None,
+        wait,
+        ordering,
+        access,
+    ))
     .await
 }
 

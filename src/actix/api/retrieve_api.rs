@@ -5,6 +5,7 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
+use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
@@ -96,18 +97,18 @@ async fn get_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let PointRequest {
-            point_request,
-            shard_key,
-        } = request.into_inner();
+    let PointRequest {
+        point_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selection = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
-        };
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
+    };
 
-        let response = do_get_points(
+    helpers::time(
+        do_get_points(
             dispatcher.toc(&access),
             &collection.name,
             point_request,
@@ -116,9 +117,13 @@ async fn get_points(
             shard_selection,
             access,
         )
-        .await;
-        response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec())
-    })
+        .map_ok(|response| {
+            response
+                .into_iter()
+                .map(api::rest::Record::from)
+                .collect_vec()
+        }),
+    )
     .await
 }
 
@@ -130,28 +135,23 @@ async fn scroll_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let ScrollRequest {
-            scroll_request,
-            shard_key,
-        } = request.into_inner();
+    let ScrollRequest {
+        scroll_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selection = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
-        };
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
+    };
 
-        dispatcher
-            .toc(&access)
-            .scroll(
-                &collection.name,
-                scroll_request,
-                params.consistency,
-                params.timeout(),
-                shard_selection,
-                access,
-            )
-            .await
-    })
+    helpers::time(dispatcher.toc(&access).scroll(
+        &collection.name,
+        scroll_request,
+        params.consistency,
+        params.timeout(),
+        shard_selection,
+        access,
+    ))
     .await
 }

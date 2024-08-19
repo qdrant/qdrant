@@ -2,6 +2,7 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::dispatcher::Dispatcher;
 
@@ -19,17 +20,17 @@ async fn discover_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
-        let DiscoverRequest {
-            discover_request,
-            shard_key,
-        } = request.into_inner();
+    let DiscoverRequest {
+        discover_request,
+        shard_key,
+    } = request.into_inner();
 
-        let shard_selection = match shard_key {
-            None => ShardSelectorInternal::All,
-            Some(shard_keys) => shard_keys.into(),
-        };
+    let shard_selection = match shard_key {
+        None => ShardSelectorInternal::All,
+        Some(shard_keys) => shard_keys.into(),
+    };
 
+    helpers::time(
         dispatcher
             .toc(&access)
             .discover(
@@ -40,14 +41,13 @@ async fn discover_points(
                 access,
                 params.timeout(),
             )
-            .await
-            .map(|scored_points| {
+            .map_ok(|scored_points| {
                 scored_points
                     .into_iter()
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
-            })
-    })
+            }),
+    )
     .await
 }
 
@@ -59,7 +59,7 @@ async fn discover_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time(async {
+    helpers::time(
         do_discover_batch_points(
             dispatcher.toc(&access),
             &collection.name,
@@ -68,8 +68,7 @@ async fn discover_batch_points(
             access,
             params.timeout(),
         )
-        .await
-        .map(|batch_scored_points| {
+        .map_ok(|batch_scored_points| {
             batch_scored_points
                 .into_iter()
                 .map(|scored_points| {
@@ -79,8 +78,8 @@ async fn discover_batch_points(
                         .collect_vec()
                 })
                 .collect_vec()
-        })
-    })
+        }),
+    )
     .await
 }
 
