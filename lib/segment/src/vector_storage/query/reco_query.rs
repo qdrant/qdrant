@@ -177,13 +177,17 @@ mod test {
 
             let ordering_before = float_cmp(dummy_similarity(&a), dummy_similarity(&b));
 
+            // Too similar scores can get compressed to the same value by the sigmoid function.
+            // This would make the test useless, so we skip those cases.
+            prop_assume!(ordering_before != Ordering::Equal);
+
             let query_a = RecoQuery::new(vec![a], vec![]);
             let query_b = RecoQuery::new(vec![b], vec![]);
 
             let score_a = query_a.score_by(dummy_similarity);
             let score_b = query_b.score_by(dummy_similarity);
 
-            let ordering_after = float_cmp(score_a, score_b);
+            let ordering_after = score_a.total_cmp(&score_b);
 
             assert_eq!(ordering_before, ordering_after);
         }
