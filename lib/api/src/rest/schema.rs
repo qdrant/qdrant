@@ -728,6 +728,8 @@ pub struct FacetRequestInternal {
     pub limit: Option<usize>,
 
     pub filter: Option<Filter>,
+
+    pub exact: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

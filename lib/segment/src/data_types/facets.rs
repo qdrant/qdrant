@@ -22,6 +22,7 @@ pub struct FacetParams {
 
 impl FacetParams {
     pub const DEFAULT_LIMIT: usize = 10;
+    pub const DEFAULT_EXACT: bool = false;
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

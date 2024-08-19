@@ -78,7 +78,7 @@ impl LocalShard {
     /// Returns values with exact counts for a given facet request.
     pub async fn exact_facet(
         &self,
-        request: Arc<FacetRequestInternal>,
+        request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<FacetValueHit>> {
@@ -126,7 +126,7 @@ impl LocalShard {
 
     async fn unique_values(
         &self,
-        request: Arc<FacetRequestInternal>,
+        request: Arc<FacetParams>,
         handle: &Handle,
         timeout: Duration,
     ) -> CollectionResult<BTreeSet<FacetValue>> {
