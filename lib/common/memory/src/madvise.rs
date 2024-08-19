@@ -1,11 +1,13 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
+#[cfg(not(unix))]
 use std::hint::black_box;
 use std::io;
 
 use serde::Deserialize;
 
+#[cfg(not(unix))]
 const PAGE_SIZE: usize = 4096;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
@@ -101,7 +103,7 @@ pub trait Madviseable {
     /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
     fn madvise(&self, advice: Advice) -> io::Result<()>;
 
-    fn populate(&self);
+    fn populate(&self) -> io::Result<()>;
 }
 
 impl Madviseable for memmap2::Mmap {
@@ -113,7 +115,7 @@ impl Madviseable for memmap2::Mmap {
         Ok(())
     }
 
-    fn populate(&self) {
+    fn populate(&self) -> io::Result<()> {
         #[cfg(unix)]
         self.advise(memmap2::Advice::PopulateRead)?;
         #[cfg(not(unix))]
@@ -128,6 +130,7 @@ impl Madviseable for memmap2::Mmap {
 
             black_box(dst);
         }
+        Ok(())
     }
 }
 
@@ -140,7 +143,7 @@ impl Madviseable for memmap2::MmapMut {
         Ok(())
     }
 
-    fn populate(&self) {
+    fn populate(&self) -> io::Result<()> {
         #[cfg(unix)]
         self.advise(memmap2::Advice::PopulateRead)?;
         #[cfg(not(unix))]
@@ -155,5 +158,6 @@ impl Madviseable for memmap2::MmapMut {
 
             black_box(dst);
         }
+        Ok(())
     }
 }
