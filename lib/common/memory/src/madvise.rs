@@ -1,13 +1,13 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 use std::hint::black_box;
 use std::io;
 
 use serde::Deserialize;
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 const PAGE_SIZE: usize = 4096;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
@@ -116,9 +116,9 @@ impl Madviseable for memmap2::Mmap {
     }
 
     fn populate(&self) -> io::Result<()> {
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         self.advise(memmap2::Advice::PopulateRead)?;
-        #[cfg(not(unix))]
+        #[cfg(not(target_os = "linux"))]
         {
             // On non-Unix platforms, we just iterate over the memory to populate it.
             // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
@@ -144,9 +144,9 @@ impl Madviseable for memmap2::MmapMut {
     }
 
     fn populate(&self) -> io::Result<()> {
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         self.advise(memmap2::Advice::PopulateRead)?;
-        #[cfg(not(unix))]
+        #[cfg(not(target_os = "linux"))]
         {
             // On non-Unix platforms, we just iterate over the memory to populate it.
             // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
