@@ -30,7 +30,7 @@ impl StrictModeVerification for SearchRequest {
         if let Some(search_parameter) = &search_request.params {
             if search_parameter.exact && strict_mode_config.search_allow_exact == Some(false) {
                 return Err(new_error(
-                    format!("Exact search disabled!"),
+                    "Exact search disabled!",
                     "Set exact=false in your request.",
                 ));
             }
@@ -65,7 +65,7 @@ impl StrictModeVerification for SearchRequest {
             if let Some(filter) = &search_request.filter {
                 if let Some(key) = collection.has_filter_without_index(filter) {
                     return Err(new_error(
-                        format!("Index required but not found for \"{}\"", key.to_string()),
+                        format!("Index required but not found for \"{key}\""),
                         "Create an index or use a different filter.",
                     ));
                 }

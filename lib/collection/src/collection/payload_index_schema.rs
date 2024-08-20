@@ -85,22 +85,18 @@ impl Collection {
         Ok(result)
     }
 
+    /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
+    /// If this function returns `None` all keys in `filter` are indexed.
+    /// Note that conditions where no index exists get ignored.
     pub fn has_filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
-        let iter = filter
+        filter
             .must
             .iter()
             .flatten()
             .chain(filter.must_not.iter().flatten())
             .chain(filter.should.iter().flatten())
-            .chain(filter.min_should.iter().map(|i| &i.conditions).flatten());
-
-        for condition in iter {
-            if let Some(key) = self.has_condition_without_index(condition) {
-                return Some(key);
-            }
-        }
-
-        None
+            .chain(filter.min_should.iter().flat_map(|i| &i.conditions))
+            .find_map(|condition| self.has_condition_without_index(condition))
     }
 
     fn has_condition_without_index(&self, condition: &Condition) -> Option<JsonPath> {

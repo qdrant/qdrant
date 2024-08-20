@@ -837,7 +837,7 @@ impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfigDiff {
             unindexed_filtering_update: value.unindexed_filtering_update,
             search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
             search_allow_exact: value.search_allow_exact,
-            search_max_oversampling: value.search_max_oversampling.map(|i| i as f64),
+            search_max_oversampling: value.search_max_oversampling.map(f64::from),
             group_by_max_group_size: value.group_by_max_group_size.map(|i| i as usize),
             recommend_max_examples: value.recommend_max_examples.map(|i| i as usize),
             discovery_max_context_size: value.discovery_max_context_size.map(|i| i as usize),
