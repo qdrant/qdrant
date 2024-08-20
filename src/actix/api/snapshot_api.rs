@@ -2,7 +2,6 @@ use std::path::Path;
 
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
-use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, HttpRequest, Responder, Result};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
@@ -30,7 +29,7 @@ use validator::Validate;
 
 use super::{CollectionPath, StrictCollectionPath};
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, HttpError};
+use crate::actix::helpers::{self, HttpError};
 use crate::common;
 use crate::common::collections::*;
 use crate::common::http_client::HttpClient;
@@ -144,11 +143,7 @@ async fn list_snapshots(
     path: web::Path<String>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let collection_name = path.into_inner();
-    let timing = Instant::now();
-
-    let response = do_list_snapshots(dispatcher.toc(&access), access, &collection_name).await;
-    process_response(response, timing)
+    helpers::time(do_list_snapshots(dispatcher.toc(&access), access, &path)).await
 }
 
 #[post("/collections/{name}/snapshots")]
@@ -256,9 +251,7 @@ async fn list_full_snapshots(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let response = do_list_full_snapshots(dispatcher.toc(&access), access).await;
-    process_response(response, timing)
+    helpers::time(do_list_full_snapshots(dispatcher.toc(&access), access)).await
 }
 
 #[post("/snapshots")]

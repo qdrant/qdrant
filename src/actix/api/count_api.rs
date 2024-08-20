@@ -1,4 +1,3 @@
-use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -8,7 +7,7 @@ use storage::dispatcher::Dispatcher;
 use super::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers;
 use crate::common::points::do_count_points;
 
 #[post("/collections/{name}/points/count")]
@@ -19,8 +18,6 @@ async fn count_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let CountRequest {
         count_request,
         shard_key,
@@ -31,7 +28,7 @@ async fn count_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let response = do_count_points(
+    helpers::time(do_count_points(
         dispatcher.toc(&access),
         &collection.name,
         count_request,
@@ -39,8 +36,6 @@ async fn count_points(
         params.timeout(),
         shard_selector,
         access,
-    )
-    .await;
-
-    process_response(response, timing)
+    ))
+    .await
 }
