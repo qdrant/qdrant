@@ -740,7 +740,7 @@ impl SegmentEntry for ProxySegment {
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let deleted_points = self.deleted_points.read();
-        let mut segment_hits = if deleted_points.is_empty() {
+        let mut hits = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
@@ -762,9 +762,13 @@ impl SegmentEntry for ProxySegment {
 
         let write_segment_hits = self.write_segment.get().read().facet(request, is_stopped)?;
 
-        segment_hits.extend(write_segment_hits);
+        write_segment_hits
+            .into_iter()
+            .for_each(|(facet_value, count)| {
+                *hits.entry(facet_value).or_insert(0) += count;
+            });
 
-        Ok(segment_hits)
+        Ok(hits)
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {

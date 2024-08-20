@@ -158,7 +158,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn get_unique_values_count(&self) -> usize {
+    pub fn get_unique_values_count(&self) -> usize {
         match self {
             MapIndex::Mutable(index) => index.get_unique_values_count(),
             MapIndex::Immutable(index) => index.get_unique_values_count(),
