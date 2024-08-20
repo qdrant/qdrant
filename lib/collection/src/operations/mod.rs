@@ -21,7 +21,7 @@ pub mod verification;
 use std::collections::HashMap;
 
 use segment::json_path::JsonPath;
-use segment::types::{ExtendedPointId, PayloadFieldSchema};
+use segment::types::{ExtendedPointId, PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
@@ -144,6 +144,43 @@ pub enum CollectionUpdateOperations {
     VectorOperation(vector_ops::VectorOperations),
     PayloadOperation(payload_ops::PayloadOps),
     FieldIndexOperation(FieldIndexOperations),
+}
+
+impl CollectionUpdateOperations {
+    pub fn is_upsert_points(&self) -> bool {
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::UpsertPoints(_))
+        )
+    }
+
+    pub fn is_delete_points(&self) -> bool {
+        matches!(
+            self,
+            Self::PointOperation(point_ops::PointOperations::DeletePoints { .. })
+        )
+    }
+
+    pub fn point_ids(&self) -> Vec<PointIdType> {
+        match self {
+            Self::PointOperation(op) => op.point_ids(),
+            Self::VectorOperation(op) => op.point_ids(),
+            Self::PayloadOperation(op) => op.point_ids(),
+            Self::FieldIndexOperation(_) => Vec::new(),
+        }
+    }
+
+    pub fn retain_point_ids<F>(&mut self, filter: F)
+    where
+        F: Fn(&PointIdType) -> bool,
+    {
+        match self {
+            Self::PointOperation(op) => op.retain_point_ids(filter),
+            Self::VectorOperation(op) => op.retain_point_ids(filter),
+            Self::PayloadOperation(op) => op.retain_point_ids(filter),
+            Self::FieldIndexOperation(_) => (),
+        }
+    }
 }
 
 /// A mapping of operation to shard.

@@ -88,6 +88,25 @@ impl VectorOperations {
             VectorOperations::DeleteVectorsByFilter(..) => false,
         }
     }
+
+    pub fn point_ids(&self) -> Vec<PointIdType> {
+        match self {
+            Self::UpdateVectors(op) => op.points.iter().map(|point| point.id).collect(),
+            Self::DeleteVectors(points, _) => points.points.clone(),
+            Self::DeleteVectorsByFilter(_, _) => Vec::new(),
+        }
+    }
+
+    pub fn retain_point_ids<F>(&mut self, filter: F)
+    where
+        F: Fn(&PointIdType) -> bool,
+    {
+        match self {
+            Self::UpdateVectors(op) => op.points.retain(|point| filter(&point.id)),
+            Self::DeleteVectors(points, _) => points.points.retain(filter),
+            Self::DeleteVectorsByFilter(_, _) => (),
+        }
+    }
 }
 
 impl Validate for VectorOperations {
