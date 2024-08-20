@@ -1171,8 +1171,7 @@ fn test_any_matcher_cardinality_estimation() {
     assert!(exact >= estimation.min);
 }
 
-/// Checks that it is ordered in descending order, and that the counts are the same as counting
-/// each value exactly.
+/// Checks that the counts are the same as counting each value exactly.
 fn validate_facet_result(
     segment: &Segment,
     facet_hits: HashMap<FacetValue, usize>,
@@ -1202,12 +1201,14 @@ fn test_keyword_facet() {
 
     let limit = 100;
     let key: JsonPath = STR_KEY.try_into().unwrap();
+    let exact = false; // This is only used at local shard level
 
     // *** Without filter ***
     let request = FacetParams {
         key: key.clone(),
         limit,
         filter: None,
+        exact,
     };
 
     // Plain segment should fail, as it does not have a keyword index
@@ -1245,6 +1246,7 @@ fn test_keyword_facet() {
         key,
         limit,
         filter: Some(filter.clone()),
+        exact,
     };
 
     // Struct segment

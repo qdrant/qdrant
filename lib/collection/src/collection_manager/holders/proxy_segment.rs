@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -712,6 +712,28 @@ impl SegmentEntry for ProxySegment {
         read_points
     }
 
+    fn unique_values(
+        &self,
+        key: &JsonPath,
+        filter: Option<&Filter>,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<BTreeSet<FacetValue>> {
+        let mut values = self
+            .wrapped_segment
+            .get()
+            .read()
+            .unique_values(key, filter, is_stopped)?;
+
+        values.extend(
+            self.write_segment
+                .get()
+                .read()
+                .unique_values(key, filter, is_stopped)?,
+        );
+
+        Ok(values)
+    }
+
     fn facet(
         &self,
         request: &FacetParams,
@@ -729,9 +751,8 @@ impl SegmentEntry for ProxySegment {
                 &deleted_points,
             );
             let new_request = FacetParams {
-                key: request.key.clone(),
-                limit: request.limit,
                 filter: Some(wrapped_filter),
+                ..request.clone()
             };
             self.wrapped_segment
                 .get()

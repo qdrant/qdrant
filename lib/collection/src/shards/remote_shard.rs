@@ -931,7 +931,12 @@ impl ShardOperation for RemoteShard {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
-        let FacetParams { key, limit, filter } = request.as_ref();
+        let FacetParams {
+            key,
+            limit,
+            filter,
+            exact,
+        } = request.as_ref();
 
         let response = self
             .with_points_client(|mut client| async move {
@@ -940,6 +945,7 @@ impl ShardOperation for RemoteShard {
                     key: key.to_string(),
                     filter: filter.clone().map(api::grpc::qdrant::Filter::from),
                     limit: *limit as u64,
+                    exact: *exact,
                     shard_id: self.id,
                     timeout: timeout.map(|t| t.as_secs()),
                 };
