@@ -722,12 +722,18 @@ pub struct SearchMatrixPairsResponse {
 
 #[derive(Debug, JsonSchema, Serialize, Deserialize, Validate)]
 pub struct FacetRequestInternal {
+    /// Payload key to use for faceting.
     pub key: JsonPath,
 
+    /// Max number of hits to return. Default is 10.
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
 
+    /// Filter conditions - only consider points that satisfy these conditions.
     pub filter: Option<Filter>,
+
+    /// Whether to do a more expensive exact count for each of the values in the facet. Default is false.
+    pub exact: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

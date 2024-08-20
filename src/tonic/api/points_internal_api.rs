@@ -102,6 +102,7 @@ async fn facet_counts_internal(
         key,
         filter,
         limit,
+        exact,
         shard_id,
         timeout,
     } = request;
@@ -113,6 +114,7 @@ async fn facet_counts_internal(
             .map_err(|_| Status::invalid_argument("Failed to parse facet key"))?,
         limit: limit as usize,
         filter: filter.map(Filter::try_from).transpose()?,
+        exact,
     };
 
     let response = toc

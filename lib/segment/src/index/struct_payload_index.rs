@@ -15,7 +15,7 @@ use schemars::_serde_json::Value;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
 };
-use super::field_index::FieldIndexBuilderTrait as _;
+use super::field_index::{FacetIndex, FieldIndexBuilderTrait as _};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
@@ -412,6 +412,15 @@ impl StructPayloadIndex {
                 is_appendable: self.is_appendable,
             })
         }
+    }
+
+    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndex> {
+        self.field_indexes
+            .get(key)
+            .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))
+            .ok_or_else(|| OperationError::MissingMapIndexForFacet {
+                key: key.to_string(),
+            })
     }
 }
 

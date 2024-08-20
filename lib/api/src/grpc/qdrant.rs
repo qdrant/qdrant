@@ -8848,9 +8848,11 @@ pub struct FacetCountsInternal {
     pub filter: ::core::option::Option<Filter>,
     #[prost(uint64, tag = "4")]
     pub limit: u64,
-    #[prost(uint32, tag = "5")]
+    #[prost(bool, tag = "5")]
+    pub exact: bool,
+    #[prost(uint32, tag = "6")]
     pub shard_id: u32,
-    #[prost(uint64, optional, tag = "6")]
+    #[prost(uint64, optional, tag = "7")]
     #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
     pub timeout: ::core::option::Option<u64>,
 }

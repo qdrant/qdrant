@@ -266,6 +266,7 @@ impl From<FacetRequestInternal> for segment::data_types::facets::FacetParams {
             key: value.key,
             limit: value.limit.unwrap_or(Self::DEFAULT_LIMIT),
             filter: value.filter,
+            exact: value.exact.unwrap_or(Self::DEFAULT_EXACT),
         }
     }
 }

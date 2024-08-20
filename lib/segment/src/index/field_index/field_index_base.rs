@@ -546,6 +546,15 @@ impl<'a> FacetIndex<'a> {
         }
     }
 
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
+        match self {
+            FacetIndex::KeywordIndex(index) => {
+                let iter = index.iter_values().map(FacetValueRef::Keyword);
+                Box::new(iter)
+            }
+        }
+    }
+
     pub fn iter_values_map<F>(
         &'a self,
         f: &'a F,

@@ -13070,15 +13070,18 @@
             ]
           },
           "key": {
+            "description": "Payload key to use for faceting.",
             "type": "string"
           },
           "limit": {
+            "description": "Max number of hits to return. Default is 10.",
             "type": "integer",
             "format": "uint",
             "minimum": 1,
             "nullable": true
           },
           "filter": {
+            "description": "Filter conditions - only consider points that satisfy these conditions.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Filter"
@@ -13087,6 +13090,11 @@
                 "nullable": true
               }
             ]
+          },
+          "exact": {
+            "description": "Whether to do a more expensive exact count for each of the values in the facet. Default is false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
