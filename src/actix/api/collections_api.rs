@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
@@ -32,21 +31,19 @@ impl WaitTimeout {
 }
 
 #[get("/collections")]
-fn get_collections(
+async fn get_collections(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
-) -> impl Future<Output = HttpResponse> {
-    helpers::time(async move { do_list_collections(dispatcher.toc(&access), access).await })
+) -> HttpResponse {
+    helpers::time(do_list_collections(dispatcher.toc(&access), access)).await
 }
 
 #[get("/aliases")]
 async fn get_aliases(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = do_list_aliases(dispatcher.toc(&access), access).await;
-    process_response(response, timing)
+) -> HttpResponse {
+    helpers::time(do_list_aliases(dispatcher.toc(&access), access)).await
 }
 
 #[get("/collections/{name}")]
@@ -54,10 +51,14 @@ async fn get_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = do_get_collection(dispatcher.toc(&access), access, &collection.name, None).await;
-    process_response(response, timing)
+) -> HttpResponse {
+    helpers::time(do_get_collection(
+        dispatcher.toc(&access),
+        access,
+        &collection.name,
+        None,
+    ))
+    .await
 }
 
 #[get("/collections/{name}/exists")]
@@ -65,10 +66,13 @@ async fn get_collection_existence(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = do_collection_exists(dispatcher.toc(&access), access, &collection.name).await;
-    process_response(response, timing)
+) -> HttpResponse {
+    helpers::time(do_collection_exists(
+        dispatcher.toc(&access),
+        access,
+        &collection.name,
+    ))
+    .await
 }
 
 #[get("/collections/{name}/aliases")]
@@ -76,11 +80,13 @@ async fn get_collection_aliases(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response =
-        do_list_collection_aliases(dispatcher.toc(&access), access, &collection.name).await;
-    process_response(response, timing)
+) -> HttpResponse {
+    helpers::time(do_list_collection_aliases(
+        dispatcher.toc(&access),
+        access,
+        &collection.name,
+    ))
+    .await
 }
 
 #[put("/collections/{name}")]
@@ -90,19 +96,16 @@ async fn create_collection(
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = dispatcher
-        .submit_collection_meta_op(
-            CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
-                collection.name.clone(),
-                operation.into_inner(),
-            )),
-            access,
-            query.timeout(),
-        )
-        .await;
-    process_response(response, timing)
+) -> HttpResponse {
+    helpers::time(dispatcher.submit_collection_meta_op(
+        CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
+            collection.name.clone(),
+            operation.into_inner(),
+        )),
+        access,
+        query.timeout(),
+    ))
+    .await
 }
 
 #[patch("/collections/{name}")]
@@ -172,10 +175,12 @@ async fn get_cluster_info(
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let response =
-        do_get_collection_cluster(dispatcher.toc(&access), access, &collection.name).await;
-    process_response(response, timing)
+    helpers::time(do_get_collection_cluster(
+        dispatcher.toc(&access),
+        access,
+        &collection.name,
+    ))
+    .await
 }
 
 #[post("/collections/{name}/cluster")]

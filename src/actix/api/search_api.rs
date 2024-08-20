@@ -1,5 +1,4 @@
-use actix_web::rt::time::Instant;
-use actix_web::{post, web, Responder};
+use actix_web::{post, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
@@ -7,13 +6,15 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::dispatcher::Dispatcher;
+use tokio::time::Instant;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
@@ -25,9 +26,7 @@ async fn search_points(
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-
+) -> HttpResponse {
     let SearchRequest {
         search_request,
         shard_key,
@@ -38,24 +37,24 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = do_core_search_points(
-        dispatcher.toc(&access),
-        &collection.name,
-        search_request.into(),
-        params.consistency,
-        shard_selection,
-        access,
-        params.timeout(),
+    helpers::time(
+        do_core_search_points(
+            dispatcher.toc(&access),
+            &collection.name,
+            search_request.into(),
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+        )
+        .map_ok(|scored_points| {
+            scored_points
+                .into_iter()
+                .map(api::rest::ScoredPoint::from)
+                .collect_vec()
+        }),
     )
     .await
-    .map(|scored_points| {
-        scored_points
-            .into_iter()
-            .map(api::rest::ScoredPoint::from)
-            .collect_vec()
-    });
-
-    process_response(response, timing)
 }
 
 #[post("/collections/{name}/points/search/batch")]
@@ -65,9 +64,7 @@ async fn batch_search_points(
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-
+) -> HttpResponse {
     let request = request.into_inner();
     let requests = request
         .searches
@@ -87,28 +84,28 @@ async fn batch_search_points(
         })
         .collect();
 
-    let response = do_search_batch_points(
-        dispatcher.toc(&access),
-        &collection.name,
-        requests,
-        params.consistency,
-        access,
-        params.timeout(),
+    helpers::time(
+        do_search_batch_points(
+            dispatcher.toc(&access),
+            &collection.name,
+            requests,
+            params.consistency,
+            access,
+            params.timeout(),
+        )
+        .map_ok(|batch_scored_points| {
+            batch_scored_points
+                .into_iter()
+                .map(|scored_points| {
+                    scored_points
+                        .into_iter()
+                        .map(api::rest::ScoredPoint::from)
+                        .collect_vec()
+                })
+                .collect_vec()
+        }),
     )
     .await
-    .map(|batch_scored_points| {
-        batch_scored_points
-            .into_iter()
-            .map(|scored_points| {
-                scored_points
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
-            })
-            .collect_vec()
-    });
-
-    process_response(response, timing)
 }
 
 #[post("/collections/{name}/points/search/groups")]
@@ -118,9 +115,7 @@ async fn search_point_groups(
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-
+) -> HttpResponse {
     let SearchGroupsRequest {
         search_group_request,
         shard_key,
@@ -131,7 +126,7 @@ async fn search_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = do_search_point_groups(
+    helpers::time(do_search_point_groups(
         dispatcher.toc(&access),
         &collection.name,
         search_group_request,
@@ -139,10 +134,8 @@ async fn search_point_groups(
         shard_selection,
         access,
         params.timeout(),
-    )
-    .await;
-
-    process_response(response, timing)
+    ))
+    .await
 }
 
 #[post("/collections/{name}/points/search/matrix/pairs")]

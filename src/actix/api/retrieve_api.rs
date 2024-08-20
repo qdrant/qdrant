@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use actix_web::rt::time::Instant;
 use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
+use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
@@ -18,7 +18,7 @@ use validator::Validate;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response};
+use crate::actix::helpers;
 use crate::common::points::do_get_points;
 
 #[derive(Deserialize, Validate)]
@@ -97,8 +97,6 @@ async fn get_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let PointRequest {
         point_request,
         shard_key,
@@ -109,18 +107,24 @@ async fn get_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let response = do_get_points(
-        dispatcher.toc(&access),
-        &collection.name,
-        point_request,
-        params.consistency,
-        params.timeout(),
-        shard_selection,
-        access,
+    helpers::time(
+        do_get_points(
+            dispatcher.toc(&access),
+            &collection.name,
+            point_request,
+            params.consistency,
+            params.timeout(),
+            shard_selection,
+            access,
+        )
+        .map_ok(|response| {
+            response
+                .into_iter()
+                .map(api::rest::Record::from)
+                .collect_vec()
+        }),
     )
-    .await;
-    let response = response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec());
-    process_response(response, timing)
+    .await
 }
 
 #[post("/collections/{name}/points/scroll")]
@@ -131,8 +135,6 @@ async fn scroll_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let ScrollRequest {
         scroll_request,
         shard_key,
@@ -143,17 +145,13 @@ async fn scroll_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let response = dispatcher
-        .toc(&access)
-        .scroll(
-            &collection.name,
-            scroll_request,
-            params.consistency,
-            params.timeout(),
-            shard_selection,
-            access,
-        )
-        .await;
-
-    process_response(response, timing)
+    helpers::time(dispatcher.toc(&access).scroll(
+        &collection.name,
+        scroll_request,
+        params.consistency,
+        params.timeout(),
+        shard_selection,
+        access,
+    ))
+    .await
 }

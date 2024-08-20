@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use actix_web::rt::time::Instant;
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
@@ -8,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
+use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
@@ -18,7 +18,7 @@ use storage::rbac::Access;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers;
 
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
@@ -28,8 +28,6 @@ async fn recommend_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let RecommendRequest {
         recommend_request,
         shard_key,
@@ -40,25 +38,25 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = dispatcher
-        .toc(&access)
-        .recommend(
-            &collection.name,
-            recommend_request,
-            params.consistency,
-            shard_selection,
-            access,
-            params.timeout(),
-        )
-        .await
-        .map(|scored_points| {
-            scored_points
-                .into_iter()
-                .map(api::rest::ScoredPoint::from)
-                .collect_vec()
-        });
-
-    process_response(response, timing)
+    helpers::time(
+        dispatcher
+            .toc(&access)
+            .recommend(
+                &collection.name,
+                recommend_request,
+                params.consistency,
+                shard_selection,
+                access,
+                params.timeout(),
+            )
+            .map_ok(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(api::rest::ScoredPoint::from)
+                    .collect_vec()
+            }),
+    )
+    .await
 }
 
 async fn do_recommend_batch_points(
@@ -94,30 +92,28 @@ async fn recommend_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
-    let response = do_recommend_batch_points(
-        dispatcher.toc(&access),
-        &collection.name,
-        request.into_inner(),
-        params.consistency,
-        access,
-        params.timeout(),
+    helpers::time(
+        do_recommend_batch_points(
+            dispatcher.toc(&access),
+            &collection.name,
+            request.into_inner(),
+            params.consistency,
+            access,
+            params.timeout(),
+        )
+        .map_ok(|batch_scored_points| {
+            batch_scored_points
+                .into_iter()
+                .map(|scored_points| {
+                    scored_points
+                        .into_iter()
+                        .map(api::rest::ScoredPoint::from)
+                        .collect_vec()
+                })
+                .collect_vec()
+        }),
     )
     .await
-    .map(|batch_scored_points| {
-        batch_scored_points
-            .into_iter()
-            .map(|scored_points| {
-                scored_points
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
-            })
-            .collect_vec()
-    });
-
-    process_response(response, timing)
 }
 
 #[post("/collections/{name}/points/recommend/groups")]
@@ -128,8 +124,6 @@ async fn recommend_point_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let RecommendGroupsRequest {
         recommend_group_request,
         shard_key,
@@ -140,7 +134,7 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = crate::common::points::do_recommend_point_groups(
+    helpers::time(crate::common::points::do_recommend_point_groups(
         dispatcher.toc(&access),
         &collection.name,
         recommend_group_request,
@@ -148,10 +142,8 @@ async fn recommend_point_groups(
         shard_selection,
         access,
         params.timeout(),
-    )
-    .await;
-
-    process_response(response, timing)
+    ))
+    .await
 }
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {
