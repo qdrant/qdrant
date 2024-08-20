@@ -32,16 +32,7 @@ where
 }
 
 pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
-    if let StorageError::ServiceError {
-        description,
-        backtrace,
-    } = &err
-    {
-        log::error!("error processing request: {}", description);
-        if let Some(backtrace) = backtrace {
-            log::trace!("backtrace: {}", backtrace);
-        }
-    }
+    log_service_error(&err);
 
     let error: HttpError = err.into();
 
@@ -78,6 +69,7 @@ where
         if wait {
             handle.await?.map(Some)
         } else {
+            log_accept_task_error(handle);
             Ok(None)
         }
     };
@@ -117,11 +109,28 @@ where
                 .and_then(|x| x)
                 .map(Some)
         } else {
+            log_accept_task_error(res);
             Ok(None)
         }
     };
 
     time_impl(future).await
+}
+
+/// For accepted tasks, spawn a background task to log any errors
+fn log_accept_task_error<T>(handle: JoinHandle<Result<T, StorageError>>) -> JoinHandle<()>
+where
+    T: serde::Serialize + Send + 'static,
+{
+    tokio::task::spawn(async move {
+        if let Err(err) = handle
+            .await
+            .map_err(Into::<StorageError>::into)
+            .and_then(|x| x)
+        {
+            log_service_error(&err);
+        }
+    })
 }
 
 /// # Cancel safety
@@ -136,6 +145,19 @@ where
     match future.await.transpose() {
         Some(v) => process_response(v, instant),
         None => accepted_response(instant),
+    }
+}
+
+fn log_service_error(err: &StorageError) {
+    if let StorageError::ServiceError {
+        description,
+        backtrace,
+    } = err
+    {
+        log::error!("error processing request: {}", description);
+        if let Some(backtrace) = backtrace {
+            log::trace!("backtrace: {}", backtrace);
+        }
     }
 }
 
