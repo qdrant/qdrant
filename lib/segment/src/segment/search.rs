@@ -3,9 +3,13 @@ use common::types::ScoredPointOffset;
 use super::Segment;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
+#[cfg(feature = "testing")]
 use crate::data_types::vectors::QueryVector;
+#[cfg(feature = "testing")]
 use crate::entry::entry_point::SegmentEntry;
-use crate::types::{Filter, ScoredPoint, SearchParams, WithPayload, WithVector};
+#[cfg(feature = "testing")]
+use crate::types::{Filter, SearchParams};
+use crate::types::{ScoredPoint, WithPayload, WithVector};
 
 impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
