@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use collection::collection::Collection;
 use collection::operations::config_diff::StrictModeConfigDiff;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::verification::{new_pass, StrictModeVerification, VerificationPass};
+use tokio::sync::RwLockReadGuard;
 use tonic::async_trait;
 
 use super::errors::StorageError;
@@ -38,7 +40,10 @@ pub trait CollectionRequestVerification {
         let collection_info = collection.info(&ShardSelectorInternal::All).await?;
 
         if let Some(strict_mode_config) = &collection_info.config.strict_mode_config {
-            self.check_strict_mode_inner(strict_mode_config).await?;
+            if strict_mode_config.enabled == Some(true) {
+                self.check_strict_mode_inner(&collection, strict_mode_config)
+                    .await?;
+            }
         }
 
         Ok(())
@@ -46,6 +51,7 @@ pub trait CollectionRequestVerification {
 
     async fn check_strict_mode_inner(
         &self,
+        collection: &RwLockReadGuard<'_, Collection>,
         strict_mode_config: &StrictModeConfigDiff,
     ) -> Result<(), StorageError>;
 }
@@ -65,9 +71,11 @@ where
 {
     async fn check_strict_mode_inner(
         &self,
+        collection: &RwLockReadGuard<'_, Collection>,
         strict_mode_config: &StrictModeConfigDiff,
     ) -> Result<(), StorageError> {
-        StrictModeVerification::check_strict_mode(self, strict_mode_config)
+        StrictModeVerification::check_strict_mode(self, collection, strict_mode_config)
+            .await
             .map_err(|error| StorageError::forbidden(error))
     }
 }

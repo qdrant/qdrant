@@ -39,6 +39,7 @@ impl Dispatcher {
     /// Get the table of content.
     /// The `_access` parameter is not used, but it's required to verify caller's possession
     /// of the [Access] object.
+    /// TODO: Replace this function with `toc_new` everywhere.
     pub fn toc(&self, _access: &Access) -> &Arc<TableOfContent> {
         &self.toc
     }

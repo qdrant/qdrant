@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::num::NonZeroU32;
 
 use merge::Merge;
@@ -85,15 +86,66 @@ pub struct HnswConfigDiff {
     pub payload_m: Option<usize>,
 }
 
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, PartialEq, Eq, Hash,
-)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
 pub struct StrictModeConfigDiff {
+    // Global
     pub enabled: Option<bool>,
-
     pub max_filter_limit: Option<usize>,
-
     pub max_timeout: Option<usize>,
+    pub unindexed_filtering_retrieve: Option<bool>,
+    pub unindexed_filtering_update: Option<bool>,
+
+    // Search
+    pub search_max_hnsw_ef: Option<usize>,
+    pub search_allow_exact: Option<bool>,
+    pub search_max_oversampling: Option<f64>,
+
+    // Group-by
+    pub group_by_max_group_size: Option<usize>,
+
+    // Recommend
+    pub recommend_max_examples: Option<usize>,
+
+    // Discovery
+    pub discovery_max_context_size: Option<usize>,
+}
+
+impl Hash for StrictModeConfigDiff {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.enabled.hash(state);
+        self.max_filter_limit.hash(state);
+        self.max_timeout.hash(state);
+        self.unindexed_filtering_retrieve.hash(state);
+        self.unindexed_filtering_update.hash(state);
+        self.search_max_hnsw_ef.hash(state);
+        self.search_allow_exact.hash(state);
+        self.search_max_oversampling
+            .map(|i| i.to_le_bytes())
+            .hash(state);
+        self.group_by_max_group_size.hash(state);
+        self.recommend_max_examples.hash(state);
+        self.discovery_max_context_size.hash(state);
+    }
+}
+
+impl Eq for StrictModeConfigDiff {}
+
+impl PartialEq for StrictModeConfigDiff {
+    fn eq(&self, other: &Self) -> bool {
+        self.enabled == other.enabled
+            && self.max_filter_limit == other.max_filter_limit
+            && self.max_timeout == other.max_timeout
+            && self.unindexed_filtering_retrieve == other.unindexed_filtering_retrieve
+            && self.unindexed_filtering_update == other.unindexed_filtering_update
+            && self.search_max_hnsw_ef == other.search_max_hnsw_ef
+            && self.search_allow_exact == other.search_allow_exact
+            && self.search_max_oversampling.map(|i| i.to_le_bytes())
+                == other.search_max_oversampling.map(|i| i.to_le_bytes())
+            && self.group_by_max_group_size == other.group_by_max_group_size
+            && self.recommend_max_examples == other.recommend_max_examples
+            && self.recommend_max_examples == other.recommend_max_examples
+            && self.discovery_max_context_size == other.discovery_max_context_size
+    }
 }
 
 #[derive(

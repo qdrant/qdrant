@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PayloadKeyType};
+use segment::types::{Condition, Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
@@ -83,5 +83,43 @@ impl Collection {
         let result = self.update_all_local(delete_index_operation, false).await?;
 
         Ok(result)
+    }
+
+    pub fn has_filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
+        let iter = filter
+            .must
+            .iter()
+            .flatten()
+            .chain(filter.must_not.iter().flatten())
+            .chain(filter.should.iter().flatten())
+            .chain(filter.min_should.iter().map(|i| &i.conditions).flatten());
+
+        for condition in iter {
+            if let Some(key) = self.has_condition_without_index(condition) {
+                return Some(key);
+            }
+        }
+
+        None
+    }
+
+    fn has_condition_without_index(&self, condition: &Condition) -> Option<JsonPath> {
+        let has_key = |key: &JsonPath| self.payload_index_schema.read().schema.contains_key(key);
+
+        match condition {
+            Condition::Field(field) => {
+                if !has_key(&field.key) {
+                    Some(field.key.clone())
+                } else {
+                    None
+                }
+            }
+            Condition::Nested(nested) => self.has_filter_without_index(nested.filter()),
+            Condition::Filter(filter) => self.has_filter_without_index(filter),
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
+            | Condition::CustomIdChecker(_) => None,
+        }
     }
 }
