@@ -51,25 +51,46 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
     assert response.ok
 
 
-def create_payload_indexes(name: str):
+def create_payload_indexes(name: str, on_disk_payload_index: bool):
     # Create some payload indexes
-    response = requests.put(
-        f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "keyword_field", "field_type": "keyword"},
-    )
-    assert response.ok
+    if on_disk_payload_index:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "keyword_field", "field_schema": {"type": "keyword", "on_disk": True }},
+        )
+        assert response.ok
+    else:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "keyword_field", "field_type": "keyword"},
+        )
+        assert response.ok
 
-    response = requests.put(
-        f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "float_field", "field_type": "float"},
-    )
-    assert response.ok
+    if on_disk_payload_index:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "float_field", "field_schema": {"type": "float", "on_disk": True }},
+        )
+        assert response.ok
+    else:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "float_field", "field_type": "float"},
+        )
+        assert response.ok
 
-    response = requests.put(
-        f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "integer_field", "field_type": "integer"},
-    )
-    assert response.ok
+    if on_disk_payload_index:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "integer_field", "field_schema": {"type": "integer", "on_disk": True, "lookup": True, "range": True }},
+        )
+        assert response.ok
+    else:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "integer_field", "field_type": "integer"},
+        )
+        assert response.ok
 
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
@@ -239,13 +260,13 @@ def basic_retrieve(name: str):
 # There are two ways to configure the usage of memmap storage:
 # - `memmap_threshold_kb` - the threshold for the indexer to use memmap storage
 # - `on_disk` - to store vectors immediately on disk
-def populate_collection(name: str, on_disk: bool, quantization_config: dict = None, memmap_threshold: bool = False):
+def populate_collection(name: str, on_disk: bool, quantization_config: dict = None, memmap_threshold: bool = False, on_disk_payload_index: bool = False):
     drop_collection(name)
     memmap_threshold_kb = 0
     if memmap_threshold:
         memmap_threshold_kb = 10  # low value to force transition to memmap storage
     create_collection(name, memmap_threshold_kb, on_disk, quantization_config)
-    create_payload_indexes(name)
+    create_payload_indexes(name, on_disk_payload_index)
     upload_points(name)
     basic_retrieve(name)
 
@@ -261,3 +282,4 @@ if __name__ == "__main__":
     populate_collection("test_collection_product_x16", False, {"product": {"compression": "x16"}})
     populate_collection("test_collection_product_x8", False, {"product": {"compression": "x8"}})
     populate_collection("test_collection_binary", False, {"binary": {"always_ram": True}})
+    populate_collection("test_collection_mmap_field_index", on_disk=True, on_disk_payload_index=True)
