@@ -19,7 +19,7 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, FacetValue, FacetValueHit, FieldType,
+    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetValue, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, KeywordIndexParams, LookupLocation,
     MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
@@ -2236,13 +2236,13 @@ impl From<LookupLocation> for rest::LookupLocation {
     }
 }
 
-impl TryFrom<FacetValueHit> for segment_facets::FacetValueHit {
+impl TryFrom<FacetHit> for segment_facets::FacetValueHit {
     type Error = Status;
 
-    fn try_from(hit: FacetValueHit) -> Result<Self, Self::Error> {
+    fn try_from(hit: FacetHit) -> Result<Self, Self::Error> {
         let value = hit
             .value
-            .ok_or_else(|| Status::internal("expected FacetValueHit to have a value"))?;
+            .ok_or_else(|| Status::internal("expected FacetHit to have a value"))?;
 
         Ok(Self {
             value: segment_facets::FacetValue::try_from(value)?,
@@ -2251,7 +2251,7 @@ impl TryFrom<FacetValueHit> for segment_facets::FacetValueHit {
     }
 }
 
-impl From<segment_facets::FacetValueHit> for FacetValueHit {
+impl From<segment_facets::FacetValueHit> for FacetHit {
     fn from(hit: segment_facets::FacetValueHit) -> Self {
         Self {
             value: Some(hit.value.into()),

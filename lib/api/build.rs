@@ -270,6 +270,9 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QueryBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("QueryBatchPoints.query_points", ""),
             ("QueryBatchPoints.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
+            ("FacetCounts.collection_name", "length(min = 1, max = 255)"),
+            ("FacetCounts.key", "length(min = 1)"),
+            ("FacetCounts.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")")
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto

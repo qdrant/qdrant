@@ -548,16 +548,16 @@ ACTION_ACCESS = {
         True,
         True,
         True,
-        "POST /collections/{collection_name}/points/search/matrix/rows",
+        "POST /collections/{collection_name}/points/search/matrix/rows", # TODO(distance_matrix): enable grpc endpoint
     ),
     "search_points_matrix_pairs": EndpointAccess(
         True,
         True,
         True,
-        "POST /collections/{collection_name}/points/search/matrix/pairs"
+        "POST /collections/{collection_name}/points/search/matrix/pairs" # TODO(distance_matrix): enable grpc endpoint
     ),
     "facet": EndpointAccess(
-        True, True, True, "POST /collections/{collection_name}/facet", # TODO(facet): enable grpc "qdrant.Points/Facet"
+        True, True, True, "POST /collections/{collection_name}/facet", "qdrant.Points/Facet"
     ),
     ### Service ###
     "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
@@ -1841,7 +1841,10 @@ def test_facet():
         rest_request={
             "key": FACET_KEY,
         },
-        # TODO(facet): grpc request
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "key": FACET_KEY,
+        },
     )
 
 

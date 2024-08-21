@@ -5028,6 +5028,39 @@ pub struct QueryPointGroups {
     #[prost(message, optional, tag = "17")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetCounts {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Payload key of the facet
+    #[prost(string, tag = "2")]
+    #[validate(length(min = 1))]
+    pub key: ::prost::alloc::string::String,
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[prost(message, optional, tag = "3")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Max number of facets. Default is 10.
+    #[prost(uint64, optional, tag = "4")]
+    pub limit: ::core::option::Option<u64>,
+    /// If true, return exact counts, slower but useful for debugging purposes. Default is false.
+    #[prost(bool, optional, tag = "5")]
+    pub exact: ::core::option::Option<bool>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "6")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    pub timeout: ::core::option::Option<u64>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "7")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "8")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5049,7 +5082,7 @@ pub mod facet_value {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FacetValueHit {
+pub struct FacetHit {
     /// Value from the facet
     #[prost(message, optional, tag = "1")]
     pub value: ::core::option::Option<FacetValue>,
@@ -5515,6 +5548,16 @@ pub struct RecommendGroupsResponse {
 pub struct UpdateBatchResponse {
     #[prost(message, repeated, tag = "1")]
     pub result: ::prost::alloc::vec::Vec<UpdateResult>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FacetResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub hits: ::prost::alloc::vec::Vec<FacetHit>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -6800,6 +6843,26 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "QueryGroups"));
             self.inner.unary(req, path, codec).await
         }
+        /// Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions.
+        pub async fn facet(
+            &mut self,
+            request: impl tonic::IntoRequest<super::FacetCounts>,
+        ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/qdrant.Points/Facet");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Facet"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7008,6 +7071,11 @@ pub mod points_server {
             tonic::Response<super::QueryGroupsResponse>,
             tonic::Status,
         >;
+        /// Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions.
+        async fn facet(
+            &self,
+            request: tonic::Request<super::FacetCounts>,
+        ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -8206,6 +8274,50 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
+                "/qdrant.Points/Facet" => {
+                    #[allow(non_camel_case_types)]
+                    struct FacetSvc<T: Points>(pub Arc<T>);
+                    impl<T: Points> tonic::server::UnaryService<super::FacetCounts>
+                    for FacetSvc<T> {
+                        type Response = super::FacetResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FacetCounts>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::facet(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = FacetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         Ok(
@@ -8861,7 +8973,7 @@ pub struct FacetCountsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetResponseInternal {
     #[prost(message, repeated, tag = "1")]
-    pub hits: ::prost::alloc::vec::Vec<FacetValueHit>,
+    pub hits: ::prost::alloc::vec::Vec<FacetHit>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
