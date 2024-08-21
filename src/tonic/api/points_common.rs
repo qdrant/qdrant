@@ -746,59 +746,67 @@ fn convert_field_type(
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
 
     let field_schema = match (field_type_parsed, field_index_params) {
-        // Parameterized Datetime type
         (
-            Some(FieldType::Datetime),
+            Some(field_type),
             Some(PayloadIndexParams {
-                index_params: Some(IndexParams::DatetimeIndexParams(datetime_index_params)),
+                index_params: Some(index_params),
             }),
-        ) => Some(PayloadFieldSchema::FieldParams(
-            PayloadSchemaParams::Datetime(datetime_index_params.try_into()?),
-        )),
-        // Parameterized Uuid type
-        (
-            Some(FieldType::Uuid),
-            Some(PayloadIndexParams {
-                index_params: Some(IndexParams::UuidIndexParams(uuid_index_params)),
-            }),
-        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Uuid(
-            uuid_index_params.try_into()?,
-        ))),
-        // Parameterized keyword type
-        (
-            Some(FieldType::Keyword),
-            Some(PayloadIndexParams {
-                index_params: Some(IndexParams::KeywordIndexParams(keyword_index_params)),
-            }),
-        ) => Some(PayloadFieldSchema::FieldParams(
-            PayloadSchemaParams::Keyword(keyword_index_params.try_into()?),
-        )), // Parameterized text type
-        (
-            Some(FieldType::Text),
-            Some(PayloadIndexParams {
-                index_params: Some(IndexParams::TextIndexParams(text_index_params)),
-            }),
-        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
-            text_index_params.try_into()?,
-        ))),
-        // Parameterized float type
-        (
-            Some(FieldType::Float),
-            Some(PayloadIndexParams {
-                index_params: Some(IndexParams::FloatIndexParams(float_params)),
-            }),
-        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Float(
-            float_params.try_into()?,
-        ))),
-        // Parameterized integer type
-        (
-            Some(FieldType::Integer),
-            Some(PayloadIndexParams {
-                index_params: Some(IndexParams::IntegerIndexParams(integer_params)),
-            }),
-        ) => Some(PayloadFieldSchema::FieldParams(
-            PayloadSchemaParams::Integer(integer_params.try_into()?),
-        )),
+        ) => {
+            let schema_params = match index_params {
+                // Parameterized keyword type
+                IndexParams::KeywordIndexParams(keyword_index_params) => {
+                    matches!(field_type, FieldType::Keyword).then(|| {
+                        TryFrom::try_from(keyword_index_params).map(PayloadSchemaParams::Keyword)
+                    })
+                }
+                IndexParams::IntegerIndexParams(integer_index_params) => {
+                    matches!(field_type, FieldType::Integer).then(|| {
+                        TryFrom::try_from(integer_index_params).map(PayloadSchemaParams::Integer)
+                    })
+                }
+                // Parameterized float type
+                IndexParams::FloatIndexParams(float_index_params) => {
+                    matches!(field_type, FieldType::Float).then(|| {
+                        TryFrom::try_from(float_index_params).map(PayloadSchemaParams::Float)
+                    })
+                }
+                IndexParams::GeoIndexParams(geo_index_params) => {
+                    matches!(field_type, FieldType::Geo)
+                        .then(|| TryFrom::try_from(geo_index_params).map(PayloadSchemaParams::Geo))
+                }
+                // Parameterized text type
+                IndexParams::TextIndexParams(text_index_params) => {
+                    matches!(field_type, FieldType::Text).then(|| {
+                        TryFrom::try_from(text_index_params).map(PayloadSchemaParams::Text)
+                    })
+                }
+                // Parameterized bool type
+                IndexParams::BoolIndexParams(bool_index_params) => {
+                    matches!(field_type, FieldType::Bool).then(|| {
+                        TryFrom::try_from(bool_index_params).map(PayloadSchemaParams::Bool)
+                    })
+                }
+                // Parameterized Datetime type
+                IndexParams::DatetimeIndexParams(datetime_index_params) => {
+                    matches!(field_type, FieldType::Datetime).then(|| {
+                        TryFrom::try_from(datetime_index_params).map(PayloadSchemaParams::Datetime)
+                    })
+                }
+                // Parameterized Uuid type
+                IndexParams::UuidIndexParams(uuid_index_params) => {
+                    matches!(field_type, FieldType::Uuid).then(|| {
+                        TryFrom::try_from(uuid_index_params).map(PayloadSchemaParams::Uuid)
+                    })
+                }
+            }
+            .ok_or_else(|| {
+                Status::invalid_argument(format!(
+                    "field_type ({field_type:?}) and field_index_params do not match"
+                ))
+            })??;
+
+            Some(PayloadFieldSchema::FieldParams(schema_params))
+        }
         // Regular field types
         (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
             FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
@@ -810,17 +818,6 @@ fn convert_field_type(
             FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
             FieldType::Uuid => Some(PayloadSchemaType::Uuid.into()),
         },
-        // Parameterized index with mismatching types
-        (
-            Some(v),
-            Some(PayloadIndexParams {
-                index_params: Some(_),
-            }),
-        ) => {
-            return Err(Status::invalid_argument(format!(
-                "field_type ({v:?}) and field_index_params do not match"
-            )))
-        }
         (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
         (None, None) => None,
     };
