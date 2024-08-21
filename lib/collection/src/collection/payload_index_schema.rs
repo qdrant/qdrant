@@ -86,8 +86,7 @@ impl Collection {
     }
 
     /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
-    /// If this function returns `None` all keys in `filter` are indexed.
-    /// Note that conditions where no index exists get ignored.
+    /// If this function returns `None` all indexable keys in `filter` are indexed.
     pub fn has_filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
         filter
             .must

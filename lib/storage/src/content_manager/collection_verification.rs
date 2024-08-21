@@ -75,7 +75,6 @@ where
         strict_mode_config: &StrictModeConfigDiff,
     ) -> Result<(), StorageError> {
         StrictModeVerification::check_strict_mode(self, collection, strict_mode_config)
-            .await
             .map_err(StorageError::forbidden)
     }
 }
