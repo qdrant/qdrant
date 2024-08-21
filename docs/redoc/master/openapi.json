@@ -6114,7 +6114,7 @@
             "default": null,
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeConfigDiff"
+                "$ref": "#/components/schemas/StrictModeConfig"
               },
               {
                 "nullable": true
@@ -6663,7 +6663,7 @@
           }
         }
       },
-      "StrictModeConfigDiff": {
+      "StrictModeConfig": {
         "type": "object",
         "properties": {
           "enabled": {
@@ -8739,7 +8739,7 @@
             "description": "Strict-mode config.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeConfigDiff"
+                "$ref": "#/components/schemas/StrictModeConfig"
               },
               {
                 "nullable": true

@@ -432,7 +432,7 @@ pub mod quantization_config_diff {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StrictModeConfigDiff {
+pub struct StrictModeConfig {
     #[prost(bool, optional, tag = "1")]
     pub enabled: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "2")]
@@ -514,7 +514,7 @@ pub struct CreateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
-    pub strict_mode_config: ::core::option::Option<StrictModeConfigDiff>,
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -652,7 +652,7 @@ pub struct CollectionConfig {
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
-    pub strict_mode_config: ::core::option::Option<StrictModeConfigDiff>,
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -430,7 +430,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
                 strict_mode_config: config.strict_mode_config.map(|i| {
-                    api::grpc::qdrant::StrictModeConfigDiff {
+                    api::grpc::qdrant::StrictModeConfig {
                         enabled: i.enabled,
                         max_filter_limit: i.max_filter_limit.map(|i| i as u32),
                         max_timeout: i.max_timeout.map(|i| i as u32),
@@ -827,8 +827,8 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     }
 }
 
-impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfig {
-    fn from(value: api::grpc::qdrant::StrictModeConfigDiff) -> Self {
+impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
+    fn from(value: api::grpc::qdrant::StrictModeConfig) -> Self {
         Self {
             enabled: value.enabled,
             max_filter_limit: value.max_filter_limit.map(|i| i as usize),

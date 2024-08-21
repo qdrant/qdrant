@@ -9,7 +9,7 @@ use crate::collection::Collection;
 
 /// Trait to verify strict mode for requests. All functions in this trait will default to an 'empty' implementation,
 /// which means every value that needs to be checked must be implemented.
-/// This trait ignores the `enabled` parameter in `StrictModeConfigDiff`.
+/// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
     /// Implementing this method allows adding a custom check for request specific values.
     fn check_custom(
