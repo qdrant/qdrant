@@ -1,5 +1,7 @@
 mod search;
 
+use std::fmt::Display;
+
 use tokio::sync::RwLockReadGuard;
 use tonic::async_trait;
 
@@ -28,9 +30,59 @@ pub trait StrictModeVerification {
     ) -> Result<(), String>;
 }
 
-pub(crate) fn new_error<S>(description: S, solution: &str) -> String
+pub(crate) fn new_error_msg<S>(description: S, solution: &str) -> String
 where
     S: ToString,
 {
     format!("{}. Help: {solution}", description.to_string())
+}
+
+pub(crate) fn check_bool(
+    value: bool,
+    allowed: Option<bool>,
+    name: &str,
+    parameter: &str,
+) -> Result<(), String> {
+    check_bool_op(Some(value), allowed, name, parameter)
+}
+
+pub(crate) fn check_bool_op(
+    value: Option<bool>,
+    allowed: Option<bool>,
+    name: &str,
+    parameter: &str,
+) -> Result<(), String> {
+    if allowed != Some(false) || !value.unwrap_or_default() {
+        return Ok(());
+    }
+
+    Err(new_error_msg(
+        format!("{name} disabled!"),
+        &format!("Set {parameter}=false."),
+    ))
+}
+
+pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
+    value: Option<T>,
+    limit: Option<T>,
+    name: &str,
+) -> Result<(), String> {
+    let Some(limit) = limit else { return Ok(()) };
+    let Some(value) = value else { return Ok(()) };
+    if value > limit {
+        return Err(new_error_msg(
+            format!("Limit exceeded {value} > {limit} for \"{name}\""),
+            "Reduce the \"{name}\" parameter to or below {limit}.",
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn check_limit<T: PartialOrd + Display>(
+    value: T,
+    limit: Option<T>,
+    name: &str,
+) -> Result<(), String> {
+    check_limit_opt(Some(value), limit, name)
 }
