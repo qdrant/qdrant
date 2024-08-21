@@ -87,30 +87,41 @@ pub struct HnswConfigDiff {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
-pub struct StrictModeConfigDiff {
+pub struct StrictModeConfig {
     // Global
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_filter_limit: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_timeout: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_retrieve: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
     // Search
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_hnsw_ef: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub search_allow_exact: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_oversampling: Option<f64>,
 
     // Group-by
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub group_by_max_group_size: Option<usize>,
 
     // Recommend
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub recommend_max_examples: Option<usize>,
 
     // Discovery
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub discovery_max_context_size: Option<usize>,
 }
 
-impl Hash for StrictModeConfigDiff {
+impl Hash for StrictModeConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.enabled.hash(state);
         self.max_filter_limit.hash(state);
@@ -128,9 +139,9 @@ impl Hash for StrictModeConfigDiff {
     }
 }
 
-impl Eq for StrictModeConfigDiff {}
+impl Eq for StrictModeConfig {}
 
-impl PartialEq for StrictModeConfigDiff {
+impl PartialEq for StrictModeConfig {
     fn eq(&self, other: &Self) -> bool {
         self.enabled == other.enabled
             && self.max_filter_limit == other.max_filter_limit

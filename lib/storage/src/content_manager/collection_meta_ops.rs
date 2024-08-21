@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
-    StrictModeConfigDiff, WalConfigDiff,
+    StrictModeConfig, WalConfigDiff,
 };
 use collection::operations::types::{
     SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
@@ -168,7 +168,7 @@ pub struct CreateCollection {
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
     /// Strict-mode config.
     #[validate(nested)]
-    pub strict_mode_config: Option<StrictModeConfigDiff>,
+    pub strict_mode_config: Option<StrictModeConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params

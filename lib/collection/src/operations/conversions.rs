@@ -23,7 +23,7 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
-use super::config_diff::StrictModeConfigDiff;
+use super::config_diff::StrictModeConfig;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
@@ -776,7 +776,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
-            strict_mode_config: config.strict_mode_config.map(|i| i.into()),
+            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
         })
     }
 }
@@ -827,7 +827,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     }
 }
 
-impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfigDiff {
+impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfig {
     fn from(value: api::grpc::qdrant::StrictModeConfigDiff) -> Self {
         Self {
             enabled: value.enabled,

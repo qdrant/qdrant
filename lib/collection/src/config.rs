@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff, StrictModeConfigDiff};
+use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff, StrictModeConfig};
 use crate::operations::types::{
     CollectionError, CollectionResult, SparseVectorParams, SparseVectorsConfig, VectorParams,
     VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
@@ -162,7 +162,7 @@ pub struct CollectionConfig {
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]
-    pub strict_mode_config: Option<StrictModeConfigDiff>,
+    pub strict_mode_config: Option<StrictModeConfig>,
 }
 
 impl CollectionConfig {

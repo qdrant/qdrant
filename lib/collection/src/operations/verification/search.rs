@@ -1,16 +1,15 @@
 use segment::types::Filter;
-use tokio::sync::RwLockReadGuard;
 
 use super::{check_bool, check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
-use crate::operations::config_diff::StrictModeConfigDiff;
+use crate::operations::config_diff::StrictModeConfig;
 use crate::operations::types::{SearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequest {
     fn check_custom(
         &self,
-        _: &RwLockReadGuard<'_, Collection>,
-        strict_mode_config: &StrictModeConfigDiff,
+        _: &Collection,
+        strict_mode_config: &StrictModeConfig,
     ) -> Result<(), String> {
         let search_request = &self.search_request;
 
@@ -50,8 +49,8 @@ impl StrictModeVerification for SearchRequest {
 impl StrictModeVerification for SearchRequestBatch {
     fn check_strict_mode(
         &self,
-        collection: &RwLockReadGuard<'_, Collection>,
-        strict_mode_config: &StrictModeConfigDiff,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
     ) -> Result<(), String> {
         for search_request in &self.searches {
             search_request.check_strict_mode(collection, strict_mode_config)?;

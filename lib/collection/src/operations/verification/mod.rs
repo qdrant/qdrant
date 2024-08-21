@@ -3,23 +3,9 @@ mod search;
 use std::fmt::Display;
 
 use segment::types::Filter;
-use tokio::sync::RwLockReadGuard;
 
-use super::config_diff::StrictModeConfigDiff;
+use super::config_diff::StrictModeConfig;
 use crate::collection::Collection;
-
-// Creates a new `VerificationPass` for successful verifications.
-// Don't use this, unless you know what you're doing!
-pub fn new_pass() -> VerificationPass {
-    VerificationPass { inner: () }
-}
-
-/// A pass, created on successful verification.
-pub struct VerificationPass {
-    // Private field, so we can't instantiate it from somewhere else.
-    #[allow(dead_code)]
-    inner: (),
-}
 
 /// Trait to verify strict mode for requests. All functions in this trait will default to an 'empty' implementation,
 /// which means every value that needs to be checked must be implemented.
@@ -28,8 +14,8 @@ pub trait StrictModeVerification {
     /// Implementing this method allows adding a custom check for request specific values.
     fn check_custom(
         &self,
-        _collection: &RwLockReadGuard<'_, Collection>,
-        _strict_mode_config: &StrictModeConfigDiff,
+        _collection: &Collection,
+        _strict_mode_config: &StrictModeConfig,
     ) -> Result<(), String> {
         Ok(())
     }
@@ -59,7 +45,7 @@ pub trait StrictModeVerification {
     }
 
     /// Checks the request limit.
-    fn check_request_limit(&self, strict_mode_config: &StrictModeConfigDiff) -> Result<(), String> {
+    fn check_request_limit(&self, strict_mode_config: &StrictModeConfig) -> Result<(), String> {
         check_limit_opt(
             self.request_limit(),
             strict_mode_config.max_filter_limit,
@@ -68,10 +54,7 @@ pub trait StrictModeVerification {
     }
 
     /// Checks the request timeout.
-    fn check_request_timeout(
-        &self,
-        strict_mode_config: &StrictModeConfigDiff,
-    ) -> Result<(), String> {
+    fn check_request_timeout(&self, strict_mode_config: &StrictModeConfig) -> Result<(), String> {
         check_limit_opt(
             self.request_timeout(),
             strict_mode_config.max_timeout,
@@ -82,8 +65,8 @@ pub trait StrictModeVerification {
     // Checks all filters use indexed fields only.
     fn check_request_filter(
         &self,
-        collection: &RwLockReadGuard<'_, Collection>,
-        strict_mode_config: &StrictModeConfigDiff,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
     ) -> Result<(), String> {
         let check_filter =
             |filter: Option<&Filter>, allow_unindexed_filter: Option<bool>| -> Result<(), String> {
@@ -117,8 +100,8 @@ pub trait StrictModeVerification {
     /// you are doing. In most cases implementing `check_custom` is sufficient.
     fn check_strict_mode(
         &self,
-        collection: &RwLockReadGuard<'_, Collection>,
-        strict_mode_config: &StrictModeConfigDiff,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
     ) -> Result<(), String> {
         self.check_custom(collection, strict_mode_config)?;
         self.check_request_limit(strict_mode_config)?;
