@@ -95,7 +95,7 @@ pub(super) async fn drive(
             // Wait on all updates here, not just the last batch
             // If we don't wait on all updates it somehow results in inconsistent deletes
             replica_set
-                .update_with_consistency(operation, true, WriteOrdering::Weak)
+                .update_with_consistency(operation, true, WriteOrdering::Weak, false)
                 .await?;
 
             if offset.is_none() {

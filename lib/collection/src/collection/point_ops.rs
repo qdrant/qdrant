@@ -108,7 +108,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering)
+                        .update_with_consistency(operation.operation, wait, ordering, false)
                         .await
                         .map(Some)
                 }
@@ -160,15 +160,22 @@ impl Collection {
 
                     for operation in operation.update_all {
                         result = shard
-                            .update_with_consistency(operation, wait, ordering)
+                            .update_with_consistency(operation, wait, ordering, false)
                             .await?;
                     }
 
                     for operation in operation.update_existing {
-                        // TODO(resharding): Ignore "missing point ID(s)" error
-                        result = shard
-                            .update_with_consistency(operation, wait, ordering)
-                            .await?;
+                        let res = shard
+                            .update_with_consistency(operation, wait, ordering, true)
+                            .await;
+
+                        if let Err(err) = &res {
+                            if err.is_missing_point() {
+                                continue;
+                            }
+                        }
+
+                        result = res?;
                     }
 
                     CollectionResult::Ok(result)
