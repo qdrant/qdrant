@@ -6109,6 +6109,17 @@
                 "nullable": true
               }
             ]
+          },
+          "strict_mode_config": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -6649,6 +6660,68 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          }
+        }
+      },
+      "StrictModeConfigDiff": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "max_filter_limit": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_timeout": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "unindexed_filtering_retrieve": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "unindexed_filtering_update": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_hnsw_ef": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_allow_exact": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_oversampling": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "group_by_max_group_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "recommend_max_examples": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "discovery_max_context_size": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -8661,6 +8734,17 @@
               "$ref": "#/components/schemas/SparseVectorParams"
             },
             "nullable": true
+          },
+          "strict_mode_config": {
+            "description": "Strict-mode config.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfigDiff"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
