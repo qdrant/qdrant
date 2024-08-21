@@ -430,7 +430,7 @@
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) |  | Configuration of vector index |
 | optimizer_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) |  | Configuration of the optimizers |
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) |  | Configuration of the Write-Ahead-Log |
-| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantizationcollection |
+| quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantization |
 | strict_mode_config | [StrictModeConfigDiff](#qdrant-StrictModeConfigDiff) | optional | Configuration of strict mode. |
 
 
@@ -1397,17 +1397,17 @@ Note: 1kB = 1 vector of size 256. |
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| enabled | [bool](#bool) | optional | General |
+| enabled | [bool](#bool) | optional |  |
 | max_filter_limit | [uint32](#uint32) | optional |  |
 | max_timeout | [uint32](#uint32) | optional |  |
 | unindexed_filtering_retrieve | [bool](#bool) | optional |  |
 | unindexed_filtering_update | [bool](#bool) | optional |  |
-| search_max_hnsw_ef | [uint32](#uint32) | optional | Search |
+| search_max_hnsw_ef | [uint32](#uint32) | optional |  |
 | search_allow_exact | [bool](#bool) | optional |  |
 | search_max_oversampling | [float](#float) | optional |  |
-| group_by_max_group_size | [uint32](#uint32) | optional | Group-by |
-| recommend_max_examples | [uint32](#uint32) | optional | Recommend |
-| discovery_max_context_size | [uint32](#uint32) | optional | Discovery |
+| group_by_max_group_size | [uint32](#uint32) | optional |  |
+| recommend_max_examples | [uint32](#uint32) | optional |  |
+| discovery_max_context_size | [uint32](#uint32) | optional |  |
 
 
 

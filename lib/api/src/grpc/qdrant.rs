@@ -433,7 +433,6 @@ pub mod quantization_config_diff {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StrictModeConfigDiff {
-    /// General
     #[prost(bool, optional, tag = "1")]
     pub enabled: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "2")]
@@ -444,20 +443,16 @@ pub struct StrictModeConfigDiff {
     pub unindexed_filtering_retrieve: ::core::option::Option<bool>,
     #[prost(bool, optional, tag = "5")]
     pub unindexed_filtering_update: ::core::option::Option<bool>,
-    /// Search
     #[prost(uint32, optional, tag = "6")]
     pub search_max_hnsw_ef: ::core::option::Option<u32>,
     #[prost(bool, optional, tag = "7")]
     pub search_allow_exact: ::core::option::Option<bool>,
     #[prost(float, optional, tag = "8")]
     pub search_max_oversampling: ::core::option::Option<f32>,
-    /// Group-by
     #[prost(uint32, optional, tag = "9")]
     pub group_by_max_group_size: ::core::option::Option<u32>,
-    /// Recommend
     #[prost(uint32, optional, tag = "10")]
     pub recommend_max_examples: ::core::option::Option<u32>,
-    /// Discovery
     #[prost(uint32, optional, tag = "11")]
     pub discovery_max_context_size: ::core::option::Option<u32>,
 }
@@ -651,7 +646,7 @@ pub struct CollectionConfig {
     /// Configuration of the Write-Ahead-Log
     #[prost(message, optional, tag = "4")]
     pub wal_config: ::core::option::Option<WalConfigDiff>,
-    /// Configuration of the vector quantizationcollection
+    /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,

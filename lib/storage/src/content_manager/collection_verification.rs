@@ -40,7 +40,7 @@ pub trait CollectionRequestVerification {
         let collection_info = collection.info(&ShardSelectorInternal::All).await?;
 
         if let Some(strict_mode_config) = &collection_info.config.strict_mode_config {
-            if strict_mode_config.enabled == Some(true) {
+            if strict_mode_config.enabled.unwrap_or_default() {
                 self.check_strict_mode_inner(&collection, strict_mode_config)
                     .await?;
             }

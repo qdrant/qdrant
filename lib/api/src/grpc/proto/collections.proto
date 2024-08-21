@@ -311,25 +311,20 @@ enum ShardingMethod {
 }
 
 message StrictModeConfigDiff {
-  // General
   optional bool enabled = 1;
   optional uint32 max_filter_limit = 2;
   optional uint32 max_timeout = 3;
   optional bool unindexed_filtering_retrieve = 4;
   optional bool unindexed_filtering_update = 5;
 
-  // Search
   optional uint32 search_max_hnsw_ef = 6;
   optional bool search_allow_exact  = 7;
   optional float search_max_oversampling  = 8;
 
-  // Group-by
   optional uint32 group_by_max_group_size = 9;
 
-  // Recommend
   optional uint32 recommend_max_examples = 10;
 
-  // Discovery
   optional uint32 discovery_max_context_size = 11;
 }
 
@@ -399,7 +394,7 @@ message CollectionConfig {
   HnswConfigDiff hnsw_config = 2; // Configuration of vector index
   OptimizersConfigDiff optimizer_config = 3; // Configuration of the optimizers
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
-  optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantizationcollection
+  optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
   optional StrictModeConfigDiff strict_mode_config = 6; // Configuration of strict mode.
 }
 
