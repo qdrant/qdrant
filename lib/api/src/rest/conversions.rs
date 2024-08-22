@@ -69,6 +69,7 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStructInternal {
                 )
             }
             VectorStruct::Document(_) => {
+                // If this is reached, it means validation failed
                 unimplemented!("Document inference is not implemented, please use vectors instead")
             }
         }
@@ -103,6 +104,7 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
                 named_vector
             }
             VectorStruct::Document(_) => {
+                // If this is reached, it means validation failed
                 unimplemented!("Document inference is not implemented, please use vectors instead")
             }
         }
@@ -158,6 +160,10 @@ impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStruct
                         .map(|(k, v)| (k, v.into_iter().map(|v| v.into()).collect()))
                         .collect(),
                 )
+            }
+            BatchVectorStruct::Document(_) => {
+                // If this is reached, it means validation failed
+                unimplemented!("Document inference is not implemented, please use vectors instead")
             }
         }
     }

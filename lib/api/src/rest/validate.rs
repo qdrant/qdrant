@@ -43,6 +43,16 @@ impl Validate for BatchVectorStruct {
             BatchVectorStruct::Named(v) => {
                 common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
             }
+            BatchVectorStruct::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }

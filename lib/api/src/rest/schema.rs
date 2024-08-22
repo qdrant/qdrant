@@ -94,6 +94,7 @@ pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<String, Vec<Vector>>),
+    Document(Vec<Document>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]

@@ -270,6 +270,11 @@ impl Validate for Batch {
                     }
                 }
             }
+            BatchVectorStruct::Document(_) => {
+                return Err(create_error(
+                    "Document inference is not implemented, please use vectors instead".to_string(),
+                ));
+            }
         }
         if let Some(payload_vector) = &batch.payloads {
             if payload_vector.len() != batch.ids.len() {
@@ -440,6 +445,12 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
+                BatchVectorStruct::Document(_) => {
+                    // If this is reached, it means validation failed
+                    unreachable!(
+                        "Document inference is not implemented, please use vectors instead"
+                    )
+                }
             }
         } else {
             match vectors {
@@ -504,6 +515,12 @@ impl SplitByShard for Batch {
                             }
                         }
                     }
+                }
+                BatchVectorStruct::Document(_) => {
+                    // If this is reached, it means validation failed
+                    unreachable!(
+                        "Document inference is not implemented, please use vectors instead"
+                    )
                 }
             }
         }
