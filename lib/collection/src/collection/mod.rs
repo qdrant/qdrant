@@ -730,7 +730,7 @@ impl Collection {
     }
 
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
-        let (shards_telemetry, transfers) = {
+        let (shards_telemetry, transfers, resharding) = {
             let mut shards_telemetry = Vec::new();
             let shards_holder = self.shards_holder.read().await;
             for shard in shards_holder.all_shards() {
@@ -739,6 +739,7 @@ impl Collection {
             (
                 shards_telemetry,
                 shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
+                shards_holder.get_resharding_operations_info(&*self.reshard_tasks.lock().await),
             )
         };
 
@@ -748,6 +749,7 @@ impl Collection {
             config: self.collection_config.read().await.clone(),
             shards: shards_telemetry,
             transfers,
+            resharding,
         }
     }
 
