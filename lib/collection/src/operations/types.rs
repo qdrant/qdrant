@@ -76,11 +76,11 @@ pub enum CollectionStatus {
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardStatus {
-    // Collection if completely ready for requests
+    // Shard if completely ready for requests
     Green,
-    // Collection is available, but some segments might be under optimization
+    // Shard is available, but some segments might be under optimization
     Yellow,
-    // Collection is available, but some segments are pending optimization
+    // Shard is available, but some segments are pending optimization
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
