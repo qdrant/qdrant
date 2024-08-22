@@ -776,6 +776,7 @@ impl SegmentEntry for Segment {
         })?;
 
         let mut builder = Builder::new(file);
+        builder.sparse(true);
 
         builder
             .append_dir_all(SNAPSHOT_PATH, &temp_path)
