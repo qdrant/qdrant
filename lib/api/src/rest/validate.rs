@@ -63,6 +63,16 @@ impl Validate for Vector {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
             Vector::MultiDense(m) => common::validation::validate_multi_vector(m),
+            Vector::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }

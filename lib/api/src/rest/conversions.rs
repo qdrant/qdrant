@@ -32,6 +32,10 @@ impl From<Vector> for segment::data_types::vectors::Vector {
                     segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
                 )
             }
+            Vector::Document(_) => {
+                // If this is reached, it means validation failed
+                unimplemented!("Document inference is not implemented, please use vectors instead")
+            }
         }
     }
 }

@@ -24,6 +24,7 @@ pub enum Vector {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
+    Document(Document),
 }
 
 fn vector_example() -> DenseVector {
@@ -82,6 +83,7 @@ impl VectorStruct {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
+                Vector::Document(_) => false,
             }),
             VectorStruct::Document(_) => false,
         }
