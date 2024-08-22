@@ -8,13 +8,13 @@ use api::grpc::qdrant::{
     points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
-    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponseInternal,
-    PointsSelector, QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints,
-    QueryResponse, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
-    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
-    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
-    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
-    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    FacetCounts, FacetResponse, FieldType, GetPoints, GetResponse, PayloadIndexParams,
+    PointsOperationResponseInternal, PointsSelector, QueryBatchResponse, QueryGroupsResponse,
+    QueryPointGroups, QueryPoints, QueryResponse, ReadConsistency as ReadConsistencyGrpc,
+    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
+    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use api::rest::{OrderByInterface, ShardKeySelector};
 use collection::operations::consistency_params::ReadConsistency;
@@ -38,6 +38,7 @@ use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVect
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
+use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
@@ -1685,6 +1686,60 @@ pub async fn query_groups(
 
     let response = QueryGroupsResponse {
         result: Some(groups_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    };
+
+    Ok(Response::new(response))
+}
+
+pub async fn facet(
+    toc: &TableOfContent,
+    facet_counts: FacetCounts,
+    access: Access,
+) -> Result<Response<FacetResponse>, Status> {
+    let FacetCounts {
+        collection_name,
+        key,
+        filter,
+        exact,
+        limit,
+        read_consistency,
+        shard_key_selector,
+        timeout,
+    } = facet_counts;
+
+    let facet_request = FacetParams {
+        key: json_path_from_proto(&key)?,
+        filter: filter.map(TryInto::try_into).transpose()?,
+        limit: limit
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("could not parse limit param into usize"))?
+            .unwrap_or(FacetParams::DEFAULT_LIMIT),
+        exact: exact.unwrap_or(FacetParams::DEFAULT_EXACT),
+    };
+
+    let timeout = timeout.map(Duration::from_secs);
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
+    let timing = Instant::now();
+    let facet_response = toc
+        .facet(
+            &collection_name,
+            facet_request,
+            shard_selector,
+            read_consistency,
+            access,
+            timeout,
+        )
+        .await?;
+
+    let segment::data_types::facets::FacetResponse { hits } = facet_response;
+
+    let response = FacetResponse {
+        hits: hits.into_iter().map(From::from).collect(),
         time: timing.elapsed().as_secs_f64(),
     };
 
