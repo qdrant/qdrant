@@ -641,10 +641,15 @@ impl SegmentEntry for Segment {
 
     fn build_field_index(
         &self,
-        _op_num: SeqNumberType,
+        op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
+        // Check version without updating it
+        if self.version.unwrap_or(0) > op_num {
+            return Ok(None);
+        }
+
         match field_type {
             Some(schema) => {
                 let res = self
