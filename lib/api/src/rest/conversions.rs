@@ -68,6 +68,9 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStructInternal {
                     vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
                 )
             }
+            VectorStruct::Document(_) => {
+                unimplemented!("Document inference is not implemented, please use vectors instead")
+            }
         }
     }
 }
@@ -98,6 +101,9 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
                     named_vector.insert(name, segment::data_types::vectors::Vector::from(vector));
                 }
                 named_vector
+            }
+            VectorStruct::Document(_) => {
+                unimplemented!("Document inference is not implemented, please use vectors instead")
             }
         }
     }

@@ -568,6 +568,9 @@ impl PointStruct {
                     named_vectors.insert(name.clone(), Vector::from(vector.clone()));
                 }
             }
+            VectorStruct::Document(_) => {
+                debug_assert!(false, "Document inference is not implemented, please use vectors instead");
+            }
         }
         named_vectors
     }

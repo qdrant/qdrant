@@ -56,6 +56,20 @@ pub enum VectorStruct {
     MultiDense(MultiDenseVector),
     #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
+    Document(Document),
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Text document for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Document {
+    /// Text of the document
+    /// This field will be used as input for the embedding model
+    pub text: String,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
 }
 
 impl VectorStruct {
@@ -69,6 +83,7 @@ impl VectorStruct {
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
             }),
+            VectorStruct::Document(_) => false,
         }
     }
 }
