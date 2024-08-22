@@ -11,8 +11,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult, PointRequestInternal, Record, ShardStatus, UpdateResult
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -44,9 +43,10 @@ impl DummyShard {
         self.dummy()
     }
 
-    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: Some("dummy shard".into()),
+            status: ShardStatus::Green,
             segments: vec![],
             optimizations: Default::default(),
         }

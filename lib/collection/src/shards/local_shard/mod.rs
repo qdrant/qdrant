@@ -52,8 +52,8 @@ use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
-    CollectionResult, CollectionStatus, OptimizersStatus,
+    check_sparse_compatible_with_segment_config, CollectionError, CollectionResult,
+    OptimizersStatus, ShardInfoInternal, ShardStatus,
 };
 use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
@@ -898,7 +898,7 @@ impl LocalShard {
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle).await
     }
 
-    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         let segments_read_guard = self.segments.read();
         let segments: Vec<_> = segments_read_guard
             .iter()
@@ -921,8 +921,11 @@ impl LocalShard {
             })
             .fold(Default::default(), |acc, x| acc + x);
 
+        let shard_status = self.local_shard_info().await.status;
+
         LocalShardTelemetry {
             variant_name: None,
+            status: shard_status,
             segments,
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
@@ -969,13 +972,13 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> CollectionInfoInternal {
+    pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let mut vectors_count = 0;
         let mut indexed_vectors_count = 0;
         let mut points_count = 0;
         let mut segments_count = 0;
-        let mut status = CollectionStatus::Green;
+        let mut status = ShardStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         let mut optimizer_status = OptimizersStatus::Ok;
 
@@ -987,7 +990,7 @@ impl LocalShard {
                 let segment_info = segment.get().read().info();
 
                 if segment_info.segment_type == SegmentType::Special {
-                    status = CollectionStatus::Yellow;
+                    status = ShardStatus::Yellow;
                 }
                 vectors_count += segment_info.num_vectors;
                 indexed_vectors_count += segment_info.num_indexed_vectors;
@@ -1000,7 +1003,7 @@ impl LocalShard {
                 }
             }
             if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                status = CollectionStatus::Red;
+                status = ShardStatus::Red;
             }
 
             if let Some(error) = &segments.optimizer_errors {
@@ -1009,19 +1012,16 @@ impl LocalShard {
         }
 
         // If still green while optimization conditions are triggered, mark as grey
-        if status == CollectionStatus::Green
+        if status == ShardStatus::Green
             && self.update_handler.lock().await.has_pending_optimizations()
+            && optimizer_status == OptimizersStatus::Ok
         {
-            // TODO(1.10): enable grey status in Qdrant 1.10+
-            // status = CollectionStatus::Grey;
-            if optimizer_status == OptimizersStatus::Ok {
-                optimizer_status = OptimizersStatus::Error(
-                    "optimizations pending, awaiting update operation".into(),
-                );
-            }
+            status = ShardStatus::Grey;
+            optimizer_status =
+                OptimizersStatus::Error("optimizations pending, awaiting update operation".into());
         }
 
-        CollectionInfoInternal {
+        ShardInfoInternal {
             status,
             optimizer_status,
             vectors_count,
