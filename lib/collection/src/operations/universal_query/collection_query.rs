@@ -741,6 +741,10 @@ mod from_rest {
                     // TODO(universal-query): Validate at API level
                     Vector::MultiDense(MultiDenseVectorInternal::new_unchecked(multi_dense)),
                 ),
+                rest::VectorInput::Document(_) => {
+                    // If this is reached, it means validation failed
+                    unimplemented!("Document inference is not implemented")
+                }
             }
         }
     }
