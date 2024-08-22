@@ -24,6 +24,7 @@ pub enum Vector {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
+    Document(Document),
 }
 
 fn vector_example() -> DenseVector {
@@ -56,6 +57,20 @@ pub enum VectorStruct {
     MultiDense(MultiDenseVector),
     #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
+    Document(Document),
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Text document for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Document {
+    /// Text of the document
+    /// This field will be used as input for the embedding model
+    pub text: String,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
 }
 
 impl VectorStruct {
@@ -68,7 +83,9 @@ impl VectorStruct {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
+                Vector::Document(_) => false,
             }),
+            VectorStruct::Document(_) => false,
         }
     }
 }
@@ -79,6 +96,7 @@ pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<String, Vec<Vector>>),
+    Document(Vec<Document>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
@@ -193,6 +211,7 @@ pub enum VectorInput {
     SparseVector(SparseVector),
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
+    Document(Document),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

@@ -1,5 +1,7 @@
+use std::borrow::Cow;
+
 use common::validation::validate_multi_vector;
-use validator::{Validate, ValidationError};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
 use super::{
@@ -14,6 +16,16 @@ impl Validate for VectorStruct {
             VectorStruct::Single(_) => Ok(()),
             VectorStruct::MultiDense(v) => validate_multi_vector(v),
             VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
+            VectorStruct::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }
@@ -31,6 +43,16 @@ impl Validate for BatchVectorStruct {
             BatchVectorStruct::Named(v) => {
                 common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
             }
+            BatchVectorStruct::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }
@@ -41,6 +63,16 @@ impl Validate for Vector {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
             Vector::MultiDense(m) => common::validation::validate_multi_vector(m),
+            Vector::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }
@@ -85,6 +117,16 @@ impl Validate for VectorInput {
             VectorInput::DenseVector(_dense) => Ok(()),
             VectorInput::SparseVector(sparse) => sparse.validate(),
             VectorInput::MultiDenseVector(multi) => validate_multi_vector(multi),
+            VectorInput::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }

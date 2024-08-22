@@ -7227,6 +7227,9 @@
                 0.897599995136261
               ]
             }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
           }
         ]
       },
@@ -7251,6 +7254,9 @@
                 "format": "float"
               }
             }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
           }
         ]
       },
@@ -7278,6 +7284,24 @@
               "type": "number",
               "format": "float"
             }
+          }
+        }
+      },
+      "Document": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "description": "Text of the document This field will be used as input for the embedding model",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -9216,6 +9240,12 @@
               "items": {
                 "$ref": "#/components/schemas/Vector"
               }
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Document"
             }
           }
         ]
@@ -12542,6 +12572,9 @@
           },
           {
             "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          {
+            "$ref": "#/components/schemas/Document"
           }
         ]
       },
