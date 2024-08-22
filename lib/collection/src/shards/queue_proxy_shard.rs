@@ -154,11 +154,10 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         self.inner_unchecked()
             .wrapped_shard
             .get_telemetry_data(detail)
-            .await
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

@@ -30,7 +30,7 @@ pub struct RemoteShardTelemetry {
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct LocalShardTelemetry {
     pub variant_name: Option<String>,
-    pub status: ShardStatus,
+    pub status: Option<ShardStatus>,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
 }

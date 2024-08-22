@@ -44,10 +44,10 @@ impl DummyShard {
         self.dummy()
     }
 
-    pub async fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: Some("dummy shard".into()),
-            status: ShardStatus::Green,
+            status: Some(ShardStatus::Green),
             segments: vec![],
             optimizations: Default::default(),
         }

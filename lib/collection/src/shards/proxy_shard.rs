@@ -121,8 +121,8 @@ impl ProxyShard {
         Ok(())
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data(detail).await
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data(detail)
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

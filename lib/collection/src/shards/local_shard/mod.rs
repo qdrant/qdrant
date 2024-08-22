@@ -898,7 +898,7 @@ impl LocalShard {
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle).await
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         let segments_read_guard = self.segments.read();
         let segments: Vec<_> = segments_read_guard
             .iter()
@@ -921,11 +921,9 @@ impl LocalShard {
             })
             .fold(Default::default(), |acc, x| acc + x);
 
-        let shard_status = self.local_shard_info().await.status;
-
         LocalShardTelemetry {
             variant_name: None,
-            status: shard_status,
+            status: None,
             segments,
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
