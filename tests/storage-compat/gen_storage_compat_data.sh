@@ -81,6 +81,8 @@ gzip "${SCRIPT_DIR}/full-snapshot.snapshot"
 
 rm "${SCRIPT_DIR}/storage.tar.bz2" || true
 
+sudo chown -R $(whoami) ./storage
+
 # Save current storage folder
 tar -cjvf "${SCRIPT_DIR}/storage.tar.bz2" ./storage
 
