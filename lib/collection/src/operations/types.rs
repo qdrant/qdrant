@@ -90,10 +90,10 @@ pub enum ShardStatus {
 impl From<ShardStatus> for CollectionStatus {
     fn from(info: ShardStatus) -> Self {
         match info {
-            ShardStatus::Green => CollectionStatus::Green,
-            ShardStatus::Yellow => CollectionStatus::Yellow,
-            ShardStatus::Grey => CollectionStatus::Grey,
-            ShardStatus::Red => CollectionStatus::Red,
+            ShardStatus::Green => Self::Green,
+            ShardStatus::Yellow => Self::Yellow,
+            ShardStatus::Grey => Self::Grey,
+            ShardStatus::Red => Self::Red,
         }
     }
 }
