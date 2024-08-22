@@ -209,6 +209,7 @@ pub enum VectorInput {
     SparseVector(SparseVector),
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
+    Document(Document),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

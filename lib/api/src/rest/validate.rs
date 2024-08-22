@@ -107,6 +107,16 @@ impl Validate for VectorInput {
             VectorInput::DenseVector(_dense) => Ok(()),
             VectorInput::SparseVector(sparse) => sparse.validate(),
             VectorInput::MultiDenseVector(multi) => validate_multi_vector(multi),
+            VectorInput::Document(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("text", err);
+                Err(errors)
+            }
         }
     }
 }
