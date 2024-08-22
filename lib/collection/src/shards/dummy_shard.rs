@@ -11,7 +11,8 @@ use segment::types::{
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
-    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult, PointRequestInternal, Record, ShardStatus, UpdateResult
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, ShardStatus, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
