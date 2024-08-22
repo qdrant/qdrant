@@ -14,7 +14,7 @@ use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::field_index::CardinalityEstimation;
+use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
@@ -956,30 +956,47 @@ impl SegmentEntry for ProxySegment {
             .delete_field_index(op_num, key)
     }
 
-    fn create_field_index(
-        &mut self,
-        op_num: u64,
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
-        field_schema: Option<&PayloadFieldSchema>,
+        field_type: Option<&PayloadFieldSchema>,
+    ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
+        if self.version() > op_num {
+            return Ok(None);
+        }
+
+        self.write_segment
+            .get()
+            .read()
+            .build_field_index(op_num, key, field_type)
+    }
+
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        field_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
     ) -> OperationResult<bool> {
         if self.version() > op_num {
             return Ok(false);
         }
 
-        self.write_segment
-            .get()
-            .write()
-            .create_field_index(op_num, key, field_schema)?;
-        let indexed_fields = self.write_segment.get().read().get_indexed_fields();
-
-        let Some(payload_schema) = indexed_fields.get(key) else {
+        if !self.write_segment.get().write().apply_field_index(
+            op_num,
+            key.clone(),
+            field_schema.clone(),
+            field_index,
+        )? {
             return Ok(false);
         };
 
+        // Index was updated: mark as added and deleted
         self.created_indexes
             .write()
-            .insert(key.to_owned(), payload_schema.to_owned());
-        self.deleted_indexes.write().remove(key);
+            .insert(key.clone(), field_schema);
+        self.deleted_indexes.write().remove(&key);
 
         Ok(true)
     }

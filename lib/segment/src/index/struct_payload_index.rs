@@ -106,7 +106,7 @@ impl StructPayloadIndex {
         let mut field_indexes: IndexesMap = Default::default();
 
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema.to_owned())?;
+            let field_index = self.load_from_db(field, payload_schema)?;
             field_indexes.insert(field.clone(), field_index);
         }
         self.field_indexes = field_indexes;
@@ -116,11 +116,11 @@ impl StructPayloadIndex {
     fn load_from_db(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let mut indexes = self
-            .selector(&payload_schema)
-            .new_index(field, &payload_schema)?;
+            .selector(payload_schema)
+            .new_index(field, payload_schema)?;
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -179,12 +179,12 @@ impl StructPayloadIndex {
     pub fn build_field_indexes(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
         let mut builders = self
-            .selector(&payload_schema)
-            .index_builder(field, &payload_schema)?;
+            .selector(payload_schema)
+            .index_builder(field, payload_schema)?;
 
         for index in &mut builders {
             index.init()?;
@@ -202,16 +202,6 @@ impl StructPayloadIndex {
             .into_iter()
             .map(|builder| builder.finalize())
             .collect()
-    }
-
-    fn build_and_save(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
-    ) -> OperationResult<()> {
-        let field_indexes = self.build_field_indexes(field, payload_schema)?;
-        self.field_indexes.insert(field.clone(), field_indexes);
-        Ok(())
     }
 
     /// Number of available points
@@ -429,25 +419,34 @@ impl PayloadIndex for StructPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn set_indexed(
-        &mut self,
+    fn build_index(
+        &self,
         field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
-    ) -> OperationResult<()> {
-        let payload_schema = payload_schema.into();
-
-        if let Some(prev_schema) = self
-            .config
-            .indexed_fields
-            .insert(field.to_owned(), payload_schema.clone())
-        {
+        payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<Option<Vec<FieldIndex>>> {
+        if let Some(prev_schema) = self.config.indexed_fields.get(field) {
             // the field is already indexed with the same schema
             // no need to rebuild index and to save the config
             if prev_schema == payload_schema {
-                return Ok(());
+                return Ok(None);
             }
         }
-        self.build_and_save(field, payload_schema)?;
+
+        let indexes = self.build_field_indexes(field, payload_schema)?;
+
+        Ok(Some(indexes))
+    }
+
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()> {
+        self.field_indexes.insert(field.clone(), field_index);
+
+        self.config.indexed_fields.insert(field, payload_schema);
+
         self.save_config()?;
 
         Ok(())

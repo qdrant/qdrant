@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use super::field_index::FieldIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -17,12 +18,37 @@ pub trait PayloadIndex {
     /// Get indexed fields
     fn indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;
 
+    /// Build the index, if not built before, taking the caller by reference only
+    fn build_index(
+        &self,
+        field: PayloadKeyTypeRef,
+        payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<Option<Vec<FieldIndex>>>;
+
+    /// Apply already built indexes
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()>;
+
     /// Mark field as one which should be indexed
     fn set_indexed(
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
-    ) -> OperationResult<()>;
+    ) -> OperationResult<()> {
+        let payload_schema = payload_schema.into();
+
+        let Some(field_index) = self.build_index(field, &payload_schema)? else {
+            return Ok(());
+        };
+
+        self.apply_index(field.to_owned(), payload_schema, field_index)?;
+
+        Ok(())
+    }
 
     /// Remove index
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;
