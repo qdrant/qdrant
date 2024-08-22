@@ -569,7 +569,10 @@ impl PointStruct {
                 }
             }
             VectorStruct::Document(_) => {
-                debug_assert!(false, "Document inference is not implemented, please use vectors instead");
+                debug_assert!(
+                    false,
+                    "Document inference is not implemented, please use vectors instead"
+                );
             }
         }
         named_vectors
