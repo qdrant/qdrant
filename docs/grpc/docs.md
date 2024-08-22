@@ -138,8 +138,10 @@
     - [DiscoverInput](#qdrant-DiscoverInput)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
     - [DiscoverResponse](#qdrant-DiscoverResponse)
+    - [FacetCounts](#qdrant-FacetCounts)
+    - [FacetHit](#qdrant-FacetHit)
+    - [FacetResponse](#qdrant-FacetResponse)
     - [FacetValue](#qdrant-FacetValue)
-    - [FacetValueHit](#qdrant-FacetValueHit)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
@@ -2411,6 +2413,60 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-FacetCounts"></a>
+
+### FacetCounts
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| key | [string](#string) |  | Payload key of the facet |
+| filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
+| limit | [uint64](#uint64) | optional | Max number of facets. Default is 10. |
+| exact | [bool](#bool) | optional | If true, return exact counts, slower but useful for debugging purposes. Default is false. |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
+
+
+
+
+
+
+<a name="qdrant-FacetHit"></a>
+
+### FacetHit
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| value | [FacetValue](#qdrant-FacetValue) |  | Value from the facet |
+| count | [uint64](#uint64) |  | Number of points with this value |
+
+
+
+
+
+
+<a name="qdrant-FacetResponse"></a>
+
+### FacetResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hits | [FacetHit](#qdrant-FacetHit) | repeated |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
 <a name="qdrant-FacetValue"></a>
 
 ### FacetValue
@@ -2420,22 +2476,6 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | string_value | [string](#string) |  | String value from the facet |
-
-
-
-
-
-
-<a name="qdrant-FacetValueHit"></a>
-
-### FacetValueHit
-
-
-
-| Field | Type | Label | Description |
-| ----- | ---- | ----- | ----------- |
-| value | [FacetValue](#qdrant-FacetValue) |  | Value from the facet |
-| count | [uint64](#uint64) |  | Number of points with this value |
 
 
 
@@ -4371,6 +4411,7 @@ When using target (with or without context), the score behaves a little differen
 | Query | [QueryPoints](#qdrant-QueryPoints) | [QueryResponse](#qdrant-QueryResponse) | Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | QueryBatch | [QueryBatchPoints](#qdrant-QueryBatchPoints) | [QueryBatchResponse](#qdrant-QueryBatchResponse) | Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | QueryGroups | [QueryPointGroups](#qdrant-QueryPointGroups) | [QueryGroupsResponse](#qdrant-QueryGroupsResponse) | Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
+| Facet | [FacetCounts](#qdrant-FacetCounts) | [FacetResponse](#qdrant-FacetResponse) | Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions. |
 
  
 

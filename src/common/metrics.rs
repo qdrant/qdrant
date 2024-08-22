@@ -57,7 +57,7 @@ const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/DeletePayload",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
-    // TODO(facet): add GRPC endpoint for facets here
+    "/qdrant.Points/Facet",
     "/qdrant.Points/Get",
     "/qdrant.Points/OverwritePayload",
     "/qdrant.Points/Query",

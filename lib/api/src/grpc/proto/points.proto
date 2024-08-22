@@ -589,13 +589,24 @@ message QueryPointGroups {
   optional ShardKeySelector shard_key_selector = 17; // Specify in which shards to look for the points, if not specified - look in all shards
 }
 
+message FacetCounts {
+    string collection_name = 1; // Name of the collection
+    string key = 2; // Payload key of the facet
+    optional Filter filter = 3; // Filter conditions - return only those points that satisfy the specified conditions.
+    optional uint64 limit = 4; // Max number of facets. Default is 10.
+    optional bool exact = 5; // If true, return exact counts, slower but useful for debugging purposes. Default is false.
+    optional uint64 timeout = 6; // If set, overrides global timeout setting for this request. Unit is seconds.
+    optional ReadConsistency read_consistency = 7; // Options for specifying read consistency guarantees
+    optional ShardKeySelector shard_key_selector = 8; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
 message FacetValue {
     oneof variant {
         string string_value = 1; // String value from the facet
     }
 }
 
-message FacetValueHit {
+message FacetHit {
     FacetValue value = 1; // Value from the facet
     uint64 count = 2; // Number of points with this value
 }
@@ -812,6 +823,11 @@ message RecommendGroupsResponse {
 message UpdateBatchResponse {
   repeated UpdateResult result = 1;
   double time = 2; // Time spent to process
+}
+
+message FacetResponse {
+    repeated FacetHit hits = 1;
+    double time = 2; // Time spent to process
 }
 
 // ---------------------------------------------

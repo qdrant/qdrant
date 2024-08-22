@@ -5,21 +5,21 @@ use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
-    DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, GetPoints,
-    GetResponse, PointsOperationResponse, QueryBatchPoints, QueryBatchResponse,
-    QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse, RecommendBatchPoints,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints, SearchBatchResponse,
-    SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, FacetCounts,
+    FacetResponse, GetPoints, GetResponse, PointsOperationResponse, QueryBatchPoints,
+    QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
+    RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
+    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
+    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
+    SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, discover, discover_batch, query, query_batch, query_groups, recommend_groups,
-    search_groups, update_batch, update_vectors,
+    delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
+    recommend_groups, search_groups, update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -498,5 +498,13 @@ impl Points for PointsService {
             access,
         )
         .await
+    }
+    async fn facet(
+        &self,
+        mut request: Request<FacetCounts>,
+    ) -> Result<Response<FacetResponse>, Status> {
+        validate(request.get_ref())?;
+        let access = extract_access(&mut request);
+        facet(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 }
