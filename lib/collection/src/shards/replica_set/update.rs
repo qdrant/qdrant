@@ -129,7 +129,7 @@ impl ShardReplicaSet {
 
         peer_ids
             .into_iter()
-            .filter(|peer_id| self.peer_is_active(peer_id)) // re-acquire replica_state read lock
+            .filter(|peer_id| self.peer_is_active_or_resharding(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
