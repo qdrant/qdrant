@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use segment::json_path::JsonPath;
-use segment::problems::unindexed_field::Extractor;
+use segment::problems::unindexed_field;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
@@ -88,19 +88,20 @@ impl Collection {
 
     /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
     /// If this function returns `None` all indexable keys in `filter` are indexed.
-    pub fn filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
-        self.payload_index_schema
-            .read()
-            .filter_without_index(filter, &self.name())
+    pub fn one_unindexed_key(&self, filter: &Filter) -> Option<JsonPath> {
+        self.payload_index_schema.read().one_unindexed_key(filter)
     }
 }
 
 impl PayloadIndexSchema {
     /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
     /// If this function returns `None` all indexable keys in `filter` are indexed.
-    pub fn filter_without_index(&self, filter: &Filter, collection_name: &str) -> Option<JsonPath> {
-        let extractor = Extractor::new_first(filter, &self.schema, collection_name.to_string());
-        // Get a random unindexed field from the extractor.
-        extractor.unindexed_schema.keys().next().cloned()
+    pub fn one_unindexed_key(&self, filter: &Filter) -> Option<JsonPath> {
+        let mut extractor = unindexed_field::Extractor::new(&self.schema);
+
+        extractor.update_from_filter_once(None, filter);
+
+        // Get the first unindexed field from the extractor.
+        extractor.unindexed_schema().keys().next().cloned()
     }
 }
