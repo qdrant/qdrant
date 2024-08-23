@@ -410,13 +410,15 @@ impl<'s> SegmentHolder {
 
     pub fn apply_segments<F>(&self, mut f: F) -> OperationResult<usize>
     where
-        F: FnMut(&mut RwLockWriteGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
+        F: FnMut(
+            &mut RwLockUpgradableReadGuard<dyn SegmentEntry + 'static>,
+        ) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
 
         let mut processed_segments = 0;
         for (_id, segment) in self.iter() {
-            let is_applied = f(&mut segment.get().write())?;
+            let is_applied = f(&mut segment.get().upgradable_read())?;
             processed_segments += usize::from(is_applied);
         }
         Ok(processed_segments)

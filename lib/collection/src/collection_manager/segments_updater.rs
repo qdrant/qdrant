@@ -335,7 +335,15 @@ pub(crate) fn create_field_index(
 ) -> CollectionResult<usize> {
     segments
         .apply_segments(|write_segment| {
-            write_segment.create_field_index(op_num, field_name, field_schema)
+            let Some((schema, index)) =
+                write_segment.build_field_index(op_num, field_name, field_schema)?
+            else {
+                return Ok(false);
+            };
+
+            write_segment.with_upgraded(|segment| {
+                segment.apply_field_index(op_num, field_name.to_owned(), schema, index)
+            })
         })
         .map_err(Into::into)
 }
@@ -346,7 +354,9 @@ pub(crate) fn delete_field_index(
     field_name: PayloadKeyTypeRef,
 ) -> CollectionResult<usize> {
     segments
-        .apply_segments(|write_segment| write_segment.delete_field_index(op_num, field_name))
+        .apply_segments(|write_segment| {
+            write_segment.with_upgraded(|segment| segment.delete_field_index(op_num, field_name))
+        })
         .map_err(Into::into)
 }
 
