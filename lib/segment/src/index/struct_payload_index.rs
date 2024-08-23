@@ -12,10 +12,11 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
+use super::field_index::facet_index::FacetIndex;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
 };
-use super::field_index::{FacetIndex, FieldIndexBuilderTrait as _};
+use super::field_index::FieldIndexBuilderTrait as _;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
