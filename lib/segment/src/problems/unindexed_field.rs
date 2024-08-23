@@ -91,7 +91,7 @@ impl UnindexedField {
         collection_name: String,
     ) {
         let unindexed_issues =
-            Extractor::new(filter, payload_schema, collection_name).into_issues();
+            IssueExtractor::new(filter, payload_schema, collection_name).into_issues();
 
         log::trace!("Found unindexed issues: {unindexed_issues:#?}");
 
@@ -236,48 +236,28 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
     inferred
 }
 
-pub struct Extractor<'a> {
-    payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
-    pub unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
+pub struct IssueExtractor<'a> {
+    extractor: Extractor<'a>,
     collection_name: String,
 }
 
-impl<'a> Extractor<'a> {
+impl<'a> IssueExtractor<'a> {
     pub fn new(
         filter: &Filter,
         payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
         collection_name: String,
     ) -> Self {
-        let mut extractor = Self {
-            payload_schema,
-            unindexed_schema: HashMap::new(),
+        let extractor = Extractor::new_eager(filter, payload_schema);
+
+        Self {
+            extractor,
             collection_name,
-        };
-
-        extractor.update_from_filter(None, filter);
-
-        extractor
-    }
-
-    /// Creates a new 'Exctractor' but only checks for a single unindexed field.
-    pub fn new_first(
-        filter: &Filter,
-        payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
-        collection_name: String,
-    ) -> Self {
-        let mut extractor = Self {
-            payload_schema,
-            unindexed_schema: HashMap::new(),
-            collection_name,
-        };
-
-        extractor.update_one_from_filter(None, filter);
-
-        extractor
+        }
     }
 
     fn into_issues(self) -> Vec<UnindexedField> {
-        self.unindexed_schema
+        self.extractor
+            .unindexed_schema
             .into_iter()
             .filter_map(|(key, field_schemas)| {
                 let field_schemas = HashSet::from_iter(field_schemas);
@@ -286,14 +266,51 @@ impl<'a> Extractor<'a> {
             })
             .collect()
     }
+}
 
+pub struct Extractor<'a> {
+    payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
+    unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
+}
+
+impl<'a> Extractor<'a> {
+    /// Creates an extractor and eagerly extracts all unindexed fields from the provided filter.
+    fn new_eager(
+        filter: &Filter,
+        payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
+    ) -> Self {
+        let mut extractor = Self {
+            payload_schema,
+            unindexed_schema: HashMap::new(),
+        };
+
+        extractor.update_from_filter(None, filter);
+
+        extractor
+    }
+
+    /// Creates a new lazy 'Extractor'. It needs to call some update method to extract unindexed fields.
+    pub fn new(payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>) -> Self {
+        Self {
+            payload_schema,
+            unindexed_schema: HashMap::new(),
+        }
+    }
+
+    /// Current unindexed schema.
+    pub fn unindexed_schema(&self) -> &HashMap<PayloadKeyType, Vec<PayloadFieldSchema>> {
+        &self.unindexed_schema
+    }
+
+    /// Checks the filter for unindexed fields.
     fn update_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
         for condition in filter.iter_conditions() {
             self.update_from_condition(nested_prefix, condition);
         }
     }
 
-    fn update_one_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
+    /// Checks the filter for an unindexed field, stops at the first one found.
+    pub fn update_from_filter_once(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
         for condition in filter.iter_conditions() {
             self.update_from_condition(nested_prefix, condition);
             if !self.unindexed_schema.is_empty() {

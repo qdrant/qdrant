@@ -65,7 +65,7 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .filter_without_index(&geo_filter, &collection_name),
+            .one_unindexed_key(&geo_filter),
         Some(JsonPath::from_str("location").unwrap())
     );
 
@@ -83,7 +83,7 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .filter_without_index(&geo_filter, &collection_name),
+            .one_unindexed_key(&geo_filter),
         None
     );
 
@@ -106,7 +106,7 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .filter_without_index(&num_filter, &collection_name),
+            .one_unindexed_key(&num_filter),
         Some("location.lat".parse().unwrap())
     );
 
@@ -124,7 +124,7 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .filter_without_index(&num_filter, &collection_name),
+            .one_unindexed_key(&num_filter),
         None,
     );
 
@@ -134,7 +134,7 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .filter_without_index(&combined_filter, &collection_name),
+            .one_unindexed_key(&combined_filter),
         None,
     );
 }
