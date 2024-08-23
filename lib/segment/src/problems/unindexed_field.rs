@@ -259,6 +259,23 @@ impl<'a> Extractor<'a> {
         extractor
     }
 
+    /// Creates a new 'Exctractor' but only checks for a single unindexed field.
+    pub fn new_first(
+        filter: &Filter,
+        payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
+        collection_name: String,
+    ) -> Self {
+        let mut extractor = Self {
+            payload_schema,
+            unindexed_schema: HashMap::new(),
+            collection_name,
+        };
+
+        extractor.update_one_from_filter(None, filter);
+
+        extractor
+    }
+
     fn into_issues(self) -> Vec<UnindexedField> {
         self.unindexed_schema
             .into_iter()
@@ -273,6 +290,15 @@ impl<'a> Extractor<'a> {
     fn update_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
         for condition in filter.iter_conditions() {
             self.update_from_condition(nested_prefix, condition);
+        }
+    }
+
+    fn update_one_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
+        for condition in filter.iter_conditions() {
+            self.update_from_condition(nested_prefix, condition);
+            if !self.unindexed_schema.is_empty() {
+                break;
+            }
         }
     }
 

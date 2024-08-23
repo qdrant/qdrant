@@ -99,7 +99,7 @@ impl PayloadIndexSchema {
     /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
     /// If this function returns `None` all indexable keys in `filter` are indexed.
     pub fn filter_without_index(&self, filter: &Filter, collection_name: &str) -> Option<JsonPath> {
-        let extractor = Extractor::new(filter, &self.schema, collection_name.to_string());
+        let extractor = Extractor::new_first(filter, &self.schema, collection_name.to_string());
         // Get a random unindexed field from the extractor.
         extractor.unindexed_schema.keys().next().cloned()
     }

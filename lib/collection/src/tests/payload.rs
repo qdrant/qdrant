@@ -60,7 +60,7 @@ async fn test_payload_missing_index_check() {
         },
     )));
 
-    // We didn't create a payload yet
+    // No index yet => Filter has unindexed field
     assert_eq!(
         shard
             .payload_index_schema
@@ -68,6 +68,8 @@ async fn test_payload_missing_index_check() {
             .filter_without_index(&geo_filter, &collection_name),
         Some(JsonPath::from_str("location").unwrap())
     );
+
+    // Create unnested index
     create_index(
         &shard,
         &payload_index_schema,
@@ -76,6 +78,7 @@ async fn test_payload_missing_index_check() {
     )
     .await;
 
+    // Index created => Filter shouldn't have any unindexed field anymore
     assert_eq!(
         shard
             .payload_index_schema
@@ -84,6 +87,7 @@ async fn test_payload_missing_index_check() {
         None
     );
 
+    // Create nested filter
     let condition = Condition::new_nested(
         JsonPath::new("location"),
         Filter::new_must(Condition::Field(FieldCondition::new_range(
@@ -96,6 +100,8 @@ async fn test_payload_missing_index_check() {
     );
     let num_filter = Filter::new_must(condition);
 
+    // Index only exists for 'location' but not 'location.lat'
+    // so we expect it to be detected as unindexed
     assert_eq!(
         shard
             .payload_index_schema
@@ -104,6 +110,7 @@ async fn test_payload_missing_index_check() {
         Some("location.lat".parse().unwrap())
     );
 
+    // Create index for nested field
     create_index(
         &shard,
         &payload_index_schema,
@@ -112,11 +119,22 @@ async fn test_payload_missing_index_check() {
     )
     .await;
 
+    // Nested field also gets detected as indexed and unindexed fields in the query are empty.
     assert_eq!(
         shard
             .payload_index_schema
             .read()
             .filter_without_index(&num_filter, &collection_name),
+        None,
+    );
+
+    // Filters combined also completely indexed!
+    let combined_filter = geo_filter.merge(&num_filter);
+    assert_eq!(
+        shard
+            .payload_index_schema
+            .read()
+            .filter_without_index(&combined_filter, &collection_name),
         None,
     );
 }
