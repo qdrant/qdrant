@@ -10913,6 +10913,13 @@
                 "nullable": true
               }
             ]
+          },
+          "peers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PeerInfo"
+            },
+            "nullable": true
           }
         }
       },
