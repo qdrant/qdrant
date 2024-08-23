@@ -970,6 +970,39 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
+    pub async fn shard_status(&self) -> ShardStatus {
+        // Note: Should be kept in sync with parts of local_shard_info
+        let segments = self.segments().read();
+        let mut status = ShardStatus::Green;
+        let mut optimizer_status = OptimizersStatus::Ok;
+
+        for (idx, segment) in segments.iter() {
+            if segment_info.segment_type == SegmentType::Special {
+                status = ShardStatus::Yellow;
+            }
+
+            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                status = ShardStatus::Red;
+            }
+
+            if let Some(error) = &segments.optimizer_errors {
+                optimizer_status = OptimizersStatus::Error(error.to_string());
+            }
+        }
+
+        // If still green while optimization conditions are triggered, mark as grey
+        if status == ShardStatus::Green
+            && self.update_handler.lock().await.has_pending_optimizations()
+            && optimizer_status == OptimizersStatus::Ok
+        {
+            status = ShardStatus::Grey;
+            // optimizer_status =
+            //     OptimizersStatus::Error("optimizations pending, awaiting update operation".into());
+        }
+
+        status
+    }
+
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let mut vectors_count = 0;
