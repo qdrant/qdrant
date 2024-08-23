@@ -5,6 +5,7 @@ pub mod debug_api;
 pub mod discovery_api;
 pub mod facet_api;
 pub mod issues_api;
+pub mod local_shard_api;
 pub mod query_api;
 pub mod read_params;
 pub mod recommend_api;
