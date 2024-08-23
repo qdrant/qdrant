@@ -6,7 +6,7 @@ use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, PointIdType, SearchParams, ShardKey, WithPayloadInterface, WithVector,
+    Filter, IntPayloadType, PointIdType, SearchParams, ShardKey, WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -768,6 +768,7 @@ pub struct FacetRequest {
 #[serde(untagged)]
 pub enum FacetValue {
     Keyword(String),
+    Integer(IntPayloadType),
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

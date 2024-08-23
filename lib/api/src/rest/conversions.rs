@@ -255,6 +255,7 @@ impl From<segment::data_types::facets::FacetValue> for FacetValue {
     fn from(value: segment::data_types::facets::FacetValue) -> Self {
         match value {
             segment::data_types::facets::FacetValue::Keyword(keyword) => Self::Keyword(keyword),
+            segment::data_types::facets::FacetValue::Int(integer) => Self::Integer(integer),
         }
     }
 }

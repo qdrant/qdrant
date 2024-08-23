@@ -1129,7 +1129,7 @@ mod tests {
             let res: Vec<_> = index
                 .get_values(idx as u32)
                 .unwrap()
-                .map(|i| i as i32)
+                .map(|i| *i as i32)
                 .collect();
             assert_eq!(res, *values);
         }

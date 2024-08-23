@@ -2272,6 +2272,7 @@ impl TryFrom<FacetValue> for segment_facets::FacetValue {
 
         Ok(match variant {
             Variant::StringValue(value) => segment_facets::FacetValue::Keyword(value),
+            Variant::IntegerValue(value) => segment_facets::FacetValue::Int(value),
         })
     }
 }
@@ -2283,6 +2284,7 @@ impl From<segment_facets::FacetValue> for FacetValue {
         Self {
             variant: Some(match value {
                 segment_facets::FacetValue::Keyword(value) => Variant::StringValue(value),
+                segment_facets::FacetValue::Int(value) => Variant::IntegerValue(value),
             }),
         }
     }

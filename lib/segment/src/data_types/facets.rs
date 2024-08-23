@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::json_path::JsonPath;
-use crate::types::{Filter, ValueVariants};
+use crate::types::{Filter, IntPayloadType, ValueVariants};
 
 #[derive(Clone, Debug, JsonSchema, Serialize, Deserialize, Validate)]
 pub struct FacetParams {
@@ -28,12 +28,14 @@ impl FacetParams {
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum FacetValueRef<'a> {
     Keyword(&'a str),
+    Int(&'a IntPayloadType),
 }
 
 impl<'a> FacetValueRef<'a> {
     pub fn to_owned(&self) -> FacetValue {
         match self {
             FacetValueRef::Keyword(s) => FacetValue::Keyword((*s).to_string()),
+            FacetValueRef::Int(i) => FacetValue::Int(**i),
         }
     }
 }
@@ -41,6 +43,7 @@ impl<'a> FacetValueRef<'a> {
 #[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Debug)]
 pub enum FacetValue {
     Keyword(String),
+    Int(IntPayloadType),
     // other types to add?
     // Bool(bool),
     // Integer(IntPayloadType),
@@ -93,6 +96,7 @@ impl From<FacetValue> for ValueVariants {
     fn from(value: FacetValue) -> Self {
         match value {
             FacetValue::Keyword(s) => ValueVariants::String(s),
+            FacetValue::Int(i) => ValueVariants::Integer(i),
         }
     }
 }

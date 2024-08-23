@@ -372,7 +372,7 @@ impl FieldIndex {
     pub fn as_facet_index(&self) -> Option<FacetIndex> {
         match self {
             FieldIndex::KeywordIndex(index) => Some(FacetIndex::KeywordIndex(index)),
-            FieldIndex::IntMapIndex(_) // TODO(facets): use int map index too
+            FieldIndex::IntMapIndex(index) => Some(FacetIndex::IntIndex(index)),
             | FieldIndex::UuidMapIndex(_) // TODO(facets): use uuid index too
             | FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)

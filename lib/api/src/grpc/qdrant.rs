@@ -5065,7 +5065,7 @@ pub struct FacetCounts {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetValue {
-    #[prost(oneof = "facet_value::Variant", tags = "1")]
+    #[prost(oneof = "facet_value::Variant", tags = "1, 2")]
     pub variant: ::core::option::Option<facet_value::Variant>,
 }
 /// Nested message and enum types in `FacetValue`.
@@ -5077,6 +5077,9 @@ pub mod facet_value {
         /// String value from the facet
         #[prost(string, tag = "1")]
         StringValue(::prost::alloc::string::String),
+        /// Integer value from the facet
+        #[prost(int64, tag = "2")]
+        IntegerValue(i64),
     }
 }
 #[derive(serde::Serialize)]

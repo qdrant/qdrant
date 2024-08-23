@@ -2476,6 +2476,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | string_value | [string](#string) |  | String value from the facet |
+| integer_value | [int64](#int64) |  | Integer value from the facet |
 
 
 
