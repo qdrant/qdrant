@@ -72,7 +72,7 @@ pub trait StrictModeVerification {
             |filter: Option<&Filter>, allow_unindexed_filter: Option<bool>| -> Result<(), String> {
                 if let Some(read_filter) = filter {
                     if allow_unindexed_filter == Some(false) {
-                        if let Some(key) = collection.has_filter_without_index(read_filter) {
+                        if let Some(key) = collection.filter_without_index(read_filter) {
                             return Err(new_error_msg(
                                 format!("Index required but not found for \"{key}\""),
                                 "Create an index or use a different filter.",

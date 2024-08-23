@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use segment::json_path::JsonPath;
-use segment::types::{Condition, Filter, PayloadFieldSchema, PayloadKeyType};
+use segment::problems::unindexed_field::Extractor;
+use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
@@ -87,34 +88,19 @@ impl Collection {
 
     /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
     /// If this function returns `None` all indexable keys in `filter` are indexed.
-    pub fn has_filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
-        filter
-            .must
-            .iter()
-            .flatten()
-            .chain(filter.must_not.iter().flatten())
-            .chain(filter.should.iter().flatten())
-            .chain(filter.min_should.iter().flat_map(|i| &i.conditions))
-            .find_map(|condition| self.has_condition_without_index(condition))
+    pub fn filter_without_index(&self, filter: &Filter) -> Option<JsonPath> {
+        self.payload_index_schema
+            .read()
+            .filter_without_index(filter, &self.name())
     }
+}
 
-    fn has_condition_without_index(&self, condition: &Condition) -> Option<JsonPath> {
-        let has_key = |key: &JsonPath| self.payload_index_schema.read().schema.contains_key(key);
-
-        match condition {
-            Condition::Field(field) => {
-                if !has_key(&field.key) {
-                    Some(field.key.clone())
-                } else {
-                    None
-                }
-            }
-            Condition::Nested(nested) => self.has_filter_without_index(nested.filter()),
-            Condition::Filter(filter) => self.has_filter_without_index(filter),
-            Condition::IsEmpty(_)
-            | Condition::IsNull(_)
-            | Condition::HasId(_)
-            | Condition::CustomIdChecker(_) => None,
-        }
+impl PayloadIndexSchema {
+    /// Returns an arbitrary payload key used by `filter` which can be indexed but currently is not.
+    /// If this function returns `None` all indexable keys in `filter` are indexed.
+    pub fn filter_without_index(&self, filter: &Filter, collection_name: &str) -> Option<JsonPath> {
+        let extractor = Extractor::new(filter, &self.schema, collection_name.to_string());
+        // Get a random unindexed field from the extractor.
+        extractor.unindexed_schema.keys().next().cloned()
     }
 }

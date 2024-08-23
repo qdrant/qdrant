@@ -236,14 +236,14 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
     inferred
 }
 
-struct Extractor<'a> {
+pub struct Extractor<'a> {
     payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
-    unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
+    pub unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
     collection_name: String,
 }
 
 impl<'a> Extractor<'a> {
-    fn new(
+    pub fn new(
         filter: &Filter,
         payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
         collection_name: String,
@@ -271,25 +271,9 @@ impl<'a> Extractor<'a> {
     }
 
     fn update_from_filter(&mut self, nested_prefix: Option<&JsonPath>, filter: &Filter) {
-        let Filter {
-            must,
-            should,
-            min_should,
-            must_not,
-        } = filter;
-
-        let min_should = min_should.as_ref().map(|min_should| &min_should.conditions);
-
-        [
-            must.as_ref(),
-            should.as_ref(),
-            min_should,
-            must_not.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .flatten()
-        .for_each(|condition| self.update_from_condition(nested_prefix, condition));
+        for condition in filter.iter_conditions() {
+            self.update_from_condition(nested_prefix, condition);
+        }
     }
 
     fn update_from_condition(&mut self, nested_prefix: Option<&JsonPath>, condition: &Condition) {

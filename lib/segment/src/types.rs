@@ -2340,6 +2340,15 @@ impl Filter {
             (Some(this), Some(other)) => Some(this.merge_owned(other)),
         }
     }
+
+    pub fn iter_conditions(&self) -> impl Iterator<Item = &Condition> {
+        self.must
+            .iter()
+            .flatten()
+            .chain(self.must_not.iter().flatten())
+            .chain(self.should.iter().flatten())
+            .chain(self.min_should.iter().flat_map(|i| &i.conditions))
+    }
 }
 
 #[cfg(test)]
