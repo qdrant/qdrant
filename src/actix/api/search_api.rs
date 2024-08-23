@@ -131,6 +131,11 @@ async fn search_point_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
+    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let SearchGroupsRequest {
         search_group_request,
         shard_key,
@@ -142,7 +147,7 @@ async fn search_point_groups(
     };
 
     helpers::time(do_search_point_groups(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         &collection.name,
         search_group_request,
         params.consistency,

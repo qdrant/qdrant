@@ -1,42 +1,13 @@
-use segment::types::Filter;
+use segment::types::{Filter, SearchParams};
 
-use super::{check_bool, check_limit_opt, StrictModeVerification};
+use super::StrictModeVerification;
 use crate::collection::Collection;
 use crate::operations::config_diff::StrictModeConfig;
-use crate::operations::types::{CollectionError, SearchRequest, SearchRequestBatch};
+use crate::operations::types::{
+    CollectionError, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+};
 
 impl StrictModeVerification for SearchRequest {
-    fn check_custom(
-        &self,
-        _: &Collection,
-        strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
-        let search_request = &self.search_request;
-
-        if let Some(search_parameter) = &search_request.params {
-            check_bool(
-                search_parameter.exact,
-                strict_mode_config.search_allow_exact,
-                "Exact search",
-                "exact",
-            )?;
-
-            check_limit_opt(
-                search_parameter.quantization.and_then(|i| i.oversampling),
-                strict_mode_config.search_max_oversampling,
-                "oversampling",
-            )?;
-
-            check_limit_opt(
-                search_parameter.hnsw_ef,
-                strict_mode_config.search_max_hnsw_ef,
-                "hnsw_ef",
-            )?;
-        }
-
-        Ok(())
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         self.search_request.filter.as_ref()
     }
@@ -50,6 +21,14 @@ impl StrictModeVerification for SearchRequest {
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        self.search_request.params.as_ref()
+    }
+
+    fn request_exact(&self) -> Option<bool> {
         None
     }
 }
@@ -75,6 +54,40 @@ impl StrictModeVerification for SearchRequestBatch {
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        None
+    }
+}
+
+impl StrictModeVerification for SearchGroupsRequest {
+    fn query_limit(&self) -> Option<usize> {
+        Some(self.search_group_request.group_request.limit as usize)
+    }
+
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        self.search_group_request.filter.as_ref()
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        self.search_group_request.params.as_ref().map(|i| i.exact)
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        self.search_group_request.params.as_ref()
+    }
+
+    fn timeout(&self) -> Option<usize> {
         None
     }
 

@@ -4,12 +4,14 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use futures::TryFutureExt;
 use itertools::Itertools;
+use storage::content_manager::collection_verification::CollectionRequestVerification;
 use storage::dispatcher::Dispatcher;
+use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_discover_batch_points;
 
 #[post("/collections/{name}/points/discover")]
@@ -20,6 +22,11 @@ async fn discover_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let DiscoverRequest {
         discover_request,
         shard_key,
@@ -32,7 +39,7 @@ async fn discover_points(
 
     helpers::time(
         dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .discover(
                 &collection.name,
                 discover_request,
@@ -59,9 +66,14 @@ async fn discover_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     helpers::time(
         do_discover_batch_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &collection.name,
             request.into_inner(),
             params.consistency,
