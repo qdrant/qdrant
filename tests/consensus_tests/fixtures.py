@@ -126,6 +126,7 @@ def create_field_index(
             "field_schema": field_schema,
         },
         headers=headers,
+        params={"wait": "true"}
     )
     assert_http_ok(r_batch)
 

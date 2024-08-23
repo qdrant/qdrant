@@ -10,7 +10,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, Vector};
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -220,13 +220,36 @@ pub trait SegmentEntry {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool>;
 
+    /// Build the field index for the key and schema, if not built before.
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_type: Option<&PayloadFieldSchema>,
+    ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>>;
+
+    /// Apply a built index. Returns whether it was actually applied or not.
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        field_schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<bool>;
+
     /// Create index for a payload field, if not exists
     fn create_field_index(
         &mut self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: Option<&PayloadFieldSchema>,
-    ) -> OperationResult<bool>;
+    ) -> OperationResult<bool> {
+        let Some((schema, index)) = self.build_field_index(op_num, key, field_schema)? else {
+            return Ok(false);
+        };
+
+        self.apply_field_index(op_num, key.to_owned(), schema, index)
+    }
 
     /// Get indexed fields
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema>;

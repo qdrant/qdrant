@@ -8,6 +8,7 @@ use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
+use super::field_index::FieldIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -83,17 +84,24 @@ impl PayloadIndex for PlainPayloadIndex {
         self.config.indexed_fields.clone()
     }
 
-    fn set_indexed(
-        &mut self,
-        field: PayloadKeyTypeRef,
-        payload_schema: impl Into<PayloadFieldSchema>,
-    ) -> OperationResult<()> {
-        let payload_schema = payload_schema.into();
+    fn build_index(
+        &self,
+        _field: PayloadKeyTypeRef,
+        _payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<Option<Vec<FieldIndex>>> {
+        Ok(Some(Vec::new()))
+    }
 
+    fn apply_index(
+        &mut self,
+        field: PayloadKeyType,
+        payload_schema: PayloadFieldSchema,
+        _field_index: Vec<FieldIndex>,
+    ) -> OperationResult<()> {
         if let Some(prev_schema) = self
             .config
             .indexed_fields
-            .insert(field.to_owned(), payload_schema.clone())
+            .insert(field, payload_schema.clone())
         {
             // the field is already present with the same schema, no need to save the config
             if prev_schema == payload_schema {

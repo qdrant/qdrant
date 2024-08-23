@@ -95,6 +95,8 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
 
     # check the issue is now active
     issue_present = False
+    solution = None
+    timestamp = None
     for issue in issues:
         if issue["id"] == expected_issue_code:
             issue_present = True
@@ -102,7 +104,9 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
             timestamp = issue["timestamp"]
             break
     assert issue_present
-
+    assert solution is not None
+    assert timestamp is not None
+    
     # search again
     search_with_city_filter(uri)
 
@@ -116,6 +120,8 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
             assert timestamp == issue["timestamp"]
             break
     assert issue_present
+    assert solution is not None
+    assert timestamp is not None
 
     assert solution == {
         "method": "PUT",
@@ -128,6 +134,7 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     response = requests.request(
         method=solution["method"],
         url=uri + solution["uri"],
+        params={"wait": "true"},
         json=solution["body"],
     )
     assert response.ok

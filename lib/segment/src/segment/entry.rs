@@ -19,7 +19,7 @@ use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
-use crate::index::field_index::CardinalityEstimation;
+use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::segment::{
@@ -639,32 +639,59 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn create_field_index(
-        &mut self,
-        op_num: u64,
+    fn build_field_index(
+        &self,
+        op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
-    ) -> OperationResult<bool> {
-        self.handle_segment_version_and_failure(op_num, |segment| match field_type {
+    ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
+        // Check version without updating it
+        if self.version.unwrap_or(0) > op_num {
+            return Ok(None);
+        }
+
+        match field_type {
             Some(schema) => {
-                segment
+                let res = self
                     .payload_index
                     .borrow_mut()
-                    .set_indexed(key, schema.clone())?;
-                Ok(true)
+                    .build_index(key, schema)?
+                    .map(|field_index| (schema.to_owned(), field_index));
+
+                Ok(res)
             }
-            None => match segment.infer_from_payload_data(key)? {
+            None => match self.infer_from_payload_data(key)? {
                 None => Err(TypeInferenceError {
                     field_name: key.clone(),
                 }),
                 Some(schema_type) => {
-                    segment
+                    let schema = schema_type.into();
+
+                    let res = self
                         .payload_index
                         .borrow_mut()
-                        .set_indexed(key, schema_type)?;
-                    Ok(true)
+                        .build_index(key, &schema)?
+                        .map(|field_index| (schema, field_index));
+
+                    Ok(res)
                 }
             },
+        }
+    }
+
+    fn apply_field_index(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyType,
+        schema: PayloadFieldSchema,
+        field_index: Vec<FieldIndex>,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment
+                .payload_index
+                .borrow_mut()
+                .apply_index(key, schema, field_index)?;
+            Ok(true)
         })
     }
 
