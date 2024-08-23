@@ -2273,6 +2273,11 @@ impl TryFrom<FacetValue> for segment_facets::FacetValue {
         Ok(match variant {
             Variant::StringValue(value) => segment_facets::FacetValue::Keyword(value),
             Variant::IntegerValue(value) => segment_facets::FacetValue::Int(value),
+            Variant::UuidValue(value) => segment_facets::FacetValue::Uuid(
+                Uuid::parse_str(&value)
+                    .map_err(|_| Status::invalid_argument("Invalid UUID"))?
+                    .as_u128(),
+            ),
         })
     }
 }
@@ -2285,6 +2290,9 @@ impl From<segment_facets::FacetValue> for FacetValue {
             variant: Some(match value {
                 segment_facets::FacetValue::Keyword(value) => Variant::StringValue(value),
                 segment_facets::FacetValue::Int(value) => Variant::IntegerValue(value),
+                segment_facets::FacetValue::Uuid(value) => {
+                    Variant::UuidValue(Uuid::from_u128(value).to_string())
+                }
             }),
         }
     }

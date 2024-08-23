@@ -198,7 +198,7 @@ impl SegmentBuilder {
                 }
                 FieldIndex::UuidMapIndex(index) => {
                     if let Some(ids) = index.get_values(internal_id) {
-                        uuid_hash(&mut ordering, ids);
+                        uuid_hash(&mut ordering, ids.copied());
                     }
                     break;
                 }

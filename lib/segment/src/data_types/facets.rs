@@ -4,10 +4,11 @@ use std::hash::Hash;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::json_path::JsonPath;
-use crate::types::{Filter, IntPayloadType, ValueVariants};
+use crate::types::{Filter, IntPayloadType, UuidIntType, ValueVariants};
 
 #[derive(Clone, Debug, JsonSchema, Serialize, Deserialize, Validate)]
 pub struct FacetParams {
@@ -29,6 +30,7 @@ impl FacetParams {
 pub enum FacetValueRef<'a> {
     Keyword(&'a str),
     Int(&'a IntPayloadType),
+    Uuid(&'a u128),
 }
 
 impl<'a> FacetValueRef<'a> {
@@ -36,6 +38,7 @@ impl<'a> FacetValueRef<'a> {
         match self {
             FacetValueRef::Keyword(s) => FacetValue::Keyword((*s).to_string()),
             FacetValueRef::Int(i) => FacetValue::Int(**i),
+            FacetValueRef::Uuid(uuid) => FacetValue::Uuid(**uuid),
         }
     }
 }
@@ -44,6 +47,7 @@ impl<'a> FacetValueRef<'a> {
 pub enum FacetValue {
     Keyword(String),
     Int(IntPayloadType),
+    Uuid(UuidIntType),
     // other types to add?
     // Bool(bool),
     // Integer(IntPayloadType),
@@ -97,6 +101,7 @@ impl From<FacetValue> for ValueVariants {
         match value {
             FacetValue::Keyword(s) => ValueVariants::String(s),
             FacetValue::Int(i) => ValueVariants::Integer(i),
+            FacetValue::Uuid(uuid) => ValueVariants::Keyword(Uuid::from_u128(uuid).to_string()),
         }
     }
 }

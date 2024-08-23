@@ -103,7 +103,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
                 .map(|(idx, values)| {
                     (
                         idx as PointOffsetType,
-                        values.iter().map(|v| T::into_referenced(v)),
+                        values.iter().map(|v| T::as_referenced(v)),
                     )
                 }),
         )?;

@@ -125,10 +125,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     ) -> Option<Box<dyn Iterator<Item = N::Referenced<'_>> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+                index.get_values(idx)?.map(|v| N::as_referenced(v)),
             )),
             MapIndex::Immutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+                index.get_values(idx)?.map(|v| N::as_referenced(v)),
             )),
             MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
         }
