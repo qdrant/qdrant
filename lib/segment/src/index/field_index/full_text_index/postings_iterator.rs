@@ -1,6 +1,9 @@
 use common::types::PointOffsetType;
 
-use super::posting_list::{CompressedPostingList, CompressedPostingVisitor, PostingList};
+use super::posting_list::PostingList;
+use crate::index::field_index::full_text_index::compressed_posting_list::{
+    CompressedPostingList, CompressedPostingVisitor,
+};
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,
