@@ -56,17 +56,6 @@ impl<'a> ChunkReader<'a> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let bitpacker = BitPackerImpl::new();
-        (0..self.chunks.len())
-            .flat_map(move |chunk_index| {
-                let mut decompressed = [0u32; BitPackerImpl::BLOCK_LEN];
-                self.decompress_chunk(&bitpacker, chunk_index, &mut decompressed);
-                decompressed.into_iter()
-            })
-            .chain(self.reminder_postings.iter().copied())
-    }
-
     pub fn get_chunk_size(
         chunks: &[CompressedPostingChunk],
         data: &[u8],
