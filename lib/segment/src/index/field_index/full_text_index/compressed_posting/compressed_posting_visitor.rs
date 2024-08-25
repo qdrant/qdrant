@@ -123,7 +123,7 @@ impl<'a> CompressedPostingVisitor<'a> {
         }
     }
 
-    fn get_by_offset(&mut self, offset: usize) -> Option<PointOffsetType> {
+    pub fn get_by_offset(&mut self, offset: usize) -> Option<PointOffsetType> {
         let chunk_idx = offset / BitPackerImpl::BLOCK_LEN;
 
         if chunk_idx > self.chunk_reader.chunks.len() {
@@ -148,27 +148,6 @@ impl<'a> CompressedPostingVisitor<'a> {
         self.decompressed_chunk
             .get(offset % BitPackerImpl::BLOCK_LEN)
             .copied()
-    }
-}
-
-pub struct CompressedPostingIterator<'a> {
-    visitor: CompressedPostingVisitor<'a>,
-    offset: usize,
-}
-
-impl<'a> CompressedPostingIterator<'a> {
-    pub fn new(visitor: CompressedPostingVisitor<'a>) -> CompressedPostingIterator<'a> {
-        CompressedPostingIterator { visitor, offset: 0 }
-    }
-}
-
-impl<'a> Iterator for CompressedPostingIterator<'a> {
-    type Item = PointOffsetType;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let val = self.visitor.get_by_offset(self.offset);
-        self.offset += 1;
-        val
     }
 }
 

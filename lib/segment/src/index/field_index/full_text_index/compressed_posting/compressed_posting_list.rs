@@ -5,9 +5,8 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
     ChunkReader, CompressedPostingChunk,
 };
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::{
-    CompressedPostingIterator, CompressedPostingVisitor,
-};
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 use crate::index::field_index::full_text_index::posting_list::PostingList;
 
 #[derive(Clone, Debug, Default)]
