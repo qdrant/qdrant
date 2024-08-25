@@ -1,9 +1,8 @@
 use common::types::PointOffsetType;
 
 use super::posting_list::PostingList;
-use crate::index::field_index::full_text_index::compressed_posting_list::{
-    CompressedPostingList, CompressedPostingVisitor,
-};
+use crate::index::field_index::full_text_index::compressed_posting_list::CompressedPostingList;
+use crate::index::field_index::full_text_index::compressed_posting_visitor::CompressedPostingVisitor;
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,
@@ -37,7 +36,7 @@ pub fn intersect_compressed_postings_iterator<'a>(
 
     let mut posting_visitors = postings
         .into_iter()
-        .map(CompressedPostingVisitor::new)
+        .map(|p| CompressedPostingVisitor::new(p.reader()))
         .collect::<Vec<_>>();
 
     let and_iter = smallest_posting
