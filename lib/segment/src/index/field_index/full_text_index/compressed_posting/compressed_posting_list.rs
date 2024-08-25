@@ -1,10 +1,10 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::{
-    ChunkReader, CompressedPostingChunk,
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
+    compress_posting, estimate_chunks, BitPackerImpl, CompressedPostingChunk,
 };
-use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 
@@ -14,7 +14,7 @@ pub struct CompressedPostingList {
     data: Vec<u8>,
     chunks: Vec<CompressedPostingChunk>,
     // last postings that are not compressed because they are not aligned with the block size
-    reminder_postings: Vec<PointOffsetType>,
+    remainder_postings: Vec<PointOffsetType>,
 }
 
 impl CompressedPostingList {
@@ -22,50 +22,18 @@ impl CompressedPostingList {
         if posting_list.is_empty() {
             return Self::default();
         }
+        let (chunks, remainder_postings, data_size) = estimate_chunks(posting_list);
 
-        // fill chunks data
-        let bitpacker = BitPackerImpl::new();
-        let mut chunks = Vec::with_capacity(posting_list.len() / BitPackerImpl::BLOCK_LEN);
-        let mut data_size = 0;
-        let mut noncompressed_postings = Vec::new();
-        for chunk_data in posting_list.chunks(BitPackerImpl::BLOCK_LEN) {
-            if chunk_data.len() == BitPackerImpl::BLOCK_LEN {
-                let initial = chunk_data[0];
-                let chunk_bits: u8 = bitpacker.num_bits_sorted(initial, chunk_data);
-                let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
-                chunks.push(CompressedPostingChunk {
-                    initial,
-                    offset: data_size as u32,
-                });
-                data_size += chunk_size;
-            } else {
-                // last chunk that is not aligned with the block size
-                noncompressed_postings.extend_from_slice(chunk_data);
-            }
-        }
-
-        // compress data
+        // compressed data storage
         let mut data = vec![0u8; data_size];
-        for (chunk_index, chunk_data) in posting_list
-            .chunks_exact(BitPackerImpl::BLOCK_LEN)
-            .enumerate()
-        {
-            let chunk = &chunks[chunk_index];
-            let chunk_size = ChunkReader::get_chunk_size(&chunks, &data, chunk_index);
-            let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
-            bitpacker.compress_sorted(
-                chunk.initial,
-                chunk_data,
-                &mut data[chunk.offset as usize..chunk.offset as usize + chunk_size],
-                chunk_bits as u8,
-            );
-        }
+
+        compress_posting(posting_list, &chunks, &mut data);
 
         Self {
             last_doc_id: *posting_list.last().unwrap(),
             data,
             chunks,
-            reminder_postings: noncompressed_postings,
+            remainder_postings,
         }
     }
 
@@ -73,7 +41,7 @@ impl CompressedPostingList {
         ChunkReader::new(
             &self.data,
             &self.chunks,
-            &self.reminder_postings,
+            &self.remainder_postings,
             self.last_doc_id,
         )
     }
@@ -83,7 +51,7 @@ impl CompressedPostingList {
     }
 
     pub fn len(&self) -> usize {
-        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.reminder_postings.len()
+        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
