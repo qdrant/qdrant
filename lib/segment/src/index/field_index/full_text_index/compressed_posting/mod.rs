@@ -1,8 +1,8 @@
-pub mod compressed_posting_list;
 mod compressed_chunks_reader;
 pub mod compressed_common;
-pub mod compressed_posting_visitor;
 mod compressed_posting_iterator;
+pub mod compressed_posting_list;
+pub mod compressed_posting_visitor;
 
 //
 //                               Posting Iterator

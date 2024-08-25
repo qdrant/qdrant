@@ -1,4 +1,5 @@
 use common::types::PointOffsetType;
+
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 
 pub struct CompressedPostingIterator<'a> {
