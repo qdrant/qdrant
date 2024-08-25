@@ -8,7 +8,7 @@ use super::postings_iterator::{
     intersect_compressed_postings_iterator, intersect_postings_iterator,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::compressed_posting_list::CompressedPostingList;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 

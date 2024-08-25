@@ -1,7 +1,7 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::compressed_common::BitPackerImpl;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
 
 #[derive(Clone, Debug, Default)]
 pub struct CompressedPostingChunk {

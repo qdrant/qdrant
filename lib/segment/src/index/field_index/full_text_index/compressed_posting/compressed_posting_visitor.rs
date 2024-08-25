@@ -1,8 +1,8 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::compressed_chunks_reader::ChunkReader;
-use crate::index::field_index::full_text_index::compressed_common::BitPackerImpl;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
 
 // Help structure to find intersection of compressed postings and set of sorted values.
 // This help structure reuse the decompressed chunk to avoid unnecessary decompression.
@@ -175,7 +175,7 @@ impl<'a> Iterator for CompressedPostingIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::field_index::full_text_index::compressed_posting_list::CompressedPostingList;
+    use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_compressed_posting_visitor() {

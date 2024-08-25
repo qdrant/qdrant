@@ -1,11 +1,11 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::compressed_chunks_reader::{
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::{
     ChunkReader, CompressedPostingChunk,
 };
-use crate::index::field_index::full_text_index::compressed_common::BitPackerImpl;
-use crate::index::field_index::full_text_index::compressed_posting_visitor::{
+use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::{
     CompressedPostingIterator, CompressedPostingVisitor,
 };
 use crate::index::field_index::full_text_index::posting_list::PostingList;
