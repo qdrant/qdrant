@@ -82,9 +82,9 @@ mod tests {
 
         assert_eq!(res, vec![2, 5]);
 
-        let p1_compressed = CompressedPostingList::new(p1);
-        let p2_compressed = CompressedPostingList::new(p2);
-        let p3_compressed = CompressedPostingList::new(p3);
+        let p1_compressed = CompressedPostingList::new(&p1.into_vec());
+        let p2_compressed = CompressedPostingList::new(&p2.into_vec());
+        let p3_compressed = CompressedPostingList::new(&p3.into_vec());
         let compressed_postings = vec![&p1_compressed, &p2_compressed, &p3_compressed];
         let merged = intersect_compressed_postings_iterator(compressed_postings, |_| true);
 

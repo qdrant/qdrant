@@ -549,7 +549,12 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
         let postings: Vec<Option<CompressedPostingList>> = index
             .postings
             .into_iter()
-            .map(|x| x.map(CompressedPostingList::new))
+            .map(|opt_posting| {
+                opt_posting
+                    .map(PostingList::into_vec)
+                    .as_deref()
+                    .map(CompressedPostingList::new)
+            })
             .collect();
         index.vocab.shrink_to_fit();
 

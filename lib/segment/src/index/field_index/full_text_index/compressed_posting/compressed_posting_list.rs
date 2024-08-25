@@ -7,7 +7,6 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
-use crate::index::field_index::full_text_index::posting_list::PostingList;
 
 #[derive(Clone, Debug, Default)]
 pub struct CompressedPostingList {
@@ -19,19 +18,17 @@ pub struct CompressedPostingList {
 }
 
 impl CompressedPostingList {
-    pub fn new(posting_list: PostingList) -> Self {
-        let list = posting_list.into_vec();
-
-        if list.is_empty() {
+    pub fn new(posting_list: &[PointOffsetType]) -> Self {
+        if posting_list.is_empty() {
             return Self::default();
         }
 
         // fill chunks data
         let bitpacker = BitPackerImpl::new();
-        let mut chunks = Vec::with_capacity(list.len() / BitPackerImpl::BLOCK_LEN);
+        let mut chunks = Vec::with_capacity(posting_list.len() / BitPackerImpl::BLOCK_LEN);
         let mut data_size = 0;
         let mut noncompressed_postings = Vec::new();
-        for chunk_data in list.chunks(BitPackerImpl::BLOCK_LEN) {
+        for chunk_data in posting_list.chunks(BitPackerImpl::BLOCK_LEN) {
             if chunk_data.len() == BitPackerImpl::BLOCK_LEN {
                 let initial = chunk_data[0];
                 let chunk_bits: u8 = bitpacker.num_bits_sorted(initial, chunk_data);
@@ -49,7 +46,10 @@ impl CompressedPostingList {
 
         // compress data
         let mut data = vec![0u8; data_size];
-        for (chunk_index, chunk_data) in list.chunks_exact(BitPackerImpl::BLOCK_LEN).enumerate() {
+        for (chunk_index, chunk_data) in posting_list
+            .chunks_exact(BitPackerImpl::BLOCK_LEN)
+            .enumerate()
+        {
             let chunk = &chunks[chunk_index];
             let chunk_size = ChunkReader::get_chunk_size(&chunks, &data, chunk_index);
             let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
@@ -62,7 +62,7 @@ impl CompressedPostingList {
         }
 
         Self {
-            last_doc_id: *list.last().unwrap(),
+            last_doc_id: *posting_list.last().unwrap(),
             data,
             chunks,
             reminder_postings: noncompressed_postings,
@@ -100,12 +100,12 @@ impl CompressedPostingList {
         std::collections::HashSet<PointOffsetType>,
     ) {
         let mut set = std::collections::HashSet::new();
-        let mut posting_list = PostingList::default();
+        let mut posting_list = vec![];
         for i in 0..999 {
             set.insert(step * i);
-            posting_list.insert(step * i);
+            posting_list.push(step * i);
         }
-        let compressed_posting_list = CompressedPostingList::new(posting_list);
+        let compressed_posting_list = CompressedPostingList::new(&posting_list);
         (compressed_posting_list, set)
     }
 }
