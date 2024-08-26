@@ -160,27 +160,33 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
     PayloadSchemaType::iter().map(PayloadFieldSchema::FieldType)
 }
 
-fn infer_schema_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
+fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
         crate::types::ValueVariants::Keyword(_string) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            vec![
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+            ]
         }
         crate::types::ValueVariants::Integer(_integer) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
         crate::types::ValueVariants::Bool(_boolean) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)]
         }
     }
 }
 
-fn infer_schema_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
+fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema> {
     match value {
         AnyVariants::Keywords(_strings) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            vec![
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
+            ]
         }
         AnyVariants::Integers(_integers) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
     }
 }
@@ -199,16 +205,18 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
     let mut inferred = Vec::new();
 
     if let Some(r#match) = r#match {
-        inferred.push(match r#match {
+        inferred.extend(match r#match {
             Match::Value(match_value) => infer_schema_from_match_value(match_value),
             Match::Text(_match_text) => {
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
-                    r#type: TextIndexType::Text,
-                    tokenizer: TokenizerType::default(),
-                    min_token_len: None,
-                    max_token_len: None,
-                    lowercase: None,
-                }))
+                vec![PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                    TextIndexParams {
+                        r#type: TextIndexType::Text,
+                        tokenizer: TokenizerType::default(),
+                        min_token_len: None,
+                        max_token_len: None,
+                        lowercase: None,
+                    },
+                ))]
             }
             Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
