@@ -170,6 +170,7 @@ impl MetricsProvider for ClusterTelemetry {
             enabled,
             status,
             config: _,
+            peers: _,
         } = self;
 
         metrics.push(metric_family(
