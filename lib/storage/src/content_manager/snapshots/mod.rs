@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
-use tokio::task::JoinHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
@@ -29,17 +28,22 @@ pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
     snapshot_name: &str,
-) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
+) -> Result<bool, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
+
     let toc = dispatcher.toc(&access);
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir = snapshot_manager
         .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
         .await?;
-    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-    Ok(tokio::spawn(async move {
-        Ok(snapshot_manager.delete_snapshot(&snapshot_dir).await?)
-    }))
+
+    let res = tokio::spawn(async move {
+        log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+        snapshot_manager.delete_snapshot(&snapshot_dir).await
+    })
+    .await??;
+
+    Ok(res)
 }
 
 pub async fn do_delete_collection_snapshot(
@@ -47,9 +51,10 @@ pub async fn do_delete_collection_snapshot(
     access: Access,
     collection_name: &str,
     snapshot_name: &str,
-) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
+) -> Result<bool, StorageError> {
     let collection_pass = access
         .check_collection_access(collection_name, AccessRequirements::new().write().whole())?;
+
     let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
@@ -58,10 +63,13 @@ pub async fn do_delete_collection_snapshot(
         .get_snapshot_path(collection.snapshots_path(), &snapshot_name)
         .await?;
 
-    log::info!("Deleting collection snapshot {:?}", file_name);
-    Ok(tokio::spawn(async move {
-        Ok(snapshot_manager.delete_snapshot(&file_name).await?)
-    }))
+    let res = tokio::spawn(async move {
+        log::info!("Deleting collection snapshot {:?}", file_name);
+        snapshot_manager.delete_snapshot(&file_name).await
+    })
+    .await??;
+
+    Ok(res)
 }
 
 pub async fn do_list_full_snapshots(
@@ -74,15 +82,14 @@ pub async fn do_list_full_snapshots(
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
 
-pub fn do_create_full_snapshot(
+pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
-) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
+) -> Result<SnapshotDescription, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access).clone();
-    Ok(tokio::spawn(async move {
-        _do_create_full_snapshot(&toc, access).await
-    }))
+    let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, access).await }).await??;
+    Ok(res)
 }
 
 async fn _do_create_full_snapshot(
