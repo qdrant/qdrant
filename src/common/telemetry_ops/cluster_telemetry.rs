@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use collection::shards::shard::PeerId;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
-use storage::types::{ClusterStatus, ConsensusThreadStatus, StateRole};
+use storage::types::{ClusterStatus, ConsensusThreadStatus, PeerInfo, StateRole};
 
 use crate::settings::Settings;
 
@@ -62,6 +64,8 @@ pub struct ClusterTelemetry {
     pub status: Option<ClusterStatusTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<ClusterConfigTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peers: Option<HashMap<PeerId, PeerInfo>>,
 }
 
 impl ClusterTelemetry {
@@ -89,6 +93,12 @@ impl ClusterTelemetry {
                 .flatten(),
             config: (detail.level >= DetailsLevel::Level2)
                 .then(|| ClusterConfigTelemetry::from(settings)),
+            peers: (detail.level >= DetailsLevel::Level2)
+                .then(|| match dispatcher.cluster_status() {
+                    ClusterStatus::Disabled => None,
+                    ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers.clone()),
+                })
+                .flatten(),
         }
     }
 }
@@ -99,6 +109,7 @@ impl Anonymize for ClusterTelemetry {
             enabled: self.enabled,
             status: self.status.clone().map(|x| x.anonymize()),
             config: self.config.clone().map(|x| x.anonymize()),
+            peers: None,
         }
     }
 }
