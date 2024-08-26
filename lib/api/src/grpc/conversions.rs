@@ -1620,7 +1620,7 @@ impl From<segment::types::Match> for Match {
     fn from(value: segment::types::Match) -> Self {
         let match_value = match value {
             segment::types::Match::Value(value) => match value.value {
-                segment::types::ValueVariants::Keyword(kw) => MatchValue::Keyword(kw),
+                segment::types::ValueVariants::String(kw) => MatchValue::Keyword(kw),
                 segment::types::ValueVariants::Integer(int) => MatchValue::Integer(int),
                 segment::types::ValueVariants::Bool(flag) => MatchValue::Boolean(flag),
             },
@@ -1628,7 +1628,7 @@ impl From<segment::types::Match> for Match {
                 MatchValue::Text(text)
             }
             segment::types::Match::Any(any) => match any.any {
-                segment::types::AnyVariants::Keywords(strings) => {
+                segment::types::AnyVariants::Strings(strings) => {
                     let strings = strings.into_iter().collect();
                     MatchValue::Keywords(RepeatedStrings { strings })
                 }
@@ -1638,7 +1638,7 @@ impl From<segment::types::Match> for Match {
                 }
             },
             segment::types::Match::Except(except) => match except.except {
-                segment::types::AnyVariants::Keywords(strings) => {
+                segment::types::AnyVariants::Strings(strings) => {
                     let strings = strings.into_iter().collect();
                     MatchValue::ExceptKeywords(RepeatedStrings { strings })
                 }

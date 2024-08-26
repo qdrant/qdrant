@@ -162,7 +162,7 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
 
 fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
-        crate::types::ValueVariants::Keyword(string) => {
+        crate::types::ValueVariants::String(string) => {
             let mut inferred = Vec::new();
 
             if UuidPayloadType::parse_str(string).is_ok() {
@@ -184,7 +184,7 @@ fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> 
 
 fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema> {
     match value {
-        AnyVariants::Keywords(strings) => {
+        AnyVariants::Strings(strings) => {
             let mut inferred = Vec::new();
 
             if strings

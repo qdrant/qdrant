@@ -257,7 +257,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
         Match::Value(MatchValue {
             value: value_variant,
         }) => match (value_variant, index) {
-            (ValueVariants::Keyword(keyword), FieldIndex::KeywordIndex(index)) => {
+            (ValueVariants::String(keyword), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.check_values_any(point_id, |k| k == keyword)
                 }))
@@ -288,7 +288,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             _ => None,
         },
         Match::Any(MatchAny { any }) => match (any, index) {
-            (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
+            (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
                         index.check_values_any(point_id, |value| {
@@ -315,7 +315,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             _ => None,
         },
         Match::Except(MatchExcept { except }) => match (except, index) {
-            (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
+            (AnyVariants::Strings(list), FieldIndex::KeywordIndex(index)) => {
                 if list.len() < INDEXSET_ITER_THRESHOLD {
                     Some(Box::new(move |point_id: PointOffsetType| {
                         index.check_values_any(point_id, |value| {

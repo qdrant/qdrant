@@ -1334,7 +1334,7 @@ where
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ValueVariants {
-    Keyword(String),
+    String(String),
     Integer(IntPayloadType),
     Bool(bool),
 }
@@ -1342,7 +1342,7 @@ pub enum ValueVariants {
 impl ValueVariants {
     pub fn to_value(&self) -> Value {
         match self {
-            ValueVariants::Keyword(keyword) => Value::String(keyword.clone()),
+            ValueVariants::String(keyword) => Value::String(keyword.clone()),
             &ValueVariants::Integer(integer) => Value::Number(integer.into()),
             &ValueVariants::Bool(flag) => Value::Bool(flag),
         }
@@ -1352,7 +1352,7 @@ impl ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(IndexSet<String, FnvBuildHasher>),
+    Strings(IndexSet<String, FnvBuildHasher>),
     Integers(IndexSet<IntPayloadType, FnvBuildHasher>),
 }
 
@@ -1458,7 +1458,7 @@ impl From<bool> for Match {
 impl From<String> for Match {
     fn from(keyword: String) -> Self {
         Self::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword),
+            value: ValueVariants::String(keyword),
         })
     }
 }
@@ -1466,7 +1466,7 @@ impl From<String> for Match {
 impl From<SmolStr> for Match {
     fn from(keyword: SmolStr) -> Self {
         Self::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword.into()),
+            value: ValueVariants::String(keyword.into()),
         })
     }
 }
@@ -1483,7 +1483,7 @@ impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
         let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         Self::Any(MatchAny {
-            any: AnyVariants::Keywords(keywords),
+            any: AnyVariants::Strings(keywords),
         })
     }
 }
@@ -1492,7 +1492,7 @@ impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
         let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         MatchExcept {
-            except: AnyVariants::Keywords(keywords),
+            except: AnyVariants::Strings(keywords),
         }
     }
 }
@@ -2691,7 +2691,7 @@ mod tests {
         assert_eq!(
             condition.r#match.unwrap(),
             Match::Value(MatchValue {
-                value: ValueVariants::Keyword("world".to_owned())
+                value: ValueVariants::String("world".to_owned())
             })
         );
     }
@@ -2728,7 +2728,7 @@ mod tests {
         let Match::Any(m) = c.r#match.as_ref().unwrap() else {
             panic!("Match::Any expected")
         };
-        if let AnyVariants::Keywords(kws) = &m.any {
+        if let AnyVariants::Strings(kws) = &m.any {
             assert_eq!(kws.len(), 3);
             let expect: IndexSet<_, FnvBuildHasher> = ["Bourne", "Momoa", "Statham"]
                 .into_iter()
@@ -2803,7 +2803,7 @@ mod tests {
         assert_eq!(
             condition.r#match.unwrap(),
             Match::Value(MatchValue {
-                value: ValueVariants::Keyword("world".to_owned())
+                value: ValueVariants::String("world".to_owned())
             })
         );
     }
@@ -3287,7 +3287,7 @@ mod tests {
 
         let condition2 = Condition::Field(FieldCondition::new_match(
             JsonPath::new("city"),
-            Match::new_value(ValueVariants::Keyword("Osaka".into())),
+            Match::new_value(ValueVariants::String("Osaka".into())),
         ));
         let other = Filter::new_must(condition2.clone());
 
