@@ -81,7 +81,7 @@ fn test_async_raw_scorer(
             let i = i as PointOffsetType;
             let vec = mutable_storage.get_vector(i);
             let deleted = mutable_storage.is_deleted_vector(i);
-            (i, vec, deleted)
+            (vec, deleted)
         });
         storage.update_from(&mut iter, &Default::default())?;
     }

@@ -357,11 +357,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
 
     fn update_from<'a>(
         &mut self,
-        other_ids: &'a mut impl Iterator<Item = (PointOffsetType, CowVector<'a>, bool)>,
+        other_ids: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors_metadata.len() as PointOffsetType;
-        for (_, other_vector, other_deleted) in other_ids {
+        for (other_vector, other_deleted) in other_ids {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector: VectorRef = other_vector.as_vec_ref();
