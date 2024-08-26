@@ -8,6 +8,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
+use smol_str::SmolStr;
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
@@ -103,8 +104,9 @@ impl GeoMapIndex {
         format!("{field}_geo")
     }
 
-    fn encode_db_key(value: &str, idx: PointOffsetType) -> String {
-        format!("{value}/{idx}")
+    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> String {
+        let value_str = SmolStr::from(value);
+        format!("{value_str}/{idx}")
     }
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
@@ -115,11 +117,11 @@ impl GeoMapIndex {
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }
-        let geohash = s[..separator_pos].into();
+        let geohash_str: SmolStr = s[..separator_pos].into();
         let idx_str = &s[separator_pos + 1..];
         let idx = PointOffsetType::from_str(idx_str)
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        Ok((geohash, idx))
+        Ok((GeoHash::from(geohash_str), idx))
     }
 
     fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {
@@ -251,7 +253,7 @@ impl GeoMapIndex {
     fn get_large_hashes(
         &self,
         threshold: usize,
-    ) -> Box<dyn Iterator<Item = (&GeoHash, usize)> + '_> {
+    ) -> Box<dyn Iterator<Item = (GeoHash, usize)> + '_> {
         let filter_condition =
             |(hash, size): &(&GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
@@ -272,9 +274,9 @@ impl GeoMapIndex {
 
         let mut current_region = GeoHash::default();
 
-        for (region, size) in large_regions {
-            if !current_region.starts_with(region.as_str()) {
-                current_region = region.clone();
+        for (&region, size) in large_regions {
+            if current_region.cut(region.len()) != region {
+                current_region = region;
                 edge_region.push((region, size));
             }
         }
