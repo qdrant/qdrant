@@ -440,8 +440,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         search_allow_exact: i.search_allow_exact,
                         search_max_oversampling: i.search_max_oversampling.map(|i| i as f32),
                         group_by_max_group_size: i.group_by_max_group_size.map(|i| i as u32),
-                        recommend_max_examples: i.recommend_max_examples.map(|i| i as u32),
-                        discovery_max_context_size: i.discovery_max_context_size.map(|i| i as u32),
+                        max_input_examples: i.max_input_examples.map(|i| i as u32),
                     }
                 }),
             }),
@@ -839,8 +838,7 @@ impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
             search_allow_exact: value.search_allow_exact,
             search_max_oversampling: value.search_max_oversampling.map(f64::from),
             group_by_max_group_size: value.group_by_max_group_size.map(|i| i as usize),
-            recommend_max_examples: value.recommend_max_examples.map(|i| i as usize),
-            discovery_max_context_size: value.discovery_max_context_size.map(|i| i as usize),
+            max_input_examples: value.max_input_examples.map(|i| i as usize),
         }
     }
 }

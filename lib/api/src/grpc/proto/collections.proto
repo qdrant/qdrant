@@ -323,9 +323,7 @@ message StrictModeConfig {
 
   optional uint32 group_by_max_group_size = 9;
 
-  optional uint32 recommend_max_examples = 10;
-
-  optional uint32 discovery_max_context_size = 11;
+  optional uint32 max_input_examples = 10;
 }
 
 message CreateCollection {

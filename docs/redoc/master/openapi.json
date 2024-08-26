@@ -6685,6 +6685,12 @@
             "minimum": 0,
             "nullable": true
           },
+          "max_input_examples": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "unindexed_filtering_retrieve": {
             "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
             "type": "boolean",
@@ -6715,20 +6721,6 @@
           },
           "group_by_max_group_size": {
             "description": "Max group_size value in group requests.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "recommend_max_examples": {
-            "description": "Max allowed amount of recommend examples.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "discovery_max_context_size": {
-            "description": "Max context size allowed in discovery.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

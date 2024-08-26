@@ -1406,8 +1406,7 @@ Note: 1kB = 1 vector of size 256. |
 | search_allow_exact | [bool](#bool) | optional |  |
 | search_max_oversampling | [float](#float) | optional |  |
 | group_by_max_group_size | [uint32](#uint32) | optional |  |
-| recommend_max_examples | [uint32](#uint32) | optional |  |
-| discovery_max_context_size | [uint32](#uint32) | optional |  |
+| max_input_examples | [uint32](#uint32) | optional |  |
 
 
 

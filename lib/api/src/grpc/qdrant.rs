@@ -452,9 +452,7 @@ pub struct StrictModeConfig {
     #[prost(uint32, optional, tag = "9")]
     pub group_by_max_group_size: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "10")]
-    pub recommend_max_examples: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "11")]
-    pub discovery_max_context_size: ::core::option::Option<u32>,
+    pub max_input_examples: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
