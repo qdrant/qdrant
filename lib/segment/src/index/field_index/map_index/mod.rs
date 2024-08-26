@@ -622,8 +622,8 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
-                ValueVariants::String(uuid) => {
-                    let uuid = Uuid::from_str(uuid).ok()?;
+                ValueVariants::String(uuid_string) => {
+                    let uuid = Uuid::from_str(uuid_string).ok()?;
                     Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()))
                 }
                 ValueVariants::Integer(_) => None,
@@ -681,23 +681,79 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        if let Some(Match::Value(MatchValue {
-            value: ValueVariants::String(keyword),
-        })) = &condition.r#match
-        {
-            let keyword = keyword.as_str();
-            if let Ok(uuid) = Uuid::from_str(keyword) {
-                let mut estimation = self.match_cardinality(&uuid.as_u128());
-                estimation
-                    .primary_clauses
-                    .push(PrimaryCondition::Condition(condition.clone()));
-                return Some(estimation);
-            } else {
-                return Some(CardinalityEstimation::exact(0));
-            }
-        }
+        match &condition.r#match {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(uuid_string) => {
+                    let uuid = Uuid::from_str(uuid_string).ok()?;
+                    let mut estimation = self.match_cardinality(&uuid.as_u128());
+                    estimation
+                        .primary_clauses
+                        .push(PrimaryCondition::Condition(condition.clone()));
+                    Some(estimation)
+                }
+                ValueVariants::Integer(_) => None,
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(uuids_string) => {
+                    let uuids: Result<IndexSet<u128>, _> = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect();
 
-        None
+                    let uuids = uuids.ok()?;
+
+                    let estimations = uuids
+                        .into_iter()
+                        .map(|uuid| self.match_cardinality(&uuid))
+                        .collect::<Vec<_>>();
+                    let estimation = if estimations.is_empty() {
+                        CardinalityEstimation::exact(0)
+                    } else {
+                        combine_should_estimations(&estimations, self.get_indexed_points())
+                    };
+                    Some(
+                        estimation
+                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                    )
+                }
+                AnyVariants::Integers(integers) => {
+                    if integers.is_empty() {
+                        Some(
+                            CardinalityEstimation::exact(0).with_primary_clause(
+                                PrimaryCondition::Condition(condition.clone()),
+                            ),
+                        )
+                    } else {
+                        None
+                    }
+                }
+            },
+            Some(Match::Except(MatchExcept { except })) => {
+                match except {
+                    AnyVariants::Strings(uuids_string) => {
+                        let uuids: Result<IndexSet<u128>, _> = uuids_string
+                            .iter()
+                            .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                            .collect();
+
+                        let excluded_uuids = uuids.ok()?;
+
+                        Some(self.except_cardinality(excluded_uuids.iter()))
+                    }
+                    AnyVariants::Integers(other) => {
+                        if other.is_empty() {
+                            Some(CardinalityEstimation::exact(0).with_primary_clause(
+                                PrimaryCondition::Condition(condition.clone()),
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 
     fn payload_blocks(
