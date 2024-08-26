@@ -1253,6 +1253,13 @@ impl PayloadFieldSchema {
             PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
         }
     }
+
+    pub fn kind(&self) -> PayloadSchemaType {
+        match self {
+            PayloadFieldSchema::FieldType(t) => *t,
+            PayloadFieldSchema::FieldParams(p) => p.kind(),
+        }
+    }
 }
 
 impl From<PayloadSchemaType> for PayloadFieldSchema {

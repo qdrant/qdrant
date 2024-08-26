@@ -112,7 +112,7 @@ impl Issue for UnindexedField {
 
     fn description(&self) -> String {
         format!(
-            "Unindexed field '{}' is slowing queries down in collection '{}'",
+            "Unindexed field '{}' might be slowing queries down in collection '{}'",
             self.field_name, self.collection_name
         )
     }
@@ -338,7 +338,24 @@ impl<'a> Extractor<'a> {
 
         let needs_index = match self.payload_schema.get(&full_key) {
             Some(index_info) => {
-                let already_indexed = inferred.iter().any(|inferred| inferred == index_info);
+                let index_info_kind = index_info.kind();
+
+                let already_indexed = inferred
+                    .iter()
+                    // TODO(strict-mode):
+                    // Use better comparisons for parametrized indexes. An idea is to make the inferring step
+                    // also output valid parametrized indexes and compare those instead of just the kind (index type)
+                    //
+                    // The only reason why it would be needed is because integer index can be parametrized
+                    // with just lookup or just range, so it is possible to make a false negative here. E.g.
+                    //
+                    // condition: MatchValue
+                    // inferred: FieldType(Integer)
+                    // index_info: FieldParams(IntegerIndex(range))
+                    //
+                    // In this case, we would assume that the field is indexed correctly when it is not
+                    .map(PayloadFieldSchema::kind)
+                    .any(|inferred| inferred == index_info_kind);
 
                 !already_indexed
             }
