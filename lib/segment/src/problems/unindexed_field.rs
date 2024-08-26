@@ -8,7 +8,6 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use strum::IntoEnumIterator as _;
-use uuid::Uuid;
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
