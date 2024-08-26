@@ -14,7 +14,7 @@ use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::json_path::JsonPath;
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
-    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface,
+    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface, UuidPayloadType,
 };
 #[derive(Debug)]
 pub struct UnindexedField {
@@ -112,7 +112,7 @@ impl Issue for UnindexedField {
 
     fn description(&self) -> String {
         format!(
-            "Unindexed field '{}' is slowing queries down in collection '{}'",
+            "Unindexed field '{}' might be slowing queries down in collection '{}'",
             self.field_name, self.collection_name
         )
     }
@@ -160,27 +160,46 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
     PayloadSchemaType::iter().map(PayloadFieldSchema::FieldType)
 }
 
-fn infer_schema_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
+fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
-        crate::types::ValueVariants::Keyword(_string) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+        crate::types::ValueVariants::Keyword(string) => {
+            let mut inferred = Vec::new();
+
+            if UuidPayloadType::parse_str(string).is_ok() {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+            }
+
+            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+
+            inferred
         }
         crate::types::ValueVariants::Integer(_integer) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
         crate::types::ValueVariants::Bool(_boolean) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)]
         }
     }
 }
 
-fn infer_schema_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
+fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema> {
     match value {
-        AnyVariants::Keywords(_strings) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+        AnyVariants::Keywords(strings) => {
+            let mut inferred = Vec::new();
+
+            if strings
+                .iter()
+                .all(|s| UuidPayloadType::parse_str(s).is_ok())
+            {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+            }
+
+            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+
+            inferred
         }
         AnyVariants::Integers(_integers) => {
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
     }
 }
@@ -199,16 +218,18 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
     let mut inferred = Vec::new();
 
     if let Some(r#match) = r#match {
-        inferred.push(match r#match {
+        inferred.extend(match r#match {
             Match::Value(match_value) => infer_schema_from_match_value(match_value),
             Match::Text(_match_text) => {
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
-                    r#type: TextIndexType::Text,
-                    tokenizer: TokenizerType::default(),
-                    min_token_len: None,
-                    max_token_len: None,
-                    lowercase: None,
-                }))
+                vec![PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                    TextIndexParams {
+                        r#type: TextIndexType::Text,
+                        tokenizer: TokenizerType::default(),
+                        min_token_len: None,
+                        max_token_len: None,
+                        lowercase: None,
+                    },
+                ))]
             }
             Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
@@ -263,7 +284,15 @@ impl<'a> Extractor<'a> {
         self.unindexed_schema
             .into_iter()
             .filter_map(|(key, field_schemas)| {
-                let field_schemas = HashSet::from_iter(field_schemas);
+                let field_schemas: HashSet<_> = field_schemas
+                    .iter()
+                    .map(PayloadFieldSchema::kind)
+                    .filter(|kind| {
+                        let is_advanced = matches!(kind, PayloadSchemaType::Uuid);
+                        !is_advanced
+                    })
+                    .map(PayloadFieldSchema::from)
+                    .collect();
 
                 UnindexedField::try_new(key, field_schemas, self.collection_name.clone()).ok()
             })
@@ -330,7 +359,24 @@ impl<'a> Extractor<'a> {
 
         let needs_index = match self.payload_schema.get(&full_key) {
             Some(index_info) => {
-                let already_indexed = inferred.iter().any(|inferred| inferred == index_info);
+                let index_info_kind = index_info.kind();
+
+                let already_indexed = inferred
+                    .iter()
+                    // TODO(strict-mode):
+                    // Use better comparisons for parametrized indexes. An idea is to make the inferring step
+                    // also output valid parametrized indexes and compare those instead of just the kind (index type)
+                    //
+                    // The only reason why it would be needed is because integer index can be parametrized
+                    // with just lookup or just range, so it is possible to make a false negative here. E.g.
+                    //
+                    // condition: MatchValue
+                    // inferred: FieldType(Integer)
+                    // index_info: FieldParams(IntegerIndex(range))
+                    //
+                    // In this case, we would assume that the field is indexed correctly when it is not
+                    .map(PayloadFieldSchema::kind)
+                    .any(|inferred| inferred == index_info_kind);
 
                 !already_indexed
             }
