@@ -255,10 +255,10 @@ impl From<QueryInterface> for Query {
 impl From<segment::data_types::facets::FacetValue> for FacetValue {
     fn from(value: segment::data_types::facets::FacetValue) -> Self {
         match value {
-            segment::data_types::facets::FacetValue::Keyword(keyword) => Self::Keyword(keyword),
+            segment::data_types::facets::FacetValue::Keyword(keyword) => Self::String(keyword),
             segment::data_types::facets::FacetValue::Int(integer) => Self::Integer(integer),
             segment::data_types::facets::FacetValue::Uuid(uuid_int) => {
-                Self::Keyword(Uuid::from_u128(uuid_int).to_string())
+                Self::String(Uuid::from_u128(uuid_int).to_string())
             }
         }
     }

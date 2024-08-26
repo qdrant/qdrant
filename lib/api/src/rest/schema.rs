@@ -767,7 +767,7 @@ pub struct FacetRequest {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(untagged)]
 pub enum FacetValue {
-    Keyword(String),
+    String(String),
     Integer(IntPayloadType),
 }
 
