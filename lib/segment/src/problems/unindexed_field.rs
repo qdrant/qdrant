@@ -271,7 +271,15 @@ impl<'a> Extractor<'a> {
         self.unindexed_schema
             .into_iter()
             .filter_map(|(key, field_schemas)| {
-                let field_schemas = HashSet::from_iter(field_schemas);
+                let field_schemas: HashSet<_> = field_schemas
+                    .iter()
+                    .map(PayloadFieldSchema::kind)
+                    .filter(|kind| {
+                        let is_advanced = matches!(kind, PayloadSchemaType::Uuid);
+                        !is_advanced
+                    })
+                    .map(PayloadFieldSchema::from)
+                    .collect();
 
                 UnindexedField::try_new(key, field_schemas, self.collection_name.clone()).ok()
             })
