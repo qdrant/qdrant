@@ -6671,8 +6671,8 @@
             "type": "boolean",
             "nullable": true
           },
-          "max_filter_limit": {
-            "description": "Max allowed limit for filter/searching.",
+          "max_query_limit": {
+            "description": "Max allowed limit for all APIs that don't have their own max limit.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

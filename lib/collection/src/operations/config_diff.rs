@@ -93,9 +93,9 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 
-    /// Max allowed limit for filter/searching.
+    /// Max allowed limit for all APIs that don't have their own max limit.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_filter_limit: Option<usize>,
+    pub max_query_limit: Option<usize>,
 
     /// Max allowed timeout.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,7 +141,7 @@ pub struct StrictModeConfig {
 impl Hash for StrictModeConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.enabled.hash(state);
-        self.max_filter_limit.hash(state);
+        self.max_query_limit.hash(state);
         self.max_timeout.hash(state);
         self.unindexed_filtering_retrieve.hash(state);
         self.unindexed_filtering_update.hash(state);
@@ -161,7 +161,7 @@ impl Eq for StrictModeConfig {}
 impl PartialEq for StrictModeConfig {
     fn eq(&self, other: &Self) -> bool {
         self.enabled == other.enabled
-            && self.max_filter_limit == other.max_filter_limit
+            && self.max_query_limit == other.max_query_limit
             && self.max_timeout == other.max_timeout
             && self.unindexed_filtering_retrieve == other.unindexed_filtering_retrieve
             && self.unindexed_filtering_update == other.unindexed_filtering_update

@@ -21,7 +21,7 @@ pub trait StrictModeVerification {
     }
 
     /// Implement this to check the limit of a request.
-    fn request_limit(&self) -> Option<usize>;
+    fn request_query_limit(&self) -> Option<usize>;
 
     /// Implement this to check the timeout of a request.
     fn request_timeout(&self) -> Option<usize>;
@@ -37,13 +37,13 @@ pub trait StrictModeVerification {
     fn request_indexed_filter_write(&self) -> Option<&Filter>;
 
     /// Checks the request limit.
-    fn check_request_limit(
+    fn check_request_query_limit(
         &self,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         check_limit_opt(
-            self.request_limit(),
-            strict_mode_config.max_filter_limit,
+            self.request_query_limit(),
+            strict_mode_config.max_query_limit,
             "limit",
         )
     }
@@ -103,7 +103,7 @@ pub trait StrictModeVerification {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         self.check_custom(collection, strict_mode_config)?;
-        self.check_request_limit(strict_mode_config)?;
+        self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
         Ok(())
     }

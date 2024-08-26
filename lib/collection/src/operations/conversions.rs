@@ -432,7 +432,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 strict_mode_config: config.strict_mode_config.map(|i| {
                     api::grpc::qdrant::StrictModeConfig {
                         enabled: i.enabled,
-                        max_filter_limit: i.max_filter_limit.map(|i| i as u32),
+                        max_filter_limit: i.max_query_limit.map(|i| i as u32),
                         max_timeout: i.max_timeout.map(|i| i as u32),
                         unindexed_filtering_retrieve: i.unindexed_filtering_retrieve,
                         unindexed_filtering_update: i.unindexed_filtering_update,
@@ -831,7 +831,7 @@ impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
     fn from(value: api::grpc::qdrant::StrictModeConfig) -> Self {
         Self {
             enabled: value.enabled,
-            max_filter_limit: value.max_filter_limit.map(|i| i as usize),
+            max_query_limit: value.max_filter_limit.map(|i| i as usize),
             max_timeout: value.max_timeout.map(|i| i as usize),
             unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
             unindexed_filtering_update: value.unindexed_filtering_update,

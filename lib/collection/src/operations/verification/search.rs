@@ -41,7 +41,7 @@ impl StrictModeVerification for SearchRequest {
         self.search_request.filter.as_ref()
     }
 
-    fn request_limit(&self) -> Option<usize> {
+    fn request_query_limit(&self) -> Option<usize> {
         Some(self.search_request.limit)
     }
 
@@ -66,7 +66,7 @@ impl StrictModeVerification for SearchRequestBatch {
         Ok(())
     }
 
-    fn request_limit(&self) -> Option<usize> {
+    fn request_query_limit(&self) -> Option<usize> {
         None
     }
 
