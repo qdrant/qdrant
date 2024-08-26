@@ -8,8 +8,7 @@ use super::config_diff::StrictModeConfig;
 use super::types::CollectionError;
 use crate::collection::Collection;
 
-/// Trait to verify strict mode for requests. All functions in this trait will default to an 'empty' implementation,
-/// which means every value that needs to be checked must be implemented.
+/// Trait to verify strict mode for requests.
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
     /// Implementing this method allows adding a custom check for request specific values.
@@ -22,28 +21,20 @@ pub trait StrictModeVerification {
     }
 
     /// Implement this to check the limit of a request.
-    fn request_limit(&self) -> Option<usize> {
-        None
-    }
+    fn request_limit(&self) -> Option<usize>;
 
     /// Implement this to check the timeout of a request.
-    fn request_timeout(&self) -> Option<usize> {
-        None
-    }
+    fn request_timeout(&self) -> Option<usize>;
 
     /// Verifies that all keys in the given filter have an index available. Only implement this
     /// if the filter operates on a READ-operation, like search.
     /// For filtered updates implement `request_indexed_filter_write`!
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
-        None
-    }
+    fn request_indexed_filter_read(&self) -> Option<&Filter>;
 
     /// Verifies that all keys in the given filter have an index available. Only implement this
     /// if the filter is used for FILTERED-updates like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
-        None
-    }
+    fn request_indexed_filter_write(&self) -> Option<&Filter>;
 
     /// Checks the request limit.
     fn check_request_limit(

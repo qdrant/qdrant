@@ -44,6 +44,14 @@ impl StrictModeVerification for SearchRequest {
     fn request_limit(&self) -> Option<usize> {
         Some(self.search_request.limit)
     }
+
+    fn request_timeout(&self) -> Option<usize> {
+        None
+    }
+
+    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
 }
 
 impl StrictModeVerification for SearchRequestBatch {
@@ -56,5 +64,21 @@ impl StrictModeVerification for SearchRequestBatch {
             search_request.check_strict_mode(collection, strict_mode_config)?;
         }
         Ok(())
+    }
+
+    fn request_limit(&self) -> Option<usize> {
+        None
+    }
+
+    fn request_timeout(&self) -> Option<usize> {
+        None
+    }
+
+    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+        None
     }
 }
