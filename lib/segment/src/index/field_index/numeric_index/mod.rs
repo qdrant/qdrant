@@ -629,7 +629,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
         condition: &FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword),
+            value: ValueVariants::String(keyword),
         })) = &condition.r#match
         {
             let keyword = keyword.as_str();
@@ -669,7 +669,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword),
+            value: ValueVariants::String(keyword),
         })) = &condition.r#match
         {
             let keyword = keyword.as_str();

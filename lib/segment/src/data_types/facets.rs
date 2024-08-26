@@ -92,7 +92,7 @@ pub fn aggregate_facet_hits<T: FacetValueTrait>(
 impl From<FacetValue> for ValueVariants {
     fn from(value: FacetValue) -> Self {
         match value {
-            FacetValue::Keyword(s) => ValueVariants::Keyword(s),
+            FacetValue::Keyword(s) => ValueVariants::String(s),
         }
     }
 }

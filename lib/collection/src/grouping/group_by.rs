@@ -524,7 +524,7 @@ fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
         .collect();
 
     if !strs.is_empty() {
-        any_variants.push(AnyVariants::Keywords(strs));
+        any_variants.push(AnyVariants::Strings(strs));
     }
 
     any_variants

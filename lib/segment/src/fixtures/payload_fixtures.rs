@@ -250,7 +250,7 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
         must: Some(vec![Condition::Field(FieldCondition::new_match(
             STR_KEY.parse().unwrap(),
             Match::Any(MatchAny {
-                any: AnyVariants::Keywords(values),
+                any: AnyVariants::Strings(values),
             }),
         ))]),
         must_not: None,

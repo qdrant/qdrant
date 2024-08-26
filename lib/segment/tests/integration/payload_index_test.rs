@@ -1130,7 +1130,7 @@ fn test_any_matcher_cardinality_estimation() {
         .collect();
     let any_match = FieldCondition::new_match(
         JsonPath::new(STR_KEY),
-        Match::new_any(AnyVariants::Keywords(keywords)),
+        Match::new_any(AnyVariants::Strings(keywords)),
     );
 
     let filter = Filter::new_must(Condition::Field(any_match.clone()));

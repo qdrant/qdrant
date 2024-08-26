@@ -84,7 +84,7 @@ mod tests {
                     vec![
                         (
                             "field1".parse().unwrap(),
-                            ValueVariants::Keyword("value".to_string()),
+                            ValueVariants::String("value".to_string()),
                         ),
                         ("field2".parse().unwrap(), ValueVariants::Integer(42)),
                         ("field3".parse().unwrap(), ValueVariants::Bool(true)),

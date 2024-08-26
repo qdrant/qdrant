@@ -508,10 +508,10 @@ impl PayloadFieldIndex for MapIndex<str> {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
+                value: ValueVariants::String(keyword),
             })) => Some(Box::new(self.get_iterator(keyword.as_str()).copied())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Keywords(keywords) => Some(Box::new(
+                AnyVariants::Strings(keywords) => Some(Box::new(
                     keywords
                         .iter()
                         .flat_map(|keyword| self.get_iterator(keyword.as_str()).copied())
@@ -526,7 +526,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             Some(Match::Except(MatchExcept {
-                except: AnyVariants::Keywords(keywords),
+                except: AnyVariants::Strings(keywords),
             })) => Some(self.except_set(keywords)),
             _ => None,
         }
@@ -535,7 +535,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
-                value: ValueVariants::Keyword(keyword),
+                value: ValueVariants::String(keyword),
             })) => {
                 let mut estimation = self.match_cardinality(keyword.as_str());
                 estimation
@@ -544,7 +544,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 Some(estimation)
             }
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Keywords(keywords) => {
+                AnyVariants::Strings(keywords) => {
                     let estimations = keywords
                         .iter()
                         .map(|keyword| self.match_cardinality(keyword.as_str()))
@@ -572,7 +572,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             Some(Match::Except(MatchExcept {
-                except: AnyVariants::Keywords(keywords),
+                except: AnyVariants::Strings(keywords),
             })) => Some(self.except_cardinality(keywords.iter().map(|k| k.as_str()))),
             _ => None,
         }
@@ -621,13 +621,15 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(Match::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword),
+            value: ValueVariants::String(keyword),
         })) = &condition.r#match
         {
             let keyword = keyword.as_str();
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 return Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()));
+            } else {
+                return Some(Box::new(iter::empty()));
             }
         }
 
@@ -636,7 +638,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Value(MatchValue {
-            value: ValueVariants::Keyword(keyword),
+            value: ValueVariants::String(keyword),
         })) = &condition.r#match
         {
             let keyword = keyword.as_str();
@@ -646,6 +648,8 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));
                 return Some(estimation);
+            } else {
+                return Some(CardinalityEstimation::exact(0));
             }
         }
 
@@ -702,7 +706,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 value: ValueVariants::Integer(integer),
             })) => Some(Box::new(self.get_iterator(integer).copied())),
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Keywords(keywords) => {
+                AnyVariants::Strings(keywords) => {
                     if keywords.is_empty() {
                         Some(Box::new(vec![].into_iter()))
                     } else {
@@ -735,7 +739,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 Some(estimation)
             }
             Some(Match::Any(MatchAny { any: any_variants })) => match any_variants {
-                AnyVariants::Keywords(keywords) => {
+                AnyVariants::Strings(keywords) => {
                     if keywords.is_empty() {
                         Some(
                             CardinalityEstimation::exact(0).with_primary_clause(

@@ -674,7 +674,7 @@ mod tests {
         let dummy_filter = Some(Filter::new_must(Condition::Field(
             FieldCondition::new_match(
                 "my_key".try_into().unwrap(),
-                Match::new_value(segment::types::ValueVariants::Keyword("hello".to_string())),
+                Match::new_value(segment::types::ValueVariants::String("hello".to_string())),
             ),
         )));
 
