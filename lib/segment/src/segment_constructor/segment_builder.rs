@@ -306,7 +306,7 @@ impl SegmentBuilder {
                 let other_vector_storage = &other_vector_storages[point_data.segment_index];
                 let vec = other_vector_storage.get_vector(point_data.internal_id);
                 let vector_deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
-                (point_data.internal_id, vec, vector_deleted)
+                (vec, vector_deleted)
             });
 
             let internal_range = vector_storage.update_from(&mut iter, stopped)?;

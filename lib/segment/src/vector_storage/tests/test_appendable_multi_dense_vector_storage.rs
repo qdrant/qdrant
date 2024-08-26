@@ -200,7 +200,7 @@ fn do_test_update_from_delete_points(
             let i = i as PointOffsetType;
             let vec = storage2.get_vector(i);
             let deleted = storage2.is_deleted_vector(i);
-            (i, vec, deleted)
+            (vec, deleted)
         });
         storage.update_from(&mut iter, &Default::default()).unwrap();
     }

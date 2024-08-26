@@ -221,7 +221,7 @@ fn scoring_equivalency(
         let i = i as PointOffsetType;
         let vec = raw_storage.get_vector(i);
         let deleted = raw_storage.is_deleted_vector(i);
-        (i, vec, deleted)
+        (vec, deleted)
     });
     other_storage.update_from(&mut iter, &Default::default())?;
 
