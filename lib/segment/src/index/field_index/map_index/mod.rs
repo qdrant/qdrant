@@ -620,20 +620,64 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         &'a self,
         condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        if let Some(Match::Value(MatchValue {
-            value: ValueVariants::String(keyword),
-        })) = &condition.r#match
-        {
-            let keyword = keyword.as_str();
+        match &condition.r#match {
+            Some(Match::Value(MatchValue { value })) => match value {
+                ValueVariants::String(uuid) => {
+                    let uuid = Uuid::from_str(uuid).ok()?;
+                    Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()))
+                }
+                ValueVariants::Integer(_) => None,
+                ValueVariants::Bool(_) => None,
+            },
+            Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
+                AnyVariants::Strings(uuids_string) => {
+                    let uuids: Result<IndexSet<u128>, _> = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect();
 
-            if let Ok(uuid) = Uuid::from_str(keyword) {
-                return Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()));
-            } else {
-                return Some(Box::new(iter::empty()));
-            }
+                    let uuids = uuids.ok()?;
+
+                    Some(Box::new(
+                        uuids
+                            .into_iter()
+                            .flat_map(|uuid| self.get_iterator(&uuid).copied())
+                            .unique(),
+                    ))
+                }
+                AnyVariants::Integers(integers) => {
+                    if integers.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
+                    }
+                }
+            },
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(uuids_string) => {
+                    let uuids: Result<IndexSet<u128>, _> = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect();
+
+                    let excluded_uuids = uuids.ok()?;
+                    let exclude_iter = self
+                        .iter_values()
+                        .filter(move |key| !excluded_uuids.contains(*key))
+                        .flat_map(|key| self.get_iterator(key).copied())
+                        .unique();
+                    Some(Box::new(exclude_iter))
+                }
+                AnyVariants::Integers(other) => {
+                    if other.is_empty() {
+                        Some(Box::new(iter::empty()))
+                    } else {
+                        None
+                    }
+                }
+            },
+            _ => None,
         }
-
-        None
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
