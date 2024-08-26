@@ -5,6 +5,7 @@ use std::fmt::Display;
 use segment::types::Filter;
 
 use super::config_diff::StrictModeConfig;
+use super::types::CollectionError;
 use crate::collection::Collection;
 
 /// Trait to verify strict mode for requests. All functions in this trait will default to an 'empty' implementation,
@@ -16,7 +17,7 @@ pub trait StrictModeVerification {
         &self,
         _collection: &Collection,
         _strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), CollectionError> {
         Ok(())
     }
 
@@ -45,7 +46,10 @@ pub trait StrictModeVerification {
     }
 
     /// Checks the request limit.
-    fn check_request_limit(&self, strict_mode_config: &StrictModeConfig) -> Result<(), String> {
+    fn check_request_limit(
+        &self,
+        strict_mode_config: &StrictModeConfig,
+    ) -> Result<(), CollectionError> {
         check_limit_opt(
             self.request_limit(),
             strict_mode_config.max_filter_limit,
@@ -54,7 +58,10 @@ pub trait StrictModeVerification {
     }
 
     /// Checks the request timeout.
-    fn check_request_timeout(&self, strict_mode_config: &StrictModeConfig) -> Result<(), String> {
+    fn check_request_timeout(
+        &self,
+        strict_mode_config: &StrictModeConfig,
+    ) -> Result<(), CollectionError> {
         check_limit_opt(
             self.request_timeout(),
             strict_mode_config.max_timeout,
@@ -67,22 +74,23 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), String> {
-        let check_filter =
-            |filter: Option<&Filter>, allow_unindexed_filter: Option<bool>| -> Result<(), String> {
-                if let Some(read_filter) = filter {
-                    if allow_unindexed_filter == Some(false) {
-                        if let Some(key) = collection.one_unindexed_key(read_filter) {
-                            return Err(new_error_msg(
-                                format!("Index required but not found for \"{key}\""),
-                                "Create an index for this key or use a different filter.",
-                            ));
-                        }
+    ) -> Result<(), CollectionError> {
+        let check_filter = |filter: Option<&Filter>,
+                            allow_unindexed_filter: Option<bool>|
+         -> Result<(), CollectionError> {
+            if let Some(read_filter) = filter {
+                if allow_unindexed_filter == Some(false) {
+                    if let Some(key) = collection.one_unindexed_key(read_filter) {
+                        return Err(CollectionError::strict_mode(
+                            format!("Index required but not found for \"{key}\""),
+                            "Create an index for this key or use a different filter.",
+                        ));
                     }
                 }
+            }
 
-                Ok(())
-            };
+            Ok(())
+        };
 
         check_filter(
             self.request_indexed_filter_read(),
@@ -102,7 +110,7 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), CollectionError> {
         self.check_custom(collection, strict_mode_config)?;
         self.check_request_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
@@ -110,19 +118,12 @@ pub trait StrictModeVerification {
     }
 }
 
-pub(crate) fn new_error_msg<S>(description: S, solution: &str) -> String
-where
-    S: ToString,
-{
-    format!("{}. Help: {solution}", description.to_string())
-}
-
 pub(crate) fn check_bool(
     value: bool,
     allowed: Option<bool>,
     name: &str,
     parameter: &str,
-) -> Result<(), String> {
+) -> Result<(), CollectionError> {
     check_bool_opt(Some(value), allowed, name, parameter)
 }
 
@@ -131,12 +132,12 @@ pub(crate) fn check_bool_opt(
     allowed: Option<bool>,
     name: &str,
     parameter: &str,
-) -> Result<(), String> {
+) -> Result<(), CollectionError> {
     if allowed != Some(false) || !value.unwrap_or_default() {
         return Ok(());
     }
 
-    Err(new_error_msg(
+    Err(CollectionError::strict_mode(
         format!("{name} disabled!"),
         &format!("Set {parameter}=false."),
     ))
@@ -146,13 +147,14 @@ pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
     value: Option<T>,
     limit: Option<T>,
     name: &str,
-) -> Result<(), String> {
-    let Some(limit) = limit else { return Ok(()) };
-    let Some(value) = value else { return Ok(()) };
+) -> Result<(), CollectionError> {
+    let (Some(limit), Some(value)) = (limit, value) else {
+        return Ok(());
+    };
     if value > limit {
-        return Err(new_error_msg(
+        return Err(CollectionError::strict_mode(
             format!("Limit exceeded {value} > {limit} for \"{name}\""),
-            "Reduce the \"{name}\" parameter to or below {limit}.",
+            format!("Reduce the \"{name}\" parameter to or below {limit}."),
         ));
     }
 

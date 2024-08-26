@@ -133,6 +133,7 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
+            CollectionError::StrictMode { description } => StorageError::Forbidden { description },
         }
     }
 }
@@ -181,6 +182,7 @@ impl From<CollectionError> for StorageError {
                 description: format!("{err}"),
                 backtrace: None,
             },
+            CollectionError::StrictMode { description } => StorageError::Forbidden { description },
         }
     }
 }

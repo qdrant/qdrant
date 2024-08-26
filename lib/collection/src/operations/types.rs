@@ -889,6 +889,8 @@ pub enum CollectionError {
     PreConditionFailed { description: String },
     #[error("Object Store error: {what}")]
     ObjectStoreError { what: String },
+    #[error("Strict mode error: {description}")]
+    StrictMode { description: String },
 }
 
 impl CollectionError {
@@ -963,6 +965,11 @@ impl CollectionError {
         }
     }
 
+    pub fn strict_mode(error: impl Into<String>, solution: impl Into<String>) -> Self {
+        let description = format!("{}. Help: {}", error.into(), solution.into());
+        Self::StrictMode { description }
+    }
+
     /// Returns true if the error is transient and the operation can be retried.
     /// Returns false if the error is not transient and the operation should fail on all replicas.
     pub fn is_transient(&self) -> bool {
@@ -982,6 +989,7 @@ impl CollectionError {
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
             Self::ObjectStoreError { .. } => false,
+            Self::StrictMode { .. } => false,
         }
     }
 }

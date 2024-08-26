@@ -3,14 +3,14 @@ use segment::types::Filter;
 use super::{check_bool, check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
 use crate::operations::config_diff::StrictModeConfig;
-use crate::operations::types::{SearchRequest, SearchRequestBatch};
+use crate::operations::types::{CollectionError, SearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequest {
     fn check_custom(
         &self,
         _: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), CollectionError> {
         let search_request = &self.search_request;
 
         if let Some(search_parameter) = &search_request.params {
@@ -51,7 +51,7 @@ impl StrictModeVerification for SearchRequestBatch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), String> {
+    ) -> Result<(), CollectionError> {
         for search_request in &self.searches {
             search_request.check_strict_mode(collection, strict_mode_config)?;
         }

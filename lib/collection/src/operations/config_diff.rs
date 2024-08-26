@@ -89,34 +89,51 @@ pub struct HnswConfigDiff {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
 pub struct StrictModeConfig {
     // Global
+    /// Whether strict mode is enabled for a collection or not.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+
+    /// Max allowed limit for filter/searching.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_filter_limit: Option<usize>,
+
+    /// Max allowed timeout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_timeout: Option<usize>,
+
+    /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_retrieve: Option<bool>,
+
+    /// Allow usage of unindexed fields in filtered updates (eg. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
     // Search
+    /// Max HNSW value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_hnsw_ef: Option<usize>,
+
+    /// Whether exact search is allowed or not.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_allow_exact: Option<bool>,
+
+    /// Max oversampling value allowed in search.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_oversampling: Option<f64>,
 
     // Group-by
+    /// Max group_size value in group requests.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_by_max_group_size: Option<usize>,
 
     // Recommend
+    /// Max allowed amount of recommend examples.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommend_max_examples: Option<usize>,
 
     // Discovery
+    /// Max context size allowed in discovery.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discovery_max_context_size: Option<usize>,
 }
