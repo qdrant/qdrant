@@ -346,7 +346,7 @@ impl PayloadConstraint {
     pub fn new_test(name: &str) -> Self {
         PayloadConstraint(HashMap::from([(
             format!("f_{name}").parse().unwrap(),
-            ValueVariants::Keyword(format!("v_{name}")),
+            ValueVariants::String(format!("v_{name}")),
         )]))
     }
 }
