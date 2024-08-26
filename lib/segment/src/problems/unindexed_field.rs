@@ -8,13 +8,14 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use strum::IntoEnumIterator as _;
+use uuid::Uuid;
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::json_path::JsonPath;
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
-    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface,
+    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface, UuidPayloadType,
 };
 #[derive(Debug)]
 pub struct UnindexedField {
@@ -162,11 +163,16 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
 
 fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
-        crate::types::ValueVariants::Keyword(_string) => {
-            vec![
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-            ]
+        crate::types::ValueVariants::Keyword(string) => {
+            let mut inferred = Vec::new();
+
+            if UuidPayloadType::parse_str(string).is_ok() {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+            }
+
+            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+
+            inferred
         }
         crate::types::ValueVariants::Integer(_integer) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
@@ -179,11 +185,19 @@ fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> 
 
 fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema> {
     match value {
-        AnyVariants::Keywords(_strings) => {
-            vec![
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
-            ]
+        AnyVariants::Keywords(strings) => {
+            let mut inferred = Vec::new();
+
+            if strings
+                .iter()
+                .all(|s| UuidPayloadType::parse_str(s).is_ok())
+            {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+            }
+
+            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+
+            inferred
         }
         AnyVariants::Integers(_integers) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
