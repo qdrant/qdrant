@@ -1,6 +1,7 @@
 mod count;
 mod discovery;
 mod search;
+mod update;
 
 use std::fmt::Display;
 
