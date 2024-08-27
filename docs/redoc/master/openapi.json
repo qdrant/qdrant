@@ -10129,6 +10129,7 @@
           "config",
           "id",
           "init_time_ms",
+          "resharding",
           "shards",
           "transfers"
         ],
@@ -10154,6 +10155,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTransferInfo"
+            }
+          },
+          "resharding": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReshardingInfo"
             }
           }
         }
