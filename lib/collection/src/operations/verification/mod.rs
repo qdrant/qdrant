@@ -1,5 +1,6 @@
 mod count;
 mod discovery;
+mod recommend;
 mod search;
 mod update;
 
