@@ -39,8 +39,8 @@ use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, HnswConfig, Indexes, IsEmptyCondition, Match, Payload,
-    PayloadField, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, VectorDataConfig,
-    VectorStorageType, WithPayload,
+    PayloadField, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, ValueVariants,
+    VectorDataConfig, VectorStorageType, WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use serde_json::json;
@@ -1179,7 +1179,7 @@ fn validate_facet_result(
 ) {
     for (value, count) in facet_hits.iter() {
         // Compare against exact count
-        let FacetValue::Keyword(value) = value.to_owned();
+        let value = ValueVariants::from(value.clone());
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),

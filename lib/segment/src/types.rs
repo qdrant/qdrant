@@ -1488,6 +1488,12 @@ impl From<Vec<String>> for Match {
     }
 }
 
+impl From<ValueVariants> for Match {
+    fn from(value: ValueVariants) -> Self {
+        Self::Value(MatchValue { value })
+    }
+}
+
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
         let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();

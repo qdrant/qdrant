@@ -94,9 +94,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             point_to_values.iter().enumerate().map(|(idx, values)| {
                 (
                     idx as PointOffsetType,
-                    values
-                        .iter()
-                        .map(|value| N::into_referenced(value.borrow())),
+                    values.iter().map(|value| N::as_referenced(value.borrow())),
                 )
             }),
         )?;

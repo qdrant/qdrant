@@ -27,21 +27,21 @@ pub trait MmapValue {
 
     fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self;
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_>;
+    fn as_referenced(&self) -> Self::Referenced<'_>;
 }
 
 impl MmapValue for IntPayloadType {
-    type Referenced<'a> = Self;
+    type Referenced<'a> = &'a Self;
 
-    fn mmaped_size(_value: Self) -> usize {
+    fn mmaped_size(_value: Self::Referenced<'_>) -> usize {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
-        Self::read_from_prefix(bytes)
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>> {
+        Self::ref_from_prefix(bytes)
     }
 
-    fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
+    fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
     }
 
@@ -49,8 +49,8 @@ impl MmapValue for IntPayloadType {
         value
     }
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
-        *value
+    fn as_referenced(&self) -> Self::Referenced<'_> {
+        self
     }
 }
 
@@ -73,23 +73,23 @@ impl MmapValue for FloatPayloadType {
         value
     }
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
-        *value
+    fn as_referenced(&self) -> Self::Referenced<'_> {
+        *self
     }
 }
 
 impl MmapValue for UuidIntType {
-    type Referenced<'a> = Self;
+    type Referenced<'a> = &'a Self;
 
-    fn mmaped_size(_value: Self) -> usize {
+    fn mmaped_size(_value: Self::Referenced<'_>) -> usize {
         std::mem::size_of::<Self>()
     }
 
-    fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
-        Self::read_from_prefix(bytes)
+    fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>> {
+        Self::ref_from_prefix(bytes)
     }
 
-    fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
+    fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()> {
         value.write_to_prefix(bytes)
     }
 
@@ -97,8 +97,8 @@ impl MmapValue for UuidIntType {
         value
     }
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
-        *value
+    fn as_referenced(&self) -> Self::Referenced<'_> {
+        self
     }
 }
 
@@ -129,8 +129,8 @@ impl MmapValue for GeoPoint {
         value
     }
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
-        value.clone()
+    fn as_referenced(&self) -> Self::Referenced<'_> {
+        self.clone()
     }
 }
 
@@ -160,8 +160,8 @@ impl MmapValue for str {
         value
     }
 
-    fn into_referenced(value: &Self) -> Self::Referenced<'_> {
-        value
+    fn as_referenced(&self) -> Self::Referenced<'_> {
+        self
     }
 }
 

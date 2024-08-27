@@ -125,10 +125,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     ) -> Option<Box<dyn Iterator<Item = N::Referenced<'_>> + '_>> {
         match self {
             MapIndex::Mutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+                index.get_values(idx)?.map(|v| N::as_referenced(v)),
             )),
             MapIndex::Immutable(index) => Some(Box::new(
-                index.get_values(idx)?.map(|v| N::into_referenced(v)),
+                index.get_values(idx)?.map(|v| N::as_referenced(v)),
             )),
             MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
         }
@@ -1129,7 +1129,7 @@ mod tests {
             let res: Vec<_> = index
                 .get_values(idx as u32)
                 .unwrap()
-                .map(|i| i as i32)
+                .map(|i| *i as i32)
                 .collect();
             assert_eq!(res, *values);
         }
