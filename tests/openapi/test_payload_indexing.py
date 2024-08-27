@@ -341,6 +341,7 @@ def test_payload_schemas():
         {
             "type": "uuid",
             "is_tenant": True,
+            "on_disk": True,
         },
     ]
 
