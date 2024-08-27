@@ -101,7 +101,7 @@ impl From<FacetValue> for ValueVariants {
         match value {
             FacetValue::Keyword(s) => ValueVariants::String(s),
             FacetValue::Int(i) => ValueVariants::Integer(i),
-            FacetValue::Uuid(uuid) => ValueVariants::Keyword(Uuid::from_u128(uuid).to_string()),
+            FacetValue::Uuid(uuid) => ValueVariants::String(Uuid::from_u128(uuid).to_string()),
         }
     }
 }
