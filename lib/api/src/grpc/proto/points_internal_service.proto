@@ -299,7 +299,20 @@ message FacetCountsInternal {
     optional uint64 timeout = 7;
 }
 
+message FacetValueInternal {
+    oneof variant {
+        string keyword_value = 1;
+        int64 integer_value = 2;
+        bytes uuid_value = 3;
+    }
+}
+
+message FacetHitInternal {
+    FacetValueInternal value = 1;
+    uint64 count = 2;
+}
+
 message FacetResponseInternal {
-    repeated FacetHit hits = 1;
+    repeated FacetHitInternal hits = 1;
     double time = 2; // Time spent to process
 }

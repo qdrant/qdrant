@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use delegate::delegate;
-use itertools::Itertools;
 use serde_json::Value;
 
 use super::binary_index::BinaryIndexBuilder;
+use super::facet_index::FacetIndex;
 use super::full_text_index::text_index::FullTextIndexBuilder;
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
@@ -15,15 +15,12 @@ use super::numeric_index::{
 };
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::struct_filter_context::StructFilterContext;
-use crate::payload_storage::FilterContext;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
@@ -374,8 +371,8 @@ impl FieldIndex {
 
     pub fn as_facet_index(&self) -> Option<FacetIndex> {
         match self {
-            FieldIndex::KeywordIndex(index) => Some(FacetIndex::KeywordIndex(index)),
-            FieldIndex::IntMapIndex(_) // TODO(facets): use int map index too
+            FieldIndex::KeywordIndex(index) => Some(FacetIndex::Keyword(index)),
+            FieldIndex::IntMapIndex(index) => Some(FacetIndex::Int(index)),
             | FieldIndex::UuidMapIndex(_) // TODO(facets): use uuid index too
             | FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
@@ -523,73 +520,6 @@ impl<'a> NumericFieldIndex<'a> {
                     .flatten()
                     .map(OrderValue::Float),
             ),
-        }
-    }
-}
-
-pub enum FacetIndex<'a> {
-    KeywordIndex(&'a MapIndex<str>),
-}
-
-impl<'a> FacetIndex<'a> {
-    pub fn get_values(
-        &self,
-        point_id: PointOffsetType,
-    ) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
-        match self {
-            FacetIndex::KeywordIndex(index) => {
-                let iter = index
-                    .get_values(point_id)
-                    .into_iter()
-                    .flatten() // flatten the Option
-                    .map(FacetValueRef::Keyword);
-
-                Box::new(iter)
-            }
-        }
-    }
-
-    pub fn iter_values(&self) -> Box<dyn Iterator<Item = FacetValueRef<'a>> + 'a> {
-        match self {
-            FacetIndex::KeywordIndex(index) => {
-                let iter = index.iter_values().map(FacetValueRef::Keyword);
-                Box::new(iter)
-            }
-        }
-    }
-
-    pub fn iter_filtered_counts_per_value(
-        &self,
-        context: &'a StructFilterContext,
-    ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'a> {
-        match self {
-            FacetIndex::KeywordIndex(index) => {
-                let iter = index
-                    .iter_values_map()
-                    .map(|(value, internal_ids_iter)| FacetHit {
-                        value: FacetValueRef::Keyword(value),
-                        count: internal_ids_iter
-                            .unique()
-                            .filter(|point_id| context.check(**point_id))
-                            .count(),
-                    });
-                Box::new(iter)
-            }
-        }
-    }
-    pub fn iter_counts_per_value(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'a> {
-        match self {
-            FacetIndex::KeywordIndex(index) => {
-                let iter = index
-                    .iter_counts_per_value()
-                    .map(|(value, count)| FacetHit {
-                        value: FacetValueRef::Keyword(value),
-                        count,
-                    });
-                Box::new(iter)
-            }
         }
     }
 }

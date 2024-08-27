@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 
 use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition};
 
+pub(super) mod facet_index;
 mod field_index_base;
 pub mod full_text_index;
 pub mod geo_hash;

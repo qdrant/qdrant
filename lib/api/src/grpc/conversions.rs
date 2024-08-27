@@ -19,11 +19,11 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetValue, FieldType,
-    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, KeywordIndexParams, LookupLocation,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
-    RecommendStrategy, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
-    UuidIndexParams, WithLookup,
+    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
+    FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
+    KeywordIndexParams, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
+    OrderValue, Range, RawVector, RecommendStrategy, SearchPointGroups, SearchPoints,
+    ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -2236,10 +2236,10 @@ impl From<LookupLocation> for rest::LookupLocation {
     }
 }
 
-impl TryFrom<FacetHit> for segment_facets::FacetValueHit {
+impl TryFrom<FacetHitInternal> for segment_facets::FacetValueHit {
     type Error = Status;
 
-    fn try_from(hit: FacetHit) -> Result<Self, Self::Error> {
+    fn try_from(hit: FacetHitInternal) -> Result<Self, Self::Error> {
         let value = hit
             .value
             .ok_or_else(|| Status::internal("expected FacetHit to have a value"))?;
@@ -2248,6 +2248,15 @@ impl TryFrom<FacetHit> for segment_facets::FacetValueHit {
             value: segment_facets::FacetValue::try_from(value)?,
             count: hit.count as usize,
         })
+    }
+}
+
+impl From<segment_facets::FacetValueHit> for FacetHitInternal {
+    fn from(hit: segment_facets::FacetValueHit) -> Self {
+        Self {
+            value: Some(From::from(hit.value)),
+            count: hit.count as u64,
+        }
     }
 }
 
@@ -2260,19 +2269,43 @@ impl From<segment_facets::FacetValueHit> for FacetHit {
     }
 }
 
-impl TryFrom<FacetValue> for segment_facets::FacetValue {
+impl TryFrom<FacetValueInternal> for segment_facets::FacetValue {
     type Error = Status;
 
-    fn try_from(value: FacetValue) -> Result<Self, Self::Error> {
-        use super::qdrant::facet_value::Variant;
+    fn try_from(value: FacetValueInternal) -> Result<Self, Self::Error> {
+        use super::qdrant::facet_value_internal::Variant;
 
         let variant = value
             .variant
-            .ok_or_else(|| Status::internal("expected FacetValue to have a value"))?;
+            .ok_or_else(|| Status::internal("expected FacetValueInternal to have a value"))?;
 
         Ok(match variant {
-            Variant::StringValue(value) => segment_facets::FacetValue::Keyword(value),
+            Variant::KeywordValue(value) => segment_facets::FacetValue::Keyword(value),
+            Variant::IntegerValue(value) => segment_facets::FacetValue::Int(value),
+            Variant::UuidValue(value) => {
+                let uuid_bytes: [u8; 16] = value.try_into().map_err(|_| {
+                    Status::invalid_argument("Unable to parse UUID: expected 16 bytes")
+                })?;
+                segment_facets::FacetValue::Uuid(Uuid::from_bytes(uuid_bytes).as_u128())
+            }
         })
+    }
+}
+
+impl From<segment_facets::FacetValue> for FacetValueInternal {
+    fn from(value: segment_facets::FacetValue) -> Self {
+        use super::qdrant::facet_value_internal::Variant;
+
+        Self {
+            variant: Some(match value {
+                segment_facets::FacetValue::Keyword(value) => Variant::KeywordValue(value),
+                segment_facets::FacetValue::Int(value) => Variant::IntegerValue(value),
+                segment_facets::FacetValue::Uuid(value) => {
+                    let uuid = Uuid::from_u128(value);
+                    Variant::UuidValue(uuid.as_bytes().to_vec())
+                }
+            }),
+        }
     }
 }
 
@@ -2283,6 +2316,10 @@ impl From<segment_facets::FacetValue> for FacetValue {
         Self {
             variant: Some(match value {
                 segment_facets::FacetValue::Keyword(value) => Variant::StringValue(value),
+                segment_facets::FacetValue::Int(value) => Variant::IntegerValue(value),
+                segment_facets::FacetValue::Uuid(value) => {
+                    Variant::StringValue(Uuid::from_u128(value).to_string())
+                }
             }),
         }
     }

@@ -1,5 +1,6 @@
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use uuid::Uuid;
 
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
 use super::{
@@ -254,7 +255,11 @@ impl From<QueryInterface> for Query {
 impl From<segment::data_types::facets::FacetValue> for FacetValue {
     fn from(value: segment::data_types::facets::FacetValue) -> Self {
         match value {
-            segment::data_types::facets::FacetValue::Keyword(keyword) => Self::Keyword(keyword),
+            segment::data_types::facets::FacetValue::Keyword(keyword) => Self::String(keyword),
+            segment::data_types::facets::FacetValue::Int(integer) => Self::Integer(integer),
+            segment::data_types::facets::FacetValue::Uuid(uuid_int) => {
+                Self::String(Uuid::from_u128(uuid_int).to_string())
+            }
         }
     }
 }
