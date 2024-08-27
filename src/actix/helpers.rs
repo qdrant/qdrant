@@ -7,7 +7,6 @@ use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
-use tokio::task::JoinHandle;
 
 pub fn accepted_response(timing: Instant) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
@@ -17,9 +16,9 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
     })
 }
 
-pub fn process_response<D>(response: Result<D, StorageError>, timing: Instant) -> HttpResponse
+pub fn process_response<T>(response: Result<T, StorageError>, timing: Instant) -> HttpResponse
 where
-    D: Serialize,
+    T: Serialize,
 {
     match response {
         Ok(res) => HttpResponse::Ok().json(ApiResponse {
@@ -27,6 +26,7 @@ where
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
         }),
+
         Err(err) => process_response_error(err, timing),
     }
 }
@@ -34,7 +34,7 @@ where
 pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
     log_service_error(&err);
 
-    let error: HttpError = err.into();
+    let error = HttpError::from(err);
 
     HttpResponse::build(error.status_code()).json(ApiResponse::<()> {
         result: None,
@@ -43,7 +43,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
     })
 }
 
-/// Response wrapper for a ``Future`` returning ``Result``.
+/// Response wrapper for a `Future` returning `Result`.
 ///
 /// # Cancel safety
 ///
@@ -56,81 +56,34 @@ where
     time_impl(async { future.await.map(Some) }).await
 }
 
-/// Response wrapper for a ``Future`` returning ``Result``.
-/// If ``wait`` is false, returns ``202 Accepted`` immediately.
+/// Response wrapper for a `Future` returning `Result`.
+/// If `wait` is false, returns `202 Accepted` immediately.
 pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> HttpResponse
 where
     Fut: Future<Output = Result<T, StorageError>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
 {
     let future = async move {
-        let handle = tokio::task::spawn(future);
+        let handle = tokio::task::spawn(async move {
+            let result = future.await;
+
+            if !wait {
+                if let Err(err) = &result {
+                    log_service_error(err);
+                }
+            }
+
+            result
+        });
 
         if wait {
             handle.await?.map(Some)
         } else {
-            log_accept_task_error(handle);
             Ok(None)
         }
     };
 
     time_impl(future).await
-}
-
-/// Response wrapper for a ``Future`` returning ``Result<JoinHandle, _>``.
-/// If ``wait`` is true, the ``JoinHandle`` will be awaited.
-/// Otherwise ``202 Accepted`` will be returned immediately.
-///
-/// Example:
-/// ```
-/// time_or_accept_with_handle(wait, async move {
-///     // This will be run in the foreground unconditionally.
-///     some_async_fn().await?;
-///
-///     // If `wait` is true, the result of this function will be awaited.
-///     // Otherwise, 202 Accepted will be returned immediately.
-///     Ok(tokio::spawn(some_long_running_fn(prepare)))
-/// })
-/// ```
-///
-/// # Cancel safety
-///
-/// Future must be cancel safe.
-pub async fn time_or_accept_with_handle<T, Fut>(wait: bool, future: Fut) -> HttpResponse
-where
-    Fut: Future<Output = Result<JoinHandle<Result<T, StorageError>>, StorageError>>,
-    T: serde::Serialize + Send + 'static,
-{
-    let future = async move {
-        let res = future.await?;
-        if wait {
-            res.await
-                .map_err(Into::<StorageError>::into)
-                .and_then(|x| x)
-                .map(Some)
-        } else {
-            log_accept_task_error(res);
-            Ok(None)
-        }
-    };
-
-    time_impl(future).await
-}
-
-/// For accepted tasks, spawn a background task to log any errors
-fn log_accept_task_error<T>(handle: JoinHandle<Result<T, StorageError>>) -> JoinHandle<()>
-where
-    T: serde::Serialize + Send + 'static,
-{
-    tokio::task::spawn(async move {
-        if let Err(err) = handle
-            .await
-            .map_err(Into::<StorageError>::into)
-            .and_then(|x| x)
-        {
-            log_service_error(&err);
-        }
-    })
 }
 
 /// # Cancel safety
@@ -143,20 +96,17 @@ where
 {
     let instant = Instant::now();
     match future.await.transpose() {
-        Some(v) => process_response(v, instant),
+        Some(res) => process_response(res, instant),
         None => accepted_response(instant),
     }
 }
 
 fn log_service_error(err: &StorageError) {
-    if let StorageError::ServiceError {
-        description,
-        backtrace,
-    } = err
-    {
-        log::error!("error processing request: {}", description);
+    if let StorageError::ServiceError { backtrace, .. } = err {
+        log::error!("Error processing request: {err}");
+
         if let Some(backtrace) = backtrace {
-            log::trace!("backtrace: {}", backtrace);
+            log::trace!("Backtrace: {backtrace}");
         }
     }
 }

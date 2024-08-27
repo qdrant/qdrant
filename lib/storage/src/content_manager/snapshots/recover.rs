@@ -6,7 +6,6 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
-use tokio::task::JoinHandle;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
@@ -48,20 +47,24 @@ pub async fn activate_shard(
     Ok(())
 }
 
-pub fn do_recover_from_snapshot(
+pub async fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
     access: Access,
     client: reqwest::Client,
-) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
+) -> Result<bool, StorageError> {
     let multipass = access.check_global_access(AccessRequirements::new().manage())?;
 
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
-    Ok(tokio::spawn(async move {
+
+    let res = tokio::spawn(async move {
         _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
-    }))
+    })
+    .await??;
+
+    Ok(res)
 }
 
 async fn _do_recover_from_snapshot(
