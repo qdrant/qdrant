@@ -77,7 +77,7 @@ pub async fn do_save_uploaded_snapshot(
     toc: &TableOfContent,
     collection_name: &str,
     snapshot: TempFile,
-) -> std::result::Result<Url, StorageError> {
+) -> Result<Url, StorageError> {
     let filename = snapshot
         .file_name
         // Sanitize the file name:
@@ -154,10 +154,12 @@ async fn create_snapshot(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let collection_name = path.into_inner();
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_snapshot(dispatcher.toc(&access).clone(), access, &collection_name)
-    })
-    .await
+
+    let future = async move {
+        do_create_snapshot(dispatcher.toc(&access).clone(), access, &collection_name).await
+    };
+
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 #[post("/collections/{name}/snapshots/upload")]
@@ -169,7 +171,9 @@ async fn upload_snapshot(
     params: valid::Query<SnapshotUploadingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
+    let wait = params.wait;
+
+    let future = async move {
         let snapshot = form.snapshot;
 
         access.check_global_access(AccessRequirements::new().manage())?;
@@ -201,8 +205,10 @@ async fn upload_snapshot(
             access,
             http_client,
         )
-    })
-    .await
+        .await
+    };
+
+    helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
 #[put("/collections/{name}/snapshots/recover")]
@@ -214,9 +220,10 @@ async fn recover_from_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
+    let future = async move {
         let snapshot_recover = request.into_inner();
         let http_client = http_client.client(snapshot_recover.api_key.as_deref())?;
+
         do_recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
@@ -224,8 +231,10 @@ async fn recover_from_snapshot(
             access,
             http_client,
         )
-    })
-    .await
+        .await
+    };
+
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
@@ -260,10 +269,8 @@ async fn create_full_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_full_snapshot(dispatcher.get_ref(), access)
-    })
-    .await
+    let future = async move { do_create_full_snapshot(dispatcher.get_ref(), access).await };
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 #[get("/snapshots/{snapshot_name}")]
@@ -284,11 +291,12 @@ async fn delete_full_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
+    let future = async move {
         let snapshot_name = path.into_inner();
         do_delete_full_snapshot(dispatcher.get_ref(), access, &snapshot_name).await
-    })
-    .await
+    };
+
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 #[delete("/collections/{name}/snapshots/{snapshot_name}")]
@@ -298,8 +306,9 @@ async fn delete_collection_snapshot(
     params: valid::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
+    let future = async move {
         let (collection_name, snapshot_name) = path.into_inner();
+
         do_delete_collection_snapshot(
             dispatcher.get_ref(),
             access,
@@ -307,8 +316,9 @@ async fn delete_collection_snapshot(
             &snapshot_name,
         )
         .await
-    })
-    .await
+    };
+
+    helpers::time_or_accept(future, params.wait.unwrap_or(true)).await
 }
 
 #[get("/collections/{collection}/shards/{shard}/snapshots")]

@@ -31,7 +31,6 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
-use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
@@ -166,17 +165,18 @@ pub async fn do_list_snapshots(
         .await?)
 }
 
-pub fn do_create_snapshot(
+pub async fn do_create_snapshot(
     toc: Arc<TableOfContent>,
     access: Access,
     collection_name: &str,
-) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
+) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = access
         .check_collection_access(collection_name, AccessRequirements::new().write().whole())?
         .into_static();
-    Ok(tokio::spawn(async move {
-        toc.create_snapshot(&collection_pass).await
-    }))
+
+    let result = tokio::spawn(async move { toc.create_snapshot(&collection_pass).await }).await??;
+
+    Ok(result)
 }
 
 pub async fn do_get_collection_cluster(

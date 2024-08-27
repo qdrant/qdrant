@@ -10,7 +10,6 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
-use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
@@ -46,15 +45,14 @@ impl Snapshots for SnapshotsService {
         let collection_name = request.into_inner().collection_name;
         let timing = Instant::now();
         let dispatcher = self.dispatcher.clone();
-        let response = async move {
-            do_create_snapshot(
-                Arc::clone(dispatcher.toc(&access)),
-                access,
-                &collection_name,
-            )?
-            .await?
-        }
+
+        let response = do_create_snapshot(
+            Arc::clone(dispatcher.toc(&access)),
+            access,
+            &collection_name,
+        )
         .await?;
+
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
             time: timing.elapsed().as_secs_f64(),
@@ -66,12 +64,14 @@ impl Snapshots for SnapshotsService {
         mut request: Request<ListSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         validate(request.get_ref())?;
+
+        let timing = Instant::now();
         let access = extract_access(&mut request);
         let ListSnapshotsRequest { collection_name } = request.into_inner();
 
-        let timing = Instant::now();
         let snapshots =
             do_list_snapshots(self.dispatcher.toc(&access), access, &collection_name).await?;
+
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -83,23 +83,22 @@ impl Snapshots for SnapshotsService {
         mut request: Request<DeleteSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         validate(request.get_ref())?;
+
+        let timing = Instant::now();
         let access = extract_access(&mut request);
         let DeleteSnapshotRequest {
             collection_name,
             snapshot_name,
         } = request.into_inner();
-        let timing = Instant::now();
-        let _response = async move {
-            do_delete_collection_snapshot(
-                &self.dispatcher,
-                access,
-                &collection_name,
-                &snapshot_name,
-            )
-            .await?
-            .await?
-        }
+
+        let _response = do_delete_collection_snapshot(
+            &self.dispatcher,
+            access,
+            &collection_name,
+            &snapshot_name,
+        )
         .await?;
+
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -110,10 +109,11 @@ impl Snapshots for SnapshotsService {
         mut request: Request<CreateFullSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         validate(request.get_ref())?;
+
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let response =
-            async move { do_create_full_snapshot(&self.dispatcher, access)?.await? }.await?;
+
+        let response = do_create_full_snapshot(&self.dispatcher, access).await?;
 
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
@@ -140,17 +140,13 @@ impl Snapshots for SnapshotsService {
         mut request: Request<DeleteFullSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         validate(request.get_ref())?;
+
+        let timing = Instant::now();
         let access = extract_access(&mut request);
         let snapshot_name = request.into_inner().snapshot_name;
-        let timing = Instant::now();
-        let _response = async move {
-            Ok::<_, StorageError>(
-                do_delete_full_snapshot(&self.dispatcher, access, &snapshot_name)
-                    .await?
-                    .await?,
-            )
-        }
-        .await?;
+
+        let _response = do_delete_full_snapshot(&self.dispatcher, access, &snapshot_name).await?;
+
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
