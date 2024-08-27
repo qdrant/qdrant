@@ -168,6 +168,7 @@ pub struct CreateCollection {
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
     /// Strict-mode config.
     #[validate(nested)]
+    #[schemars(skip)]
     pub strict_mode_config: Option<StrictModeConfig>,
 }
 

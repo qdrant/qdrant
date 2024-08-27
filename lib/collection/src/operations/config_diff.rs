@@ -101,9 +101,6 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_timeout: Option<usize>,
 
-    // Input examples for recommend and discovery api
-    pub max_input_examples: Option<usize>,
-
     /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_retrieve: Option<bool>,
@@ -124,11 +121,6 @@ pub struct StrictModeConfig {
     /// Max oversampling value allowed in search.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_oversampling: Option<f64>,
-
-    // Group-by
-    /// Max group_size value in group requests.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub group_by_max_group_size: Option<usize>,
 }
 
 impl Hash for StrictModeConfig {
@@ -143,8 +135,6 @@ impl Hash for StrictModeConfig {
         self.search_max_oversampling
             .map(|i| i.to_le_bytes())
             .hash(state);
-        self.group_by_max_group_size.hash(state);
-        self.max_input_examples.hash(state);
     }
 }
 
@@ -161,8 +151,6 @@ impl PartialEq for StrictModeConfig {
             && self.search_allow_exact == other.search_allow_exact
             && self.search_max_oversampling.map(|i| i.to_le_bytes())
                 == other.search_max_oversampling.map(|i| i.to_le_bytes())
-            && self.group_by_max_group_size == other.group_by_max_group_size
-            && self.max_input_examples == other.max_input_examples
     }
 }
 

@@ -162,6 +162,7 @@ pub struct CollectionConfig {
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]
+    #[schemars(skip)]
     pub strict_mode_config: Option<StrictModeConfig>,
 }
 

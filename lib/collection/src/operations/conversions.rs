@@ -432,15 +432,13 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 strict_mode_config: config.strict_mode_config.map(|i| {
                     api::grpc::qdrant::StrictModeConfig {
                         enabled: i.enabled,
-                        max_filter_limit: i.max_query_limit.map(|i| i as u32),
+                        max_query_limit: i.max_query_limit.map(|i| i as u32),
                         max_timeout: i.max_timeout.map(|i| i as u32),
                         unindexed_filtering_retrieve: i.unindexed_filtering_retrieve,
                         unindexed_filtering_update: i.unindexed_filtering_update,
                         search_max_hnsw_ef: i.search_max_hnsw_ef.map(|i| i as u32),
                         search_allow_exact: i.search_allow_exact,
                         search_max_oversampling: i.search_max_oversampling.map(|i| i as f32),
-                        group_by_max_group_size: i.group_by_max_group_size.map(|i| i as u32),
-                        max_input_examples: i.max_input_examples.map(|i| i as u32),
                     }
                 }),
             }),
@@ -830,15 +828,13 @@ impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
     fn from(value: api::grpc::qdrant::StrictModeConfig) -> Self {
         Self {
             enabled: value.enabled,
-            max_query_limit: value.max_filter_limit.map(|i| i as usize),
+            max_query_limit: value.max_query_limit.map(|i| i as usize),
             max_timeout: value.max_timeout.map(|i| i as usize),
             unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
             unindexed_filtering_update: value.unindexed_filtering_update,
             search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
             search_allow_exact: value.search_allow_exact,
             search_max_oversampling: value.search_max_oversampling.map(f64::from),
-            group_by_max_group_size: value.group_by_max_group_size.map(|i| i as usize),
-            max_input_examples: value.max_input_examples.map(|i| i as usize),
         }
     }
 }

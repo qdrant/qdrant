@@ -130,7 +130,7 @@ pub(crate) fn check_bool_opt(
 
     Err(CollectionError::strict_mode(
         format!("{name} disabled!"),
-        &format!("Set {parameter}=false."),
+        format!("Set {parameter}=false."),
     ))
 }
 

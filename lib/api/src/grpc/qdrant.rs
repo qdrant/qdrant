@@ -436,7 +436,7 @@ pub struct StrictModeConfig {
     #[prost(bool, optional, tag = "1")]
     pub enabled: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "2")]
-    pub max_filter_limit: ::core::option::Option<u32>,
+    pub max_query_limit: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "3")]
     pub max_timeout: ::core::option::Option<u32>,
     #[prost(bool, optional, tag = "4")]
@@ -449,10 +449,6 @@ pub struct StrictModeConfig {
     pub search_allow_exact: ::core::option::Option<bool>,
     #[prost(float, optional, tag = "8")]
     pub search_max_oversampling: ::core::option::Option<f32>,
-    #[prost(uint32, optional, tag = "9")]
-    pub group_by_max_group_size: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "10")]
-    pub max_input_examples: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -1398,15 +1398,13 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | enabled | [bool](#bool) | optional |  |
-| max_filter_limit | [uint32](#uint32) | optional |  |
+| max_query_limit | [uint32](#uint32) | optional |  |
 | max_timeout | [uint32](#uint32) | optional |  |
 | unindexed_filtering_retrieve | [bool](#bool) | optional |  |
 | unindexed_filtering_update | [bool](#bool) | optional |  |
 | search_max_hnsw_ef | [uint32](#uint32) | optional |  |
 | search_allow_exact | [bool](#bool) | optional |  |
 | search_max_oversampling | [float](#float) | optional |  |
-| group_by_max_group_size | [uint32](#uint32) | optional |  |
-| max_input_examples | [uint32](#uint32) | optional |  |
 
 
 
