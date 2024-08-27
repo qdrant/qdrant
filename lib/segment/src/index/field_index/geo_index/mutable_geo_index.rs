@@ -237,7 +237,7 @@ impl MutableGeoMapIndex {
         let geo_clone = *geo;
         self.points_map
             .range(*geo..)
-            .take_while(move |(p, _h)| p.cut(geo_clone.len()) == geo_clone)
+            .take_while(move |(p, _h)| p.starts_with(geo_clone))
     }
 
     fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {

@@ -117,11 +117,11 @@ impl GeoMapIndex {
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }
-        let geohash_str: SmolStr = s[..separator_pos].into();
+        let geohash_str = &s[..separator_pos];
         let idx_str = &s[separator_pos + 1..];
         let idx = PointOffsetType::from_str(idx_str)
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        Ok((GeoHash::from(geohash_str), idx))
+        Ok((GeoHash::new(geohash_str), idx))
     }
 
     fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {
@@ -275,7 +275,7 @@ impl GeoMapIndex {
         let mut current_region = GeoHash::default();
 
         for (&region, size) in large_regions {
-            if current_region.cut(region.len()) != region {
+            if !current_region.starts_with(region) {
                 current_region = region;
                 edge_region.push((region, size));
             }

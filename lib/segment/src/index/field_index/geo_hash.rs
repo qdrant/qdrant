@@ -36,7 +36,7 @@ impl Index<usize> for GeoHash {
 
     fn index(&self, i: usize) -> &Self::Output {
         assert!(i < self.len());
-        let index = (self.packed >> (5 * (GEOHASH_MAX_LENGTH - 1 - i) + 4)) & 0b11111;
+        let index = (self.packed >> Self::shift_value(i)) & 0b11111;
         &BASE32_CODES[index as usize]
     }
 }
@@ -75,10 +75,11 @@ impl Iterator for GeoHashIterator {
 
 impl GeoHash {
     pub fn new(s: &str) -> Self {
+        assert!(s.len() <= GEOHASH_MAX_LENGTH);
         let mut packed: u64 = 0;
         for (i, c) in s.chars().enumerate() {
             let index = BASE32_CODES.iter().position(|&x| x == c).unwrap() as u64;
-            packed |= index << (5 * (GEOHASH_MAX_LENGTH - 1 - i) + 4);
+            packed |= index << Self::shift_value(i);
         }
         packed |= s.len() as u64;
         Self { packed }
@@ -101,9 +102,10 @@ impl GeoHash {
     }
 
     pub fn cut(&self, new_len: usize) -> Self {
+        assert!(new_len <= self.len());
         let mut packed = self.packed;
         for i in new_len..self.len() {
-            packed &= !(0b11111 << (5 * (GEOHASH_MAX_LENGTH - 1 - i) + 4));
+            packed &= !(0b11111 << Self::shift_value(i));
         }
         packed &= !(0b1111);
         packed |= new_len as u64;
@@ -111,7 +113,22 @@ impl GeoHash {
     }
 
     pub fn starts_with(&self, other: GeoHash) -> bool {
-        self.cut(other.len()) == other
+        if self.len() >= other.len() {
+            if !other.is_empty() {
+                let self_shifted = self.packed >> Self::shift_value(other.len() - 1);
+                let other_shifted = other.packed >> Self::shift_value(other.len() - 1);
+                self_shifted == other_shifted
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    fn shift_value(i: usize) -> usize {
+        // first 4 bits is size, then 5 bits per character in reverse order (for lexigraphical order)
+        5 * (GEOHASH_MAX_LENGTH - 1 - i) + 4
     }
 }
 
