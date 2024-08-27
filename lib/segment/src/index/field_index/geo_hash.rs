@@ -127,7 +127,7 @@ impl GeoHash {
     }
 
     fn shift_value(i: usize) -> usize {
-        // first 4 bits is size, then 5 bits per character in reverse order (for lexigraphical order)
+        // first 4 bits is size, then 5 bits per character in reverse order (for lexicographical order)
         5 * (GEOHASH_MAX_LENGTH - 1 - i) + 4
     }
 }
