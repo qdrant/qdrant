@@ -1,4 +1,5 @@
 use std::cmp;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
@@ -168,6 +169,7 @@ impl Collection {
     pub async fn handle_replica_changes(
         &self,
         replica_changes: Vec<Change>,
+        all_peers: &HashSet<PeerId>,
     ) -> CollectionResult<()> {
         if replica_changes.is_empty() {
             return Ok(());
@@ -212,7 +214,7 @@ impl Collection {
 
                 // ...and cancel transfer tasks and remove transfers from internal state
                 for transfer in transfers {
-                    self.finish_shard_transfer(transfer, Some(&shard_holder))
+                    self.finish_shard_transfer(transfer, all_peers, Some(&shard_holder))
                         .await?;
                 }
             }

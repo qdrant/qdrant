@@ -187,7 +187,7 @@ pub async fn change_remote_shard_route(
     to_shard_id: ShardId,
     old_peer_id: PeerId,
     new_peer_id: PeerId,
-    state: ReplicaState,
+    state: Option<ReplicaState>,
     sync: bool,
 ) -> CollectionResult<bool> {
     let from_replica_set = match shard_holder.get_shard(&from_shard_id) {
@@ -199,8 +199,10 @@ pub async fn change_remote_shard_route(
         Some(replica_set) => replica_set,
     };
 
-    if to_replica_set.this_peer_id() != new_peer_id {
-        to_replica_set.add_remote(new_peer_id, state).await?;
+    if let Some(state) = state {
+        if to_replica_set.this_peer_id() != new_peer_id {
+            to_replica_set.add_remote(new_peer_id, state).await?;
+        }
     }
 
     if !sync {

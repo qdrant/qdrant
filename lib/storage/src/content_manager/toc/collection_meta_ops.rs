@@ -159,7 +159,17 @@ impl TableOfContent {
             recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
-            collection.handle_replica_changes(changes).await?;
+            let all_peers = self
+                .channel_service
+                .id_to_address
+                .read()
+                .keys()
+                .copied()
+                .collect();
+
+            collection
+                .handle_replica_changes(changes, &all_peers)
+                .await?;
         }
 
         // Recreate optimizers
@@ -586,7 +596,18 @@ impl TableOfContent {
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
-                collection.finish_shard_transfer(transfer, None).await?;
+
+                let all_peers: HashSet<_> = self
+                    .channel_service
+                    .id_to_address
+                    .read()
+                    .keys()
+                    .cloned()
+                    .collect();
+
+                collection
+                    .finish_shard_transfer(transfer, &all_peers, None)
+                    .await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {

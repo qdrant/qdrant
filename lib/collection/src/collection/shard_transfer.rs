@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -182,6 +183,7 @@ impl Collection {
     pub async fn finish_shard_transfer(
         &self,
         transfer: ShardTransfer,
+        all_peers: &HashSet<PeerId>,
         shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         let transfer_result = self
@@ -209,9 +211,14 @@ impl Collection {
             // Normally we promote the shard to become active, in case of resharding we do not.
             // For resharding we have multiple transfers in sequence, during which the shard should
             // remain in the resharding state. Once all are done, the shard is manually promoted to active.
-            let activate_shard = transfer
+            let dst_peer_exists = all_peers.contains(&transfer.to);
+
+            let is_resharding_transfer = transfer
                 .method
-                .map_or(true, |method| !method.is_resharding());
+                .map_or(false, |method| method.is_resharding());
+
+            let activate_shard = dst_peer_exists && !is_resharding_transfer;
+
             let proxy_promoted = transfer::driver::handle_transferred_shard_proxy(
                 shard_holder,
                 transfer.shard_id,
@@ -220,6 +227,7 @@ impl Collection {
                 transfer.sync,
             )
             .await?;
+
             log::debug!("proxy_promoted: {proxy_promoted}");
         }
 
@@ -254,6 +262,13 @@ impl Collection {
             } else {
                 ReplicaState::Active
             };
+
+            let state = if all_peers.contains(&transfer.to) {
+                Some(state)
+            } else {
+                None
+            };
+
             let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
                 shard_holder,
                 transfer.shard_id,
