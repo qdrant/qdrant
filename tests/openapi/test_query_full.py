@@ -255,7 +255,7 @@ def test_uuid_index_filtered_query():
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "vector": [0.1, 0.2, 0.3, 0.4],
+                "vector": {"vector": [0.1, 0.2, 0.3, 0.4], "name": "dense-image"},
                 "filter": item,
                 "limit": 10,
             },
