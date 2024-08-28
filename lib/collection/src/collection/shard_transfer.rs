@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -181,7 +180,6 @@ impl Collection {
     pub async fn finish_shard_transfer(
         &self,
         transfer: ShardTransfer,
-        all_peers: &HashSet<PeerId>,
         shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         let transfer_result = self
@@ -204,12 +202,12 @@ impl Collection {
             .method
             .map_or(false, |method| method.is_resharding());
 
-        // Handle *source* replica/shard
+        // Handle *source* replica
         let src_replica_set = shard_holder.get_shard(&transfer.shard_id);
 
         if let Some(replica_set) = src_replica_set {
             if transfer.sync || is_resharding_transfer {
-                // If transfer is *sync* (or *resharding*), we *keep* source replica/shard
+                // If transfer is *sync* (or *resharding*), we *keep* source replica
 
                 if transfer.from == self.this_peer_id {
                     // If current peer is *transfer-sender*, we need to unproxify local shard
@@ -217,7 +215,7 @@ impl Collection {
                     replica_set.un_proxify_local().await?;
                 }
             } else {
-                // If transfer is *not* sync, we *remove* source replica/shard
+                // If transfer is *not* sync (and *not* resharding), we *remove* source replica
 
                 if transfer.from == self.this_peer_id {
                     replica_set.remove_local().await?;
@@ -227,25 +225,21 @@ impl Collection {
             }
         }
 
-        // Handle *destination* replica/shard
+        // Handle *destination* replica
         let dest_replica_set =
             shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
 
         if let Some(replica_set) = dest_replica_set {
-            let does_dest_peer_exist = all_peers.contains(&transfer.to);
-
-            if does_dest_peer_exist && !is_resharding_transfer {
-                // Promote *destination* shard/replica to `Active` if:
+            if replica_set.peer_state(&transfer.to).is_some() && !is_resharding_transfer {
+                // Promote *destination* replica/shard to `Active` if:
                 //
-                // - destination *peer* exists
-                //   - destination peer might *not* exist, if peer is removed right before transfer
-                //     is finished
+                // - replica *exists*
+                //   - replica should be created when shard transfer (or resharding) is started
+                //   - replica might *not* exist, if it (or the whole *peer*) was removed right
+                //     before transfer is finished
                 // - transfer is *not* resharding
                 //   - resharding requires multiple transfers, so destination shard is promoted
                 //     *explicitly* when all transfers are finished
-
-                // We expect that replica already exists in the replica set
-                debug_assert!(replica_set.peer_state(&transfer.to).is_some());
 
                 replica_set.set_replica_state(&transfer.to, ReplicaState::Active)?;
             }
