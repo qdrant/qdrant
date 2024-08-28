@@ -65,7 +65,8 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .one_unindexed_key(&geo_filter),
+            .one_unindexed_key(&geo_filter)
+            .map(|(x, _)| x),
         Some(JsonPath::from_str("location").unwrap())
     );
 
@@ -106,7 +107,8 @@ async fn test_payload_missing_index_check() {
         shard
             .payload_index_schema
             .read()
-            .one_unindexed_key(&num_filter),
+            .one_unindexed_key(&num_filter)
+            .map(|(x, _)| x),
         Some("location.lat".parse().unwrap())
     );
 

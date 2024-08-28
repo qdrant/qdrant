@@ -71,9 +71,15 @@ pub trait StrictModeVerification {
          -> Result<(), CollectionError> {
             if let Some(read_filter) = filter {
                 if allow_unindexed_filter == Some(false) {
-                    if let Some(key) = collection.one_unindexed_key(read_filter) {
+                    if let Some((key, schemas)) = collection.one_unindexed_key(read_filter) {
+                        let possible_schemas_str = schemas
+                            .iter()
+                            .map(|schema| schema.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+
                         return Err(CollectionError::strict_mode(
-                            format!("Index required but not found for \"{key}\""),
+                            format!("Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]"),
                             "Create an index for this key or use a different filter.",
                         ));
                     }

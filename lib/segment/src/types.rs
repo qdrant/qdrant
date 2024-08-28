@@ -1224,6 +1224,15 @@ pub enum PayloadFieldSchema {
     FieldParams(PayloadSchemaParams),
 }
 
+impl Display for PayloadFieldSchema {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PayloadFieldSchema::FieldType(t) => write!(f, "{}", t.name()),
+            PayloadFieldSchema::FieldParams(p) => write!(f, "{}", p.name()),
+        }
+    }
+}
+
 impl PayloadFieldSchema {
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
