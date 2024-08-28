@@ -18,7 +18,6 @@ use crate::payload_storage::query_checker::{
 use crate::types::{
     Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
     GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, Range, RangeInterface,
-    ValuesCount,
 };
 
 pub fn condition_converter<'a>(
