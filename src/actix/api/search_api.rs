@@ -8,7 +8,7 @@ use collection::operations::types::{
 };
 use futures::TryFutureExt;
 use itertools::Itertools;
-use storage::content_manager::collection_verification::CollectionRequestVerification;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -28,7 +28,7 @@ async fn search_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -71,7 +71,7 @@ async fn batch_search_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
