@@ -166,18 +166,17 @@ pub fn field_condition_index<'a>(
         } => get_geo_polygon_checkers(index, geo_polygon.clone()),
 
         FieldCondition {
-            values_count: Some(values_count),
-            ..
-        } => Some(get_values_count_checkers(*values_count, index)),
-
-        FieldCondition {
             key: _,
             r#match: None,
             range: None,
             geo_radius: None,
             geo_bounding_box: None,
             geo_polygon: None,
-            values_count: None,
+            // We can't use index for this condition, since some indices don't count values,
+            // like boolean index, where [true, true, true] is the same as [true]. Count should be 3 but they think is 1.
+            //
+            // TODO: Try to use the indices that actually support counting values.
+            values_count: _,
         } => None,
     }
 }
@@ -311,12 +310,5 @@ fn get_is_empty_checker<'a>(
         // Counting on the short-circuit of the `&&` operator
         // Only check the fallback if the index seems to be empty
         index.values_is_empty(point_id) && fallback(point_id)
-    })
-}
-
-fn get_values_count_checkers(values_count: ValuesCount, index: &FieldIndex) -> ConditionCheckerFn {
-    Box::new(move |point_id: PointOffsetType| {
-        let count = index.values_count(point_id);
-        values_count.check_count(count)
     })
 }
