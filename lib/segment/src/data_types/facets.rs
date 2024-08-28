@@ -50,7 +50,6 @@ pub enum FacetValue {
     Uuid(UuidIntType),
     // other types to add?
     // Bool(bool),
-    // Integer(IntPayloadType),
     // FloatRange(FloatRange),
 }
 

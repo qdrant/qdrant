@@ -357,18 +357,17 @@ impl StructPayloadIndex {
         id_tracker: &'a IdTrackerSS,
         query_cardinality: &'a CardinalityEstimation,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let struct_filtered_context = self.struct_filtered_context(filter);
+
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
 
-            let struct_filtered_context = self.struct_filtered_context(filter);
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 full_scan_iterator.filter(move |i| struct_filtered_context.check(*i));
 
             Either::Left(matched_points)
         } else {
-            let struct_filtered_context = self.struct_filtered_context(filter);
-
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
