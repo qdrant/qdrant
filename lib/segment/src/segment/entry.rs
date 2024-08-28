@@ -654,7 +654,7 @@ impl SegmentEntry for Segment {
             Some(schema) => {
                 let res = self
                     .payload_index
-                    .borrow_mut()
+                    .borrow()
                     .build_index(key, schema)?
                     .map(|field_index| (schema.to_owned(), field_index));
 
@@ -669,7 +669,7 @@ impl SegmentEntry for Segment {
 
                     let res = self
                         .payload_index
-                        .borrow_mut()
+                        .borrow()
                         .build_index(key, &schema)?
                         .map(|field_index| (schema, field_index));
 
