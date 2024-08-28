@@ -373,8 +373,8 @@ impl FieldIndex {
         match self {
             FieldIndex::KeywordIndex(index) => Some(FacetIndex::Keyword(index)),
             FieldIndex::IntMapIndex(index) => Some(FacetIndex::Int(index)),
-            | FieldIndex::UuidMapIndex(_) // TODO(facets): use uuid index too
-            | FieldIndex::UuidIndex(_)
+            FieldIndex::UuidMapIndex(index) => Some(FacetIndex::Uuid(index)),
+            FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)

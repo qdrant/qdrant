@@ -5297,6 +5297,15 @@
               "type": "integer",
               "minimum": 1
             }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
           }
         ],
         "responses": {
