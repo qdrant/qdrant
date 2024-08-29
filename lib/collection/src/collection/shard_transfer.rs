@@ -203,6 +203,8 @@ impl Collection {
             .map_or(false, |method| method.is_resharding());
 
         // Handle *destination* replica
+        let mut is_dest_replica_active = false;
+
         let dest_replica_set =
             shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
 
@@ -219,6 +221,7 @@ impl Collection {
                 //     *explicitly* when all transfers are finished
 
                 replica_set.set_replica_state(&transfer.to, ReplicaState::Active)?;
+                is_dest_replica_active = true;
             }
         }
 
@@ -234,8 +237,9 @@ impl Collection {
 
                     replica_set.un_proxify_local().await?;
                 }
-            } else {
-                // If transfer is *not* sync (and *not* resharding), we *remove* source replica
+            } else if is_dest_replica_active {
+                // If transfer is *not* sync (and *not* resharding) and *destination* replica is `Active`,
+                // we *remove* source replica
 
                 if transfer.from == self.this_peer_id {
                     replica_set.remove_local().await?;
