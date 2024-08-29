@@ -381,10 +381,13 @@ impl Collection {
             .read()
             .contains_key(&peer_id);
 
-        if !peer_exists {
+        let replica_exists = replica_set.peer_state(&peer_id).is_some();
+
+        if !peer_exists && !replica_exists {
             return Err(CollectionError::bad_input(format!(
                 "Can't set replica {peer_id}:{shard_id} state to {state:?}, \
-                 because peer {peer_id} is not part of the cluster"
+                 because replica {peer_id}:{shard_id} does not exist \
+                 and peer {peer_id} is not part of the cluster"
             )));
         }
 
