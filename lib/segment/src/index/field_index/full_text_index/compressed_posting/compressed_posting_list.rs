@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    compress_posting, estimate_chunks, BitPackerImpl, CompressedPostingChunk,
+    compress_posting, estimate_chunks, BitPackerImpl, CompressedPostingChunksIndex,
 };
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
@@ -12,7 +12,7 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_p
 pub struct CompressedPostingList {
     last_doc_id: PointOffsetType,
     data: Vec<u8>,
-    chunks: Vec<CompressedPostingChunk>,
+    chunks: Vec<CompressedPostingChunksIndex>,
     // last postings that are not compressed because they are not aligned with the block size
     remainder_postings: Vec<PointOffsetType>,
 }

@@ -2,12 +2,12 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    BitPackerImpl, CompressedPostingChunk,
+    BitPackerImpl, CompressedPostingChunksIndex,
 };
 
 pub struct ChunkReader<'a> {
     data: &'a [u8],
-    pub chunks: &'a [CompressedPostingChunk],
+    pub chunks: &'a [CompressedPostingChunksIndex],
     pub reminder_postings: &'a [PointOffsetType],
     last_doc_id: PointOffsetType,
 }
@@ -15,7 +15,7 @@ pub struct ChunkReader<'a> {
 impl<'a> ChunkReader<'a> {
     pub fn new(
         data: &'a [u8],
-        chunks: &'a [CompressedPostingChunk],
+        chunks: &'a [CompressedPostingChunksIndex],
         reminder_postings: &'a [PointOffsetType],
         last_doc_id: PointOffsetType,
     ) -> Self {
@@ -57,15 +57,15 @@ impl<'a> ChunkReader<'a> {
     }
 
     pub fn get_chunk_size(
-        chunks: &[CompressedPostingChunk],
-        data: &[u8],
+        chunks: &[CompressedPostingChunksIndex],
+        data_len_bytes: usize,
         chunk_index: usize,
     ) -> usize {
         assert!(chunk_index < chunks.len());
         if chunk_index + 1 < chunks.len() {
             chunks[chunk_index + 1].offset as usize - chunks[chunk_index].offset as usize
         } else {
-            data.len() - chunks[chunk_index].offset as usize
+            data_len_bytes - chunks[chunk_index].offset as usize
         }
     }
 
@@ -102,7 +102,7 @@ impl<'a> ChunkReader<'a> {
     ) {
         assert_eq!(decompressed.len(), BitPackerImpl::BLOCK_LEN);
         let chunk = &self.chunks[chunk_index];
-        let chunk_size = Self::get_chunk_size(self.chunks, self.data, chunk_index);
+        let chunk_size = Self::get_chunk_size(self.chunks, self.data.len(), chunk_index);
         let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
         bitpacker.decompress_sorted(
             chunk.initial,

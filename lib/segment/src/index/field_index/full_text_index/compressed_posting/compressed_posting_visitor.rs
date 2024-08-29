@@ -21,7 +21,7 @@ pub struct CompressedPostingVisitor<'a> {
     /// It is used to shorten the search range in decompressed chunk for the next value.
     decompressed_chunk_start_index: usize,
 
-    // Check if the checked values are in the increasing order.
+    /// Check if the checked values are in the increasing order.
     #[cfg(test)]
     last_checked: Option<PointOffsetType>,
 }
@@ -126,12 +126,7 @@ impl<'a> CompressedPostingVisitor<'a> {
     pub fn get_by_offset(&mut self, offset: usize) -> Option<PointOffsetType> {
         let chunk_idx = offset / BitPackerImpl::BLOCK_LEN;
 
-        if chunk_idx > self.chunk_reader.chunks.len() {
-            // Offset out of range
-            return None;
-        }
-
-        if chunk_idx == self.chunk_reader.chunks.len() {
+        if chunk_idx >= self.chunk_reader.chunks.len() {
             // Reminder postings
             let reminder_idx = offset - self.chunk_reader.chunks.len() * BitPackerImpl::BLOCK_LEN;
             return self
