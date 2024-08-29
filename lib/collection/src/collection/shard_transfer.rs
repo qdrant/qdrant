@@ -202,6 +202,26 @@ impl Collection {
             .method
             .map_or(false, |method| method.is_resharding());
 
+        // Handle *destination* replica
+        let dest_replica_set =
+            shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
+
+        if let Some(replica_set) = dest_replica_set {
+            if replica_set.peer_state(&transfer.to).is_some() && !is_resharding_transfer {
+                // Promote *destination* replica/shard to `Active` if:
+                //
+                // - replica *exists*
+                //   - replica should be created when shard transfer (or resharding) is started
+                //   - replica might *not* exist, if it (or the whole *peer*) was removed right
+                //     before transfer is finished
+                // - transfer is *not* resharding
+                //   - resharding requires multiple transfers, so destination shard is promoted
+                //     *explicitly* when all transfers are finished
+
+                replica_set.set_replica_state(&transfer.to, ReplicaState::Active)?;
+            }
+        }
+
         // Handle *source* replica
         let src_replica_set = shard_holder.get_shard(&transfer.shard_id);
 
@@ -222,26 +242,6 @@ impl Collection {
                 } else {
                     replica_set.remove_remote(transfer.from).await?;
                 }
-            }
-        }
-
-        // Handle *destination* replica
-        let dest_replica_set =
-            shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
-
-        if let Some(replica_set) = dest_replica_set {
-            if replica_set.peer_state(&transfer.to).is_some() && !is_resharding_transfer {
-                // Promote *destination* replica/shard to `Active` if:
-                //
-                // - replica *exists*
-                //   - replica should be created when shard transfer (or resharding) is started
-                //   - replica might *not* exist, if it (or the whole *peer*) was removed right
-                //     before transfer is finished
-                // - transfer is *not* resharding
-                //   - resharding requires multiple transfers, so destination shard is promoted
-                //     *explicitly* when all transfers are finished
-
-                replica_set.set_replica_state(&transfer.to, ReplicaState::Active)?;
             }
         }
 
