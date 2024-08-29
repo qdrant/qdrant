@@ -23,6 +23,7 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
+use super::config_diff::StrictModeConfig;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
@@ -428,11 +429,27 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
+                strict_mode_config: config.strict_mode_config.map(From::from),
             }),
             payload_schema: payload_schema
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
+        }
+    }
+}
+
+impl From<StrictModeConfig> for api::grpc::qdrant::StrictModeConfig {
+    fn from(value: StrictModeConfig) -> Self {
+        api::grpc::qdrant::StrictModeConfig {
+            enabled: value.enabled,
+            max_query_limit: value.max_query_limit.map(|i| i as u32),
+            max_timeout: value.max_timeout.map(|i| i as u32),
+            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
+            unindexed_filtering_update: value.unindexed_filtering_update,
+            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as u32),
+            search_allow_exact: value.search_allow_exact,
+            search_max_oversampling: value.search_max_oversampling.map(|i| i as f32),
         }
     }
 }
@@ -760,6 +777,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
+            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
         })
     }
 }
@@ -806,6 +824,21 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                     .try_collect()?,
             }),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
+    fn from(value: api::grpc::qdrant::StrictModeConfig) -> Self {
+        Self {
+            enabled: value.enabled,
+            max_query_limit: value.max_query_limit.map(|i| i as usize),
+            max_timeout: value.max_timeout.map(|i| i as usize),
+            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
+            unindexed_filtering_update: value.unindexed_filtering_update,
+            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
+            search_allow_exact: value.search_allow_exact,
+            search_max_oversampling: value.search_max_oversampling.map(f64::from),
         }
     }
 }
