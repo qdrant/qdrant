@@ -1,3 +1,4 @@
+import uuid
 from math import isclose
 
 import pytest
@@ -7,7 +8,9 @@ from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
 
 collection_name = "test_query"
 lookup_collection_name = "test_collection_lookup"
-
+uuid_1 = str(uuid.uuid4())
+uuid_2 = str(uuid.uuid4())
+uuid_3 = str(uuid.uuid4())
 
 @pytest.fixture(autouse=True, scope="module")
 def setup(on_disk_vectors):
@@ -32,6 +35,38 @@ def setup(on_disk_vectors):
         body={"field_name": "count", "field_schema": "integer"},
     )
     assert response.ok, response.text
+
+    # UUID index
+    def set_payload(payload, points):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points/payload',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'true'},
+            body={
+                "payload": payload,
+                "points": points
+            }
+        )
+        assert response.ok
+
+    # create payload
+    set_payload({"uuid": uuid_1}, [1])
+    set_payload({"uuid": uuid_2}, [2])
+    set_payload({"uuid": uuid_3}, [3])
+
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "uuid",
+            "field_schema": "uuid"
+        }
+    )
+    assert response.ok
 
     yield
     drop_collection(collection_name=collection_name)
@@ -135,38 +170,105 @@ def test_query_by_id():
 
 
 def test_filtered_query():
-    filter = {
-        "must": [
-            {
-                "key": "city",
-                "match": {
-                    "value": "Berlin"
+    filters = [
+        {
+            "must": [
+                {
+                    "key": "city",
+                    "match": {
+                        "value": "Berlin"
+                    }
                 }
-            }
-        ]
-    }
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/search",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "vector": {
-                "name": "dense-image",
-                "vector": [0.1, 0.2, 0.3, 0.4],
-            },
-            "filter": filter,
-            "limit": 10,
+            ]
         },
-    )
-    assert response.ok, response.text
-    search_result = response.json()["result"]
+        {
+            "must_not": [
+                {
+                    "key": "city",
+                    "match": {
+                        "value": "Berlin"
+                    }
+                }
+            ]
+        },
+        {
+            "should": [
+                {
+                    "key": "city",
+                    "match": {
+                        "value": "Berlin"
+                    }
+                }
+            ]
+        },
+        {
+            "min_should": {
+                "conditions": [
+                    {
+                        "key": "city",
+                        "match": {
+                            "any": ["Berlin", "Moscow"]
+                        }
+                    },
+                    {
+                        "key": "count",
+                        "match": {
+                            "value": 0
+                        }
+                    }
+                ],
+                "min_count": 2
+            }
+        }
+    ]
+    for filter in filters:
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/search",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "vector": {
+                    "name": "dense-image",
+                    "vector": [0.1, 0.2, 0.3, 0.4],
+                },
+                "filter": filter,
+                "limit": 10,
+            },
+        )
+        assert response.ok, response.text
+        search_result = response.json()["result"]
 
-    default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter)
+        default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter)
 
-    nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter)
+        nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter)
 
-    assert search_result == default_query_result
-    assert search_result == nearest_query_result
+        assert search_result == default_query_result
+        assert search_result == nearest_query_result
+
+
+def test_uuid_index_filtered_query():
+    filters_arr = get_uuid_index_filters()
+
+    for item in filters_arr:
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/search",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "vector": {"vector": [0.1, 0.2, 0.3, 0.4], "name": "dense-image"},
+                "filter": item,
+                "limit": 10,
+            },
+        )
+        assert response.ok, f"{response.text}\n{item}"
+        search_result = response.json()["result"]
+
+        default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter=item)
+
+        nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter=item)
+
+        assert search_result == default_query_result
+        assert search_result == nearest_query_result
 
 
 def test_scroll():
@@ -234,7 +336,49 @@ def test_filtered_scroll():
         assert record.get("payload") == scored_point.get("payload")
 
 
-def test_recommend_avg():
+def get_uuid_index_filters():
+    # Check different filters
+    filters_arr = []
+    match_conditions = [
+        {"value": uuid_1},
+        {"text": uuid_2},
+        {"any": [uuid_1, uuid_2]},
+        {"except": [uuid_1, uuid_2]}
+    ]
+
+    for item in ["must", "must_not", "should"]:
+        for condition in match_conditions:
+            filters_arr.append(
+                {
+                    item: [
+                        {
+                            "key": "uuid",
+                            "match": condition
+                        }
+                    ]
+                }
+            )
+
+    # min_should
+    for condition in match_conditions:
+        filters_arr.append(
+            {
+                "min_should": {
+                    "conditions": [
+                        {
+                            "key": "uuid",
+                            "match": condition
+                        }
+                    ],
+                "min_count": 2
+            }
+            }
+        )
+    return filters_arr
+
+
+@pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
+def test_recommend_avg(query_filter):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
@@ -244,6 +388,7 @@ def test_recommend_avg():
             "negative": [3],
             "limit": 10,
             "using": "dense-image",
+            "filter": query_filter
         },
     )
     assert response.ok, response.text
@@ -254,6 +399,7 @@ def test_recommend_avg():
             "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},
         },
         "dense-image",
+        filter=query_filter
     )
 
     assert recommend_result == query_result
@@ -644,7 +790,8 @@ def test_recommend_best_score():
     assert recommend_result == query_result
 
 
-def test_discover():
+@pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
+def test_discover(query_filter):
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover",
         method="POST",
@@ -654,6 +801,7 @@ def test_discover():
             "context": [{"positive": 3, "negative": 4}],
             "limit": 10,
             "using": "dense-image",
+            "filter": query_filter
         },
     )
     assert response.ok, response.text
@@ -666,7 +814,8 @@ def test_discover():
                 "context": [{"positive": 3, "negative": 4}],
             }
         },
-        "dense-image"
+        "dense-image",
+        filter=query_filter
     )
 
     assert discover_result == query_result
@@ -1312,3 +1461,195 @@ def test_random_rescore_with_offset():
     # Although prefetch limit is 1, offset should be propagated, so randomness is applied to points 1 and 2.
     # By this point we should've seen both points.
     assert False, f"after 100 tries, `seen` is expected to be {{1, 2}}, but it was {seen}"
+
+
+@pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
+def test_nearest_query_batch(query_filter):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "limit": 3,
+                    "vector": {
+                        "vector": [-1.9, 1.1, -1.1, 1.1],
+                        "name": "dense-image"
+                    },
+                    "with_payload": True,
+                    "filter": query_filter
+                },
+                {
+                    "limit": 3,
+                    "vector": {
+                        "vector": [0.19, 0.83, 0.75, -0.11],
+                        "name": "dense-image",
+                    },
+                    "with_payload": True,
+                    "filter": query_filter
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    search_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "limit": 3,
+                    "query": [-1.9, 1.1, -1.1, 1.1],
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                },
+                {
+                    "limit": 3,
+                    "query": [0.19, 0.83, 0.75, -0.11],
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    assert search_result[0] == query_result[0]["points"]
+    assert search_result[1] == query_result[1]["points"]
+
+
+@pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
+def test_recommend_batch(query_filter):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "positive": [1, 2, 3, 4],
+                    "negative": [3],
+                    "limit": 10,
+                    "using": "dense-image",
+                    "filter": query_filter,
+                    "with_payload": True,
+                },
+                {
+                    "positive": [3, 4],
+                    "negative": [4],
+                    "limit": 10,
+                    "using": "dense-image",
+                    "filter": query_filter,
+                    "with_payload": True,
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    search_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "limit": 10,
+                    "query": {"recommend": {"positive": [1, 2, 3, 4], "negative": [3]}},
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                },
+                {
+                    "limit": 10,
+                    "query": {"recommend": {"positive": [3, 4], "negative": [4]}},
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    assert search_result[0] == query_result[0]["points"]
+    assert search_result[1] == query_result[1]["points"]
+
+
+@pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
+def test_discover_batch(query_filter):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "target": 2,
+                    "context": [{"positive": 3, "negative": 4}],
+                    "limit": 10,
+                    "using": "dense-image",
+                    "filter": query_filter,
+                    "with_payload": True,
+                },
+                {
+                    "target": 4,
+                    "context": [{"positive": 1, "negative": 2}],
+                    "limit": 10,
+                    "using": "dense-image",
+                    "filter": query_filter,
+                    "with_payload": True,
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    search_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "limit": 10,
+                    "query": {
+                        "discover": {
+                            "target": 2,
+                            "context": [{"positive": 3, "negative": 4}],
+                        }
+                    },
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                },
+                {
+                    "limit": 10,
+                    "query": {
+                        "discover": {
+                            "target": 4,
+                            "context": [{"positive": 1, "negative": 2}],
+                        }
+                    },
+                    "using": "dense-image",
+                    "with_payload": True,
+                    "filter": query_filter
+                }
+            ]
+        },
+    )
+    assert response.ok, response.text
+    query_result = response.json()["result"]
+
+    assert search_result[0] == query_result[0]["points"]
+    assert search_result[1] == query_result[1]["points"]
