@@ -1621,17 +1621,21 @@ pub struct ValuesCount {
 }
 
 impl ValuesCount {
-    pub fn check_count(&self, value: &Value) -> bool {
+    pub fn check_count(&self, count: usize) -> bool {
+        self.lt.map_or(true, |x| count < x)
+            && self.gt.map_or(true, |x| count > x)
+            && self.lte.map_or(true, |x| count <= x)
+            && self.gte.map_or(true, |x| count >= x)
+    }
+
+    pub fn check_count_from(&self, value: &Value) -> bool {
         let count = match value {
             Value::Null => 0,
             Value::Array(array) => array.len(),
             _ => 1,
         };
 
-        self.lt.map_or(true, |x| count < x)
-            && self.gt.map_or(true, |x| count > x)
-            && self.lte.map_or(true, |x| count <= x)
-            && self.gte.map_or(true, |x| count >= x)
+        self.check_count(count)
     }
 }
 
