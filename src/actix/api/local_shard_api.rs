@@ -112,12 +112,17 @@ async fn count_points(
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
-    helpers::time(async move {
-        let WithFilter {
-            mut request,
-            hash_ring_filter,
-        } = request.into_inner();
+    let WithFilter {
+        mut request,
+        hash_ring_filter,
+    } = request.into_inner();
 
+    let pass = match check_strict_mode(&request, &path.collection, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
@@ -135,7 +140,7 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         points::do_count_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &path.collection,
             request,
             params.consistency,

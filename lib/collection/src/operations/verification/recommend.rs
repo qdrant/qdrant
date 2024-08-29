@@ -3,7 +3,7 @@ use crate::operations::types::RecommendRequest;
 
 impl StrictModeVerification for RecommendRequest {
     fn query_limit(&self) -> Option<usize> {
-        None
+        Some(self.recommend_request.limit)
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -11,7 +11,7 @@ impl StrictModeVerification for RecommendRequest {
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
-        None
+        self.recommend_request.filter.as_ref()
     }
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {

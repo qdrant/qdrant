@@ -9,7 +9,6 @@ use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_verification::check_strict_mode;
-// use storage::content_manager::collection_verification::CollectionRequestVerification;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 

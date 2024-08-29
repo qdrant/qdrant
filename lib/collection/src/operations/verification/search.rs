@@ -80,7 +80,8 @@ impl StrictModeVerification for SearchGroupsRequest {
     }
 
     fn request_exact(&self) -> Option<bool> {
-        self.search_group_request.params.as_ref().map(|i| i.exact)
+        // We already check this in `request_search_params`
+        None
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
