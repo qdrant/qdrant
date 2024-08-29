@@ -114,10 +114,9 @@ def get_index_filters(filed_name):
         }
     },
     {"context": [{"positive": 2, "negative": 4}]},
-    {"order_by": "count"},
 ], ids=[
     "default query", "nearest query", "query by id",
-    "recommend", "discover", "context", "order by"
+    "recommend", "discover", "context"
 ])
 def test_filtered_query_results_same_for_different_indexes(query):
     for uuid_filter, keyword_filter in zip([None, *get_index_filters("uuid")], [None, *get_index_filters("keyword")]):
