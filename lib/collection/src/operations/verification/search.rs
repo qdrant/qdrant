@@ -37,19 +37,19 @@ impl StrictModeVerification for SearchRequest {
         Ok(())
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         self.search_request.filter.as_ref()
     }
 
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         Some(self.search_request.limit)
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 }
@@ -66,19 +66,19 @@ impl StrictModeVerification for SearchRequestBatch {
         Ok(())
     }
 
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         None
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
 
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 }

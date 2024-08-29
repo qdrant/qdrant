@@ -21,20 +21,20 @@ pub trait StrictModeVerification {
     }
 
     /// Implement this to check the limit of a request.
-    fn request_query_limit(&self) -> Option<usize>;
+    fn query_limit(&self) -> Option<usize>;
 
     /// Implement this to check the timeout of a request.
-    fn request_timeout(&self) -> Option<usize>;
+    fn timeout(&self) -> Option<usize>;
 
     /// Verifies that all keys in the given filter have an index available. Only implement this
     /// if the filter operates on a READ-operation, like search.
     /// For filtered updates implement `request_indexed_filter_write`!
-    fn request_indexed_filter_read(&self) -> Option<&Filter>;
+    fn indexed_filter_read(&self) -> Option<&Filter>;
 
     /// Verifies that all keys in the given filter have an index available. Only implement this
     /// if the filter is used for FILTERED-updates like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
-    fn request_indexed_filter_write(&self) -> Option<&Filter>;
+    fn indexed_filter_write(&self) -> Option<&Filter>;
 
     /// Checks the request limit.
     fn check_request_query_limit(
@@ -42,7 +42,7 @@ pub trait StrictModeVerification {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         check_limit_opt(
-            self.request_query_limit(),
+            self.query_limit(),
             strict_mode_config.max_query_limit,
             "limit",
         )
@@ -53,11 +53,7 @@ pub trait StrictModeVerification {
         &self,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_limit_opt(
-            self.request_timeout(),
-            strict_mode_config.max_timeout,
-            "timeout",
-        )
+        check_limit_opt(self.timeout(), strict_mode_config.max_timeout, "timeout")
     }
 
     // Checks all filters use indexed fields only.
@@ -90,11 +86,11 @@ pub trait StrictModeVerification {
         };
 
         check_filter(
-            self.request_indexed_filter_read(),
+            self.indexed_filter_read(),
             strict_mode_config.unindexed_filtering_retrieve,
         )?;
         check_filter(
-            self.request_indexed_filter_write(),
+            self.indexed_filter_write(),
             strict_mode_config.unindexed_filtering_update,
         )?;
 
