@@ -163,6 +163,7 @@ pub struct CollectionConfig {
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default)]
     #[schemars(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfig>,
 }
 
