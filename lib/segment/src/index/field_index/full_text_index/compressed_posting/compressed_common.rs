@@ -18,7 +18,11 @@ pub struct CompressedPostingChunksIndex {
 /// It returns a list of chunks, a list of remaining ids that are not going to be compressed, and the compressed chunks data size
 pub fn estimate_chunks(
     posting_list: &[PointOffsetType],
-) -> (Vec<CompressedPostingChunksIndex>, Vec<PointOffsetType>, usize) {
+) -> (
+    Vec<CompressedPostingChunksIndex>,
+    Vec<PointOffsetType>,
+    usize,
+) {
     let bitpacker = BitPackerImpl::new();
 
     let mut chunks = Vec::with_capacity(posting_list.len() / BitPackerImpl::BLOCK_LEN);
