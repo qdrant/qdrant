@@ -1,5 +1,7 @@
 mod count;
 mod discovery;
+mod facet;
+mod local_shard;
 mod recommend;
 mod search;
 mod update;

@@ -166,6 +166,7 @@ async fn search_points_matrix_pairs(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TDOO check for strict mode!
     let timing = Instant::now();
 
     let SearchMatrixRequest {
@@ -201,6 +202,7 @@ async fn search_points_matrix_offsets(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TDOO check for strict mode!
     let timing = Instant::now();
 
     let SearchMatrixRequest {

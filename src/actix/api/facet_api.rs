@@ -2,13 +2,14 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{FacetRequest, FacetResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{process_response, process_response_error};
 
 #[post("/collections/{name}/facet")]
 async fn facet(
@@ -19,6 +20,11 @@ async fn facet(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
+
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, timing),
+    };
 
     let FacetRequest {
         facet_request,
@@ -33,7 +39,7 @@ async fn facet(
     };
 
     let response = dispatcher
-        .toc(&access)
+        .toc_new(&access, &pass)
         .facet(
             &collection.name,
             facet_params,
