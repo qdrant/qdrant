@@ -209,7 +209,7 @@ impl Collection {
             shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
 
         if let Some(replica_set) = dest_replica_set {
-            if replica_set.peer_state(&transfer.to).is_some() && !is_resharding_transfer {
+            if replica_set.peer_state(&transfer.to).is_some() {
                 // Promote *destination* replica/shard to `Active` if:
                 //
                 // - replica *exists*
@@ -220,8 +220,19 @@ impl Collection {
                 //   - resharding requires multiple transfers, so destination shard is promoted
                 //     *explicitly* when all transfers are finished
 
-                replica_set.set_replica_state(&transfer.to, ReplicaState::Active)?;
-                is_dest_replica_active = true;
+                let state = if is_resharding_transfer {
+                    ReplicaState::Resharding
+                } else {
+                    ReplicaState::Active
+                };
+
+                if transfer.to == self.this_peer_id {
+                    replica_set.set_replica_state(&transfer.to, state)?;
+                } else {
+                    replica_set.add_remote(transfer.to, state).await?;
+                }
+
+                is_dest_replica_active = state == ReplicaState::Active;
             }
         }
 
