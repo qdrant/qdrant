@@ -5,10 +5,10 @@ pub mod compressed_posting_list;
 pub mod compressed_posting_visitor;
 
 //
-//                               Posting Iterator
+//                               CompressedPostingIterator
 //                               Holds Current offset
 //                            ┌──────────────────────────────────────┐
-//                            │   Chunk Visitor                      │
+//                            │   CompressedPostingVisitor           │
 //                            │   Holds Uncompressed Context         │
 //                            │ ┌──────────────────────────────────┐ │
 //          PostingList       │ │                                  │ │
