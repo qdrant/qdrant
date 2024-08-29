@@ -167,4 +167,37 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_access_data_in_posting() {
+        let (posting, _all_offsets) =
+            CompressedPostingList::generate_compressed_posting_list_fixture(10);
+
+        let reader = posting.reader();
+
+        assert!(reader.contains(&0));
+        assert!(reader.contains(&10));
+        assert!(reader.contains(&400));
+        assert!(reader.contains(&8940));
+        assert!(reader.contains(&8950));
+        assert!(reader.contains(&8960));
+        assert!(reader.contains(&8970));
+        assert!(reader.contains(&8980));
+        assert!(reader.contains(&8990));
+        assert!(reader.contains(&9970));
+        assert!(reader.contains(&9980));
+
+        assert!(!reader.contains(&1));
+        assert!(!reader.contains(&11));
+        assert!(!reader.contains(&401));
+        assert!(!reader.contains(&9971));
+        assert!(!reader.contains(&9981));
+
+        let mut visitor = CompressedPostingVisitor::new(reader);
+
+        for i in 0..posting.len() {
+            let val = visitor.get_by_offset(i).expect("Value should be present");
+            assert_eq!(val, i as PointOffsetType * 10);
+        }
+    }
 }
