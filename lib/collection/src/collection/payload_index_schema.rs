@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PayloadKeyType};
+use segment::problems::unindexed_field;
+use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
@@ -83,5 +84,36 @@ impl Collection {
         let result = self.update_all_local(delete_index_operation, false).await?;
 
         Ok(result)
+    }
+
+    /// Returns an arbitrary payload key along with acceptable
+    /// schemas used by `filter` which can be indexed but currently is not.
+    /// If this function returns `None` all indexable keys in `filter` are indexed.
+    pub fn one_unindexed_key(
+        &self,
+        filter: &Filter,
+    ) -> Option<(JsonPath, Vec<PayloadFieldSchema>)> {
+        self.payload_index_schema.read().one_unindexed_key(filter)
+    }
+}
+
+impl PayloadIndexSchema {
+    /// Returns an arbitrary payload key with acceptable schemas
+    /// used by `filter` which can be indexed but currently is not.
+    /// If this function returns `None` all indexable keys in `filter` are indexed.
+    pub fn one_unindexed_key(
+        &self,
+        filter: &Filter,
+    ) -> Option<(JsonPath, Vec<PayloadFieldSchema>)> {
+        let mut extractor = unindexed_field::Extractor::new(&self.schema);
+
+        extractor.update_from_filter_once(None, filter);
+
+        // Get the first unindexed field from the extractor.
+        extractor
+            .unindexed_schema()
+            .iter()
+            .next()
+            .map(|(key, schema)| (key.clone(), schema.clone()))
     }
 }

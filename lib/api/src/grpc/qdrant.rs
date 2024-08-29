@@ -433,6 +433,30 @@ pub mod quantization_config_diff {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeConfig {
+    #[prost(bool, optional, tag = "1")]
+    pub enabled: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "2")]
+    #[validate(range(min = 1))]
+    pub max_query_limit: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "3")]
+    #[validate(range(min = 1))]
+    pub max_timeout: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "4")]
+    pub unindexed_filtering_retrieve: ::core::option::Option<bool>,
+    #[prost(bool, optional, tag = "5")]
+    pub unindexed_filtering_update: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "6")]
+    pub search_max_hnsw_ef: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "7")]
+    pub search_allow_exact: ::core::option::Option<bool>,
+    #[prost(float, optional, tag = "8")]
+    pub search_max_oversampling: ::core::option::Option<f32>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateCollection {
     /// Name of the collection
     #[prost(string, tag = "1")]
@@ -485,6 +509,9 @@ pub struct CreateCollection {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "16")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// Configuration for strict mode
+    #[prost(message, optional, tag = "17")]
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -620,6 +647,9 @@ pub struct CollectionConfig {
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
+    /// Configuration of strict mode.
+    #[prost(message, optional, tag = "6")]
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

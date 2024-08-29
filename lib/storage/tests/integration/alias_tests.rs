@@ -112,6 +112,7 @@ fn test_alias_operation() {
                         init_from: None,
                         quantization_config: None,
                         sharding_method: None,
+                        strict_mode_config: None,
                     },
                 )),
                 FULL_ACCESS.clone(),

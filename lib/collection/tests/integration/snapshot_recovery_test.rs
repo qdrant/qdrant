@@ -41,6 +41,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        strict_mode_config: Default::default(),
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();

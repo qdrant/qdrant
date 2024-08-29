@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::num::NonZeroU32;
 
 use merge::Merge;
@@ -83,6 +84,96 @@ pub struct HnswConfigDiff {
     /// Custom M param for additional payload-aware HNSW links. If not set, default M will be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_m: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
+pub struct StrictModeConfig {
+    // Global
+    /// Whether strict mode is enabled for a collection or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+
+    /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_query_limit: Option<usize>,
+
+    /// Max allowed `timeout` parameter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_timeout: Option<usize>,
+
+    /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_retrieve: Option<bool>,
+
+    /// Allow usage of unindexed fields in filtered updates (eg. delete by payload).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_update: Option<bool>,
+
+    // Search
+    /// Max HNSW value allowed in search parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_hnsw_ef: Option<usize>,
+
+    /// Whether exact search is allowed or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_allow_exact: Option<bool>,
+
+    /// Max oversampling value allowed in search.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_oversampling: Option<f64>,
+}
+
+impl Hash for StrictModeConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+        } = self;
+
+        enabled.hash(state);
+        max_query_limit.hash(state);
+        max_timeout.hash(state);
+        unindexed_filtering_retrieve.hash(state);
+        unindexed_filtering_update.hash(state);
+        search_max_hnsw_ef.hash(state);
+        search_allow_exact.hash(state);
+        search_max_oversampling.map(|i| i.to_le_bytes()).hash(state);
+    }
+}
+
+impl Eq for StrictModeConfig {}
+
+impl PartialEq for StrictModeConfig {
+    fn eq(&self, other: &Self) -> bool {
+        let Self {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+        } = self;
+
+        *enabled == other.enabled
+            && *max_query_limit == other.max_query_limit
+            && *max_timeout == other.max_timeout
+            && *unindexed_filtering_retrieve == other.unindexed_filtering_retrieve
+            && *unindexed_filtering_update == other.unindexed_filtering_update
+            && *search_max_hnsw_ef == other.search_max_hnsw_ef
+            && *search_allow_exact == other.search_allow_exact
+            && search_max_oversampling.map(|i| i.to_le_bytes())
+                == other.search_max_oversampling.map(|i| i.to_le_bytes())
+    }
 }
 
 #[derive(

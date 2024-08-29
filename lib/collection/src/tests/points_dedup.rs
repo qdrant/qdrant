@@ -55,6 +55,7 @@ async fn fixture() -> Collection {
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
+        strict_mode_config: Default::default(),
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
