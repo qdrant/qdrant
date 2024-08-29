@@ -2,7 +2,7 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;
-use storage::content_manager::collection_verification::CollectionRequestVerification;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -20,7 +20,7 @@ async fn count_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };

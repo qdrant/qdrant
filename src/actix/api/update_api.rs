@@ -8,7 +8,8 @@ use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::collection_verification::CollectionRequestVerification;
+use storage::content_manager::collection_verification::check_strict_mode;
+// use storage::content_manager::collection_verification::CollectionRequestVerification;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
@@ -67,10 +68,7 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -127,10 +125,7 @@ async fn delete_vectors(
     let timing = Instant::now();
 
     let operation = operation.into_inner();
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, timing),
     };
@@ -162,10 +157,7 @@ async fn set_payload(
 ) -> impl Responder {
     let operation = operation.into_inner();
 
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -195,10 +187,7 @@ async fn overwrite_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -227,10 +216,7 @@ async fn delete_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -259,10 +245,7 @@ async fn clear_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match operation
-        .check(&dispatcher, &access, &collection.name)
-        .await
-    {
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -296,9 +279,7 @@ async fn update_batch(
 
     let mut vpass = None;
     for operation in operations.operations.iter() {
-        let pass = match operation
-            .check(&dispatcher, &access, &collection.name)
-            .await
+        let pass = match check_strict_mode(operation, &collection.name, &dispatcher, &access).await
         {
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now()),

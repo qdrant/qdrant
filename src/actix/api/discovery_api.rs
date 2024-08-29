@@ -4,7 +4,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use futures::TryFutureExt;
 use itertools::Itertools;
-use storage::content_manager::collection_verification::CollectionRequestVerification;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -22,7 +22,7 @@ async fn discover_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
@@ -66,7 +66,7 @@ async fn discover_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };

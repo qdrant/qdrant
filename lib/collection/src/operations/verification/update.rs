@@ -6,7 +6,7 @@ use crate::operations::point_ops::PointsSelector;
 use crate::operations::vector_ops::DeleteVectors;
 
 impl StrictModeVerification for PointsSelector {
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         if let PointsSelector::FilterSelector(filter) = self {
             return Some(&filter.filter);
         }
@@ -14,15 +14,15 @@ impl StrictModeVerification for PointsSelector {
         None
     }
 
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         None
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
 
@@ -36,19 +36,19 @@ impl StrictModeVerification for PointsSelector {
 }
 
 impl StrictModeVerification for DeleteVectors {
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         None
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
 
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
 
@@ -62,19 +62,19 @@ impl StrictModeVerification for DeleteVectors {
 }
 
 impl StrictModeVerification for SetPayload {
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
 
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         None
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
 
@@ -88,19 +88,19 @@ impl StrictModeVerification for SetPayload {
 }
 
 impl StrictModeVerification for DeletePayload {
-    fn request_indexed_filter_write(&self) -> Option<&Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
 
-    fn request_query_limit(&self) -> Option<usize> {
+    fn query_limit(&self) -> Option<usize> {
         None
     }
 
-    fn request_timeout(&self) -> Option<usize> {
+    fn timeout(&self) -> Option<usize> {
         None
     }
 
-    fn request_indexed_filter_read(&self) -> Option<&Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
 

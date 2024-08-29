@@ -131,7 +131,7 @@ async fn search_point_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let pass = match request.check(&dispatcher, &access, &collection.name).await {
+    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
