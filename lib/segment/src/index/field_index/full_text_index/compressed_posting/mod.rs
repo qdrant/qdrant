@@ -19,7 +19,7 @@ pub mod compressed_posting_visitor;
 //         │              │   │ │  │               │               │ │
 //   ┌─────┤ ChunksIndex ◄┼───│─┼──┼── Ref         │               │ │
 //   │     │              │   │ │  │               │               │ │
-//   │     │ Reminder ◄───┼───│─┼──┼── Ref         │               │ │
+//   │     │ Remainder ◄──┼───│─┼──┼── Ref         │               │ │
 //   │     │              │   │ │  │               │               │ │
 //   │     └──────────────┘   │ │  └───────────────┘               │ │
 //   │                        │ │                                  │ │
@@ -34,7 +34,7 @@ pub mod compressed_posting_visitor;
 //   │     │              │
 //   └───► │ ChunksIndex ◄┼─
 //         │              │
-//         │ Reminder ◄───┼─
+//         │ Remainder ◄──┼─
 //         │              │
 //         └──────────────┘
 //

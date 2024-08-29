@@ -4,21 +4,21 @@ use common::types::PointOffsetType;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::BitPackerImpl;
 
-// Help structure to find intersection of compressed postings and set of sorted values.
-// This help structure reuse the decompressed chunk to avoid unnecessary decompression.
+/// Help structure to find intersection of compressed postings and set of sorted values.
+/// This help structure reuse the decompressed chunk to avoid unnecessary decompression.
 pub struct CompressedPostingVisitor<'a> {
     bitpacker: BitPackerImpl,
     chunk_reader: ChunkReader<'a>,
 
-    // Data for the decompressed chunk.
+    /// Data for the decompressed chunk.
     decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
 
-    // Index of the decompressed chunk.
-    // It is used to shorten the search range of chunk index for the next value.
+    /// Index of the decompressed chunk.
+    /// It is used to shorten the search range of chunk index for the next value.
     decompressed_chunk_idx: Option<usize>,
 
-    // start index of the decompressed chunk.
-    // It is used to shorten the search range in decompressed chunk for the next value.
+    /// start index of the decompressed chunk.
+    /// It is used to shorten the search range in decompressed chunk for the next value.
     decompressed_chunk_start_index: usize,
 
     // Check if the checked values are in the increasing order.
@@ -50,9 +50,9 @@ impl<'a> CompressedPostingVisitor<'a> {
         self.decompressed_chunk_start_index = 0;
     }
 
-    // Check if the next value is in the compressed posting list.
-    // This function reuses the decompressed chunk to avoid unnecessary decompression.
-    // It is useful when the visitor is used to check the values in the increasing order.
+    /// Check if the next value is in the compressed posting list.
+    /// This function reuses the decompressed chunk to avoid unnecessary decompression.
+    /// It is useful when the visitor is used to check the values in the increasing order.
     pub fn contains_next_and_advance(&mut self, val: &PointOffsetType) -> bool {
         #[cfg(test)]
         {

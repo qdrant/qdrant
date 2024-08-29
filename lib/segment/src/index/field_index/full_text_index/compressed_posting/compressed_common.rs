@@ -45,9 +45,7 @@ pub fn estimate_chunks(
 /// This function takes a sorted list of ids (posting list of a term) and compresses it into a byte array.
 ///
 /// Function requires a pre-allocated byte array to store compressed data.
-///
-/// Each chunk of compressed data is returned to the lambda function.
-/// Remainder is returned as a non-compressed list of ids in the function return value.
+/// Remainder is ignored.
 pub fn compress_posting(
     posting_list: &[PointOffsetType],
     chunks: &[CompressedPostingChunk],
