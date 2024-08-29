@@ -1,10 +1,9 @@
 import uuid
-from math import isclose
 
 import pytest
 
 from .helpers.collection_setup import drop_collection, full_collection_setup
-from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
+from .helpers.helpers import request_with_validation
 
 collection_name = "test_query"
 lookup_collection_name = "test_collection_lookup"
