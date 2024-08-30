@@ -103,7 +103,11 @@ pub trait StrictModeVerification {
         &self,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_limit_opt(self.timeout(), strict_mode_config.max_timeout, "timeout")
+        if let Some(timeout) = self.timeout() {
+            check_timeout(timeout, strict_mode_config)?;
+        }
+
+        Ok(())
     }
 
     // Checks all filters use indexed fields only.
