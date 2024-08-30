@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::types::{DetailsLevel, TelemetryDetail};
+use reqwest::Client;
 use segment::common::anonymize::Anonymize;
 use storage::rbac::Access;
 use tokio::sync::Mutex;
@@ -35,7 +36,7 @@ impl TelemetryReporter {
         }
     }
 
-    async fn report(&self) {
+    async fn report(&self, client: &Client) {
         let data = self
             .telemetry
             .lock()
@@ -43,7 +44,6 @@ impl TelemetryReporter {
             .prepare_data(&FULL_ACCESS, DETAIL)
             .await
             .anonymize();
-        let client = reqwest::Client::new();
         let data = serde_json::to_string(&data).unwrap();
         let _resp = client
             .post(&self.telemetry_url)
@@ -55,8 +55,9 @@ impl TelemetryReporter {
 
     pub async fn run(telemetry: Arc<Mutex<TelemetryCollector>>) {
         let reporter = Self::new(telemetry);
+        let client = Client::new();
         loop {
-            reporter.report().await;
+            reporter.report(&client).await;
             tokio::time::sleep(REPORTING_INTERVAL).await;
         }
     }
