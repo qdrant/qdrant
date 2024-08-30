@@ -66,7 +66,8 @@ impl Segment {
 
                 let iter = facet_index
                     .iter_filtered_counts_per_value(&context)
-                    .check_stop(|| is_stopped.load(Ordering::Relaxed));
+                    .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                    .filter(|hit| hit.count > 0);
 
                 Either::Right(iter)
             };
@@ -75,7 +76,8 @@ impl Segment {
             // just count how many points each value has
             let iter = facet_index
                 .iter_counts_per_value()
-                .check_stop(|| is_stopped.load(Ordering::Relaxed));
+                .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .filter(|hit| hit.count > 0);
 
             Either::Right(iter)
         };
