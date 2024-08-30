@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
 
+use common::tar_ext;
 use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
-use tar::Builder;
 use uuid::Uuid;
 
 use super::Segment;
@@ -724,7 +724,7 @@ impl SegmentEntry for Segment {
     fn take_snapshot(
         &self,
         temp_path: &Path,
-        snapshot_dir_path: &Path,
+        tar: &tar_ext::BuilderExt,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         let segment_id = self
@@ -738,22 +738,7 @@ impl SegmentEntry for Segment {
             return Ok(());
         }
 
-        log::debug!(
-            "Taking snapshot of segment {:?} into {snapshot_dir_path:?}",
-            self.current_path,
-        );
-
-        if !snapshot_dir_path.exists() {
-            return Err(OperationError::service_error(format!(
-                "the snapshot path {snapshot_dir_path:?} does not exist"
-            )));
-        }
-
-        if !snapshot_dir_path.is_dir() {
-            return Err(OperationError::service_error(format!(
-                "the snapshot path {snapshot_dir_path:?} is not a directory",
-            )));
-        }
+        log::debug!("Taking snapshot of segment {:?}", self.current_path);
 
         // flush segment to capture latest state
         self.flush(true, false)?;
@@ -772,45 +757,18 @@ impl SegmentEntry for Segment {
             .borrow()
             .take_database_snapshot(&payload_index_db_backup_path)?;
 
-        let archive_path = snapshot_dir_path.join(format!("{segment_id}.tar"));
+        tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
+            let mut builder = tar::Builder::new(writer);
+            builder.sparse(true);
 
-        // If `archive_path` exists, we still want to overwrite it
-        let file = File::create(&archive_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to create segment snapshot archive {archive_path:?}: {err}"
-            ))
-        })?;
+            builder
+                .append_dir_all(SNAPSHOT_PATH, &temp_path)
+                .map_err(|err| utils::tar::failed_to_append_error(&temp_path, err))?;
 
-        let mut builder = Builder::new(file);
-        builder.sparse(true);
+            let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
 
-        builder
-            .append_dir_all(SNAPSHOT_PATH, &temp_path)
-            .map_err(|err| utils::tar::failed_to_append_error(&temp_path, err))?;
-
-        let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
-
-        for vector_data in self.vector_data.values() {
-            for file in vector_data.vector_index.borrow().files() {
-                utils::tar::append_file_relative_to_base(
-                    &mut builder,
-                    &self.current_path,
-                    &file,
-                    &files,
-                )?;
-            }
-
-            for file in vector_data.vector_storage.borrow().files() {
-                utils::tar::append_file_relative_to_base(
-                    &mut builder,
-                    &self.current_path,
-                    &file,
-                    &files,
-                )?;
-            }
-
-            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
-                for file in quantized_vectors.files() {
+            for vector_data in self.vector_data.values() {
+                for file in vector_data.vector_index.borrow().files() {
                     utils::tar::append_file_relative_to_base(
                         &mut builder,
                         &self.current_path,
@@ -818,40 +776,62 @@ impl SegmentEntry for Segment {
                         &files,
                     )?;
                 }
+
+                for file in vector_data.vector_storage.borrow().files() {
+                    utils::tar::append_file_relative_to_base(
+                        &mut builder,
+                        &self.current_path,
+                        &file,
+                        &files,
+                    )?;
+                }
+
+                if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
+                    for file in quantized_vectors.files() {
+                        utils::tar::append_file_relative_to_base(
+                            &mut builder,
+                            &self.current_path,
+                            &file,
+                            &files,
+                        )?;
+                    }
+                }
             }
-        }
 
-        for file in self.payload_index.borrow().files() {
-            utils::tar::append_file_relative_to_base(
+            for file in self.payload_index.borrow().files() {
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    &files,
+                )?;
+            }
+
+            for file in self.id_tracker.borrow().files() {
+                utils::tar::append_file_relative_to_base(
+                    &mut builder,
+                    &self.current_path,
+                    &file,
+                    &files,
+                )?;
+            }
+
+            utils::tar::append_file(
                 &mut builder,
-                &self.current_path,
-                &file,
-                &files,
+                &self.current_path.join(SEGMENT_STATE_FILE),
+                &files.join(SEGMENT_STATE_FILE),
             )?;
-        }
 
-        for file in self.id_tracker.borrow().files() {
-            utils::tar::append_file_relative_to_base(
+            utils::tar::append_file(
                 &mut builder,
-                &self.current_path,
-                &file,
-                &files,
+                &self.current_path.join(VERSION_FILE),
+                &files.join(VERSION_FILE),
             )?;
-        }
 
-        utils::tar::append_file(
-            &mut builder,
-            &self.current_path.join(SEGMENT_STATE_FILE),
-            &files.join(SEGMENT_STATE_FILE),
-        )?;
+            builder.finish()?;
 
-        utils::tar::append_file(
-            &mut builder,
-            &self.current_path.join(VERSION_FILE),
-            &files.join(VERSION_FILE),
-        )?;
-
-        builder.finish()?;
+            Result::<_, OperationError>::Ok(())
+        })?;
 
         // remove tmp directory in background
         let _ = thread::spawn(move || {

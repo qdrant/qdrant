@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::tar_ext;
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
@@ -272,7 +273,7 @@ pub trait SegmentEntry {
     fn take_snapshot(
         &self,
         temp_path: &Path,
-        snapshot_dir_path: &Path,
+        tar: &tar_ext::BuilderExt,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()>;
 

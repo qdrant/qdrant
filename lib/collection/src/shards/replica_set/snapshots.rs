@@ -1,6 +1,8 @@
 use std::ops::Deref as _;
 use std::path::Path;
 
+use common::tar_ext;
+
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
@@ -13,22 +15,21 @@ impl ShardReplicaSet {
     pub async fn create_snapshot(
         &self,
         temp_path: &Path,
-        target_path: &Path,
+        tar: &tar_ext::BuilderExt,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
-            local
-                .create_snapshot(temp_path, target_path, save_wal)
-                .await?
+            local.create_snapshot(temp_path, tar, save_wal).await?
         }
 
         self.replica_state
-            .save_to(target_path.join(REPLICA_STATE_FILE))?;
+            .save_to_tar(tar, REPLICA_STATE_FILE)
+            .await?;
 
         let shard_config = ShardConfig::new_replica_set();
-        shard_config.save(target_path)?;
+        shard_config.save_to_tar(tar).await?;
         Ok(())
     }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -190,11 +191,11 @@ impl ForwardProxyShard {
     pub async fn create_snapshot(
         &self,
         temp_path: &Path,
-        target_path: &Path,
+        tar: &tar_ext::BuilderExt,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
-            .create_snapshot(temp_path, target_path, save_wal)
+            .create_snapshot(temp_path, tar, save_wal)
             .await
     }
 

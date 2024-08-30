@@ -1,11 +1,12 @@
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
 use atomicwrites::{AtomicFile, Error as AtomicWriteError};
+use common::tar_ext;
 use parking_lot::{Condvar, Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use serde::{Deserialize, Serialize};
 
@@ -146,6 +147,16 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
 
     pub fn save_to(&self, path: impl Into<PathBuf>) -> Result<(), Error> {
         Self::save_data_to(path, &self.data.read())
+    }
+
+    pub async fn save_to_tar(
+        &self,
+        tar: &tar_ext::BuilderExt,
+        path: impl AsRef<Path>,
+    ) -> Result<(), Error> {
+        let data_bytes = serde_json::to_vec(self.data.read().deref())?;
+        tar.append_data(data_bytes, path.as_ref()).await?;
+        Ok(())
     }
 
     pub async fn delete(self) -> std::io::Result<()> {

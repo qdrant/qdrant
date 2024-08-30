@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::cpu::CpuPermit;
-use itertools::Itertools as _;
+use common::tar_ext;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -132,35 +134,40 @@ fn test_on_disk_segment_snapshot() {
 
     let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
+    let snapshot_name = snapshot_dir.path().join("snapshot.tar");
 
     // take snapshot
+    let tar = tar_ext::BuilderExt::new(File::create(&snapshot_name).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), snapshot_dir.path(), &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, &mut HashSet::new())
         .unwrap();
-    let archive = snapshot_dir
-        .path()
-        .read_dir()
-        .unwrap()
-        .exactly_one()
-        .unwrap()
-        .unwrap()
-        .path();
-    let archive_extension = archive.extension().unwrap();
-    let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
+    tar.blocking_finish().unwrap();
 
-    // correct file extension
-    assert_eq!(archive_extension, "tar");
+    let mut tar = tar::Archive::new(File::open(&snapshot_name).unwrap());
+    let mut entries = tar.entries().unwrap();
+    let mut entry = entries.next().unwrap().unwrap();
 
-    // archive name contains segment id
+    // The archive entry should have a proper name.
     let segment_id = segment
         .current_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();
-    assert!(archive_name.starts_with(segment_id));
+    assert_eq!(
+        entry.path().unwrap(),
+        PathBuf::from(format!("{segment_id}.tar")),
+    );
+
+    entry
+        .unpack(snapshot_dir.path().join("segment-snapshot.tar"))
+        .unwrap();
 
     // restore snapshot
-    Segment::restore_snapshot(&archive, segment_id).unwrap();
+    Segment::restore_snapshot(
+        &snapshot_dir.path().join("segment-snapshot.tar"),
+        segment_id,
+    )
+    .unwrap();
 
     let restored_segment = load_segment(
         &snapshot_dir.path().join(segment_id),

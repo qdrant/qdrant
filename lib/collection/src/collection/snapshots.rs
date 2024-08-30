@@ -1,15 +1,17 @@
 use std::collections::HashSet;
+use std::fs::File;
 use std::path::Path;
 
+use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
-use tokio::fs;
 
 use super::Collection;
+use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::collection::CollectionVersion;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
-use crate::config::{CollectionConfig, ShardingMethod};
+use crate::config::{CollectionConfig, ShardingMethod, COLLECTION_CONFIG_FILE};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
@@ -62,19 +64,20 @@ impl Collection {
             snapshot_path
         );
 
-        // Dedicated temporary directory for this snapshot (deleted on drop)
-        let snapshot_temp_target_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_name}-target-"))
-            .tempdir_in(global_temp_dir)
+        // Dedicated temporary file for archiving this snapshot (deleted on drop)
+        let snapshot_temp_arc_file = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_name}-arc-"))
+            .tempfile_in(global_temp_dir)
             .map_err(|err| {
                 CollectionError::service_error(format!(
-                    "failed to create temporary snapshot directory {}/{snapshot_name}-target-XXXX: \
+                    "failed to create temporary snapshot directory {}/{snapshot_name}-arc-XXXX: \
                      {err}",
                     global_temp_dir.display(),
                 ))
             })?;
 
-        let snapshot_temp_target_dir_path = snapshot_temp_target_dir.path().to_path_buf();
+        let tar = BuilderExt::new(File::create(snapshot_temp_arc_file.path())?);
+
         // Create snapshot of each shard
         {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
@@ -90,80 +93,48 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
-                let shard_snapshot_path = shard_versioning::versioned_shard_path(
-                    &snapshot_temp_target_dir_path,
-                    *shard_id,
-                    0,
-                );
-                fs::create_dir_all(&shard_snapshot_path)
-                    .await
-                    .map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to create directory {}: {err}",
-                            shard_snapshot_path.display()
-                        ))
-                    })?;
+                let shard_snapshot_path =
+                    shard_versioning::versioned_shard_path(Path::new(""), *shard_id, 0);
 
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
                     .create_snapshot(
                         snapshot_temp_temp_dir.path(),
-                        &shard_snapshot_path,
+                        &tar.descend(&shard_snapshot_path)?,
                         save_wal,
                     )
                     .await
                     .map_err(|err| {
-                        CollectionError::service_error(format!(
-                            "failed to create snapshot {}: {err}",
-                            shard_snapshot_path.display()
-                        ))
+                        CollectionError::service_error(format!("failed to create snapshot: {err}"))
                     })?;
             }
         }
 
         // Save collection config and version
-        CollectionVersion::save(&snapshot_temp_target_dir_path)?;
-        self.collection_config
-            .read()
-            .await
-            .save(&snapshot_temp_target_dir_path)?;
+        tar.append_data(
+            CollectionVersion::current_raw().as_bytes().to_vec(),
+            Path::new(io::storage_version::VERSION_FILE),
+        )
+        .await?;
+
+        tar.append_data(
+            self.collection_config.read().await.to_bytes()?,
+            Path::new(COLLECTION_CONFIG_FILE),
+        )
+        .await?;
 
         self.shards_holder
             .read()
             .await
-            .save_key_mapping_to_dir(&snapshot_temp_target_dir_path)?;
+            .save_key_mapping_to_tar(&tar)
+            .await?;
 
-        let payload_index_schema_tmp_path =
-            Self::payload_index_file(&snapshot_temp_target_dir_path);
         self.payload_index_schema
-            .save_to(&payload_index_schema_tmp_path)?;
+            .save_to_tar(&tar, Path::new(PAYLOAD_INDEX_CONFIG_FILE))
+            .await?;
 
-        // Dedicated temporary file for archiving this snapshot (deleted on drop)
-        let mut snapshot_temp_arc_file = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_name}-arc-"))
-            .tempfile_in(global_temp_dir)
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to create temporary snapshot directory {}/{snapshot_name}-arc-XXXX: \
-                     {err}",
-                    global_temp_dir.display(),
-                ))
-            })?;
-
-        // Archive snapshot folder into a single file
-        log::debug!("Archiving snapshot {snapshot_temp_target_dir_path:?}");
-        let archiving = tokio::task::spawn_blocking(move || -> CollectionResult<_> {
-            let mut builder = tar::Builder::new(snapshot_temp_arc_file.as_file_mut());
-            builder.sparse(true);
-            // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
-            builder.append_dir_all(".", &snapshot_temp_target_dir_path)?;
-            builder.finish()?;
-            drop(builder);
-            // return ownership of the file
-            Ok(snapshot_temp_arc_file)
-        });
-        snapshot_temp_arc_file = archiving.await?.map_err(|err| {
+        tar.finish().await.map_err(|err| {
             CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
         })?;
 
