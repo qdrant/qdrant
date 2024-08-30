@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    compress_posting, estimate_chunks, BitPackerImpl, CompressedPostingChunksIndex,
+    compress_posting, BitPackerImpl, CompressedPostingChunksIndex,
 };
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
@@ -22,12 +22,7 @@ impl CompressedPostingList {
         if posting_list.is_empty() {
             return Self::default();
         }
-        let (chunks, remainder_postings, data_size) = estimate_chunks(posting_list);
-
-        // compressed data storage
-        let mut data = vec![0u8; data_size];
-
-        compress_posting(posting_list, &chunks, &mut data);
+        let (chunks, remainder_postings, data) = compress_posting(posting_list);
 
         Self {
             last_doc_id: *posting_list.last().unwrap(),

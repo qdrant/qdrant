@@ -16,7 +16,7 @@ pub struct CompressedPostingChunksIndex {
 /// This function takes posting list and estimates chunks layout for it.
 ///
 /// It returns a list of chunks, a list of remaining ids that are not going to be compressed, and the compressed chunks data size
-pub fn estimate_chunks(
+fn estimate_chunks(
     posting_list: &[PointOffsetType],
 ) -> (
     Vec<CompressedPostingChunksIndex>,
@@ -50,7 +50,7 @@ pub fn estimate_chunks(
 ///
 /// Function requires a pre-allocated byte array to store compressed data.
 /// Remainder is ignored.
-pub fn compress_posting(
+fn compress_chunks(
     posting_list: &[PointOffsetType],
     chunks: &[CompressedPostingChunksIndex],
     data: &mut [u8],
@@ -71,4 +71,21 @@ pub fn compress_posting(
             chunk_bits as u8,
         );
     }
+}
+
+pub fn compress_posting(
+    posting_list: &[PointOffsetType],
+) -> (
+    Vec<CompressedPostingChunksIndex>,
+    Vec<PointOffsetType>,
+    Vec<u8>,
+) {
+    let (chunks, remainder_postings, data_size) = estimate_chunks(posting_list);
+
+    // compressed data storage
+    let mut data = vec![0u8; data_size];
+
+    compress_chunks(posting_list, &chunks, &mut data);
+
+    (chunks, remainder_postings, data)
 }
