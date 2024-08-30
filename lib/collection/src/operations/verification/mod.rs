@@ -2,6 +2,8 @@ mod count;
 mod discovery;
 mod facet;
 mod local_shard;
+mod matrix;
+mod query;
 mod recommend;
 mod search;
 mod update;

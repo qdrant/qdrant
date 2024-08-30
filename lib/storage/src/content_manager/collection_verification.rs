@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use collection::operations::verification::{new_pass, StrictModeVerification, VerificationPass};
@@ -7,12 +8,15 @@ use super::toc::TableOfContent;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements};
 
-pub async fn check_strict_mode(
-    request: &impl StrictModeVerification,
+pub async fn check_strict_mode_batch<'a, I>(
+    requests: impl Iterator<Item = &'a I>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,
-) -> Result<VerificationPass, StorageError> {
+) -> Result<VerificationPass, StorageError>
+where
+    I: StrictModeVerification + 'a,
+{
     let toc = get_toc_without_verification_pass(dispatcher, access);
 
     // Check access here first since strict-mode gets checked before `access`.
@@ -23,11 +27,22 @@ pub async fn check_strict_mode(
     let collection = toc.get_collection(&collection_pass).await?;
     if let Some(strict_mode_config) = &collection.strict_mode_config().await {
         if strict_mode_config.enabled.unwrap_or_default() {
-            request.check_strict_mode(&collection, strict_mode_config)?;
+            for request in requests {
+                request.check_strict_mode(&collection, strict_mode_config)?;
+            }
         }
     }
 
     Ok(new_pass())
+}
+
+pub async fn check_strict_mode(
+    request: &impl StrictModeVerification,
+    collection_name: &str,
+    dispatcher: &Dispatcher,
+    access: &Access,
+) -> Result<VerificationPass, StorageError> {
+    check_strict_mode_batch(iter::once(request), collection_name, dispatcher, access).await
 }
 
 /// Returns the `TableOfContents` from `dispatcher` without needing a validity check.

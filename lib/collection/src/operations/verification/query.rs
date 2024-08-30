@@ -1,9 +1,10 @@
-use super::StrictModeVerification;
-use crate::operations::types::{RecommendGroupsRequestInternal, RecommendRequestInternal};
+use api::rest::{QueryGroupsRequestInternal, QueryRequestInternal};
 
-impl StrictModeVerification for RecommendRequestInternal {
+use super::StrictModeVerification;
+
+impl StrictModeVerification for QueryRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit)
+        self.limit
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -23,11 +24,11 @@ impl StrictModeVerification for RecommendRequestInternal {
     }
 
     fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
-        None
+        self.params.as_ref()
     }
 }
 
-impl StrictModeVerification for RecommendGroupsRequestInternal {
+impl StrictModeVerification for QueryGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
         None
     }
