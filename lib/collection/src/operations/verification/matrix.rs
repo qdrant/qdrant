@@ -4,7 +4,7 @@ use super::StrictModeVerification;
 
 impl StrictModeVerification for SearchMatrixRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit)
+        self.limit
     }
 
     fn timeout(&self) -> Option<usize> {

@@ -67,10 +67,11 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -124,10 +125,11 @@ async fn delete_vectors(
     let timing = Instant::now();
 
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, timing),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, timing),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -156,10 +158,11 @@ async fn set_payload(
 ) -> impl Responder {
     let operation = operation.into_inner();
 
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -186,10 +189,11 @@ async fn overwrite_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
@@ -215,10 +219,11 @@ async fn delete_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
@@ -244,10 +249,11 @@ async fn clear_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -278,7 +284,8 @@ async fn update_batch(
 
     let mut vpass = None;
     for operation in operations.operations.iter() {
-        let pass = match check_strict_mode(operation, &collection.name, &dispatcher, &access).await
+        let pass = match check_strict_mode(operation, None, &collection.name, &dispatcher, &access)
+            .await
         {
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now()),

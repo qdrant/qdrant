@@ -1,7 +1,9 @@
 use std::iter;
 use std::sync::Arc;
 
-use collection::operations::verification::{new_pass, StrictModeVerification, VerificationPass};
+use collection::operations::verification::{
+    check_timeout, new_pass, StrictModeVerification, VerificationPass,
+};
 
 use super::errors::StorageError;
 use super::toc::TableOfContent;
@@ -10,6 +12,7 @@ use crate::rbac::{Access, AccessRequirements};
 
 pub async fn check_strict_mode_batch<'a, I>(
     requests: impl Iterator<Item = &'a I>,
+    timeout: Option<usize>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,
@@ -30,6 +33,10 @@ where
             for request in requests {
                 request.check_strict_mode(&collection, strict_mode_config)?;
             }
+
+            if let Some(timeout) = timeout {
+                check_timeout(timeout, strict_mode_config)?;
+            }
         }
     }
 
@@ -38,11 +45,19 @@ where
 
 pub async fn check_strict_mode(
     request: &impl StrictModeVerification,
+    timeout: Option<usize>,
     collection_name: &str,
     dispatcher: &Dispatcher,
     access: &Access,
 ) -> Result<VerificationPass, StorageError> {
-    check_strict_mode_batch(iter::once(request), collection_name, dispatcher, access).await
+    check_strict_mode_batch(
+        iter::once(request),
+        timeout,
+        collection_name,
+        dispatcher,
+        access,
+    )
+    .await
 }
 
 /// Returns the `TableOfContents` from `dispatcher` without needing a validity check.

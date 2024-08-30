@@ -37,11 +37,18 @@ async fn recommend_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&recommend_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &recommend_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -104,6 +111,7 @@ async fn recommend_batch_points(
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.recommend_request),
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,
@@ -153,6 +161,7 @@ async fn recommend_point_groups(
 
     let pass = match check_strict_mode(
         &recommend_group_request,
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,

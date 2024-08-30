@@ -143,11 +143,18 @@ async fn scroll_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&scroll_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &scroll_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,

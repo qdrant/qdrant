@@ -163,6 +163,13 @@ pub trait StrictModeVerification {
     }
 }
 
+pub fn check_timeout(
+    timeout: usize,
+    strict_mode_config: &StrictModeConfig,
+) -> Result<(), CollectionError> {
+    check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
+}
+
 pub(crate) fn check_bool_opt(
     value: Option<bool>,
     allowed: Option<bool>,

@@ -32,7 +32,14 @@ async fn query_points(
         shard_key,
     } = request.into_inner();
 
-    let pass = match check_strict_mode(&query_request, &collection.name, &dispatcher, &access).await
+    let pass = match check_strict_mode(
+        &query_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
     {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
@@ -79,6 +86,7 @@ async fn query_points_batch(
 
     let pass = match check_strict_mode_batch(
         searches.iter().map(|i| &i.internal),
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,
@@ -147,6 +155,7 @@ async fn query_points_groups(
 
     let pass = match check_strict_mode(
         &search_group_request,
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,

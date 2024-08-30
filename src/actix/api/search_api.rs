@@ -35,11 +35,18 @@ async fn search_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&search_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -95,6 +102,7 @@ async fn batch_search_points(
 
     let pass = match check_strict_mode_batch(
         requests.iter().map(|i| &i.0),
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,
@@ -144,6 +152,7 @@ async fn search_point_groups(
 
     let pass = match check_strict_mode(
         &search_group_request,
+        params.timeout_usize(),
         &collection.name,
         &dispatcher,
         &access,
@@ -186,11 +195,18 @@ async fn search_points_matrix_pairs(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&search_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -227,11 +243,18 @@ async fn search_points_matrix_offsets(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&search_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_usize(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
