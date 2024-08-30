@@ -3,11 +3,12 @@ use std::collections::{BTreeSet, HashMap};
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
-use super::posting_list::{CompressedPostingList, PostingList};
+use super::posting_list::PostingList;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, intersect_postings_iterator,
 };
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
@@ -548,7 +549,12 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
         let postings: Vec<Option<CompressedPostingList>> = index
             .postings
             .into_iter()
-            .map(|x| x.map(CompressedPostingList::new))
+            .map(|opt_posting| {
+                opt_posting
+                    .map(PostingList::into_vec)
+                    .as_deref()
+                    .map(CompressedPostingList::new)
+            })
             .collect();
         index.vocab.shrink_to_fit();
 
