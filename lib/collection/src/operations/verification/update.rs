@@ -7,11 +7,10 @@ use crate::operations::vector_ops::DeleteVectors;
 
 impl StrictModeVerification for PointsSelector {
     fn indexed_filter_write(&self) -> Option<&Filter> {
-        if let PointsSelector::FilterSelector(filter) = self {
-            return Some(&filter.filter);
+        match self {
+            PointsSelector::FilterSelector(filter) => Some(&filter.filter),
+            PointsSelector::PointIdsSelector(_) => None,
         }
-
-        None
     }
 
     fn query_limit(&self) -> Option<usize> {
