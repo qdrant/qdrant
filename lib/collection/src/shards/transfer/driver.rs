@@ -16,8 +16,7 @@ use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAs
 use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::replica_set::ReplicaState;
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
 use crate::shards::CollectionId;
 
@@ -177,89 +176,6 @@ pub async fn revert_proxy_shard_to_local(
 
     // Un-proxify local shard
     replica_set.un_proxify_local().await?;
-
-    Ok(true)
-}
-
-pub async fn change_remote_shard_route(
-    shard_holder: &ShardHolder,
-    from_shard_id: ShardId,
-    to_shard_id: ShardId,
-    old_peer_id: PeerId,
-    new_peer_id: PeerId,
-    state: ReplicaState,
-    sync: bool,
-) -> CollectionResult<bool> {
-    let from_replica_set = match shard_holder.get_shard(&from_shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
-    let to_replica_set = match shard_holder.get_shard(&to_shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
-
-    if to_replica_set.this_peer_id() != new_peer_id {
-        to_replica_set.add_remote(new_peer_id, state).await?;
-    }
-
-    if !sync {
-        // Transfer was a move, we need to remove the old peer
-        from_replica_set.remove_remote(old_peer_id).await?;
-    }
-    Ok(true)
-}
-
-/// Mark partial shard as ready
-///
-/// Returns `true` if the shard was promoted, `false` if the shard was not found.
-pub async fn finalize_partial_shard(
-    shard_holder: &ShardHolder,
-    shard_id: ShardId,
-) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
-
-    if !replica_set.has_local_shard().await {
-        return Ok(false);
-    }
-
-    replica_set.set_replica_state(&replica_set.this_peer_id(), ReplicaState::Active)?;
-    Ok(true)
-}
-
-/// Promotes wrapped local shard to remote shard
-///
-/// Returns true if the shard was promoted, false if it was already handled
-pub async fn handle_transferred_shard_proxy(
-    shard_holder: &ShardHolder,
-    shard_id: ShardId,
-    to: PeerId,
-    activate_shard: bool,
-    sync: bool,
-) -> CollectionResult<bool> {
-    // TODO: Ensure cancel safety!
-
-    let replica_set = match shard_holder.get_shard(&shard_id) {
-        None => return Ok(false),
-        Some(replica_set) => replica_set,
-    };
-
-    if activate_shard {
-        replica_set.add_remote(to, ReplicaState::Active).await?;
-    }
-
-    if sync {
-        // Keep local shard in the replica set
-        replica_set.un_proxify_local().await?;
-    } else {
-        // Remove local proxy
-        //
-        // TODO: Ensure cancel safety!
-        replica_set.remove_local().await?;
-    }
 
     Ok(true)
 }
