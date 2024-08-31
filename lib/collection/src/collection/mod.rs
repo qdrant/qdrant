@@ -372,16 +372,33 @@ impl Collection {
         let current_state = replica_set.peer_state(&peer_id);
 
         // Validation:
-        // 0. Check that `from_state` matches current state
+        //
+        // 1. Check that peer exists in the cluster (peer might *not* exist, if it was removed from
+        //    the cluster right before `SetShardReplicaSet` was proposed)
+        let peer_exists = self
+            .channel_service
+            .id_to_address
+            .read()
+            .contains_key(&peer_id);
 
+        let replica_exists = replica_set.peer_state(&peer_id).is_some();
+
+        if !peer_exists && !replica_exists {
+            return Err(CollectionError::bad_input(format!(
+                "Can't set replica {peer_id}:{shard_id} state to {state:?}, \
+                 because replica {peer_id}:{shard_id} does not exist \
+                 and peer {peer_id} is not part of the cluster"
+            )));
+        }
+
+        // 2. Check that `from_state` matches current state
         if from_state.is_some() && current_state != from_state {
             return Err(CollectionError::bad_input(format!(
                 "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
             )));
         }
 
-        // 1. Do not deactivate the last active replica
-
+        // 3. Do not deactivate the last active replica
         if state != ReplicaState::Active {
             let active_replicas: HashSet<_> = replica_set
                 .peers()
