@@ -13,9 +13,7 @@ use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
 use crate::shards::transfer;
-use crate::shards::transfer::transfer_tasks_pool::{
-    TaskResult, TransferTaskItem, TransferTaskProgress,
-};
+use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
@@ -191,9 +189,7 @@ impl Collection {
             .stop_task(&transfer.key())
             .await;
 
-        let transfer_finished = transfer_result == Some(TaskResult::Finished);
-
-        log::debug!("transfer_finished: {transfer_finished}");
+        log::debug!("Transfer result: {transfer_result:?}");
 
         let mut shard_holder_guard = None;
 
@@ -202,72 +198,71 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        // Should happen on transfer side
-        // Unwrap forward proxy into local shard, or replace it with remote shard
-        // depending on the `sync` flag.
-        if self.this_peer_id == transfer.from {
-            // Normally we promote the shard to become active, in case of resharding we do not.
-            // For resharding we have multiple transfers in sequence, during which the shard should
-            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
-            let activate_shard = transfer
-                .method
-                .map_or(true, |method| !method.is_resharding());
-            let proxy_promoted = transfer::driver::handle_transferred_shard_proxy(
-                shard_holder,
-                transfer.shard_id,
-                transfer.to,
-                activate_shard,
-                transfer.sync,
-            )
-            .await?;
-            log::debug!("proxy_promoted: {proxy_promoted}");
+        let is_resharding_transfer = transfer
+            .method
+            .map_or(false, |method| method.is_resharding());
+
+        // Handle *destination* replica
+        let mut is_dest_replica_active = false;
+
+        let dest_replica_set =
+            shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
+
+        if let Some(replica_set) = dest_replica_set {
+            if replica_set.peer_state(&transfer.to).is_some() {
+                // Promote *destination* replica/shard to `Active` if:
+                //
+                // - replica *exists*
+                //   - replica should be created when shard transfer (or resharding) is started
+                //   - replica might *not* exist, if it (or the whole *peer*) was removed right
+                //     before transfer is finished
+                // - transfer is *not* resharding
+                //   - resharding requires multiple transfers, so destination shard is promoted
+                //     *explicitly* when all transfers are finished
+
+                let state = if is_resharding_transfer {
+                    ReplicaState::Resharding
+                } else {
+                    ReplicaState::Active
+                };
+
+                if transfer.to == self.this_peer_id {
+                    replica_set.set_replica_state(&transfer.to, state)?;
+                } else {
+                    replica_set.add_remote(transfer.to, state).await?;
+                }
+
+                is_dest_replica_active = state == ReplicaState::Active;
+            }
         }
 
-        // Should happen on receiving side
-        // Promote partial shard to active shard
-        // In case of resharding we manually promote the shard, and there are no partial shards
-        if self.this_peer_id == transfer.to
-            && !transfer
-                .method
-                .map_or(false, |method| method.is_resharding())
-        {
-            let shard_promoted =
-                transfer::driver::finalize_partial_shard(shard_holder, transfer.shard_id).await?;
-            log::debug!(
-                "shard_promoted: {shard_promoted}, shard_id: {}, peer_id: {}",
-                transfer.shard_id,
-                self.this_peer_id,
-            );
+        // Handle *source* replica
+        let src_replica_set = shard_holder.get_shard(&transfer.shard_id);
+
+        if let Some(replica_set) = src_replica_set {
+            if transfer.sync || is_resharding_transfer {
+                // If transfer is *sync* (or *resharding*), we *keep* source replica
+
+                if transfer.from == self.this_peer_id {
+                    // If current peer is *transfer-sender*, we need to unproxify local shard
+
+                    replica_set.un_proxify_local().await?;
+                }
+            } else if is_dest_replica_active {
+                // If transfer is *not* sync (and *not* resharding) and *destination* replica is `Active`,
+                // we *remove* source replica
+
+                if transfer.from == self.this_peer_id {
+                    replica_set.remove_local().await?;
+                } else {
+                    replica_set.remove_remote(transfer.from).await?;
+                }
+            }
         }
 
-        // Should happen on a third-party side
-        // Change direction of the remote shards or add a new remote shard
-        if self.this_peer_id != transfer.from {
-            // Normally we promote the shard to become active, in case of resharding we do not.
-            // For resharding we have multiple transfers in sequence, during which the shard should
-            // remain in the resharding state. Once all are done, the shard is manually promoted to active.
-            let state = if transfer
-                .method
-                .map_or(false, |method| method.is_resharding())
-            {
-                ReplicaState::Resharding
-            } else {
-                ReplicaState::Active
-            };
-            let remote_shard_rerouted = transfer::driver::change_remote_shard_route(
-                shard_holder,
-                transfer.shard_id,
-                transfer.to_shard_id.unwrap_or(transfer.shard_id),
-                transfer.from,
-                transfer.to,
-                state,
-                transfer.sync,
-            )
-            .await?;
-            log::debug!("remote_shard_rerouted: {remote_shard_rerouted}");
-        }
-        let finish_was_registered = shard_holder.register_finish_transfer(&transfer.key())?;
-        log::debug!("finish_was_registered: {finish_was_registered}");
+        let is_finish_registered = shard_holder.register_finish_transfer(&transfer.key())?;
+        log::debug!("Transfer finish registered: {is_finish_registered}");
+
         Ok(())
     }
 

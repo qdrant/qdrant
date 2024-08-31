@@ -586,6 +586,7 @@ impl TableOfContent {
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
+
                 collection.finish_shard_transfer(transfer, None).await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
