@@ -59,7 +59,7 @@ use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
+use crate::shards::shard_config::ShardConfig;
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
@@ -813,11 +813,6 @@ impl LocalShard {
         .await??;
 
         LocalShardClocks::copy_data(&self.path, snapshot_shard_path).await?;
-
-        // copy shard's config
-        let shard_config_path = ShardConfig::get_config_path(&self.path);
-        let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
-        copy(&shard_config_path, &target_shard_config_path).await?;
 
         Ok(())
     }
