@@ -115,7 +115,7 @@ impl TableOfContent {
                 .expect("Can't access of one of the collection files")
                 .path();
 
-            if !CollectionConfig::check(&collection_path) {
+            if !CollectionConfig::check_config_file_exists(&collection_path) {
                 log::warn!(
                     "Collection config is not found in the collection directory: {}, skipping",
                     collection_path.display(),
@@ -574,7 +574,7 @@ impl TableOfContent {
         let path = self.get_collection_path(collection_name);
 
         if path.exists() {
-            if CollectionConfig::check(&path) {
+            if CollectionConfig::check_config_file_exists(&path) {
                 return Err(StorageError::bad_input(format!(
                     "Can't create collection with name {collection_name}. Collection data already exists at {path}",
                     collection_name = collection_name,
