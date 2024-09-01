@@ -72,6 +72,11 @@ impl CpuBudget {
         }
     }
 
+    /// Returns the total CPU budget.
+    pub fn available_cpu_budget(&self) -> usize {
+        self.cpu_budget
+    }
+
     /// For the given desired number of CPUs, return the minimum number of required CPUs.
     fn min_permits(&self, desired_cpus: usize) -> usize {
         desired_cpus.min(self.cpu_budget).div_ceil(2)
@@ -115,7 +120,7 @@ impl CpuBudget {
     /// Check if there are at least `budget` available CPUs in this budget.
     ///
     /// A budget of `0` will always return `true`.
-    fn has_budget_exact(&self, budget: usize) -> bool {
+    pub fn has_budget_exact(&self, budget: usize) -> bool {
         self.semaphore.available_permits() >= budget
     }
 
