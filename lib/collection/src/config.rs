@@ -187,9 +187,12 @@ impl CollectionConfig {
     }
 
     /// Check if collection config exists
-    pub fn check(path: &Path) -> bool {
-        let config_path = path.join(COLLECTION_CONFIG_FILE);
-        config_path.exists()
+    pub fn check_config_file_exists(path: &Path) -> bool {
+        if path.is_dir() {
+            let config_path = path.join(COLLECTION_CONFIG_FILE);
+            return config_path.exists();
+        }
+        return false;
     }
 
     pub fn validate_and_warn(&self) {
