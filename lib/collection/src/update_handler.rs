@@ -329,7 +329,7 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok(num_points_optimized) => {
-                                    let result = points_optimized > 0;
+                                    let result = num_points_optimized > 0;
                                     tracker_handle
                                         .update(TrackerStatus::Done, Some(num_points_optimized));
                                     callback(result);
