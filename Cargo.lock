@@ -1161,7 +1161,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "hashring",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "indicatif",
  "io",
  "issues",
@@ -2302,7 +2302,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.9",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2321,7 +2321,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 1.0.0",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2714,9 +2714,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ead53efc7ea8ed3cfb0c79fc8023fbb782a5432b52830b6518941cebe6505c"
+checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.2",
@@ -2743,7 +2743,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abfb2e51b23c338595ae0b6bdaaa7a4a8b860b8d788a4331cb07b50fe5dea71b"
 dependencies = [
  "ahash",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "is-terminal",
  "itoa",
  "log",
@@ -5439,7 +5439,7 @@ dependencies = [
  "chrono",
  "dyn-clone",
  "indexmap 1.9.2",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "schemars_derive",
  "serde",
  "serde_json",
@@ -5571,7 +5571,7 @@ dependencies = [
  "geohash",
  "half 2.4.1",
  "http 1.0.0",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "indicatif",
  "io",
  "io-uring",
@@ -5702,7 +5702,7 @@ version = "1.0.127"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8043c06d9f82bd7271361ed64f415fe5e12a77fdb52e573e7f06a516dea329ad"
 dependencies = [
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itoa",
  "memchr",
  "ryu",
@@ -6529,7 +6529,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "serde",
  "serde_spanned",
  "toml_datetime",
