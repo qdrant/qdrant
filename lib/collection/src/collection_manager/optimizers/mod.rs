@@ -103,6 +103,7 @@ impl Tracker {
         TrackerTelemetry {
             name: self.name.clone(),
             segment_ids: self.segment_ids.clone(),
+            points_optimized: state.points_optimized,
             status: state.status.clone(),
             start_at: self.start_at,
             end_at: state.end_at,
@@ -117,6 +118,8 @@ pub struct TrackerTelemetry {
     pub name: String,
     /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
+    /// Points optimized by optimizer
+    pub points_optimized: Option<usize>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,
     /// Start time of the optimizer
@@ -132,8 +135,8 @@ pub struct TrackerHandle {
 }
 
 impl TrackerHandle {
-    pub fn update(&self, status: TrackerStatus) {
-        self.handle.lock().update(status);
+    pub fn update(&self, status: TrackerStatus, num_points_optimized: Option<usize>) {
+        self.handle.lock().update(status, num_points_optimized);
     }
 }
 
@@ -147,15 +150,17 @@ impl From<Arc<Mutex<TrackerState>>> for TrackerHandle {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TrackerState {
     pub status: TrackerStatus,
+    pub points_optimized: Option<usize>,
     pub end_at: Option<DateTime<Utc>>,
 }
 
 impl TrackerState {
     /// Update the tracker state to the given `status`
-    pub fn update(&mut self, status: TrackerStatus) {
+    pub fn update(&mut self, status: TrackerStatus, num_points_optimized: Option<usize>) {
         match status {
             TrackerStatus::Done | TrackerStatus::Cancelled(_) | TrackerStatus::Error(_) => {
                 self.end_at.replace(Utc::now());
+                self.points_optimized = num_points_optimized;
             }
             TrackerStatus::Optimizing => {
                 self.end_at.take();

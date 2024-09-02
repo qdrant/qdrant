@@ -68,6 +68,7 @@ impl Anonymize for TrackerTelemetry {
         TrackerTelemetry {
             name: self.name.clone(),
             segment_ids: self.segment_ids.anonymize(),
+            points_optimized: self.points_optimized,
             status: self.status.clone(),
             start_at: self.start_at.anonymize(),
             end_at: self.end_at.anonymize(),
