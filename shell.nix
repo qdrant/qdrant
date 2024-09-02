@@ -38,14 +38,21 @@ let
     preferWheels = true; # wheels speed up building of the environment
   };
 
+  # Use mold linker to speed up builds
+  mkShell =
+    if !pkgs.stdenv.isDarwin then
+      pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; }
+    else
+      pkgs.mkShell;
 in
-pkgs.mkShell {
+mkShell {
   buildInputs = [
     # Rust toolchain
     cargo-wrapper # should be before rust-combined
     rust-combined
 
     # Crates' build dependencies
+    pkgs.iconv # for libc on darwin
     pkgs.libunwind # for unwind-sys
     pkgs.pkg-config # for unwind-sys and other deps
     pkgs.protobuf # for prost-wkt-types
@@ -53,16 +60,14 @@ pkgs.mkShell {
 
     # For tests and tools
     pkgs.cargo-nextest # mentioned in .github/workflows/rust.yml
+    pkgs.ccache # mentioned in shellHook
     pkgs.curl # used in ./tests
     pkgs.gnuplot # optional runtime dep for criterion
     pkgs.jq # used in ./tests and ./tools
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
-    pkgs.iconv # needed to build rustls -> ring dependency
-    pkgs.ccache # compile cache for c/cxx code
-    pkgs.sccache # compile cache for rust code
-    pkgs.mold # mold linker
     pkgs.poetry # used to update poetry.lock
+    pkgs.sccache # mentioned in shellHook
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
@@ -70,18 +75,9 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      # Override minimally supported macos version
-      export CFLAGS="-mmacosx-version-min=10.13"
-      export CXXFLAGS="-mmacosx-version-min=10.13"
-      export MACOSX_DEPLOYMENT_TARGET="10.13"
-    fi
     # Caching for C/C++ deps, particularly for librocksdb-sys
     export CC="ccache $CC"
     export CXX="ccache $CXX"
-
-    # use mold linker
-    export LD="${pkgs.mold}/bin/ld.mold"
 
     # Caching for Rust
     PATH="${pkgs.sccache}/bin:$PATH"
@@ -90,6 +86,14 @@ pkgs.mkShell {
     # Caching for lindera-unidic
     [ "''${LINDERA_CACHE+x}" ] ||
       export LINDERA_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/lindera"
+
+    # Fix for older macOS
+    # https://github.com/rust-rocksdb/rust-rocksdb/issues/776
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      export CFLAGS="-mmacosx-version-min=10.13"
+      export CXXFLAGS="-mmacosx-version-min=10.13"
+      export MACOSX_DEPLOYMENT_TARGET="10.13"
+    fi
 
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000
