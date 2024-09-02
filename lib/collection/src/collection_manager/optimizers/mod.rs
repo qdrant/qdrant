@@ -118,7 +118,8 @@ pub struct TrackerTelemetry {
     pub name: String,
     /// Segment IDs being optimized
     pub segment_ids: Vec<SegmentId>,
-    /// Points optimized by optimizer
+    /// Points optimized by the optimizer
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub points_optimized: Option<usize>,
     /// Latest status of the optimizer
     pub status: TrackerStatus,

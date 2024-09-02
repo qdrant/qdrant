@@ -320,7 +320,7 @@ impl UpdateHandler {
                             let tracker_handle = tracker.handle();
                             optimizers_log.lock().register(tracker);
 
-                            let mut num_points_optimized = nsi
+                            let num_points_optimized = nsi
                                 .clone()
                                 .into_iter()
                                 .map(|seg_id| {
@@ -336,7 +336,6 @@ impl UpdateHandler {
 
                                     num_points
                                 })
-                                // .collect::<Vec<_>>()
                                 .sum();
 
                             // Optimize and handle result
