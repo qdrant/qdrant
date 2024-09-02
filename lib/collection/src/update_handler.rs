@@ -320,7 +320,7 @@ impl UpdateHandler {
                             let tracker_handle = tracker.handle();
                             optimizers_log.lock().register(tracker);
 
-                            let num_points_optimized = nsi
+                            let mut num_points_optimized = nsi
                                 .clone()
                                 .into_iter()
                                 .map(|seg_id| {
@@ -331,8 +331,6 @@ impl UpdateHandler {
                                         } else {
                                             0 // ideally shouldn't be possible?
                                         };
-
-                                    dbg!(seg_id, &num_points);
 
                                     num_points
                                 })
@@ -347,10 +345,9 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok(result) => {
-                                    dbg!(&result);
-                                    // if result == false {
-                                    //     num_points_optimized = 0;
-                                    // }
+                                    if result == false {
+                                        num_points_optimized = 0;
+                                    }
 
                                     tracker_handle
                                         .update(TrackerStatus::Done, Some(num_points_optimized));
