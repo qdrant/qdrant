@@ -455,13 +455,7 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
-        scroll(
-            self.toc.as_ref(),
-            scroll_points,
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        scroll(&self.toc, scroll_points, shard_id, FULL_ACCESS.clone()).await
     }
 
     async fn get(

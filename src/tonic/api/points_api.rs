@@ -21,13 +21,14 @@ use tonic::{Request, Response, Status};
 
 use super::points_common::{
     delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, search_groups, search_points_matrix, update_batch, update_vectors,
+    recommend_groups, scroll_checked, search_groups, search_points_matrix, update_batch,
+    update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
     clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
     delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
-    scroll, search, set_payload, upsert,
+    search, set_payload, upsert,
 };
 use crate::tonic::auth::extract_access;
 
@@ -271,13 +272,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search(
-            self.dispatcher.toc(&access),
-            request.into_inner(),
-            None,
-            access,
-        )
-        .await
+        search(&self.dispatcher, request.into_inner(), None, access).await
     }
 
     async fn search_batch(
@@ -309,7 +304,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            self.dispatcher.toc(&access),
+            &self.dispatcher,
             collection_name,
             requests,
             read_consistency,
@@ -325,13 +320,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search_groups(
-            self.dispatcher.toc(&access),
-            request.into_inner(),
-            None,
-            access,
-        )
-        .await
+        search_groups(&self.dispatcher, request.into_inner(), None, access).await
     }
 
     async fn scroll(
@@ -342,13 +331,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        scroll(
-            self.dispatcher.toc(&access),
-            request.into_inner(),
-            None,
-            access,
-        )
-        .await
+        scroll_checked(&self.dispatcher, request.into_inner(), None, access).await
     }
 
     async fn recommend(
