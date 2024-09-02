@@ -30,7 +30,7 @@ impl StrictModeVerification for QueryRequestInternal {
 
 impl StrictModeVerification for QueryGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        None
+        self.group_request.limit
     }
 
     fn timeout(&self) -> Option<usize> {

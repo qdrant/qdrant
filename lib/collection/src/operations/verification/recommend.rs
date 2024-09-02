@@ -29,7 +29,7 @@ impl StrictModeVerification for RecommendRequestInternal {
 
 impl StrictModeVerification for RecommendGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        None
+        Some(self.group_request.limit as usize)
     }
 
     fn timeout(&self) -> Option<usize> {
