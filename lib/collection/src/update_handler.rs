@@ -320,22 +320,6 @@ impl UpdateHandler {
                             let tracker_handle = tracker.handle();
                             optimizers_log.lock().register(tracker);
 
-                            let mut num_points_optimized = nsi
-                                .clone()
-                                .into_iter()
-                                .map(|seg_id| {
-                                    let segments_read_guard = segments.read();
-                                    let num_points =
-                                        if let Some(segment) = segments_read_guard.get(seg_id) {
-                                            segment.get().read().available_point_count()
-                                        } else {
-                                            0 // ideally shouldn't be possible?
-                                        };
-
-                                    num_points
-                                })
-                                .sum();
-
                             // Optimize and handle result
                             match optimizer.as_ref().optimize(
                                 segments.clone(),
@@ -344,11 +328,8 @@ impl UpdateHandler {
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
-                                Ok(result) => {
-                                    if result == false {
-                                        num_points_optimized = 0;
-                                    }
-
+                                Ok(num_points_optimized) => {
+                                    let result = points_optimized > 0;
                                     tracker_handle
                                         .update(TrackerStatus::Done, Some(num_points_optimized));
                                     callback(result);
