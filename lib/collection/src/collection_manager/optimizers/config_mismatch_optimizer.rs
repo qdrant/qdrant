@@ -357,7 +357,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -388,7 +388,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
         locked_holder
@@ -512,7 +512,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -551,7 +551,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
         locked_holder
@@ -682,7 +682,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -724,7 +724,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed, "optimizer should have rebuilt this segment");
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed quantization config
         locked_holder

@@ -947,7 +947,7 @@ mod tests {
             )
             .unwrap();
         assert!(
-            changed,
+            changed > 0,
             "optimizer should have rebuilt this segment for mmap"
         );
         assert!(
