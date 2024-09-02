@@ -541,9 +541,10 @@ pub trait SegmentOptimizer {
                 .iter()
                 .all(|s| matches!(s, LockedSegment::Original(_)));
 
-        let num_points_to_optimize = optimizing_segments.iter().map(|segment| {
-            segment.get().read().available_point_count()
-        }).sum();
+        let num_points_to_optimize = optimizing_segments
+            .iter()
+            .map(|segment| segment.get().read().available_point_count())
+            .sum();
 
         if !all_segments_ok {
             // Cancel the optimization
