@@ -5,6 +5,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
 };
+use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
 use segment::types::{Condition, Filter};
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -34,9 +35,12 @@ async fn get_points(
     request: web::Json<PointRequestInternal>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
+    // No strict mode verification needed
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         let records = points::do_get_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &path.collection,
             request.into_inner(),
             params.consistency,
@@ -86,6 +90,7 @@ async fn scroll_points(
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
+                &pass,
             )
             .await?
             .into(),
@@ -144,6 +149,7 @@ async fn count_points(
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
+                &pass,
             )
             .await?
             .into(),
@@ -173,10 +179,13 @@ async fn cleanup_shard(
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
 ) -> impl Responder {
+    // Nothing to verify here.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         let path = path.into_inner();
         dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .cleanup_local_shard(&path.collection, path.shard, access)
             .await
     })
@@ -209,11 +218,12 @@ async fn get_hash_ring_filter(
     collection: &str,
     reqs: AccessRequirements,
     expected_shard_id: ShardId,
+    verification_pass: &VerificationPass,
 ) -> StorageResult<Filter> {
     let pass = access.check_collection_access(collection, reqs)?;
 
     let shard_holder = dispatcher
-        .toc(access)
+        .toc_new(access, verification_pass)
         .get_collection(&pass)
         .await?
         .shards_holder();

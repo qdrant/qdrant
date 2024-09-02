@@ -7,6 +7,7 @@ use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web_validator::Json;
+use collection::operations::verification::new_unchecked_verification_pass;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -101,8 +102,11 @@ fn put_locks(
     locks_option: Json<LocksOption>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
-        let toc = dispatcher.toc(&access);
+        let toc = dispatcher.toc_new(&access, &pass);
         access.check_global_access(AccessRequirements::new().manage())?;
         let result = LocksOption {
             write: toc.is_write_locked(),
@@ -118,9 +122,12 @@ fn get_locks(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new())?;
-        let toc = dispatcher.toc(&access);
+        let toc = dispatcher.toc_new(&access, &pass);
         let result = LocksOption {
             write: toc.is_write_locked(),
             error_message: toc.get_lock_error_message(),
