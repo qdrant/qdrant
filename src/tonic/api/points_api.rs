@@ -21,8 +21,7 @@ use tonic::{Request, Response, Status};
 
 use super::points_common::{
     delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, scroll_checked, search_groups, search_points_matrix, update_batch,
-    update_vectors,
+    recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -31,6 +30,7 @@ use crate::tonic::api::points_common::{
     search, set_payload, upsert,
 };
 use crate::tonic::auth::extract_access;
+use crate::tonic::verification::StrictModeCheckedProvider;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -331,7 +331,13 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        scroll_checked(&self.dispatcher, request.into_inner(), None, access).await
+        scroll(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn recommend(
@@ -423,10 +429,10 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         count(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            access,
+            &access,
         )
         .await
     }

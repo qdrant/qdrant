@@ -1,0 +1,68 @@
+use collection::operations::verification::StrictModeVerification;
+use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
+use storage::rbac::Access;
+use tonic::Status;
+
+/// Trait for different ways of providing something with `toc` that may do additional checks eg. for Strict mode.
+pub trait CheckedTocProvider {
+    async fn check_strict_mode<'b>(
+        &'b self,
+        i: &impl StrictModeVerification,
+        collection_name: &str,
+        timeout: Option<usize>,
+        access: &Access,
+    ) -> Result<&'b TableOfContent, Status>;
+}
+
+/// Simple provider for TableOfContent that doesn't do any checks.
+pub struct UncheckedTocProvider<'a> {
+    toc: &'a TableOfContent,
+}
+
+impl<'a> UncheckedTocProvider<'a> {
+    #[deprecated(
+        note = "You should NOT use UncheckedTocProvider, unless you know what you're doing. In that case supress this with #[allow(deprecated)]"
+    )]
+    pub fn new(toc: &'a TableOfContent) -> Self {
+        Self { toc }
+    }
+}
+
+impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
+    async fn check_strict_mode<'b>(
+        &'b self,
+        _i: &impl StrictModeVerification,
+        _collection_name: &str,
+        _timeout: Option<usize>,
+        _access: &Access,
+    ) -> Result<&'b TableOfContent, Status> {
+        // No checks here
+        Ok(self.toc)
+    }
+}
+
+/// Provider for TableOfContent that requires Strict mode to be checked.
+pub struct StrictModeCheckedProvider<'a> {
+    dispatcher: &'a Dispatcher,
+}
+
+impl<'a> StrictModeCheckedProvider<'a> {
+    pub fn new(dispatcher: &'a Dispatcher) -> Self {
+        Self { dispatcher }
+    }
+}
+
+impl<'a> CheckedTocProvider for StrictModeCheckedProvider<'a> {
+    async fn check_strict_mode(
+        &self,
+        i: &impl StrictModeVerification,
+        collection_name: &str,
+        timeout: Option<usize>,
+        access: &Access,
+    ) -> Result<&TableOfContent, Status> {
+        let pass = check_strict_mode(i, timeout, collection_name, self.dispatcher, access).await?;
+        Ok(self.dispatcher.toc_new(access, &pass))
+    }
+}

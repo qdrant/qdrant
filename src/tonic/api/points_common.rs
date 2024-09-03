@@ -62,6 +62,7 @@ use crate::common::points::{
     do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
     do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
+use crate::tonic::verification::CheckedTocProvider;
 
 fn extract_points_selector(
     points_selector: Option<PointsSelector>,
@@ -1458,21 +1459,57 @@ pub async fn discover_batch(
     Ok(Response::new(response))
 }
 
-async fn scroll(
-    toc: &TableOfContent,
-    collection_name: &str,
-    scroll_request: ScrollRequestInternal,
-    timeout: Option<Duration>,
-    read_consistency: Option<ReadConsistencyGrpc>,
-    shard_selector: ShardSelectorInternal,
+pub async fn scroll(
+    toc_provider: impl CheckedTocProvider,
+    scroll_points: ScrollPoints,
+    shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<ScrollResponse>, Status> {
+    let ScrollPoints {
+        collection_name,
+        filter,
+        offset,
+        limit,
+        with_payload,
+        with_vectors,
+        read_consistency,
+        shard_key_selector,
+        order_by,
+        timeout,
+    } = scroll_points;
+
+    let scroll_request = ScrollRequestInternal {
+        offset: offset.map(|o| o.try_into()).transpose()?,
+        limit: limit.map(|l| l as usize),
+        filter: filter.map(|f| f.try_into()).transpose()?,
+        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
+        with_vector: with_vectors
+            .map(|selector| selector.into())
+            .unwrap_or_default(),
+        order_by: order_by
+            .map(OrderBy::try_from)
+            .transpose()?
+            .map(OrderByInterface::Struct),
+    };
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &scroll_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
+
+    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
     let scrolled_points = do_scroll_points(
         toc,
-        collection_name,
+        &collection_name,
         scroll_request,
         read_consistency,
         timeout,
@@ -1495,110 +1532,11 @@ async fn scroll(
     Ok(Response::new(response))
 }
 
-fn convert_scroll_points_to_internal(
-    scroll_points: ScrollPoints,
-) -> Result<ScrollRequestInternal, Status> {
-    let ScrollPoints {
-        collection_name: _,
-        filter,
-        offset,
-        limit,
-        with_payload,
-        with_vectors,
-        read_consistency: _,
-        shard_key_selector: _,
-        order_by,
-        timeout: _,
-    } = scroll_points;
-
-    let internal_request = ScrollRequestInternal {
-        offset: offset.map(|o| o.try_into()).transpose()?,
-        limit: limit.map(|l| l as usize),
-        filter: filter.map(|f| f.try_into()).transpose()?,
-        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: with_vectors
-            .map(|selector| selector.into())
-            .unwrap_or_default(),
-        order_by: order_by
-            .map(OrderBy::try_from)
-            .transpose()?
-            .map(OrderByInterface::Struct),
-    };
-    Ok(internal_request)
-}
-
-pub async fn scroll_checked(
-    dispatcher: &Dispatcher,
-    scroll_points: ScrollPoints,
-    shard_selection: Option<ShardId>,
-    access: Access,
-) -> Result<Response<ScrollResponse>, Status> {
-    let collection_name = scroll_points.collection_name.clone();
-    let timeout = scroll_points.timeout;
-    let shard_key_selector = scroll_points.shard_key_selector.clone();
-    let read_consistency = scroll_points.read_consistency.clone();
-    let scroll_request = convert_scroll_points_to_internal(scroll_points.clone())?;
-
-    let pass = check_strict_mode(
-        &scroll_request,
-        timeout.map(|i| i as usize),
-        &collection_name,
-        dispatcher,
-        &access,
-    )
-    .await?;
-
-    let toc = dispatcher.toc_new(&access, &pass);
-
-    let timeout = timeout.map(Duration::from_secs);
-
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
-
-    scroll(
-        toc,
-        &collection_name,
-        scroll_request,
-        timeout,
-        read_consistency,
-        shard_selector,
-        access,
-    )
-    .await
-}
-
-/// Executes a scroll operation.
-/// Does NOT check for strict mode!
-pub(super) async fn scroll_internal(
-    toc: &TableOfContent,
-    scroll_points: ScrollPoints,
-    shard_selection: Option<ShardId>,
-    access: Access,
-) -> Result<Response<ScrollResponse>, Status> {
-    let collection_name = scroll_points.collection_name.clone();
-    let timeout = scroll_points.timeout.map(Duration::from_secs);
-    let shard_key_selector = scroll_points.shard_key_selector.clone();
-    let read_consistency = scroll_points.read_consistency.clone();
-    let scroll_request = convert_scroll_points_to_internal(scroll_points.clone())?;
-
-    let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
-
-    scroll(
-        toc,
-        &collection_name,
-        scroll_request,
-        timeout,
-        read_consistency,
-        shard_selector,
-        access,
-    )
-    .await
-}
-
 pub async fn count(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
-    access: Access,
+    access: &Access,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
         collection_name,
@@ -1613,6 +1551,16 @@ pub async fn count(
         filter: filter.map(|f| f.try_into()).transpose()?,
         exact: exact.unwrap_or_else(default_exact_count),
     };
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &count_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
+
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1626,7 +1574,7 @@ pub async fn count(
         read_consistency,
         timeout,
         shard_selector,
-        access,
+        access.clone(),
     )
     .await?;
 
