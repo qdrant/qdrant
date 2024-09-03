@@ -679,12 +679,12 @@ pub struct SearchMatrixRequestInternal {
     /// Look only for points which satisfies this conditions
     #[validate(nested)]
     pub filter: Option<Filter>,
-    /// How many points to select and search within.
+    /// How many points to select and search within. Default is 10.
     #[validate(range(min = 2))]
-    pub sample: usize,
-    /// How many neighbours per sample to find
+    pub sample: Option<usize>,
+    /// How many neighbours per sample to find. Default is 3.
     #[validate(range(min = 1))]
-    pub limit: usize,
+    pub limit: Option<usize>,
     /// Define which vector name to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 }

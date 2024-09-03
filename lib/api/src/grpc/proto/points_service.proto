@@ -125,4 +125,12 @@ service Points {
   Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions.
   */
   rpc Facet (FacetCounts) returns (FacetResponse) {}
+  /*
+  Compute distance matrix for sampled points
+  */
+  rpc SearchMatrixPairs (SearchMatrixPoints) returns (SearchMatrixPairsResponse) {}
+  /*
+Compute distance matrix for sampled points
+*/
+  rpc SearchMatrixOffset (SearchMatrixPoints) returns (SearchMatrixOffsetsResponse) {}
 }

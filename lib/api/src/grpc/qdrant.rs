@@ -5073,6 +5073,7 @@ pub struct FacetCounts {
     pub key: ::prost::alloc::string::String,
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Max number of facets. Default is 10.
     #[prost(uint64, optional, tag = "4")]
@@ -5122,6 +5123,80 @@ pub struct FacetHit {
     /// Number of points with this value
     #[prost(uint64, tag = "2")]
     pub count: u64,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
+    pub filter: ::core::option::Option<Filter>,
+    /// How many points to select and search within. Default is 10.
+    #[prost(uint64, optional, tag = "3")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    pub sample: ::core::option::Option<u64>,
+    /// How many neighbours per sample to find. Default is 3.
+    #[prost(uint64, optional, tag = "4")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    pub limit: ::core::option::Option<u64>,
+    /// Define which vector to use for querying. If missing, the default vector is is used.
+    #[prost(string, optional, tag = "5")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// If set, overrides global timeout setting for this request. Unit is seconds.
+    #[prost(uint64, optional, tag = "6")]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    pub timeout: ::core::option::Option<u64>,
+    /// Options for specifying read consistency guarantees
+    #[prost(message, optional, tag = "7")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards
+    #[prost(message, optional, tag = "8")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixPairs {
+    /// List of pairs of points with scores
+    #[prost(message, repeated, tag = "1")]
+    pub pairs: ::prost::alloc::vec::Vec<SearchMatrixPair>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixPair {
+    /// first id of the pair
+    #[prost(message, optional, tag = "1")]
+    pub a: ::core::option::Option<PointId>,
+    /// second id of the pair
+    #[prost(message, optional, tag = "2")]
+    pub b: ::core::option::Option<PointId>,
+    /// score of the pair
+    #[prost(float, tag = "3")]
+    pub score: f32,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixOffsets {
+    /// Row coordinates of the CRS matrix
+    #[prost(uint64, repeated, tag = "1")]
+    pub offsets_row: ::prost::alloc::vec::Vec<u64>,
+    /// Column coordinates ids of the matrix
+    #[prost(uint64, repeated, tag = "2")]
+    pub offsets_col: ::prost::alloc::vec::Vec<u64>,
+    /// Scores associate with coordinates
+    #[prost(float, repeated, tag = "3")]
+    pub scores: ::prost::alloc::vec::Vec<f32>,
+    /// Ids of the points in order
+    #[prost(message, repeated, tag = "4")]
+    pub ids: ::prost::alloc::vec::Vec<PointId>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5591,6 +5666,26 @@ pub struct UpdateBatchResponse {
 pub struct FacetResponse {
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<FacetHit>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixPairsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<SearchMatrixPairs>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchMatrixOffsetsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<SearchMatrixOffsets>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -6896,6 +6991,58 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Facet"));
             self.inner.unary(req, path, codec).await
         }
+        /// Compute distance matrix for sampled points
+        pub async fn search_matrix_pairs(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchMatrixPairsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/SearchMatrixPairs",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixPairs"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Compute distance matrix for sampled points
+        pub async fn search_matrix_offset(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchMatrixOffsetsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Points/SearchMatrixOffset",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixOffset"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7109,6 +7256,22 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::FacetCounts>,
         ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status>;
+        /// Compute distance matrix for sampled points
+        async fn search_matrix_pairs(
+            &self,
+            request: tonic::Request<super::SearchMatrixPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchMatrixPairsResponse>,
+            tonic::Status,
+        >;
+        /// Compute distance matrix for sampled points
+        async fn search_matrix_offset(
+            &self,
+            request: tonic::Request<super::SearchMatrixPoints>,
+        ) -> std::result::Result<
+            tonic::Response<super::SearchMatrixOffsetsResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct PointsServer<T: Points> {
@@ -8336,6 +8499,98 @@ pub mod points_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = FacetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/SearchMatrixPairs" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchMatrixPairsSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::SearchMatrixPoints>
+                    for SearchMatrixPairsSvc<T> {
+                        type Response = super::SearchMatrixPairsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchMatrixPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::search_matrix_pairs(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchMatrixPairsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Points/SearchMatrixOffset" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchMatrixOffsetSvc<T: Points>(pub Arc<T>);
+                    impl<
+                        T: Points,
+                    > tonic::server::UnaryService<super::SearchMatrixPoints>
+                    for SearchMatrixOffsetSvc<T> {
+                        type Response = super::SearchMatrixOffsetsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchMatrixPoints>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Points>::search_matrix_offset(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SearchMatrixOffsetSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
