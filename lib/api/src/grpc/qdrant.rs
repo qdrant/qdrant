@@ -7018,7 +7018,7 @@ pub mod points_client {
             self.inner.unary(req, path, codec).await
         }
         /// Compute distance matrix with an offset based output format
-        pub async fn search_matrix_offset(
+        pub async fn search_matrix_offsets(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
         ) -> std::result::Result<
@@ -7036,11 +7036,11 @@ pub mod points_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.Points/SearchMatrixOffset",
+                "/qdrant.Points/SearchMatrixOffsets",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixOffset"));
+                .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixOffsets"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -7265,7 +7265,7 @@ pub mod points_server {
             tonic::Status,
         >;
         /// Compute distance matrix with an offset based output format
-        async fn search_matrix_offset(
+        async fn search_matrix_offsets(
             &self,
             request: tonic::Request<super::SearchMatrixPoints>,
         ) -> std::result::Result<
@@ -8560,13 +8560,13 @@ pub mod points_server {
                     };
                     Box::pin(fut)
                 }
-                "/qdrant.Points/SearchMatrixOffset" => {
+                "/qdrant.Points/SearchMatrixOffsets" => {
                     #[allow(non_camel_case_types)]
-                    struct SearchMatrixOffsetSvc<T: Points>(pub Arc<T>);
+                    struct SearchMatrixOffsetsSvc<T: Points>(pub Arc<T>);
                     impl<
                         T: Points,
                     > tonic::server::UnaryService<super::SearchMatrixPoints>
-                    for SearchMatrixOffsetSvc<T> {
+                    for SearchMatrixOffsetsSvc<T> {
                         type Response = super::SearchMatrixOffsetsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -8578,7 +8578,7 @@ pub mod points_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Points>::search_matrix_offset(&inner, request).await
+                                <T as Points>::search_matrix_offsets(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -8590,7 +8590,7 @@ pub mod points_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = SearchMatrixOffsetSvc(inner);
+                        let method = SearchMatrixOffsetsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

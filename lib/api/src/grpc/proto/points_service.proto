@@ -132,5 +132,5 @@ service Points {
   /*
   Compute distance matrix with an offset based output format
   */
-  rpc SearchMatrixOffset (SearchMatrixPoints) returns (SearchMatrixOffsetsResponse) {}
+  rpc SearchMatrixOffsets (SearchMatrixPoints) returns (SearchMatrixOffsetsResponse) {}
 }

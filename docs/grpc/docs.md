@@ -4549,7 +4549,7 @@ When using target (with or without context), the score behaves a little differen
 | QueryGroups | [QueryPointGroups](#qdrant-QueryPointGroups) | [QueryGroupsResponse](#qdrant-QueryGroupsResponse) | Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | Facet | [FacetCounts](#qdrant-FacetCounts) | [FacetResponse](#qdrant-FacetResponse) | Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions. |
 | SearchMatrixPairs | [SearchMatrixPoints](#qdrant-SearchMatrixPoints) | [SearchMatrixPairsResponse](#qdrant-SearchMatrixPairsResponse) | Compute distance matrix with a pair based output format |
-| SearchMatrixOffset | [SearchMatrixPoints](#qdrant-SearchMatrixPoints) | [SearchMatrixOffsetsResponse](#qdrant-SearchMatrixOffsetsResponse) | Compute distance matrix with an offset based output format |
+| SearchMatrixOffsets | [SearchMatrixPoints](#qdrant-SearchMatrixPoints) | [SearchMatrixOffsetsResponse](#qdrant-SearchMatrixOffsetsResponse) | Compute distance matrix with an offset based output format |
 
  
 

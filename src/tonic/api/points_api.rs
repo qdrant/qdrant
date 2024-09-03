@@ -527,7 +527,7 @@ impl Points for PointsService {
         Ok(Response::new(pairs_response))
     }
 
-    async fn search_matrix_offset(
+    async fn search_matrix_offsets(
         &self,
         mut request: Request<SearchMatrixPoints>,
     ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
