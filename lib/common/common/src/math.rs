@@ -17,7 +17,11 @@ pub fn scaled_fast_sigmoid(x: ScoreType) -> ScoreType {
     0.5 * (fast_sigmoid(x) + 1.0)
 }
 
-/// Calculates the ideal sample size for a given population size and proportion at confidence level 0.99.
+/// Sample size for an unlimited population, confidence level 0.99 and margin of error 0.01.
+pub const SAMPLE_SIZE_CL99_ME01: usize = 16641;
+
+/// Calculates the ideal sample size for a given population size and proportion
+/// at confidence level 0.99 and margin of error 0.01.
 ///
 /// If population is `None`, considers an unlimited population.
 pub fn ideal_sample_size(population_size: Option<usize>) -> usize {
@@ -47,7 +51,7 @@ pub fn ideal_sample_size(population_size: Option<usize>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::math::ideal_sample_size;
+    use crate::math::{ideal_sample_size, SAMPLE_SIZE_CL99_ME01};
 
     /// Tests equivalence against https://www.calculator.net/sample-size-calculator.html
     #[test]
@@ -57,6 +61,6 @@ mod tests {
         assert_eq!(ideal_sample_size(Some(100000)), 14267);
         assert_eq!(ideal_sample_size(Some(1000000)), 16369);
         assert_eq!(ideal_sample_size(Some(10000000)), 16614);
-        assert_eq!(ideal_sample_size(None), 16641);
+        assert_eq!(ideal_sample_size(None), SAMPLE_SIZE_CL99_ME01);
     }
 }

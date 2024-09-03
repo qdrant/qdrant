@@ -2,12 +2,13 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::iterator_ext::IteratorExt;
-use common::math::ideal_sample_size;
+use common::math::SAMPLE_SIZE_CL99_ME01;
 use itertools::{Either, Itertools};
 
 use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetParams, FacetValue};
+use crate::entry::entry_point::SegmentEntry;
 use crate::index::PayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::Filter;
@@ -28,11 +29,13 @@ impl Segment {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let ideal_sample_size = ideal_sample_size(None);
+            let ideal_sample_size = SAMPLE_SIZE_CL99_ME01;
 
-            let use_iterative_approach = filter_cardinality.exp < ideal_sample_size;
+            // If the cardinality is low enough, it is fast enough to just go over all the points,
+            // and we are also interested in higher accuracy at low counts
+            let do_accurate_counts = filter_cardinality.exp < ideal_sample_size;
 
-            let iter = if use_iterative_approach {
+            let iter = if do_accurate_counts {
                 // go over the filtered points and aggregate the values
                 // aka. read from other indexes
                 let iter = payload_index
@@ -50,26 +53,18 @@ impl Segment {
 
                 Either::Left(iter)
             } else {
-                // go over the filtered points, aggregate the values, but stop after ideal sample size.
+                // Use cardinality estimations for each value to estimate the counts
+                let cardinality_ratio =
+                    filter_cardinality.exp as f32 / (self.available_point_count() + 1) as f32;
 
-                let (map, sample_size) = payload_index
-                    .iter_filtered_points(filter, &*id_tracker, &filter_cardinality)
-                    .check_stop_every(STOP_CHECK_INTERVAL, || is_stopped.load(Ordering::Relaxed))
-                    .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
-                    .take(ideal_sample_size)
-                    .fold((HashMap::new(), 0), |(mut map, sample_size), point_id| {
-                        facet_index.get_values(point_id).unique().for_each(|value| {
-                            *map.entry(value).or_insert(0) += 1;
-                        });
-                        (map, sample_size + 1)
+                // Go over each value in the map index
+                let iter = facet_index
+                    .iter_counts_per_value()
+                    .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                    .map(move |hit| FacetHit {
+                        value: hit.value,
+                        count: (hit.count as f32 * cardinality_ratio).round() as usize,
                     });
-
-                // Adjust counts based on the cardinality estimation.
-                let iter = map.into_iter().map(move |(value, count)| FacetHit {
-                    value,
-                    count: (count as f32 * filter_cardinality.exp as f32 / sample_size as f32)
-                        .ceil() as usize,
-                });
 
                 Either::Right(iter)
             };
