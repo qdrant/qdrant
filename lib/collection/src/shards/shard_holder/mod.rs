@@ -21,6 +21,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::SnapshotDescription;
@@ -470,12 +471,13 @@ impl ShardHolder {
                 for (&shard_id, shard) in self.shards.iter() {
                     // Ignore a new resharding shard until it completed point migration
                     // The shard will be marked as active at the end of the migration stage
-                    let resharding_migrating =
+                    let resharding_migrating_up =
                         self.resharding_state.read().clone().map_or(false, |state| {
-                            state.shard_id == shard_id
+                            state.direction == ReshardingDirection::Up
+                                && state.shard_id == shard_id
                                 && state.stage < ReshardStage::ReadHashRingCommitted
                         });
-                    if resharding_migrating {
+                    if resharding_migrating_up {
                         continue;
                     }
 
