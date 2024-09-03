@@ -6991,7 +6991,7 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Facet"));
             self.inner.unary(req, path, codec).await
         }
-        /// Compute distance matrix for sampled points
+        /// Compute distance matrix with a pair based output format
         pub async fn search_matrix_pairs(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
@@ -7017,7 +7017,7 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixPairs"));
             self.inner.unary(req, path, codec).await
         }
-        /// Compute distance matrix for sampled points
+        /// Compute distance matrix with an offset based output format
         pub async fn search_matrix_offset(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
@@ -7256,7 +7256,7 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::FacetCounts>,
         ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status>;
-        /// Compute distance matrix for sampled points
+        /// Compute distance matrix with a pair based output format
         async fn search_matrix_pairs(
             &self,
             request: tonic::Request<super::SearchMatrixPoints>,
@@ -7264,7 +7264,7 @@ pub mod points_server {
             tonic::Response<super::SearchMatrixPairsResponse>,
             tonic::Status,
         >;
-        /// Compute distance matrix for sampled points
+        /// Compute distance matrix with an offset based output format
         async fn search_matrix_offset(
             &self,
             request: tonic::Request<super::SearchMatrixPoints>,

@@ -216,6 +216,12 @@
     - [SearchBatchPoints](#qdrant-SearchBatchPoints)
     - [SearchBatchResponse](#qdrant-SearchBatchResponse)
     - [SearchGroupsResponse](#qdrant-SearchGroupsResponse)
+    - [SearchMatrixOffsets](#qdrant-SearchMatrixOffsets)
+    - [SearchMatrixOffsetsResponse](#qdrant-SearchMatrixOffsetsResponse)
+    - [SearchMatrixPair](#qdrant-SearchMatrixPair)
+    - [SearchMatrixPairs](#qdrant-SearchMatrixPairs)
+    - [SearchMatrixPairsResponse](#qdrant-SearchMatrixPairsResponse)
+    - [SearchMatrixPoints](#qdrant-SearchMatrixPoints)
     - [SearchParams](#qdrant-SearchParams)
     - [SearchPointGroups](#qdrant-SearchPointGroups)
     - [SearchPoints](#qdrant-SearchPoints)
@@ -3807,6 +3813,110 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-SearchMatrixOffsets"></a>
+
+### SearchMatrixOffsets
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| offsets_row | [uint64](#uint64) | repeated | Row coordinates of the CRS matrix |
+| offsets_col | [uint64](#uint64) | repeated | Column coordinates ids of the matrix |
+| scores | [float](#float) | repeated | Scores associate with coordinates |
+| ids | [PointId](#qdrant-PointId) | repeated | Ids of the points in order |
+
+
+
+
+
+
+<a name="qdrant-SearchMatrixOffsetsResponse"></a>
+
+### SearchMatrixOffsetsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [SearchMatrixOffsets](#qdrant-SearchMatrixOffsets) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-SearchMatrixPair"></a>
+
+### SearchMatrixPair
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| a | [PointId](#qdrant-PointId) |  | first id of the pair |
+| b | [PointId](#qdrant-PointId) |  | second id of the pair |
+| score | [float](#float) |  | score of the pair |
+
+
+
+
+
+
+<a name="qdrant-SearchMatrixPairs"></a>
+
+### SearchMatrixPairs
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| pairs | [SearchMatrixPair](#qdrant-SearchMatrixPair) | repeated | List of pairs of points with scores |
+
+
+
+
+
+
+<a name="qdrant-SearchMatrixPairsResponse"></a>
+
+### SearchMatrixPairsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| result | [SearchMatrixPairs](#qdrant-SearchMatrixPairs) |  |  |
+| time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-SearchMatrixPoints"></a>
+
+### SearchMatrixPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
+| sample | [uint64](#uint64) | optional | How many points to select and search within. Default is 10. |
+| limit | [uint64](#uint64) | optional | How many neighbours per sample to find. Default is 3. |
+| using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is is used. |
+| timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
+
+
+
+
+
+
 <a name="qdrant-SearchParams"></a>
 
 ### SearchParams
@@ -4438,6 +4548,8 @@ When using target (with or without context), the score behaves a little differen
 | QueryBatch | [QueryBatchPoints](#qdrant-QueryBatchPoints) | [QueryBatchResponse](#qdrant-QueryBatchResponse) | Universally query points in a batch fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | QueryGroups | [QueryPointGroups](#qdrant-QueryPointGroups) | [QueryGroupsResponse](#qdrant-QueryGroupsResponse) | Universally query points in a group fashion. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries. |
 | Facet | [FacetCounts](#qdrant-FacetCounts) | [FacetResponse](#qdrant-FacetResponse) | Perform facet counts. For each value in the field, count the number of points that have this value and match the conditions. |
+| SearchMatrixPairs | [SearchMatrixPoints](#qdrant-SearchMatrixPoints) | [SearchMatrixPairsResponse](#qdrant-SearchMatrixPairsResponse) | Compute distance matrix with a pair based output format |
+| SearchMatrixOffset | [SearchMatrixPoints](#qdrant-SearchMatrixPoints) | [SearchMatrixOffsetsResponse](#qdrant-SearchMatrixOffsetsResponse) | Compute distance matrix with an offset based output format |
 
  
 
