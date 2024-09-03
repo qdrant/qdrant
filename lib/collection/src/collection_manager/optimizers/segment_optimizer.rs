@@ -635,9 +635,8 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        check_process_stopped(stopped).map_err(|error| {
+        check_process_stopped(stopped).inspect_err(|_error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
-            error
         })?;
 
         {
