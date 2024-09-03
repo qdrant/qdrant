@@ -5139,7 +5139,7 @@ pub struct SearchMatrixPoints {
     pub filter: ::core::option::Option<Filter>,
     /// How many points to select and search within. Default is 10.
     #[prost(uint64, optional, tag = "3")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_2"))]
     pub sample: ::core::option::Option<u64>,
     /// How many neighbours per sample to find. Default is 3.
     #[prost(uint64, optional, tag = "4")]

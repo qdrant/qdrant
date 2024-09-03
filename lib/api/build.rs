@@ -278,7 +278,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("FacetCounts.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("SearchMatrixPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchMatrixPoints.filter", ""),
-            ("SearchMatrixPoints.sample", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
+            ("SearchMatrixPoints.sample", "custom(function = \"crate::grpc::validate::validate_u64_range_min_2\")"),
             ("SearchMatrixPoints.limit", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("SearchMatrixPoints.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")")
         ], &[])
