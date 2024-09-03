@@ -1458,7 +1458,7 @@ pub async fn discover_batch(
     Ok(Response::new(response))
 }
 
-pub async fn scroll_internal(
+async fn scroll(
     toc: &TableOfContent,
     collection_name: &str,
     scroll_request: ScrollRequestInternal,
@@ -1554,7 +1554,7 @@ pub async fn scroll_checked(
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
-    scroll_internal(
+    scroll(
         toc,
         &collection_name,
         scroll_request,
@@ -1566,22 +1566,23 @@ pub async fn scroll_checked(
     .await
 }
 
-pub async fn scroll(
+/// Executes a scroll operation.
+/// Does NOT check for strict mode!
+pub(super) async fn scroll_internal(
     toc: &TableOfContent,
     scroll_points: ScrollPoints,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<ScrollResponse>, Status> {
     let collection_name = scroll_points.collection_name.clone();
-    let timeout = scroll_points.timeout;
+    let timeout = scroll_points.timeout.map(Duration::from_secs);
     let shard_key_selector = scroll_points.shard_key_selector.clone();
     let read_consistency = scroll_points.read_consistency.clone();
     let scroll_request = convert_scroll_points_to_internal(scroll_points.clone())?;
 
-    let timeout = timeout.map(Duration::from_secs);
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
-    scroll_internal(
+    scroll(
         toc,
         &collection_name,
         scroll_request,

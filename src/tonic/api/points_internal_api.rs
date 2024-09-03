@@ -28,8 +28,8 @@ use super::points_common::core_search_list;
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
-    delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, set_payload, sync,
-    update_vectors, upsert,
+    delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll_internal,
+    set_payload, sync, update_vectors, upsert,
 };
 
 const FULL_ACCESS: Access = Access::full("Internal API");
@@ -455,7 +455,7 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
-        scroll(&self.toc, scroll_points, shard_id, FULL_ACCESS.clone()).await
+        scroll_internal(&self.toc, scroll_points, shard_id, FULL_ACCESS.clone()).await
     }
 
     async fn get(
