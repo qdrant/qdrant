@@ -67,6 +67,8 @@ impl Shard {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
                 let mut shard_telemetry = local_shard.get_telemetry_data(detail);
+                // can't take sync locks in async fn so local_shard_status() has to be 
+                // called outside get_telemetry_data()
                 shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
