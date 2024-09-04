@@ -212,6 +212,12 @@ path = "src/wal_inspector.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "memory_experiment"
+path = "src/memory_experiment.rs"
+test = false
+bench = true
+
 [workspace]
 members = [
     "lib/api",
