@@ -56,7 +56,7 @@ use crate::shards::transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
 /// Current state of the collection.
-/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
+/// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
@@ -64,7 +64,7 @@ pub enum CollectionStatus {
     Green,
     // Collection is available, but some segments might be under optimization
     Yellow,
-    // Collection is available, but some segments are non-optimal and still optimizations aren't running
+    // Collection is available, but some segments can be optimized still optimizations aren't triggered
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
@@ -72,7 +72,7 @@ pub enum CollectionStatus {
 }
 
 /// Current state of the shard (supports same states as the collection)
-/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
+/// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardStatus {
@@ -80,7 +80,7 @@ pub enum ShardStatus {
     Green,
     // Shard is available, but some segments might be under optimization
     Yellow,
-    // Shard is available, but some segments are non-optimal and still optimizations aren't running
+    // Shard is available, but some segments can be optimized still optimizations aren't triggered
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
