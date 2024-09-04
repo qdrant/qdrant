@@ -47,9 +47,6 @@ use segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
-use storage::content_manager::collection_verification::{
-    check_strict_mode, check_strict_mode_batch,
-};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -974,7 +971,7 @@ pub async fn delete_field_index_internal(
 }
 
 pub async fn search(
-    dispatcher: &Dispatcher,
+    toc_provider: impl CheckedTocProvider,
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
     access: Access,
@@ -1016,16 +1013,14 @@ pub async fn search(
         score_threshold,
     };
 
-    let pass = check_strict_mode(
-        &search_request,
-        timeout.map(|i| i as usize),
-        &collection_name,
-        dispatcher,
-        &access,
-    )
-    .await?;
-
-    let toc = dispatcher.toc_new(&access, &pass);
+    let toc = toc_provider
+        .check_strict_mode(
+            &search_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1053,24 +1048,22 @@ pub async fn search(
 }
 
 pub async fn core_search_batch(
-    dispatcher: &Dispatcher,
-    // toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
     access: Access,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
-    let pass = check_strict_mode_batch(
-        requests.iter().map(|i| &i.0),
-        timeout.map(|i| i.as_secs() as usize),
-        &collection_name,
-        dispatcher,
-        &access,
-    )
-    .await?;
-
-    let toc = dispatcher.toc_new(&access, &pass);
+    let toc = toc_provider
+        .check_strict_mode_batch(
+            &requests,
+            |i| &i.0,
+            &collection_name,
+            timeout.map(|i| i.as_secs() as usize),
+            &access,
+        )
+        .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1154,7 +1147,7 @@ pub async fn core_search_list(
 }
 
 pub async fn search_groups(
-    dispatcher: &Dispatcher,
+    toc_provider: impl CheckedTocProvider,
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
     access: Access,
@@ -1169,16 +1162,14 @@ pub async fn search_groups(
         ..
     } = search_point_groups;
 
-    let pass = check_strict_mode(
-        &search_groups_request,
-        timeout.map(|i| i as usize),
-        &collection_name,
-        dispatcher,
-        &access,
-    )
-    .await?;
-
-    let toc = dispatcher.toc_new(&access, &pass);
+    let toc = toc_provider
+        .check_strict_mode(
+            &search_groups_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1205,7 +1196,7 @@ pub async fn search_groups(
 }
 
 pub async fn recommend(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     recommend_points: RecommendPoints,
     access: Access,
 ) -> Result<Response<RecommendResponse>, Status> {
@@ -1230,8 +1221,6 @@ pub async fn recommend(
         timeout,
         shard_key_selector,
     } = recommend_points;
-
-    let timeout = timeout.map(Duration::from_secs);
 
     let positive_ids = positive
         .into_iter()
@@ -1272,9 +1261,18 @@ pub async fn recommend(
         lookup_from: lookup_from.map(|l| l.into()),
     };
 
-    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+    let toc = toc_provider
+        .check_strict_mode(
+            &request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+    let timeout = timeout.map(Duration::from_secs);
 
     let timing = Instant::now();
     let recommended_points = toc
@@ -1300,7 +1298,7 @@ pub async fn recommend(
 }
 
 pub async fn recommend_batch(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
@@ -1316,6 +1314,16 @@ pub async fn recommend_batch(
             request.try_into()?;
         requests.push((internal_request, shard_selector));
     }
+
+    let toc = toc_provider
+        .check_strict_mode_batch(
+            &requests,
+            |i| &i.0,
+            &collection_name,
+            timeout.map(|i| i.as_secs() as usize),
+            &access,
+        )
+        .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1344,7 +1352,7 @@ pub async fn recommend_batch(
 }
 
 pub async fn recommend_groups(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     recommend_point_groups: RecommendPointGroups,
     access: Access,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
@@ -1357,6 +1365,15 @@ pub async fn recommend_groups(
         shard_key_selector,
         ..
     } = recommend_point_groups;
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &recommend_groups_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1383,12 +1400,21 @@ pub async fn recommend_groups(
 }
 
 pub async fn discover(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     discover_points: DiscoverPoints,
     access: Access,
 ) -> Result<Response<DiscoverResponse>, Status> {
     let (request, collection_name, read_consistency, timeout, shard_key_selector) =
         try_discover_request_from_grpc(discover_points)?;
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &request,
+            &collection_name,
+            timeout.map(|i| i.as_secs() as usize),
+            &access,
+        )
+        .await?;
 
     let timing = Instant::now();
 
@@ -1417,7 +1443,7 @@ pub async fn discover(
 }
 
 pub async fn discover_batch(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     discover_points: Vec<DiscoverPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
@@ -1434,6 +1460,16 @@ pub async fn discover_batch(
     }
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let toc = toc_provider
+        .check_strict_mode_batch(
+            &requests,
+            |i| &i.0,
+            &collection_name,
+            timeout.map(|i| i.as_secs() as usize),
+            &access,
+        )
+        .await?;
 
     let timing = Instant::now();
     let scored_points = toc
@@ -1557,7 +1593,7 @@ pub async fn count(
             &count_request,
             &collection_name,
             timeout.map(|i| i as usize),
-            &access,
+            access,
         )
         .await?;
 
@@ -1639,7 +1675,7 @@ pub async fn get(
 }
 
 pub async fn query(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     query_points: QueryPoints,
     shard_selection: Option<ShardId>,
     access: Access,
@@ -1651,9 +1687,21 @@ pub async fn query(
         .clone()
         .map(TryFrom::try_from)
         .transpose()?;
-    let timeout = query_points.timeout.map(Duration::from_secs);
     let collection_name = query_points.collection_name.clone();
+    let timeout = query_points.timeout;
     let request = CollectionQueryRequest::try_from(query_points)?;
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
+
+    let timeout = timeout.map(Duration::from_secs);
+
     let timing = Instant::now();
     let scored_points = do_query_points(
         toc,
@@ -1678,7 +1726,7 @@ pub async fn query(
 }
 
 pub async fn query_batch(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     points: Vec<QueryPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
@@ -1693,6 +1741,17 @@ pub async fn query_batch(
         let request = CollectionQueryRequest::try_from(query_points)?;
         requests.push((request, shard_selector));
     }
+
+    let toc = toc_provider
+        .check_strict_mode_batch(
+            &requests,
+            |i| &i.0,
+            &collection_name,
+            timeout.map(|i| i.as_secs() as usize),
+            &access,
+        )
+        .await?;
+
     let timing = Instant::now();
     let scored_points = do_query_batch_points(
         toc,
@@ -1718,7 +1777,7 @@ pub async fn query_batch(
 }
 
 pub async fn query_groups(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     query_points: QueryPointGroups,
     shard_selection: Option<ShardId>,
     access: Access,
@@ -1730,9 +1789,20 @@ pub async fn query_groups(
         .clone()
         .map(TryFrom::try_from)
         .transpose()?;
-    let timeout = query_points.timeout.map(Duration::from_secs);
+    let timeout = query_points.timeout;
     let collection_name = query_points.collection_name.clone();
     let request = CollectionQueryGroupsRequest::try_from(query_points)?;
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
+
+    let timeout = timeout.map(Duration::from_secs);
     let timing = Instant::now();
     let groups_result = do_query_point_groups(
         toc,
@@ -1754,7 +1824,7 @@ pub async fn query_groups(
 }
 
 pub async fn facet(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     facet_counts: FacetCounts,
     access: Access,
 ) -> Result<Response<FacetResponse>, Status> {
@@ -1779,6 +1849,15 @@ pub async fn facet(
             .unwrap_or(FacetParams::DEFAULT_LIMIT),
         exact: exact.unwrap_or(FacetParams::DEFAULT_EXACT),
     };
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &facet_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

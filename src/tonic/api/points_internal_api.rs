@@ -437,7 +437,13 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        recommend(self.toc.as_ref(), recommend_points, FULL_ACCESS.clone()).await
+        recommend(
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
+            recommend_points,
+            FULL_ACCESS.clone(),
+        )
+        .await
     }
 
     async fn scroll(

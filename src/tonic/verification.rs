@@ -1,5 +1,7 @@
 use collection::operations::verification::StrictModeVerification;
-use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_batch,
+};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -9,11 +11,22 @@ use tonic::Status;
 pub trait CheckedTocProvider {
     async fn check_strict_mode<'b>(
         &'b self,
-        i: &impl StrictModeVerification,
+        request: &impl StrictModeVerification,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
     ) -> Result<&'b TableOfContent, Status>;
+
+    async fn check_strict_mode_batch<'b, I, R>(
+        &'b self,
+        requests: &[I],
+        conv: impl Fn(&I) -> &R,
+        collection_name: &str,
+        timeout: Option<usize>,
+        access: &Access,
+    ) -> Result<&'b TableOfContent, Status>
+    where
+        R: StrictModeVerification;
 }
 
 /// Simple provider for TableOfContent that doesn't do any checks.
@@ -33,11 +46,26 @@ impl<'a> UncheckedTocProvider<'a> {
 impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
     async fn check_strict_mode<'b>(
         &'b self,
-        _i: &impl StrictModeVerification,
+        _request: &impl StrictModeVerification,
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
     ) -> Result<&'b TableOfContent, Status> {
+        // No checks here
+        Ok(self.toc)
+    }
+
+    async fn check_strict_mode_batch<'b, I, R>(
+        &'b self,
+        _requests: &[I],
+        _conv: impl Fn(&I) -> &R,
+        _collection_name: &str,
+        _timeout: Option<usize>,
+        _access: &Access,
+    ) -> Result<&'b TableOfContent, Status>
+    where
+        R: StrictModeVerification,
+    {
         // No checks here
         Ok(self.toc)
     }
@@ -57,12 +85,35 @@ impl<'a> StrictModeCheckedProvider<'a> {
 impl<'a> CheckedTocProvider for StrictModeCheckedProvider<'a> {
     async fn check_strict_mode(
         &self,
-        i: &impl StrictModeVerification,
+        request: &impl StrictModeVerification,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
     ) -> Result<&TableOfContent, Status> {
-        let pass = check_strict_mode(i, timeout, collection_name, self.dispatcher, access).await?;
+        let pass =
+            check_strict_mode(request, timeout, collection_name, self.dispatcher, access).await?;
+        Ok(self.dispatcher.toc_new(access, &pass))
+    }
+
+    async fn check_strict_mode_batch<'b, I, R>(
+        &'b self,
+        requests: &[I],
+        conv: impl Fn(&I) -> &R,
+        collection_name: &str,
+        timeout: Option<usize>,
+        access: &Access,
+    ) -> Result<&'b TableOfContent, Status>
+    where
+        R: StrictModeVerification,
+    {
+        let pass = check_strict_mode_batch(
+            requests.iter().map(conv),
+            timeout,
+            collection_name,
+            self.dispatcher,
+            access,
+        )
+        .await?;
         Ok(self.dispatcher.toc_new(access, &pass))
     }
 }

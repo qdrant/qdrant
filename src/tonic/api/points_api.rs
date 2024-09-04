@@ -272,7 +272,13 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search(&self.dispatcher, request.into_inner(), None, access).await
+        search(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn search_batch(
@@ -304,7 +310,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            &self.dispatcher,
+            StrictModeCheckedProvider::new(&self.dispatcher),
             collection_name,
             requests,
             read_consistency,
@@ -320,7 +326,13 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search_groups(&self.dispatcher, request.into_inner(), None, access).await
+        search_groups(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn scroll(
@@ -346,7 +358,12 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        recommend(self.dispatcher.toc(&access), request.into_inner(), access).await
+        recommend(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn recommend_batch(
@@ -361,8 +378,9 @@ impl Points for PointsService {
             read_consistency,
             timeout,
         } = request.into_inner();
+
         recommend_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             collection_name,
             recommend_points,
             read_consistency,
@@ -380,7 +398,12 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        recommend_groups(self.dispatcher.toc(&access), request.into_inner(), access).await
+        recommend_groups(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn discover(
@@ -391,7 +414,12 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        discover(self.dispatcher.toc(&access), request.into_inner(), access).await
+        discover(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn discover_batch(
@@ -410,7 +438,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             collection_name,
             discover_points,
             read_consistency,
@@ -444,7 +472,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         query(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -467,7 +495,7 @@ impl Points for PointsService {
         } = request;
         let timeout = timeout.map(Duration::from_secs);
         query_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             collection_name,
             query_points,
             read_consistency,
@@ -483,7 +511,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let access = extract_access(&mut request);
         query_groups(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -496,7 +524,12 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        facet(self.dispatcher.toc(&access), request.into_inner(), access).await
+        facet(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn search_matrix_pairs(
