@@ -13037,7 +13037,7 @@
         ],
         "properties": {
           "offsets_row": {
-            "description": "Row coordinates of the matrix",
+            "description": "Row indices of the matrix",
             "type": "array",
             "items": {
               "type": "integer",
@@ -13046,7 +13046,7 @@
             }
           },
           "offsets_col": {
-            "description": "Column coordinates ids of the matrix",
+            "description": "Column indices of the matrix",
             "type": "array",
             "items": {
               "type": "integer",

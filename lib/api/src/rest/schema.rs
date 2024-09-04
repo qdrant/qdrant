@@ -703,9 +703,9 @@ pub struct SearchMatrixRequest {
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchMatrixOffsetsResponse {
-    /// Row coordinates of the matrix
+    /// Row indices of the matrix
     pub offsets_row: Vec<u64>,
-    /// Column coordinates ids of the matrix
+    /// Column indices of the matrix
     pub offsets_col: Vec<u64>,
     /// Scores associate with coordinates
     pub scores: Vec<ScoreType>,

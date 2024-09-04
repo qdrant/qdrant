@@ -5185,10 +5185,10 @@ pub struct SearchMatrixPair {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixOffsets {
-    /// Row coordinates of the matrix
+    /// Row indices of the matrix
     #[prost(uint64, repeated, tag = "1")]
     pub offsets_row: ::prost::alloc::vec::Vec<u64>,
-    /// Column coordinates ids of the matrix
+    /// Column indices of the matrix
     #[prost(uint64, repeated, tag = "2")]
     pub offsets_col: ::prost::alloc::vec::Vec<u64>,
     /// Scores associate with coordinates
