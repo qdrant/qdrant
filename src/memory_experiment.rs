@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
-use std::hint::black_box;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -21,16 +19,14 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::generate_diverse_payload;
 use segment::segment::Segment;
-use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, HnswConfig};
-use tempfile::Builder;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 use tikv_jemallocator::Jemalloc;
-use {collection, segment};
+use {collection, segment, tempfile};
 
 fn random_segment(path: &Path, num_points: usize, dim: usize) -> Segment {
     let distance = Distance::Dot;
@@ -68,13 +64,18 @@ static GLOBAL: Jemalloc = Jemalloc;
 fn main() {
     // This is a simple routine, which is dedicated to make sure memory is not leaking during
     // load and offload of the segments.
-    let mem = segment::utils::mem::Mem::new();
 
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+    let temp_dir = tempfile::Builder::new()
+        .prefix("segment_temp_dir")
+        .tempdir()
+        .unwrap();
 
-    let dim = 128;
-    let num_vectors = 1000;
+    let dim = 1024;
+    let num_vectors = 10000;
 
     let mut holder = SegmentHolder::default();
 
@@ -119,16 +120,18 @@ fn main() {
     let locked_segment_holder = Arc::new(RwLock::new(holder));
 
     for i in 0..100 {
-        let all_segment_ids: Vec<_> = holder.iter().map(|(id, _)| *id).collect();
+        let all_segment_ids: Vec<_> = locked_segment_holder.read().segment_ids();
 
         let cpu_permit = CpuPermit::dummy(4);
 
-        optimizer.optimize(
-            locked_segment_holder.clone(),
-            all_segment_ids,
-            cpu_permit,
-            &stopped,
-        ).unwrap();
+        optimizer
+            .optimize(
+                locked_segment_holder.clone(),
+                all_segment_ids,
+                cpu_permit,
+                &stopped,
+            )
+            .unwrap();
 
         println!("Iteration: {}", i);
     }

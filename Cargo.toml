@@ -37,16 +37,17 @@ tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
+testing = ["collection/testing", "common/testing", "segment/testing"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
 sealed_test = "1.1.0"
 
-tempfile = { workspace = true }
 rusty-hook = "^0.11.2"
 
 
 [dependencies]
+tempfile = { workspace = true }
 parking_lot = { workspace = true, optional = true }
 
 thiserror = { workspace = true }
