@@ -431,7 +431,7 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers and returns whether any is satisfied
     ///
     /// In other words, if this returns true we have pending optimizations.
-    pub(crate) fn has_pending_optimizations(&self) -> bool {
+    pub(crate) fn has_non_optimal_segments(&self) -> bool {
         // If we did trigger optimizers at least once, we do not consider to be pending
         if self.has_triggered_optimizers.load(Ordering::Relaxed) {
             return false;

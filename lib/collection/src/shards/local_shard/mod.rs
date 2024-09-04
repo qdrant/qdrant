@@ -976,30 +976,34 @@ impl LocalShard {
 
         {
             let segments = self.segments().read();
-            for (_, segment) in segments.iter() {
-                let segment_info = segment.get().read().info();
-                if segment_info.segment_type == SegmentType::Special {
-                    status = ShardStatus::Yellow;
-                }
 
-                if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                    status = ShardStatus::Red;
-                }
+            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                status = ShardStatus::Red;
 
                 if let Some(error) = &segments.optimizer_errors {
                     optimizer_status = OptimizersStatus::Error(error.to_string());
                 }
+            } else {
+                let has_special_segments = segments
+                    .iter()
+                    .map(|(_, segment)| segment.get().read().info().segment_type)
+                    .any(segment_type == SegmentType::Special);
+
+                // Special segment means it's a proxy segment and is being optimized, mark as yellow
+                if has_special_segments {
+                    status = ShardStatus::Yellow;
+                }
             }
         }
 
-        // If still green while optimization conditions are triggered, mark as grey
+        // If status looks green/ok but optimizations can be triggered, mark as grey
         if status == ShardStatus::Green
             && optimizer_status == OptimizersStatus::Ok
-            && self.update_handler.lock().await.has_pending_optimizations()
+            && self.update_handler.lock().await.has_non_optimal_segments()
         {
+            // This can happen when a node is restarted (crashed), because we don't
+            // automatically trigger optimizations on restart to avoid a crash loop
             status = ShardStatus::Grey;
-            optimizer_status =
-                OptimizersStatus::Error("optimizations pending, awaiting update operation".into());
         }
 
         (status, optimizer_status)
