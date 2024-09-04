@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::types::TelemetryDetail;
+use common::types::{DetailsLevel, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -76,9 +76,11 @@ impl TelemetryCollector {
     }
 
     pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
+        // Cluster metadata for details level 1 and up
         let metadata = self
             .dispatcher
             .consensus_state()
+            .filter(|_| detail.level >= DetailsLevel::Level1)
             .map(|state| state.persistent.read().cluster_metadata.clone())
             .unwrap_or_default();
 
