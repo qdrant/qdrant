@@ -29,6 +29,11 @@ pub struct CollectionSearchMatrixRequest {
     pub using: String,
 }
 
+impl CollectionSearchMatrixRequest {
+    pub const DEFAULT_LIMIT_PER_SAMPLE: usize = 3;
+    pub const DEFAULT_SAMPLE: usize = 10;
+}
+
 impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
     fn from(request: SearchMatrixRequestInternal) -> Self {
         let SearchMatrixRequestInternal {
@@ -38,8 +43,9 @@ impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
             using,
         } = request;
         Self {
-            sample_size: sample,
-            limit_per_sample: limit,
+            sample_size: sample.unwrap_or(CollectionSearchMatrixRequest::DEFAULT_SAMPLE),
+            limit_per_sample: limit
+                .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
             filter,
             using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
         }
@@ -98,6 +104,26 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
         }
 
         Self { pairs }
+    }
+}
+
+impl From<CollectionSearchMatrixResponse> for api::grpc::qdrant::SearchMatrixPairs {
+    fn from(response: CollectionSearchMatrixResponse) -> Self {
+        let rest_result = SearchMatrixPairsResponse::from(response);
+        let pairs = rest_result.pairs.into_iter().map(From::from).collect();
+        Self { pairs }
+    }
+}
+
+impl From<CollectionSearchMatrixResponse> for api::grpc::qdrant::SearchMatrixOffsets {
+    fn from(response: CollectionSearchMatrixResponse) -> Self {
+        let rest_result = SearchMatrixOffsetsResponse::from(response);
+        Self {
+            offsets_row: rest_result.offsets_row,
+            offsets_col: rest_result.offsets_col,
+            scores: rest_result.scores,
+            ids: rest_result.ids.into_iter().map(From::from).collect(),
+        }
     }
 }
 

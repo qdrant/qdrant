@@ -12983,10 +12983,6 @@
       },
       "SearchMatrixRequest": {
         "type": "object",
-        "required": [
-          "limit",
-          "sample"
-        ],
         "properties": {
           "shard_key": {
             "description": "Specify in which shards to look for the points, if not specified - look in all shards",
@@ -13011,16 +13007,18 @@
             ]
           },
           "sample": {
-            "description": "How many points to select and search within.",
+            "description": "How many points to select and search within. Default is 10.",
             "type": "integer",
             "format": "uint",
-            "minimum": 2
+            "minimum": 2,
+            "nullable": true
           },
           "limit": {
-            "description": "How many neighbours per sample to find",
+            "description": "How many neighbours per sample to find. Default is 3.",
             "type": "integer",
             "format": "uint",
-            "minimum": 1
+            "minimum": 1,
+            "nullable": true
           },
           "using": {
             "description": "Define which vector name to use for querying. If missing, the default vector is used.",
@@ -13039,7 +13037,7 @@
         ],
         "properties": {
           "offsets_row": {
-            "description": "Row coordinates of the CRS matrix",
+            "description": "Row indices of the matrix",
             "type": "array",
             "items": {
               "type": "integer",
@@ -13048,7 +13046,7 @@
             }
           },
           "offsets_col": {
-            "description": "Column coordinates ids of the matrix",
+            "description": "Column indices of the matrix",
             "type": "array",
             "items": {
               "type": "integer",

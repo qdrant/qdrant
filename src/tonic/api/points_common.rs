@@ -13,10 +13,13 @@ use api::grpc::qdrant::{
     QueryPointGroups, QueryPoints, QueryResponse, ReadConsistency as ReadConsistencyGrpc,
     RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
     RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
-    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints,
-    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    SearchMatrixPoints, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
+    SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use api::rest::{OrderByInterface, ShardKeySelector};
+use collection::collection::distance_matrix::{
+    CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
+};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
@@ -40,7 +43,7 @@ use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::VectorStructInternal;
+use segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -1744,4 +1747,54 @@ pub async fn facet(
     };
 
     Ok(Response::new(response))
+}
+
+pub async fn search_points_matrix(
+    toc: &TableOfContent,
+    search_matrix_points: SearchMatrixPoints,
+    access: Access,
+) -> Result<CollectionSearchMatrixResponse, Status> {
+    let SearchMatrixPoints {
+        collection_name,
+        filter,
+        sample,
+        limit,
+        using,
+        read_consistency,
+        shard_key_selector,
+        timeout,
+    } = search_matrix_points;
+
+    let search_matrix_request = CollectionSearchMatrixRequest {
+        filter: filter.map(TryInto::try_into).transpose()?,
+        sample_size: sample
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("could not parse 'sample' param into usize"))?
+            .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_SAMPLE),
+        limit_per_sample: limit
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("could not parse 'limit' param into usize"))?
+            .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+    };
+
+    let timeout = timeout.map(Duration::from_secs);
+    let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
+
+    let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
+
+    let search_matrix_response = toc
+        .search_points_matrix(
+            &collection_name,
+            search_matrix_request,
+            read_consistency,
+            shard_selector,
+            access,
+            timeout,
+        )
+        .await?;
+
+    Ok(search_matrix_response)
 }

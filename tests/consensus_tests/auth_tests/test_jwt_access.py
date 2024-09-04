@@ -543,18 +543,13 @@ ACTION_ACCESS = {
         True,
         True,
         "POST /collections/{collection_name}/points/search/matrix/offsets",
-    ),
-    "search_points_matrix_rows": EndpointAccess(
-        True,
-        True,
-        True,
-        "POST /collections/{collection_name}/points/search/matrix/rows", # TODO(distance_matrix): enable grpc endpoint
+        "qdrant.Points/SearchMatrixOffsets",
     ),
     "search_points_matrix_pairs": EndpointAccess(
         True,
         True,
         True,
-        "POST /collections/{collection_name}/points/search/matrix/pairs" # TODO(distance_matrix): enable grpc endpoint
+        "POST /collections/{collection_name}/points/search/matrix/pairs", "qdrant.Points/SearchMatrixPairs"
     ),
     "facet": EndpointAccess(
         True, True, True, "POST /collections/{collection_name}/facet", "qdrant.Points/Facet"
@@ -1810,15 +1805,6 @@ def test_query_points_groups():
 def test_search_points_matrix_offsets():
     check_access(
         "search_points_matrix_offsets",
-        rest_request={"sample": 10, "limit": 2},
-        path_params={"collection_name": COLL_NAME},
-        grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
-    )
-
-
-def test_search_points_matrix_rows():
-    check_access(
-        "search_points_matrix_rows",
         rest_request={"sample": 10, "limit": 2},
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME, "sample": 10, "limit": 2},
