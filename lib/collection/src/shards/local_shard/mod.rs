@@ -971,22 +971,24 @@ impl LocalShard {
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
-        let segments = self.segments().read();
         let mut status = ShardStatus::Green;
         let mut optimizer_status = OptimizersStatus::Ok;
 
-        for (_, segment) in segments.iter() {
-            let segment_info = segment.get().read().info();
-            if segment_info.segment_type == SegmentType::Special {
-                status = ShardStatus::Yellow;
-            }
+        {
+            let segments = self.segments().read();
+            for (_, segment) in segments.iter() {
+                let segment_info = segment.get().read().info();
+                if segment_info.segment_type == SegmentType::Special {
+                    status = ShardStatus::Yellow;
+                }
 
-            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                status = ShardStatus::Red;
-            }
+                if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                    status = ShardStatus::Red;
+                }
 
-            if let Some(error) = &segments.optimizer_errors {
-                optimizer_status = OptimizersStatus::Error(error.to_string());
+                if let Some(error) = &segments.optimizer_errors {
+                    optimizer_status = OptimizersStatus::Error(error.to_string());
+                }
             }
         }
 
