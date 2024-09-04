@@ -5185,7 +5185,7 @@ pub struct SearchMatrixPair {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchMatrixOffsets {
-    /// Row coordinates of the CRS matrix
+    /// Row coordinates of the matrix (COO)
     #[prost(uint64, repeated, tag = "1")]
     pub offsets_row: ::prost::alloc::vec::Vec<u64>,
     /// Column coordinates ids of the matrix

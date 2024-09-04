@@ -13037,7 +13037,7 @@
         ],
         "properties": {
           "offsets_row": {
-            "description": "Row coordinates of the CRS matrix",
+            "description": "Row coordinates of the matrix (COO)",
             "type": "array",
             "items": {
               "type": "integer",
