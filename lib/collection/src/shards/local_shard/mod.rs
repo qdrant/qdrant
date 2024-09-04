@@ -987,9 +987,10 @@ impl LocalShard {
                 let has_special_segments = segments
                     .iter()
                     .map(|(_, segment)| segment.get().read().info().segment_type)
-                    .any(segment_type == SegmentType::Special);
+                    .any(|segment_type| segment_type == SegmentType::Special);
 
                 // Special segment means it's a proxy segment and is being optimized, mark as yellow
+                // ToDo: snapshotting also creates temp proxy segments. should differentiate.
                 if has_special_segments {
                     status = ShardStatus::Yellow;
                 }
