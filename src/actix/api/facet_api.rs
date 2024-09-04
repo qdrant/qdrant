@@ -21,15 +21,16 @@ async fn facet(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, timing),
-    };
-
     let FacetRequest {
         facet_request,
         shard_key,
     } = request.into_inner();
+
+    let pass = match check_strict_mode(&facet_request, &collection.name, &dispatcher, &access).await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, timing),
+    };
 
     let facet_params = From::from(facet_request);
 

@@ -3,19 +3,19 @@ use segment::types::{Filter, SearchParams};
 use super::StrictModeVerification;
 use crate::collection::Collection;
 use crate::operations::config_diff::StrictModeConfig;
-use crate::operations::types::{CollectionError, DiscoverRequest, DiscoverRequestBatch};
+use crate::operations::types::{CollectionError, DiscoverRequestBatch, DiscoverRequestInternal};
 
-impl StrictModeVerification for DiscoverRequest {
+impl StrictModeVerification for DiscoverRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.discover_request.limit)
+        Some(self.limit)
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
-        self.discover_request.filter.as_ref()
+        self.filter.as_ref()
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
-        self.discover_request.params.as_ref()
+        self.params.as_ref()
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -38,7 +38,8 @@ impl StrictModeVerification for DiscoverRequestBatch {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         for i in self.searches.iter() {
-            i.check_strict_mode(collection, strict_mode_config)?;
+            i.discover_request
+                .check_strict_mode(collection, strict_mode_config)?;
         }
 
         Ok(())

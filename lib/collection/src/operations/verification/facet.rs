@@ -1,10 +1,10 @@
-use api::rest::FacetRequest;
+use api::rest::FacetRequestInternal;
 
 use super::StrictModeVerification;
 
-impl StrictModeVerification for FacetRequest {
+impl StrictModeVerification for FacetRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        self.facet_request.limit
+        self.limit
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -12,7 +12,7 @@ impl StrictModeVerification for FacetRequest {
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
-        self.facet_request.filter.as_ref()
+        self.filter.as_ref()
     }
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
@@ -20,7 +20,7 @@ impl StrictModeVerification for FacetRequest {
     }
 
     fn request_exact(&self) -> Option<bool> {
-        self.facet_request.exact
+        self.exact
     }
 
     fn request_search_params(&self) -> Option<&segment::types::SearchParams> {

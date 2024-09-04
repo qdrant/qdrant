@@ -1,9 +1,9 @@
 use super::StrictModeVerification;
-use crate::operations::types::RecommendRequest;
+use crate::operations::types::RecommendRequestInternal;
 
-impl StrictModeVerification for RecommendRequest {
+impl StrictModeVerification for RecommendRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.recommend_request.limit)
+        Some(self.limit)
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -11,7 +11,7 @@ impl StrictModeVerification for RecommendRequest {
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
-        self.recommend_request.filter.as_ref()
+        self.filter.as_ref()
     }
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {

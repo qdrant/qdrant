@@ -1,19 +1,18 @@
+use api::rest::{SearchGroupsRequestInternal, SearchRequestInternal};
 use segment::types::{Filter, SearchParams};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
 use crate::operations::config_diff::StrictModeConfig;
-use crate::operations::types::{
-    CollectionError, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
-};
+use crate::operations::types::{CollectionError, SearchRequestBatch};
 
-impl StrictModeVerification for SearchRequest {
+impl StrictModeVerification for SearchRequestInternal {
     fn indexed_filter_read(&self) -> Option<&Filter> {
-        self.search_request.filter.as_ref()
+        self.filter.as_ref()
     }
 
     fn query_limit(&self) -> Option<usize> {
-        Some(self.search_request.limit)
+        Some(self.limit)
     }
 
     fn timeout(&self) -> Option<usize> {
@@ -25,7 +24,7 @@ impl StrictModeVerification for SearchRequest {
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
-        self.search_request.params.as_ref()
+        self.params.as_ref()
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -40,7 +39,9 @@ impl StrictModeVerification for SearchRequestBatch {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         for search_request in &self.searches {
-            search_request.check_strict_mode(collection, strict_mode_config)?;
+            search_request
+                .search_request
+                .check_strict_mode(collection, strict_mode_config)?;
         }
         Ok(())
     }
@@ -70,13 +71,13 @@ impl StrictModeVerification for SearchRequestBatch {
     }
 }
 
-impl StrictModeVerification for SearchGroupsRequest {
+impl StrictModeVerification for SearchGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.search_group_request.group_request.limit as usize)
+        Some(self.group_request.limit as usize)
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
-        self.search_group_request.filter.as_ref()
+        self.filter.as_ref()
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -85,7 +86,7 @@ impl StrictModeVerification for SearchGroupsRequest {
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
-        self.search_group_request.params.as_ref()
+        self.params.as_ref()
     }
 
     fn timeout(&self) -> Option<usize> {

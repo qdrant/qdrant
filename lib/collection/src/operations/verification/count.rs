@@ -1,17 +1,9 @@
-use segment::types::Filter;
+use segment::types::{Filter, SearchParams};
 
 use super::StrictModeVerification;
-use crate::operations::types::CountRequest;
+use crate::operations::types::CountRequestInternal;
 
-impl StrictModeVerification for CountRequest {
-    fn indexed_filter_read(&self) -> Option<&Filter> {
-        self.count_request.filter.as_ref()
-    }
-
-    fn request_exact(&self) -> Option<bool> {
-        Some(self.count_request.exact)
-    }
-
+impl StrictModeVerification for CountRequestInternal {
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -20,11 +12,19 @@ impl StrictModeVerification for CountRequest {
         None
     }
 
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        self.filter.as_ref()
+    }
+
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 
-    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
+    fn request_exact(&self) -> Option<bool> {
+        Some(self.exact)
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
         None
     }
 }
