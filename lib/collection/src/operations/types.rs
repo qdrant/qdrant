@@ -64,7 +64,7 @@ pub enum CollectionStatus {
     Green,
     // Collection is available, but some segments might be under optimization
     Yellow,
-    // Collection is available, but some segments are pending optimization
+    // Collection is available, but some segments are non-optimal and still optimizations aren't running
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
@@ -80,7 +80,7 @@ pub enum ShardStatus {
     Green,
     // Shard is available, but some segments might be under optimization
     Yellow,
-    // Shard is available, but some segments are pending optimization
+    // Shard is available, but some segments are non-optimal and still optimizations aren't running
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
