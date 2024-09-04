@@ -48,6 +48,7 @@ impl DummyShard {
         LocalShardTelemetry {
             variant_name: Some("dummy shard".into()),
             status: Some(ShardStatus::Green),
+            points_indexed_once: 0,
             segments: vec![],
             optimizations: Default::default(),
         }

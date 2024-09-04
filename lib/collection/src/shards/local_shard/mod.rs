@@ -86,6 +86,7 @@ pub struct LocalShard {
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
+    pub(super) points_indexed_once: Arc<ParkingMutex<usize>>,
     update_runtime: Handle,
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
@@ -153,6 +154,7 @@ impl LocalShard {
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
+        let points_indexed_once = Arc::new(ParkingMutex::new(0));
 
         // default to 2x the WAL capacity
         let disk_buffer_threshold_mb =
@@ -169,6 +171,7 @@ impl LocalShard {
             payload_index_schema.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
+            points_indexed_once.clone(),
             optimizer_cpu_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
@@ -201,6 +204,7 @@ impl LocalShard {
             search_runtime,
             optimizers,
             optimizers_log,
+            points_indexed_once,
             disk_usage_watcher,
         }
     }
@@ -916,9 +920,12 @@ impl LocalShard {
             })
             .fold(Default::default(), |acc, x| acc + x);
 
+        let points_indexed = self.points_indexed_once.lock();
+
         LocalShardTelemetry {
             variant_name: None,
             status: None,
+            points_indexed_once: *points_indexed,
             segments,
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,

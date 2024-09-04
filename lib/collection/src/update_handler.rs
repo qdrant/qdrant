@@ -88,6 +88,8 @@ pub struct UpdateHandler {
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
     optimizers_log: Arc<Mutex<TrackerLog>>,
+    /// Number of points indexed after init of the shard
+    points_indexed_once: Arc<Mutex<usize>>,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
     optimizer_cpu_budget: CpuBudget,
@@ -129,6 +131,7 @@ impl UpdateHandler {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        points_indexed_once: Arc<Mutex<usize>>,
         optimizer_cpu_budget: CpuBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
@@ -146,6 +149,7 @@ impl UpdateHandler {
             update_worker: None,
             optimizer_worker: None,
             optimizers_log,
+            points_indexed_once,
             optimizer_cpu_budget,
             flush_worker: None,
             flush_stop: None,
@@ -171,6 +175,7 @@ impl UpdateHandler {
             self.wal.clone(),
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
+            self.points_indexed_once.clone(),
             self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
             self.has_triggered_optimizers.clone(),
@@ -256,6 +261,7 @@ impl UpdateHandler {
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        points_indexed_once: Arc<Mutex<usize>>,
         optimizer_cpu_budget: &CpuBudget,
         segments: LockedSegmentHolder,
         callback: F,
@@ -305,6 +311,7 @@ impl UpdateHandler {
 
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
+                let points_indexed_once = points_indexed_once.clone();
                 let segments = segments.clone();
                 let nsi = nonoptimal_segment_ids.clone();
                 scheduled_segment_ids.extend(&nsi);
@@ -329,9 +336,11 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok(num_points_optimized) => {
+                                    let mut points_indexed_in_shard = points_indexed_once.lock();
+                                    *points_indexed_in_shard += num_points_optimized;
+
                                     let result = num_points_optimized > 0;
-                                    tracker_handle
-                                        .update(TrackerStatus::Done, Some(num_points_optimized));
+                                    tracker_handle.update(TrackerStatus::Done);
                                     callback(result);
                                     result
                                 }
@@ -339,8 +348,7 @@ impl UpdateHandler {
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
                                         debug!("Optimization cancelled - {description}");
-                                        tracker_handle
-                                            .update(TrackerStatus::Cancelled(description), None);
+                                        tracker_handle.update(TrackerStatus::Cancelled(description));
                                         false
                                     }
                                     _ => {
@@ -352,8 +360,7 @@ impl UpdateHandler {
                                         // optimization thread and log the error
                                         log::error!("Optimization error: {error}");
 
-                                        tracker_handle
-                                            .update(TrackerStatus::Error(error.to_string()), None);
+                                        tracker_handle.update(TrackerStatus::Error(error.to_string()));
 
                                         panic!("Optimization error: {error}");
                                     }
@@ -447,11 +454,13 @@ impl UpdateHandler {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        points_indexed_once: Arc<Mutex<usize>>,
         optimizer_cpu_budget: &CpuBudget,
         sender: Sender<OptimizerSignal>,
         limit: usize,
@@ -459,6 +468,7 @@ impl UpdateHandler {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             optimizers_log,
+            points_indexed_once,
             optimizer_cpu_budget,
             segments.clone(),
             move |_optimization_result| {
@@ -510,6 +520,7 @@ impl UpdateHandler {
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        points_indexed_once: Arc<Mutex<usize>>,
         optimizer_cpu_budget: CpuBudget,
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
@@ -606,6 +617,7 @@ impl UpdateHandler {
                         segments.clone(),
                         optimization_handles.clone(),
                         optimizers_log.clone(),
+                        points_indexed_once.clone(),
                         &optimizer_cpu_budget,
                         sender.clone(),
                         limit,

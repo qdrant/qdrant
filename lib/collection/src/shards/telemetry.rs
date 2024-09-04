@@ -31,6 +31,7 @@ pub struct RemoteShardTelemetry {
 pub struct LocalShardTelemetry {
     pub variant_name: Option<String>,
     pub status: Option<ShardStatus>,
+    pub points_indexed_once: usize,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
 }
@@ -57,6 +58,7 @@ impl Anonymize for LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: self.variant_name.clone(),
             status: self.status,
+            points_indexed_once: 0,
             segments: self.segments.anonymize(),
             optimizations: self.optimizations.anonymize(),
         }
@@ -68,7 +70,6 @@ impl Anonymize for TrackerTelemetry {
         TrackerTelemetry {
             name: self.name.clone(),
             segment_ids: self.segment_ids.anonymize(),
-            points_optimized: self.points_optimized,
             status: self.status.clone(),
             start_at: self.start_at.anonymize(),
             end_at: self.end_at.anonymize(),
