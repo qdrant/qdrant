@@ -975,7 +975,8 @@ impl LocalShard {
         let mut status = ShardStatus::Green;
         let mut optimizer_status = OptimizersStatus::Ok;
 
-        for (idx, segment) in segments.iter() {
+        for (_, segment) in segments.iter() {
+            let segment_info = segment.get().read().info();
             if segment_info.segment_type == SegmentType::Special {
                 status = ShardStatus::Yellow;
             }
