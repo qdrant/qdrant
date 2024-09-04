@@ -261,6 +261,11 @@ pub fn validate_u64_range_min_1(value: &u64) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(&1), None)
 }
 
+/// Validate the value is in `[2, ]`.
+pub fn validate_u64_range_min_2(value: &u64) -> Result<(), ValidationError> {
+    validate_range_generic(value, Some(&2), None)
+}
+
 /// Validate the value is in `[1, ]`.
 pub fn validate_u32_range_min_1(value: &u32) -> Result<(), ValidationError> {
     validate_range_generic(value, Some(&1), None)

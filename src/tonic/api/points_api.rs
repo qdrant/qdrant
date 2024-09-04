@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
@@ -10,8 +10,10 @@ use api::grpc::qdrant::{
     QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
     RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
     RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
-    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsets, SearchMatrixOffsetsResponse,
+    SearchMatrixPairs, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
+    UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use storage::dispatcher::Dispatcher;
@@ -19,7 +21,7 @@ use tonic::{Request, Response, Status};
 
 use super::points_common::{
     delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, search_groups, update_batch, update_vectors,
+    recommend_groups, search_groups, search_points_matrix, update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
@@ -506,5 +508,39 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         facet(self.dispatcher.toc(&access), request.into_inner(), access).await
+    }
+
+    async fn search_matrix_pairs(
+        &self,
+        mut request: Request<SearchMatrixPoints>,
+    ) -> Result<Response<SearchMatrixPairsResponse>, Status> {
+        validate(request.get_ref())?;
+        let access = extract_access(&mut request);
+        let timing = Instant::now();
+        let search_matrix_response =
+            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
+                .await?;
+        let pairs_response = SearchMatrixPairsResponse {
+            result: Some(SearchMatrixPairs::from(search_matrix_response)),
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(pairs_response))
+    }
+
+    async fn search_matrix_offsets(
+        &self,
+        mut request: Request<SearchMatrixPoints>,
+    ) -> Result<Response<SearchMatrixOffsetsResponse>, Status> {
+        validate(request.get_ref())?;
+        let access = extract_access(&mut request);
+        let timing = Instant::now();
+        let search_matrix_response =
+            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
+                .await?;
+        let offsets_response = SearchMatrixOffsetsResponse {
+            result: Some(SearchMatrixOffsets::from(search_matrix_response)),
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(offsets_response))
     }
 }

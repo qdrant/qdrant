@@ -274,7 +274,13 @@ fn configure_validation(builder: Builder) -> Builder {
             ("QueryBatchPoints.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
             ("FacetCounts.collection_name", "length(min = 1, max = 255)"),
             ("FacetCounts.key", "length(min = 1)"),
-            ("FacetCounts.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")")
+            ("FacetCounts.filter", ""),
+            ("FacetCounts.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
+            ("SearchMatrixPoints.collection_name", "length(min = 1, max = 255)"),
+            ("SearchMatrixPoints.filter", ""),
+            ("SearchMatrixPoints.sample", "custom(function = \"crate::grpc::validate::validate_u64_range_min_2\")"),
+            ("SearchMatrixPoints.limit", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")"),
+            ("SearchMatrixPoints.timeout", "custom(function = \"crate::grpc::validate::validate_u64_range_min_1\")")
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
