@@ -9974,6 +9974,7 @@
           "cluster",
           "collections",
           "id",
+          "metadata",
           "requests"
         ],
         "properties": {
@@ -9991,6 +9992,10 @@
           },
           "requests": {
             "$ref": "#/components/schemas/RequestsTelemetry"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
           }
         }
       },
