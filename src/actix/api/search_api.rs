@@ -28,15 +28,18 @@ async fn search_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let search_request = request.into_inner();
+
+    let pass =
+        match check_strict_mode(&search_request, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let SearchRequest {
         search_request,
         shard_key,
-    } = request.into_inner();
+    } = search_request;
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -71,12 +74,13 @@ async fn batch_search_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let pass = match check_strict_mode(&request.0, &collection.name, &dispatcher, &access).await {
+    let request = request.into_inner();
+
+    let pass = match check_strict_mode(&request, &collection.name, &dispatcher, &access).await {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let request = request.into_inner();
     let requests = request
         .searches
         .into_iter()

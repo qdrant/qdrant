@@ -21,7 +21,6 @@ pub async fn check_strict_mode(
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequirements::new())?;
     let collection = toc.get_collection(&collection_pass).await?;
-
     if let Some(strict_mode_config) = &collection.strict_mode_config().await {
         if strict_mode_config.enabled.unwrap_or_default() {
             request.check_strict_mode(&collection, strict_mode_config)?;
