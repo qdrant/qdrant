@@ -8,6 +8,19 @@ use super::config_diff::StrictModeConfig;
 use super::types::CollectionError;
 use crate::collection::Collection;
 
+// Creates a new `VerificationPass` for successful verifications.
+// Don't use this, unless you know what you're doing!
+pub fn new_pass() -> VerificationPass {
+    VerificationPass { inner: () }
+}
+
+/// A pass, created on successful verification.
+pub struct VerificationPass {
+    // Private field, so we can't instantiate it from somewhere else.
+    #[allow(dead_code)]
+    inner: (),
+}
+
 /// Trait to verify strict mode for requests.
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
@@ -32,7 +45,7 @@ pub trait StrictModeVerification {
     fn indexed_filter_read(&self) -> Option<&Filter>;
 
     /// Verifies that all keys in the given filter have an index available. Only implement this
-    /// if the filter is used for FILTERED-updates like delete by payload.
+    /// if the filter is used for filtered-UPDATES like delete by payload.
     /// For read only filters implement `request_indexed_filter_read`!
     fn indexed_filter_write(&self) -> Option<&Filter>;
 

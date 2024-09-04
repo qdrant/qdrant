@@ -244,6 +244,14 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn strict_mode_config(&self) -> Option<StrictModeConfig> {
+        self.collection_config
+            .read()
+            .await
+            .strict_mode_config
+            .clone()
+    }
+
     pub async fn info(
         &self,
         shard_selection: &ShardSelectorInternal,
