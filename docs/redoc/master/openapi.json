@@ -10215,6 +10215,7 @@
         "type": "object",
         "required": [
           "optimizations",
+          "points_indexed_once",
           "segments"
         ],
         "properties": {
@@ -10231,6 +10232,11 @@
                 "nullable": true
               }
             ]
+          },
+          "points_indexed_once": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           },
           "segments": {
             "type": "array",
@@ -10820,13 +10826,6 @@
               "format": "uint",
               "minimum": 0
             }
-          },
-          "points_optimized": {
-            "description": "Points optimized by the optimizer",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
           },
           "status": {
             "$ref": "#/components/schemas/TrackerStatus"
