@@ -60,7 +60,7 @@ use crate::wal::WalError;
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
-    // Collection if completely ready for requests
+    // Collection is completely ready for requests
     Green,
     // Collection is available, but some segments might be under optimization
     Yellow,
@@ -76,7 +76,7 @@ pub enum CollectionStatus {
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardStatus {
-    // Shard if completely ready for requests
+    // Shard is completely ready for requests
     Green,
     // Shard is available, but some segments might be under optimization
     Yellow,

@@ -67,7 +67,7 @@ impl Shard {
         let mut telemetry = match self {
             Shard::Local(local_shard) => {
                 let mut shard_telemetry = local_shard.get_telemetry_data(detail);
-                shard_telemetry.status = Some(local_shard.local_shard_info().await.status);
+                shard_telemetry.status = Some(local_shard.local_shard_status().await.0);
                 shard_telemetry
             }
             Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),

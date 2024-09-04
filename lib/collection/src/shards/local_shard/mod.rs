@@ -970,36 +970,16 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> ShardInfoInternal {
-        let collection_config = self.collection_config.read().await.clone();
-        let mut vectors_count = 0;
-        let mut indexed_vectors_count = 0;
-        let mut points_count = 0;
-        let mut segments_count = 0;
+    pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
+        let segments = self.segments().read();
         let mut status = ShardStatus::Green;
-        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         let mut optimizer_status = OptimizersStatus::Ok;
 
-        {
-            let segments = self.segments().read();
-            for (_idx, segment) in segments.iter() {
-                segments_count += 1;
-
-                let segment_info = segment.get().read().info();
-
-                if segment_info.segment_type == SegmentType::Special {
-                    status = ShardStatus::Yellow;
-                }
-                vectors_count += segment_info.num_vectors;
-                indexed_vectors_count += segment_info.num_indexed_vectors;
-                points_count += segment_info.num_points;
-                for (key, val) in segment_info.index_schema {
-                    schema
-                        .entry(key)
-                        .and_modify(|entry| entry.points += val.points)
-                        .or_insert(val);
-                }
+        for (idx, segment) in segments.iter() {
+            if segment_info.segment_type == SegmentType::Special {
+                status = ShardStatus::Yellow;
             }
+
             if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
                 status = ShardStatus::Red;
             }
@@ -1011,13 +991,45 @@ impl LocalShard {
 
         // If still green while optimization conditions are triggered, mark as grey
         if status == ShardStatus::Green
-            && self.update_handler.lock().await.has_pending_optimizations()
             && optimizer_status == OptimizersStatus::Ok
+            && self.update_handler.lock().await.has_pending_optimizations()
         {
             status = ShardStatus::Grey;
             optimizer_status =
                 OptimizersStatus::Error("optimizations pending, awaiting update operation".into());
         }
+
+        (status, optimizer_status)
+    }
+
+    pub async fn local_shard_info(&self) -> ShardInfoInternal {
+        let collection_config = self.collection_config.read().await.clone();
+        let mut vectors_count = 0;
+        let mut indexed_vectors_count = 0;
+        let mut points_count = 0;
+        let mut segments_count = 0;
+        let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
+
+        {
+            let segments = self.segments().read();
+            for (_idx, segment) in segments.iter() {
+                segments_count += 1;
+
+                let segment_info = segment.get().read().info();
+
+                vectors_count += segment_info.num_vectors;
+                indexed_vectors_count += segment_info.num_indexed_vectors;
+                points_count += segment_info.num_points;
+                for (key, val) in segment_info.index_schema {
+                    schema
+                        .entry(key)
+                        .and_modify(|entry| entry.points += val.points)
+                        .or_insert(val);
+                }
+            }
+        }
+
+        let (status, optimizer_status) = self.local_shard_status().await;
 
         ShardInfoInternal {
             status,
