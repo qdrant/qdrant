@@ -305,7 +305,7 @@ impl Collection {
                     //   and so all changes to replicas would be discarded/rolled-back anyway
                     // - during resharding *up*, we transfer points to a single new shard replica;
                     //   it is expected that this node is initially empty/incomplete, and so failed
-                    //   transfer should not strictly introduce inconcistency (it just means the node
+                    //   transfer should not strictly introduce inconsistency (it just means the node
                     //   is *still* empty/incomplete); marking this new replica as `Dead` would only
                     //   make requests to return explicit errors
                     // - during resharding *down*, we transfer points from shard-to-be-removed
