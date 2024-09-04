@@ -703,7 +703,7 @@ pub struct SearchMatrixRequest {
 #[derive(Debug, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchMatrixOffsetsResponse {
-    /// Row coordinates of the matrix (COO)
+    /// Row coordinates of the matrix
     pub offsets_row: Vec<u64>,
     /// Column coordinates ids of the matrix
     pub offsets_col: Vec<u64>,

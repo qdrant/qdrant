@@ -3821,7 +3821,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| offsets_row | [uint64](#uint64) | repeated | Row coordinates of the matrix (COO) |
+| offsets_row | [uint64](#uint64) | repeated | Row coordinates of the matrix |
 | offsets_col | [uint64](#uint64) | repeated | Column coordinates ids of the matrix |
 | scores | [float](#float) | repeated | Scores associate with coordinates |
 | ids | [PointId](#qdrant-PointId) | repeated | Ids of the points in order |

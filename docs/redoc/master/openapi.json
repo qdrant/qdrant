@@ -13037,7 +13037,7 @@
         ],
         "properties": {
           "offsets_row": {
-            "description": "Row coordinates of the matrix (COO)",
+            "description": "Row coordinates of the matrix",
             "type": "array",
             "items": {
               "type": "integer",

@@ -634,7 +634,7 @@ message SearchMatrixPair {
 }
 
 message SearchMatrixOffsets {
-  repeated uint64 offsets_row = 1; // Row coordinates of the matrix (COO)
+  repeated uint64 offsets_row = 1; // Row coordinates of the matrix
   repeated uint64 offsets_col = 2; // Column coordinates ids of the matrix
   repeated float scores = 3; // Scores associate with coordinates
   repeated PointId ids = 4; // Ids of the points in order
