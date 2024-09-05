@@ -795,11 +795,13 @@ impl ShardReplicaSet {
         let mut ids = Vec::new();
 
         while let Some(current_offset) = next_offset {
+            const BATCH_SIZE: usize = 1000;
+
             let mut points = local_shard
                 .get()
                 .scroll_by(
                     Some(current_offset),
-                    1001,
+                    BATCH_SIZE + 1,
                     &false.into(),
                     &false.into(),
                     Some(&filter),
@@ -809,7 +811,7 @@ impl ShardReplicaSet {
                 )
                 .await?;
 
-            if points.len() > 100 {
+            if points.len() > BATCH_SIZE {
                 next_offset = points.pop().map(|points| points.id);
             } else {
                 next_offset = None;
