@@ -1174,24 +1174,38 @@ fn test_any_matcher_cardinality_estimation() {
 /// Checks that the counts are the same as counting each value exactly.
 fn validate_facet_result(
     segment: &Segment,
-    facet_hits: HashMap<FacetValue, usize>,
+    facet_hits: impl IntoIterator<Item = (FacetValue, usize)>,
     filter: Option<Filter>,
+    is_exact: bool,
 ) {
-    for (value, count) in facet_hits.iter() {
-        // Compare against exact count
+    for (value, count) in facet_hits {
+        assert!(count > 0, "count must never be zero, otherwise the value could leak even if JWT access does not allow it");
+
         let value = ValueVariants::from(value.clone());
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),
-            Match::from(value),
+            Match::from(value.clone()),
         )));
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
-        let exact = segment
-            .read_filtered(None, None, count_filter.as_ref(), &Default::default())
-            .len();
+        if is_exact {
+            // Compare against exact count
+            let exact = segment
+                .read_filtered(None, None, count_filter.as_ref(), &Default::default())
+                .len();
 
-        assert_eq!(*count, exact);
+            assert_eq!(count, exact);
+        } else {
+            // Compare against cardinality estimation
+            let estimation = segment.estimate_point_count(count_filter.as_ref()).exp;
+            assert!(
+                count.abs_diff(estimation) <= 1,
+                "facet count mismatch for value {value:?}, expected {estimation}, got {count}
+                \nfilter: {filter:#?}
+                \nis_exact: {is_exact}",
+            );
+        };
     }
 }
 
@@ -1223,7 +1237,7 @@ fn test_keyword_facet() {
         .facet(&request, &Default::default())
         .unwrap();
 
-    validate_facet_result(&test_segments.struct_segment, facet_hits, None);
+    validate_facet_result(&test_segments.struct_segment, facet_hits, None, true);
 
     // Mmap segment
     let facet_hits = test_segments
@@ -1237,41 +1251,82 @@ fn test_keyword_facet() {
         test_segments.mmap_segment.as_ref().unwrap(),
         facet_hits,
         None,
+        true,
     );
 
-    // *** With filter ***
+    // *** With filter *** (10 random filters)
     let mut rng = rand::thread_rng();
-    let filter = random_filter(&mut rng, 3);
-    let request = FacetParams {
-        key,
-        limit,
-        filter: Some(filter.clone()),
-        exact,
-    };
+    for _ in 0..10 {
+        let filter = random_filter(&mut rng, 3);
+        let request = FacetParams {
+            key: key.clone(),
+            limit,
+            filter: Some(filter.clone()),
+            exact,
+        };
 
-    // Struct segment
-    let facet_hits = test_segments
-        .struct_segment
-        .facet(&request, &Default::default())
-        .unwrap();
+        // * Struct segment *
 
-    validate_facet_result(
-        &test_segments.struct_segment,
-        facet_hits,
-        Some(filter.clone()),
-    );
+        // Accurate facet
+        let facet_hits = test_segments
+            .struct_segment
+            .facet(&request, &Default::default())
+            .unwrap();
 
-    // Mmap segment
-    let facet_hits = test_segments
-        .mmap_segment
-        .as_ref()
-        .unwrap()
-        .facet(&request, &Default::default())
-        .unwrap();
+        validate_facet_result(
+            &test_segments.struct_segment,
+            facet_hits,
+            Some(filter.clone()),
+            true,
+        );
+        eprintln!("accurate facet in struct segment ok");
 
-    validate_facet_result(
-        test_segments.mmap_segment.as_ref().unwrap(),
-        facet_hits,
-        Some(filter),
-    );
+        // Estimated facet
+        let facet_hits = test_segments
+            .struct_segment
+            .exact_or_estimate_facet_for_test(&request, &Default::default(), 0)
+            .unwrap();
+
+        validate_facet_result(
+            &test_segments.struct_segment,
+            facet_hits,
+            Some(filter.clone()),
+            false,
+        );
+        eprintln!("estimated facet in struct segment ok");
+
+        // * Mmap segment *
+
+        // Accurate facet
+        let facet_hits = test_segments
+            .mmap_segment
+            .as_ref()
+            .unwrap()
+            .facet(&request, &Default::default())
+            .unwrap();
+
+        validate_facet_result(
+            test_segments.mmap_segment.as_ref().unwrap(),
+            facet_hits,
+            Some(filter.clone()),
+            true,
+        );
+        eprintln!("accurate facet in mmap segment ok");
+
+        // Estimated facet
+        let facet_hits = test_segments
+            .mmap_segment
+            .as_ref()
+            .unwrap()
+            .exact_or_estimate_facet_for_test(&request, &Default::default(), 0)
+            .unwrap();
+
+        validate_facet_result(
+            test_segments.mmap_segment.as_ref().unwrap(),
+            facet_hits,
+            Some(filter.clone()),
+            false,
+        );
+        eprintln!("estimated facet in mmap segment ok");
+    }
 }

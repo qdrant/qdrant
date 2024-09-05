@@ -19,6 +19,30 @@ impl Segment {
         request: &FacetParams,
         is_stopped: &AtomicBool,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
+        self.exact_or_estimate_facet(request, is_stopped, SAMPLE_SIZE_CL99_ME01)
+    }
+
+    /// For testing purposes only. To be able to adjust the threshold for easier testing
+    #[cfg(feature = "testing")]
+    pub fn exact_or_estimate_facet_for_test(
+        &self,
+        request: &FacetParams,
+        is_stopped: &AtomicBool,
+        cardinality_threshold: usize,
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
+        self.exact_or_estimate_facet(request, is_stopped, cardinality_threshold)
+    }
+
+    /// Decides if the counts should be accurate or approximate based on the cardinality of the filter.
+    ///
+    /// If the cardinality of the filter exceeds the threshold, the counts will be
+    /// as approximate as a cardinality estimation for each hit.
+    fn exact_or_estimate_facet(
+        &self,
+        request: &FacetParams,
+        is_stopped: &AtomicBool,
+        cardinality_threshold: usize,
+    ) -> OperationResult<HashMap<FacetValue, usize>> {
         const STOP_CHECK_INTERVAL: usize = 100;
 
         let payload_index = self.payload_index.borrow();
@@ -29,11 +53,9 @@ impl Segment {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let ideal_sample_size = SAMPLE_SIZE_CL99_ME01;
-
             // If the cardinality is low enough, it is fast enough to just go over all the points,
             // and we are also interested in higher accuracy at low counts
-            let do_accurate_counts = filter_cardinality.exp < ideal_sample_size;
+            let do_accurate_counts = filter_cardinality.exp < cardinality_threshold;
 
             let iter = if do_accurate_counts {
                 // go over the filtered points and aggregate the values
@@ -55,7 +77,7 @@ impl Segment {
             } else {
                 // Use cardinality estimations for each value to estimate the counts
                 let cardinality_ratio =
-                    filter_cardinality.exp as f32 / (self.available_point_count() + 1) as f32;
+                    filter_cardinality.exp as f32 / self.available_point_count() as f32;
 
                 // Go over each value in the map index
                 let iter = facet_index
@@ -64,7 +86,8 @@ impl Segment {
                     .map(move |hit| FacetHit {
                         value: hit.value,
                         count: (hit.count as f32 * cardinality_ratio).round() as usize,
-                    });
+                    })
+                    .filter(|hit| hit.count > 0);
 
                 Either::Right(iter)
             };

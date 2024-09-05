@@ -198,11 +198,12 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        self.value_to_points
-            .get(value)
-            .ok()
-            .flatten()
-            .map(|p| p.len())
+        self.value_to_points.get(value).ok().flatten().map(|ids| {
+            ids.iter()
+                .filter(|idx| !(self.deleted.get(**idx as usize).unwrap_or(false)))
+                .unique()
+                .count()
+        })
     }
 
     pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
@@ -221,7 +222,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.value_to_points.iter().map(|(k, v)| {
             let count = v
                 .iter()
-                .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(true))
+                .filter(|idx| !(self.deleted.get(**idx as usize).unwrap_or(false)))
                 .unique()
                 .count();
             (k, count)
