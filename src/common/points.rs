@@ -5,8 +5,10 @@ use api::rest::{SearchGroupsRequestInternal, ShardKeySelector};
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
+use collection::collection::Collection;
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
+use collection::operations::config_diff::StrictModeConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
     DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
@@ -17,7 +19,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
+    CollectionError, CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
     DiscoverRequestBatch, GroupsResult, PointRequestInternal, RecommendGroupsRequestInternal,
     Record, ScrollRequestInternal, ScrollResult, UpdateResult,
 };
@@ -27,6 +29,7 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::vector_ops::{
     DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
 };
+use collection::operations::verification::StrictModeVerification;
 use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
@@ -129,6 +132,60 @@ impl Validate for UpdateOperation {
             UpdateOperation::ClearPayload(op) => op.validate(),
             UpdateOperation::UpdateVectors(op) => op.validate(),
             UpdateOperation::DeleteVectors(op) => op.validate(),
+        }
+    }
+}
+
+impl StrictModeVerification for UpdateOperation {
+    fn query_limit(&self) -> Option<usize> {
+        None
+    }
+
+    fn timeout(&self) -> Option<usize> {
+        None
+    }
+
+    fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
+        None
+    }
+
+    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
+        None
+    }
+
+    fn check_strict_mode(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> Result<(), CollectionError> {
+        match self {
+            UpdateOperation::Delete(delete_op) => delete_op
+                .delete
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::SetPayload(set_payload) => set_payload
+                .set_payload
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::OverwritePayload(overwrite_payload) => overwrite_payload
+                .overwrite_payload
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::DeletePayload(delete_payload) => delete_payload
+                .delete_payload
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::ClearPayload(clear_payload) => clear_payload
+                .clear_payload
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::DeleteVectors(delete_op) => delete_op
+                .delete_vectors
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::UpdateVectors(_) | UpdateOperation::Upsert(_) => Ok(()),
         }
     }
 }

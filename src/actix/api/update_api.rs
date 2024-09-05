@@ -3,16 +3,18 @@ use actix_web::{delete, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
+use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response};
+use crate::actix::helpers::{self, process_response, process_response_error};
 use crate::common::points::{
     do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
     do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
@@ -65,11 +67,16 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_delete_points(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -115,12 +122,18 @@ async fn delete_vectors(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
+
     let operation = operation.into_inner();
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, timing),
+    };
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_delete_vectors(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -142,11 +155,17 @@ async fn set_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
+
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_set_payload(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -167,11 +186,15 @@ async fn overwrite_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_overwrite_payload(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -192,11 +215,15 @@ async fn delete_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_delete_payload(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -217,11 +244,16 @@ async fn clear_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_clear_payload(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -243,11 +275,27 @@ async fn update_batch(
 ) -> impl Responder {
     let timing = Instant::now();
     let operations = operations.into_inner();
+
+    let mut vpass = None;
+    for operation in operations.operations.iter() {
+        let pass = match check_strict_mode(operation, &collection.name, &dispatcher, &access).await
+        {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
+        vpass = Some(pass);
+    }
+
+    // vpass == None => No update operation available
+    let Some(pass) = vpass else {
+        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing);
+    };
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_batch_update_points(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operations.operations,
         None,

@@ -23,6 +23,7 @@ async fn query_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO add strict mode checking!
     helpers::time(async move {
         let QueryRequest {
             internal: query_request,
@@ -65,6 +66,7 @@ async fn query_points_batch(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO add strict mode checking!
     helpers::time(async move {
         let QueryRequestBatch { searches } = request.into_inner();
 
@@ -118,6 +120,7 @@ async fn query_points_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO add strict mode checking!
     helpers::time(async move {
         let QueryGroupsRequest {
             search_group_request,

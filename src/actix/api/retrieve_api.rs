@@ -64,6 +64,7 @@ async fn get_point(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO: Check strict mode
     helpers::time(async move {
         let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
             description: format!("Can not recognize \"{}\" as point id", point.id),
@@ -97,6 +98,7 @@ async fn get_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO: Check strict mode
     let PointRequest {
         point_request,
         shard_key,
@@ -135,6 +137,7 @@ async fn scroll_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // TODO: Check strict mode
     let ScrollRequest {
         scroll_request,
         shard_key,
