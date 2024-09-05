@@ -62,9 +62,9 @@ use crate::wal::WalError;
 pub enum CollectionStatus {
     // Collection is completely ready for requests
     Green,
-    // Collection is available, but some segments might be under optimization
+    // Collection is available, but some segments are under optimization
     Yellow,
-    // Collection is available, but some segments can be optimized still optimizations aren't triggered
+    // Collection is available, but some segments are pending optimization
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
@@ -78,9 +78,9 @@ pub enum CollectionStatus {
 pub enum ShardStatus {
     // Shard is completely ready for requests
     Green,
-    // Shard is available, but some segments might be under optimization
+    // Shard is available, but some segments are under optimization
     Yellow,
-    // Shard is available, but some segments can be optimized still optimizations aren't triggered
+    // Shard is available, but some segments are pending optimization
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
