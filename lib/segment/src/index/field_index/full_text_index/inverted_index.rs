@@ -449,10 +449,10 @@ impl MutableInvertedIndex {
 
 #[derive(Default)]
 pub struct ImmutableInvertedIndex {
-    postings: Vec<CompressedPostingList>,
-    vocab: HashMap<String, TokenId>,
-    point_to_tokens_count: Vec<Option<usize>>,
-    points_count: usize,
+    pub(super) postings: Vec<CompressedPostingList>,
+    pub(super) vocab: HashMap<String, TokenId>,
+    pub(super) point_to_tokens_count: Vec<Option<usize>>,
+    pub(super) points_count: usize,
 }
 
 impl ImmutableInvertedIndex {

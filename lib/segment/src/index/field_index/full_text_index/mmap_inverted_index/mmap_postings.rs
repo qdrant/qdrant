@@ -51,7 +51,8 @@ struct PostingListHeader {
 }
 
 impl PostingListHeader {
-    fn postings_size(&self) -> usize {
+    /// Size of the posting list this header represents
+    fn posting_size(&self) -> usize {
         self.data_bytes_count as usize
             + self.alignment_bytes_count as usize
             + self.remainder_count as usize * size_of::<PointOffsetType>()
@@ -63,7 +64,9 @@ impl PostingListHeader {
 /// MmapPostings Structure on disk:
 ///
 ///
-/// `| PostingsHeader | [ PostingListHeader, PostingListHeader, ... ] | [ CompressedMmapPostingList, CompressedMmapPostingList, ... ] |`
+/// `| PostingsHeader |
+/// [ PostingListHeader, PostingListHeader, ... ] |
+/// [ CompressedMmapPostingList, CompressedMmapPostingList, ... ] |`
 pub struct MmapPostings {
     path: PathBuf,
     mmap: Arc<Mmap>,
@@ -162,30 +165,48 @@ impl MmapPostings {
         let mut posting_offset = size_of::<PostingsHeader>() + postings_lists_headers_size;
 
         for compressed_posting in compressed_postings {
-            let (data, chunks, remainder_postings) = compressed_posting.internal_structs();
+            if let Some(posting) = compressed_posting {
+                let (data, chunks, remainder_postings) = posting.internal_structs();
 
-            let data_len = data.len();
-            let alignment_len = ALIGNMENT - data_len % ALIGNMENT;
+                let data_len = data.len();
+                let alignment_len = ALIGNMENT - data_len % ALIGNMENT;
 
-            let posting_list_header = PostingListHeader {
-                offset: posting_offset as u64,
-                chunks_count: chunks.len() as u32,
-                data_bytes_count: data.len() as u32,
-                alignment_bytes_count: alignment_len as u8,
-                remainder_count: remainder_postings.len() as u8,
-                _reserved: [0; 6],
-            };
+                let posting_list_header = PostingListHeader {
+                    offset: posting_offset as u64,
+                    chunks_count: chunks.len() as u32,
+                    data_bytes_count: data.len() as u32,
+                    alignment_bytes_count: alignment_len as u8,
+                    remainder_count: remainder_postings.len() as u8,
+                    _reserved: [0; 6],
+                };
 
-            // Write the posting list header to the file
-            file.write_all(posting_list_header.as_bytes())?;
+                // Write the posting list header to the file
+                file.write_all(posting_list_header.as_bytes())?;
 
-            posting_offset += posting_list_header.postings_size();
+                posting_offset += posting_list_header.posting_size();
+            } else {
+                // TODO(luis): Is this the best thing we can do if a posting is None?
+                let posting_list_header = PostingListHeader {
+                    offset: posting_offset as u64,
+                    chunks_count: 0,
+                    data_bytes_count: 0,
+                    alignment_bytes_count: 0,
+                    remainder_count: 0,
+                    _reserved: [0; 6],
+                };
+                file.write_all(posting_list_header.as_bytes())?;
+            }
         }
 
         for compressed_posting in compressed_postings {
-            let (data, chunks, remainder_postings) = compressed_posting.internal_structs();
+            let Some(posting) = compressed_posting else {
+                // TODO(luis): Is this the best thing we can do if a posting is None?
+                continue;
+            };
 
-            let last_doc_id = compressed_posting.last_doc_id();
+            let (data, chunks, remainder_postings) = posting.internal_structs();
+
+            let last_doc_id = posting.last_doc_id();
 
             file.write_all(last_doc_id.as_bytes())?;
 
