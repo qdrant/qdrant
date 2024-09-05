@@ -252,3 +252,4 @@ inherits = "release"
 lto = false
 opt-level = 3
 codegen-units = 256 # restore default value for faster compilation
+debug = true

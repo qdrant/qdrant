@@ -1,8 +1,16 @@
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
+use parking_lot::RwLock;
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+use tikv_jemallocator::Jemalloc;
+
+use {collection, segment, tempfile};
 use collection::collection_manager::holders::segment_holder::SegmentHolder;
 use collection::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -12,21 +20,17 @@ use collection::config::CollectionParams;
 use collection::operations::types::VectorsConfig;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use common::cpu::CpuPermit;
-use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
-use segment::fixtures::payload_fixtures::generate_diverse_payload;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, HnswConfig};
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
-use tikv_jemallocator::Jemalloc;
-use {collection, segment, tempfile};
+use segment::types::{
+    Distance, HnswConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
+};
+
+const DIM: usize = 128;
 
 fn random_segment(path: &Path, num_points: usize, dim: usize) -> Segment {
     let distance = Distance::Dot;
@@ -37,7 +41,6 @@ fn random_segment(path: &Path, num_points: usize, dim: usize) -> Segment {
 
     for point_id in 0..num_points {
         let vector = random_vector(&mut rnd_gen, dim);
-        let payload = generate_diverse_payload(&mut rnd_gen);
 
         segment
             .upsert_point(
@@ -45,9 +48,6 @@ fn random_segment(path: &Path, num_points: usize, dim: usize) -> Segment {
                 (point_id as u64).into(),
                 NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into()),
             )
-            .unwrap();
-        segment
-            .set_payload(100, (point_id as u64).into(), &payload, &None)
             .unwrap();
     }
 
@@ -61,46 +61,51 @@ fn random_segment(path: &Path, num_points: usize, dim: usize) -> Segment {
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-fn main() {
-    // This is a simple routine, which is dedicated to make sure memory is not leaking during
-    // load and offload of the segments.
+fn run_optimizer(segments: Vec<Segment>, start_time: std::time::Instant) {
+    let mut holder = SegmentHolder::default();
 
-    let dir = tempfile::Builder::new()
-        .prefix("segment_dir")
-        .tempdir()
-        .unwrap();
+    for segment in segments {
+        holder.add_new(segment);
+    }
+
+    let locked_segment_holder = Arc::new(RwLock::new(holder));
+
     let temp_dir = tempfile::Builder::new()
         .prefix("segment_temp_dir")
         .tempdir()
         .unwrap();
 
-    let dim = 1024;
-    let num_vectors = 10000;
-
-    let mut holder = SegmentHolder::default();
-
-    let stopped = AtomicBool::new(false);
-
-    let segment = random_segment(dir.path(), num_vectors, dim);
-
-    holder.add_new(segment);
+    let dir = tempfile::Builder::new()
+        .prefix("segment_dir_2")
+        .tempdir()
+        .unwrap();
 
     let collection_params = CollectionParams {
         vectors: VectorsConfig::Multi(BTreeMap::from([(
             "".into(),
-            VectorParamsBuilder::new(dim as _, Distance::Dot).build(),
+            VectorParamsBuilder::new(DIM as _, Distance::Dot)
+                .with_on_disk(true)
+                .build(),
         )])),
         ..CollectionParams::empty()
     };
 
     let hnsw_config = HnswConfig {
-        m: 16,
+        m: 2,
         ef_construct: 100,
         full_scan_threshold: 10, // Force to build HNSW links for payload
         ..HnswConfig::default()
     };
 
-    let query_config = None;
+    let quantization_config = Some(QuantizationConfig::Scalar(ScalarQuantization {
+        scalar: ScalarQuantizationConfig {
+            r#type: Default::default(),
+            quantile: None,
+            always_ram: Some(true),
+        },
+    }));
+
+    let quantization_config = None;
 
     let optimizer = VacuumOptimizer::new(
         0.1,
@@ -114,12 +119,12 @@ fn main() {
         temp_dir.path().to_owned(),
         collection_params,
         hnsw_config,
-        query_config,
+        quantization_config,
     );
 
-    let locked_segment_holder = Arc::new(RwLock::new(holder));
+    let stopped = AtomicBool::new(false);
 
-    for i in 0..100 {
+    for i in 0..5 {
         let all_segment_ids: Vec<_> = locked_segment_holder.read().segment_ids();
 
         let cpu_permit = CpuPermit::dummy(4);
@@ -133,6 +138,38 @@ fn main() {
             )
             .unwrap();
 
-        println!("Iteration: {}", i);
+        println!("[{}] Iteration {}", start_time.elapsed().as_millis(), i);
     }
+}
+
+fn main() {
+    // This is a simple routine, which is dedicated to make sure memory is not leaking during
+    // load and offload of the segments.
+
+    let start_time = std::time::Instant::now();
+
+    println!("[{}] Start", start_time.elapsed().as_millis());
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let dir = tempfile::Builder::new()
+        .prefix("segment_dir")
+        .tempdir()
+        .unwrap();
+
+    let num_vectors = 10000;
+
+    let segment = random_segment(dir.path(), num_vectors, DIM);
+    let empty_segment = random_segment(dir.path(), 0, DIM);
+
+    println!("[{}] Segment created", start_time.elapsed().as_millis());
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    run_optimizer(vec![segment, empty_segment], start_time.clone());
+
+    // drop(segment);
+    // drop(empty_segment);
+
+    println!("[{}] Segment dropped", start_time.elapsed().as_millis());
+    std::thread::sleep(std::time::Duration::from_millis(500));
 }

@@ -230,7 +230,13 @@ impl SegmentBuilder {
             return Ok(true);
         }
 
-        let mut merged_points: HashMap<ExtendedPointId, PositionedPointMetadata> = HashMap::new();
+        let mut merged_points: HashMap<ExtendedPointId, PositionedPointMetadata> =
+            HashMap::with_capacity(
+                segments
+                    .iter()
+                    .map(|i| i.total_point_count())
+                    .sum::<usize>(),
+            );
 
         for (segment_index, segment) in segments.iter().enumerate() {
             for external_id in segment.iter_points() {
