@@ -13075,7 +13075,7 @@
             }
           },
           "scores": {
-            "description": "Scores associate with coordinates",
+            "description": "Scores associated with matrix coordinates",
             "type": "array",
             "items": {
               "type": "number",

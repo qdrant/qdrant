@@ -707,7 +707,7 @@ pub struct SearchMatrixOffsetsResponse {
     pub offsets_row: Vec<u64>,
     /// Column indices of the matrix
     pub offsets_col: Vec<u64>,
-    /// Scores associate with coordinates
+    /// Scores associated with matrix coordinates
     pub scores: Vec<ScoreType>,
     /// Ids of the points in order
     pub ids: Vec<PointIdType>,

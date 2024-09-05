@@ -126,11 +126,11 @@ service Points {
   */
   rpc Facet (FacetCounts) returns (FacetResponse) {}
   /*
-  Compute distance matrix with a pair based output format
+  Compute distance matrix for sampled points with a pair based output format
   */
   rpc SearchMatrixPairs (SearchMatrixPoints) returns (SearchMatrixPairsResponse) {}
   /*
-  Compute distance matrix with an offset based output format
+  Compute distance matrix for sampled points with an offset based output format
   */
   rpc SearchMatrixOffsets (SearchMatrixPoints) returns (SearchMatrixOffsetsResponse) {}
 }
