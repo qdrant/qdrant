@@ -71,11 +71,13 @@ pub fn sharding_method_to_proto(sharding_method: ShardingMethod) -> i32 {
 }
 
 pub fn sharding_method_from_proto(sharding_method: i32) -> Result<ShardingMethod, Status> {
-    match sharding_method {
-        x if x == api::grpc::qdrant::ShardingMethod::Auto as i32 => Ok(ShardingMethod::Auto),
-        x if x == api::grpc::qdrant::ShardingMethod::Custom as i32 => Ok(ShardingMethod::Custom),
-        _ => Err(Status::invalid_argument(format!(
-            "Cannot convert sharding method: {sharding_method}"
+    let sharding_method_grpc = api::grpc::qdrant::ShardingMethod::try_from(sharding_method);
+
+    match sharding_method_grpc {
+        Ok(api::grpc::qdrant::ShardingMethod::Auto) => Ok(ShardingMethod::Auto),
+        Ok(api::grpc::qdrant::ShardingMethod::Custom) => Ok(ShardingMethod::Custom),
+        Err(err) => Err(Status::invalid_argument(format!(
+            "Cannot convert ShardingMethod: {sharding_method}, error: {err}"
         ))),
     }
 }
@@ -472,11 +474,18 @@ impl TryFrom<i32> for CollectionStatus {
     type Error = Status;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(CollectionStatus::Green),
-            2 => Ok(CollectionStatus::Yellow),
-            3 => Ok(CollectionStatus::Red),
-            _ => Err(Status::invalid_argument("Malformed CollectionStatus type")),
+        let status_grpc = api::grpc::qdrant::CollectionStatus::try_from(value);
+        match status_grpc {
+            Ok(api::grpc::qdrant::CollectionStatus::Green) => Ok(CollectionStatus::Green),
+            Ok(api::grpc::qdrant::CollectionStatus::Yellow) => Ok(CollectionStatus::Yellow),
+            Ok(api::grpc::qdrant::CollectionStatus::Red) => Ok(CollectionStatus::Red),
+            Ok(api::grpc::qdrant::CollectionStatus::Grey) => Ok(CollectionStatus::Grey),
+            Ok(api::grpc::qdrant::CollectionStatus::UnknownCollectionStatus) => Err(
+                Status::invalid_argument(format!("Unknown CollectionStatus: {value}")),
+            ),
+            Err(err) => Err(Status::invalid_argument(format!(
+                "Cannot convert CollectionStatus: {value}, error: {err}"
+            ))),
         }
     }
 }
@@ -791,7 +800,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
         match collection_info_response.result {
             None => Err(Status::invalid_argument("Malformed CollectionInfo type")),
             Some(collection_info_response) => Ok(Self {
-                status: collection_info_response.status.try_into()?,
+                status: CollectionStatus::try_from(collection_info_response.status)?,
                 optimizer_status: match collection_info_response.optimizer_status {
                     None => return Err(Status::invalid_argument("Malformed OptimizerStatus type")),
                     Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
