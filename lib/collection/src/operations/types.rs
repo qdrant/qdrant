@@ -56,19 +56,46 @@ use crate::shards::transfer::ShardTransferMethod;
 use crate::wal::WalError;
 
 /// Current state of the collection.
-/// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
+/// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
-    // Collection if completely ready for requests
+    // Collection is completely ready for requests
     Green,
-    // Collection is available, but some segments might be under optimization
+    // Collection is available, but some segments are under optimization
     Yellow,
     // Collection is available, but some segments are pending optimization
     Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
     Red,
+}
+
+/// Current state of the shard (supports same states as the collection)
+/// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
+#[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardStatus {
+    // Shard is completely ready for requests
+    Green,
+    // Shard is available, but some segments are under optimization
+    Yellow,
+    // Shard is available, but some segments are pending optimization
+    Grey,
+    // Something is not OK:
+    // - some operations failed and was not recovered
+    Red,
+}
+
+impl From<ShardStatus> for CollectionStatus {
+    fn from(info: ShardStatus) -> Self {
+        match info {
+            ShardStatus::Green => Self::Green,
+            ShardStatus::Yellow => Self::Yellow,
+            ShardStatus::Grey => Self::Grey,
+            ShardStatus::Red => Self::Red,
+        }
+    }
 }
 
 /// State of existence of a collection,
@@ -149,10 +176,10 @@ impl CollectionInfo {
     }
 }
 
-impl From<CollectionInfoInternal> for CollectionInfo {
-    fn from(info: CollectionInfoInternal) -> Self {
+impl From<ShardInfoInternal> for CollectionInfo {
+    fn from(info: ShardInfoInternal) -> Self {
         Self {
-            status: info.status,
+            status: info.status.into(),
             optimizer_status: info.optimizer_status,
             vectors_count: Some(info.vectors_count),
             indexed_vectors_count: Some(info.indexed_vectors_count),
@@ -166,24 +193,24 @@ impl From<CollectionInfoInternal> for CollectionInfo {
 
 /// Internal statistics and configuration of the collection.
 #[derive(Debug)]
-pub struct CollectionInfoInternal {
-    /// Status of the collection
-    pub status: CollectionStatus,
+pub struct ShardInfoInternal {
+    /// Status of the shard
+    pub status: ShardStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// Approximate number of vectors in collection.
-    /// All vectors in collection are available for querying.
+    /// Approximate number of vectors in shard.
+    /// All vectors in shard are available for querying.
     /// Calculated as `points_count x vectors_per_point`.
     /// Where `vectors_per_point` is a number of named vectors in schema.
     pub vectors_count: usize,
-    /// Approximate number of indexed vectors in the collection.
+    /// Approximate number of indexed vectors in the shard.
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: usize,
-    /// Approximate number of points (vectors + payloads) in collection.
+    /// Approximate number of points (vectors + payloads) in shard.
     /// Each point could be accessed by unique id.
     pub points_count: usize,
-    /// Number of segments in collection.
+    /// Number of segments in shard.
     /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings

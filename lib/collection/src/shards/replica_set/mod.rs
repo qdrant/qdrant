@@ -746,12 +746,16 @@ impl ShardReplicaSet {
 
     pub(crate) async fn get_telemetry_data(&self, detail: TelemetryDetail) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
-        let local = local_shard
-            .as_ref()
-            .map(|local_shard| local_shard.get_telemetry_data(detail));
+        let local = local_shard.as_ref();
+
+        let local_telemetry = match local {
+            Some(local_shard) => Some(local_shard.get_telemetry_data(detail).await),
+            None => None,
+        };
+
         ReplicaSetTelemetry {
             id: self.shard_id,
-            local,
+            local: local_telemetry,
             remote: self
                 .remotes
                 .read()
