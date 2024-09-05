@@ -1,16 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use parking_lot::RwLock;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
-use tikv_jemallocator::Jemalloc;
-
-use {collection, segment, tempfile};
 use collection::collection_manager::holders::segment_holder::SegmentHolder;
 use collection::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
@@ -20,6 +12,7 @@ use collection::config::CollectionParams;
 use collection::operations::types::VectorsConfig;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use common::cpu::CpuPermit;
+use parking_lot::RwLock;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::entry::entry_point::SegmentEntry;
@@ -29,6 +22,12 @@ use segment::segment_constructor::simple_segment_constructor::build_simple_segme
 use segment::types::{
     Distance, HnswConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
 };
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+use tikv_jemallocator::Jemalloc;
+use {collection, segment, tempfile};
 
 const DIM: usize = 128;
 
