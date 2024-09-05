@@ -337,6 +337,7 @@ impl UpdateHandler {
                                 // Perform some actions when optimization if finished
                                 Ok(num_points_optimized) => {
                                     // FIXME: Decide on ordering
+                                    // ToDo: Only increment if it's an indexing optimization
                                     total_indexed_points
                                         .fetch_add(num_points_optimized, Ordering::Relaxed);
 

@@ -8,6 +8,7 @@ mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -64,7 +65,7 @@ async fn test_optimization_process() {
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let total_indexed_points = Arc::new(Mutex::new(0));
+    let total_indexed_points = Arc::new(AtomicUsize::new(0));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
@@ -109,7 +110,7 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    assert_eq!(*total_indexed_points.lock(), 119);
+    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 119);
 
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
@@ -143,7 +144,7 @@ async fn test_optimization_process() {
         assert!(segments.read().get(sid).is_none());
     }
 
-    assert_eq!(*total_indexed_points.lock(), 119);
+    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 119);
 }
 
 #[tokio::test]
@@ -166,7 +167,7 @@ async fn test_cancel_optimization() {
     let now = Instant::now();
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let total_indexed_points = Arc::new(Mutex::new(0_usize));
+    let total_indexed_points = Arc::new(AtomicUsize::new(0));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
@@ -219,7 +220,7 @@ async fn test_cancel_optimization() {
         }
     }
 
-    assert_eq!(*total_indexed_points.lock(), 0);
+    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]

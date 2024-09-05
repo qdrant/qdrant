@@ -59,7 +59,7 @@ impl Anonymize for LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: self.variant_name.clone(),
             status: self.status,
-            total_indexed_points: 0,
+            total_indexed_points: self.total_indexed_points.anonymize(),
             segments: self.segments.anonymize(),
             optimizations: self.optimizations.anonymize(),
         }
