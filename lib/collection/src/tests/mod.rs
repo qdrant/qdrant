@@ -64,12 +64,12 @@ async fn test_optimization_process() {
     let optimizers = Arc::new(vec![merge_optimizer, indexing_optimizer]);
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let points_indexed_once = Arc::new(Mutex::new(0_usize));
+    let total_indexed_points = Arc::new(Mutex::new(0));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        points_indexed_once.clone(),
+        total_indexed_points.clone(),
         &CpuBudget::default(),
         segments.clone(),
         |_| {},
@@ -109,12 +109,12 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    assert_eq!(*points_indexed_once.lock(), 119);
+    assert_eq!(*total_indexed_points.lock(), 119);
 
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        points_indexed_once.clone(),
+        total_indexed_points.clone(),
         &CpuBudget::default(),
         segments.clone(),
         |_| {},
@@ -143,7 +143,7 @@ async fn test_optimization_process() {
         assert!(segments.read().get(sid).is_none());
     }
 
-    assert_eq!(*points_indexed_once.lock(), 119);
+    assert_eq!(*total_indexed_points.lock(), 119);
 }
 
 #[tokio::test]
@@ -166,12 +166,12 @@ async fn test_cancel_optimization() {
     let now = Instant::now();
 
     let optimizers_log = Arc::new(Mutex::new(Default::default()));
-    let points_indexed_once = Arc::new(Mutex::new(0_usize));
+    let total_indexed_points = Arc::new(Mutex::new(0_usize));
     let segments: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
-        points_indexed_once.clone(),
+        total_indexed_points.clone(),
         &CpuBudget::default(),
         segments.clone(),
         |_| {},
@@ -219,7 +219,7 @@ async fn test_cancel_optimization() {
         }
     }
 
-    assert_eq!(*points_indexed_once.lock(), 0);
+    assert_eq!(*total_indexed_points.lock(), 0);
 }
 
 #[tokio::test]
