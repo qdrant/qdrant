@@ -30,7 +30,7 @@ use crate::tonic::api::points_common::{
     search, set_payload, upsert,
 };
 use crate::tonic::auth::extract_access;
-use crate::tonic::verification::StrictModeCheckedProvider;
+use crate::tonic::verification::StrictModeCheckedTocProvider;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -72,7 +72,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -124,7 +124,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_vectors(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -143,7 +143,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         set_payload(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -162,7 +162,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         overwrite_payload(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -181,7 +181,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_payload(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -200,7 +200,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         clear_payload(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -266,7 +266,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         search(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -303,7 +303,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             requests,
             read_consistency,
@@ -320,7 +320,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         search_groups(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -337,7 +337,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         scroll(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -352,7 +352,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         recommend(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )
@@ -373,7 +373,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         recommend_batch(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             recommend_points,
             read_consistency,
@@ -392,7 +392,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         recommend_groups(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )
@@ -408,7 +408,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         discover(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )
@@ -431,7 +431,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             discover_points,
             read_consistency,
@@ -450,7 +450,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         count(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             &access,
@@ -465,7 +465,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         query(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -488,7 +488,7 @@ impl Points for PointsService {
         } = request;
         let timeout = timeout.map(Duration::from_secs);
         query_batch(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             query_points,
             read_consistency,
@@ -504,7 +504,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let access = extract_access(&mut request);
         query_groups(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -518,7 +518,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         facet(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )
@@ -533,7 +533,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let search_matrix_response = search_points_matrix(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )
@@ -553,7 +553,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let search_matrix_response = search_points_matrix(
-            StrictModeCheckedProvider::new(&self.dispatcher),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
         )

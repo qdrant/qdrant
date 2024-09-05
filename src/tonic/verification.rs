@@ -74,17 +74,17 @@ impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
 }
 
 /// Provider for TableOfContent that requires Strict mode to be checked.
-pub struct StrictModeCheckedProvider<'a> {
+pub struct StrictModeCheckedTocProvider<'a> {
     dispatcher: &'a Dispatcher,
 }
 
-impl<'a> StrictModeCheckedProvider<'a> {
+impl<'a> StrictModeCheckedTocProvider<'a> {
     pub fn new(dispatcher: &'a Dispatcher) -> Self {
         Self { dispatcher }
     }
 }
 
-impl<'a> CheckedTocProvider for StrictModeCheckedProvider<'a> {
+impl<'a> CheckedTocProvider for StrictModeCheckedTocProvider<'a> {
     async fn check_strict_mode(
         &self,
         request: &impl StrictModeVerification,

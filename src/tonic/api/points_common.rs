@@ -60,7 +60,7 @@ use crate::common::points::{
     do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
     do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
-use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedProvider};
+use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
 fn extract_points_selector(
     points_selector: Option<PointsSelector>,
@@ -571,7 +571,7 @@ pub async fn update_batch(
             }
             points_update_operation::Operation::DeleteDeprecated(points) => {
                 delete(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     DeletePoints {
                         collection_name,
                         wait,
@@ -594,7 +594,7 @@ pub async fn update_batch(
                 },
             ) => {
                 set_payload(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -619,7 +619,7 @@ pub async fn update_batch(
                 },
             ) => {
                 overwrite_payload(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -644,7 +644,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_payload(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     DeletePayloadPoints {
                         collection_name,
                         wait,
@@ -664,7 +664,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 clear_payload(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -709,7 +709,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_vectors(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     DeletePointVectors {
                         collection_name,
                         wait,
@@ -726,7 +726,7 @@ pub async fn update_batch(
             }
             Operation::ClearPayloadDeprecated(selector) => {
                 clear_payload(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -745,7 +745,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 delete(
-                    StrictModeCheckedProvider::new(dispatcher),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     DeletePoints {
                         collection_name,
                         wait,
