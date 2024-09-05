@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
+use rocksdb::statistics::StatsLevel;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 
@@ -42,7 +43,7 @@ pub fn db_options() -> Options {
     let mut options: Options = Options::default();
     options.set_write_buffer_size(DB_CACHE_SIZE); // write_buffer_size is enforced per column family.
     options.create_if_missing(true);
-    options.set_log_level(LogLevel::Error);
+    options.set_log_level(LogLevel::Info);
     options.set_recycle_log_file_num(1);
     options.set_keep_log_file_num(1); // must be greater than zero
     options.set_max_log_file_size(DB_MAX_LOG_SIZE);
@@ -50,6 +51,9 @@ pub fn db_options() -> Options {
     options.create_missing_column_families(true);
     options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
     options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    options.set_dump_malloc_stats(true);
+    options.enable_statistics();
+    options.set_statistics_level(StatsLevel::All);
 
     // Qdrant relies on it's own WAL for durability
     options.set_wal_recovery_mode(DBRecoveryMode::TolerateCorruptedTailRecords);
