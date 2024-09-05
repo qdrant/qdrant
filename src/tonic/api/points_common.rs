@@ -38,6 +38,7 @@ use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
+use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
@@ -59,7 +60,7 @@ use crate::common::points::{
     do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
     do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
-use crate::tonic::verification::CheckedTocProvider;
+use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedProvider};
 
 fn extract_points_selector(
     points_selector: Option<PointsSelector>,
@@ -197,7 +198,7 @@ pub async fn sync(
 }
 
 pub async fn delete(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     delete_points: DeletePoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -216,9 +217,13 @@ pub async fn delete(
         Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&points_selector, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_delete_points(
-        toc,
+        toc.clone(),
         collection_name,
         points_selector,
         clock_tag,
@@ -288,7 +293,7 @@ pub async fn update_vectors(
 }
 
 pub async fn delete_vectors(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     delete_point_vectors: DeletePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -316,9 +321,13 @@ pub async fn delete_vectors(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_delete_vectors(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -334,7 +343,7 @@ pub async fn delete_vectors(
 }
 
 pub async fn set_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -360,9 +369,13 @@ pub async fn set_payload(
         key,
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_set_payload(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -378,7 +391,7 @@ pub async fn set_payload(
 }
 
 pub async fn overwrite_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -404,9 +417,13 @@ pub async fn overwrite_payload(
         key: None,
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_overwrite_payload(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -422,7 +439,7 @@ pub async fn overwrite_payload(
 }
 
 pub async fn delete_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     delete_payload_points: DeletePayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -446,9 +463,13 @@ pub async fn delete_payload(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_delete_payload(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -464,7 +485,7 @@ pub async fn delete_payload(
 }
 
 pub async fn clear_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     clear_payload_points: ClearPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -483,9 +504,13 @@ pub async fn clear_payload(
         Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&points_selector, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_clear_payload(
-        toc,
+        toc.clone(),
         collection_name,
         points_selector,
         clock_tag,
@@ -501,7 +526,7 @@ pub async fn clear_payload(
 }
 
 pub async fn update_batch(
-    toc: Arc<TableOfContent>,
+    dispatcher: &Dispatcher,
     update_batch_points: UpdateBatchPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -527,6 +552,8 @@ pub async fn update_batch(
                 points,
                 shard_key_selector,
             }) => {
+                // We don't need strict mode checks for upsert!
+                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
                 upsert(
                     toc.clone(),
                     UpsertPoints {
@@ -544,7 +571,7 @@ pub async fn update_batch(
             }
             points_update_operation::Operation::DeleteDeprecated(points) => {
                 delete(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     DeletePoints {
                         collection_name,
                         wait,
@@ -567,7 +594,7 @@ pub async fn update_batch(
                 },
             ) => {
                 set_payload(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -592,7 +619,7 @@ pub async fn update_batch(
                 },
             ) => {
                 overwrite_payload(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -617,7 +644,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_payload(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     DeletePayloadPoints {
                         collection_name,
                         wait,
@@ -637,7 +664,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 clear_payload(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -657,6 +684,8 @@ pub async fn update_batch(
                     shard_key_selector,
                 },
             ) => {
+                // We don't need strict mode checks for vector updates!
+                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
                 update_vectors(
                     toc.clone(),
                     UpdatePointVectors {
@@ -680,7 +709,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_vectors(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     DeletePointVectors {
                         collection_name,
                         wait,
@@ -697,7 +726,7 @@ pub async fn update_batch(
             }
             Operation::ClearPayloadDeprecated(selector) => {
                 clear_payload(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -716,7 +745,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 delete(
-                    toc.clone(),
+                    StrictModeCheckedProvider::new(dispatcher),
                     DeletePoints {
                         collection_name,
                         wait,
@@ -1887,7 +1916,7 @@ pub async fn facet(
 }
 
 pub async fn search_points_matrix(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     search_matrix_points: SearchMatrixPoints,
     access: Access,
 ) -> Result<CollectionSearchMatrixResponse, Status> {
@@ -1916,6 +1945,15 @@ pub async fn search_points_matrix(
             .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
     };
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &search_matrix_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
 
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

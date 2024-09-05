@@ -180,7 +180,8 @@ impl PointsInternal for PointsInternalService {
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
         delete(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             delete_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -230,7 +231,8 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
 
         delete_vectors(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             delete_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
@@ -255,7 +257,8 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         set_payload(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -280,7 +283,8 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         overwrite_payload(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -305,7 +309,8 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
 
         delete_payload(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             delete_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -330,7 +335,8 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
 
         clear_payload(
-            self.toc.clone(),
+            #[allow(deprecated)] // Internal API doesn't need to check strict mode.
+            UncheckedTocProvider::new(&self.toc),
             clear_payload_points,
             clock_tag.map(Into::into),
             shard_id,

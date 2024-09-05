@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use collection::operations::verification::StrictModeVerification;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -15,7 +17,7 @@ pub trait CheckedTocProvider {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b TableOfContent, Status>;
+    ) -> Result<&'b Arc<TableOfContent>, Status>;
 
     async fn check_strict_mode_batch<'b, I, R>(
         &'b self,
@@ -24,21 +26,21 @@ pub trait CheckedTocProvider {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b TableOfContent, Status>
+    ) -> Result<&'b Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification;
 }
 
 /// Simple provider for TableOfContent that doesn't do any checks.
 pub struct UncheckedTocProvider<'a> {
-    toc: &'a TableOfContent,
+    toc: &'a Arc<TableOfContent>,
 }
 
 impl<'a> UncheckedTocProvider<'a> {
     #[deprecated(
         note = "You should NOT use UncheckedTocProvider, unless you know what you're doing. In that case supress this with #[allow(deprecated)]"
     )]
-    pub fn new(toc: &'a TableOfContent) -> Self {
+    pub fn new(toc: &'a Arc<TableOfContent>) -> Self {
         Self { toc }
     }
 }
@@ -50,7 +52,7 @@ impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b TableOfContent, Status> {
+    ) -> Result<&'b Arc<TableOfContent>, Status> {
         // No checks here
         Ok(self.toc)
     }
@@ -62,7 +64,7 @@ impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b TableOfContent, Status>
+    ) -> Result<&'b Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification,
     {
@@ -89,7 +91,7 @@ impl<'a> CheckedTocProvider for StrictModeCheckedProvider<'a> {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&TableOfContent, Status> {
+    ) -> Result<&Arc<TableOfContent>, Status> {
         let pass =
             check_strict_mode(request, timeout, collection_name, self.dispatcher, access).await?;
         Ok(self.dispatcher.toc_new(access, &pass))
@@ -102,7 +104,7 @@ impl<'a> CheckedTocProvider for StrictModeCheckedProvider<'a> {
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b TableOfContent, Status>
+    ) -> Result<&'b Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification,
     {

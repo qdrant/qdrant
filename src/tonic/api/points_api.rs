@@ -72,7 +72,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -124,7 +124,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_vectors(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -143,7 +143,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         set_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -162,7 +162,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         overwrite_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -181,7 +181,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -200,7 +200,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         clear_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -218,14 +218,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        update_batch(
-            self.dispatcher.toc(&access).clone(),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
+        update_batch(&self.dispatcher, request.into_inner(), None, None, access).await
     }
 
     async fn create_field_index(
@@ -539,9 +532,12 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let search_matrix_response =
-            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
-                .await?;
+        let search_matrix_response = search_points_matrix(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await?;
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
@@ -556,9 +552,12 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let search_matrix_response =
-            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
-                .await?;
+        let search_matrix_response = search_points_matrix(
+            StrictModeCheckedProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await?;
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
