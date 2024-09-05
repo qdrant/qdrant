@@ -139,7 +139,7 @@ impl SegmentOptimizer for MergeOptimizer {
         if candidates.len() < 3 {
             return vec![];
         }
-        log::debug!("Possible merge candidates: {:?}", candidates);
+        log::trace!("Possible merge candidates: {:?}", candidates);
         candidates
     }
 
