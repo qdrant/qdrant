@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::types::{DetailsLevel, TelemetryDetail};
+use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -35,7 +34,6 @@ pub struct TelemetryData {
     pub(crate) collections: CollectionsTelemetry,
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
-    pub(crate) metadata: HashMap<String, serde_json::Value>,
 }
 
 impl Anonymize for TelemetryData {
@@ -46,7 +44,6 @@ impl Anonymize for TelemetryData {
             collections: self.collections.anonymize(),
             cluster: self.cluster.anonymize(),
             requests: self.requests.anonymize(),
-            metadata: HashMap::new(),
         }
     }
 }
@@ -76,14 +73,6 @@ impl TelemetryCollector {
     }
 
     pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
-        // Cluster metadata for details level 1 and up
-        let metadata = self
-            .dispatcher
-            .consensus_state()
-            .filter(|_| detail.level >= DetailsLevel::Level1)
-            .map(|state| state.persistent.read().cluster_metadata.clone())
-            .unwrap_or_default();
-
         TelemetryData {
             id: self.process_id.to_string(),
             collections: CollectionsTelemetry::collect(detail, access, self.dispatcher.toc(access))
@@ -95,7 +84,6 @@ impl TelemetryCollector {
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
-            metadata,
         }
     }
 }
