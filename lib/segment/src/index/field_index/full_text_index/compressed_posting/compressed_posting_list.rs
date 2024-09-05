@@ -71,6 +71,16 @@ impl CompressedPostingList {
         let compressed_posting_list = CompressedPostingList::new(&posting_list);
         (compressed_posting_list, set)
     }
+
+    pub(crate) fn internal_structs(
+        &self,
+    ) -> (&[u8], &[CompressedPostingChunksIndex], &[PointOffsetType]) {
+        (&self.data, &self.chunks, &self.remainder_postings)
+    }
+
+    pub(crate) fn last_doc_id(&self) -> PointOffsetType {
+        self.last_doc_id
+    }
 }
 
 #[cfg(test)]
