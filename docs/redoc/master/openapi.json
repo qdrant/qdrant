@@ -6053,7 +6053,7 @@
         }
       },
       "CollectionStatus": {
-        "description": "Current state of the collection. `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered",
+        "description": "Current state of the collection. `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered",
         "type": "string",
         "enum": [
           "green",
@@ -10222,6 +10222,16 @@
             "type": "string",
             "nullable": true
           },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardStatus"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "segments": {
             "type": "array",
             "items": {
@@ -10232,6 +10242,16 @@
             "$ref": "#/components/schemas/OptimizerTelemetry"
           }
         }
+      },
+      "ShardStatus": {
+        "description": "Current state of the shard (supports same states as the collection) `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered",
+        "type": "string",
+        "enum": [
+          "green",
+          "yellow",
+          "grey",
+          "red"
+        ]
       },
       "SegmentTelemetry": {
         "type": "object",

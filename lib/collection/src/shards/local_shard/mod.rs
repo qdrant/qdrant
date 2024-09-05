@@ -52,8 +52,8 @@ use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
-    CollectionResult, CollectionStatus, OptimizersStatus,
+    check_sparse_compatible_with_segment_config, CollectionError, CollectionResult,
+    OptimizersStatus, ShardInfoInternal, ShardStatus,
 };
 use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
@@ -918,6 +918,7 @@ impl LocalShard {
 
         LocalShardTelemetry {
             variant_name: None,
+            status: None,
             segments,
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
@@ -964,15 +965,53 @@ impl LocalShard {
         vector_size * info.points_count
     }
 
-    pub async fn local_shard_info(&self) -> CollectionInfoInternal {
+    pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
+        let mut status = ShardStatus::Green;
+        let mut optimizer_status = OptimizersStatus::Ok;
+
+        {
+            let segments = self.segments().read();
+
+            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
+                status = ShardStatus::Red;
+
+                if let Some(error) = &segments.optimizer_errors {
+                    optimizer_status = OptimizersStatus::Error(error.to_string());
+                }
+            } else {
+                let has_special_segments = segments
+                    .iter()
+                    .map(|(_, segment)| segment.get().read().info().segment_type)
+                    .any(|segment_type| segment_type == SegmentType::Special);
+
+                // Special segment means it's a proxy segment and is being optimized, mark as yellow
+                // ToDo: snapshotting also creates temp proxy segments. should differentiate.
+                if has_special_segments {
+                    status = ShardStatus::Yellow;
+                }
+            }
+        }
+
+        // If status looks green/ok but optimizations can be triggered, mark as grey
+        if status == ShardStatus::Green
+            && optimizer_status == OptimizersStatus::Ok
+            && self.update_handler.lock().await.has_non_optimal_segments()
+        {
+            // This can happen when a node is restarted (crashed), because we don't
+            // automatically trigger optimizations on restart to avoid a crash loop
+            status = ShardStatus::Grey;
+        }
+
+        (status, optimizer_status)
+    }
+
+    pub async fn local_shard_info(&self) -> ShardInfoInternal {
         let collection_config = self.collection_config.read().await.clone();
         let mut vectors_count = 0;
         let mut indexed_vectors_count = 0;
         let mut points_count = 0;
         let mut segments_count = 0;
-        let mut status = CollectionStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
-        let mut optimizer_status = OptimizersStatus::Ok;
 
         {
             let segments = self.segments().read();
@@ -981,9 +1020,6 @@ impl LocalShard {
 
                 let segment_info = segment.get().read().info();
 
-                if segment_info.segment_type == SegmentType::Special {
-                    status = CollectionStatus::Yellow;
-                }
                 vectors_count += segment_info.num_vectors;
                 indexed_vectors_count += segment_info.num_indexed_vectors;
                 points_count += segment_info.num_points;
@@ -994,29 +1030,11 @@ impl LocalShard {
                         .or_insert(val);
                 }
             }
-            if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                status = CollectionStatus::Red;
-            }
-
-            if let Some(error) = &segments.optimizer_errors {
-                optimizer_status = OptimizersStatus::Error(error.to_string());
-            }
         }
 
-        // If still green while optimization conditions are triggered, mark as grey
-        if status == CollectionStatus::Green
-            && self.update_handler.lock().await.has_pending_optimizations()
-        {
-            // TODO(1.10): enable grey status in Qdrant 1.10+
-            // status = CollectionStatus::Grey;
-            if optimizer_status == OptimizersStatus::Ok {
-                optimizer_status = OptimizersStatus::Error(
-                    "optimizations pending, awaiting update operation".into(),
-                );
-            }
-        }
+        let (status, optimizer_status) = self.local_shard_status().await;
 
-        CollectionInfoInternal {
+        ShardInfoInternal {
             status,
             optimizer_status,
             vectors_count,
