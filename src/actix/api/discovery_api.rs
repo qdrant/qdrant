@@ -4,12 +4,14 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use futures::TryFutureExt;
 use itertools::Itertools;
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
+use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_discover_batch_points;
 
 #[post("/collections/{name}/points/discover")]
@@ -25,6 +27,12 @@ async fn discover_points(
         shard_key,
     } = request.into_inner();
 
+    let pass =
+        match check_strict_mode(&discover_request, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
+
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => shard_keys.into(),
@@ -32,7 +40,7 @@ async fn discover_points(
 
     helpers::time(
         dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .discover(
                 &collection.name,
                 discover_request,
@@ -59,11 +67,18 @@ async fn discover_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    let request = request.into_inner();
+
+    let pass = match check_strict_mode(&request, &collection.name, &dispatcher, &access).await {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     helpers::time(
         do_discover_batch_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &collection.name,
-            request.into_inner(),
+            request,
             params.consistency,
             access,
             params.timeout(),
