@@ -1,12 +1,13 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
-use zerocopy::{FromBytes, FromZeroes};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 
 pub type BitPackerImpl = bitpacking::BitPacker4x;
 
-#[derive(Clone, Debug, Default, FromBytes, FromZeroes)]
+#[derive(Clone, Debug, Default, AsBytes, FromBytes, FromZeroes)]
+#[repr(C)]
 pub struct CompressedPostingChunksIndex {
     /// First document ID value in the compressed chunk
     pub initial: PointOffsetType,
