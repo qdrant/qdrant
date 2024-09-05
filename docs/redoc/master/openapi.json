@@ -10904,8 +10904,7 @@
       "ClusterTelemetry": {
         "type": "object",
         "required": [
-          "enabled",
-          "metadata"
+          "enabled"
         ],
         "properties": {
           "enabled": {
@@ -10940,7 +10939,8 @@
           },
           "metadata": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "nullable": true
           }
         }
       },

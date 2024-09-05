@@ -66,8 +66,8 @@ pub struct ClusterTelemetry {
     pub config: Option<ClusterConfigTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peers: Option<HashMap<PeerId, PeerInfo>>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub metadata: HashMap<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl ClusterTelemetry {
@@ -106,9 +106,9 @@ impl ClusterTelemetry {
                     dispatcher
                         .consensus_state()
                         .map(|state| state.persistent.read().cluster_metadata.clone())
-                        .unwrap_or_default()
+                        .filter(|metadata| !metadata.is_empty())
                 })
-                .unwrap_or_default(),
+                .flatten(),
         }
     }
 }
@@ -120,7 +120,7 @@ impl Anonymize for ClusterTelemetry {
             status: self.status.clone().map(|x| x.anonymize()),
             config: self.config.clone().map(|x| x.anonymize()),
             peers: None,
-            metadata: HashMap::default(),
+            metadata: None,
         }
     }
 }
