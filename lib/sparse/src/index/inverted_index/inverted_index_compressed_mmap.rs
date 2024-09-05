@@ -39,7 +39,7 @@ impl StorageVersion for Version {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {
-    pub posting_count: usize, // number oof posting lists
+    pub posting_count: usize, // number of posting lists
     pub vector_count: usize,  // number of unique vectors indexed
 }
 
