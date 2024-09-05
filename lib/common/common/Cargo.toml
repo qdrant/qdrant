@@ -28,6 +28,7 @@ lazy_static = "1.5.0"
 memmap2 = { workspace = true }
 semver = { workspace = true }
 zerocopy = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
