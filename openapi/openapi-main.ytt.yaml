@@ -768,7 +768,7 @@ paths:
       tags:
         - points
       summary: Search points matrix distance pairs
-      description: Retrieve distance matrix with a pair based output format
+      description: Compute distance matrix for sampled points with a pair based output format
       operationId: search_points_matrix_pairs
       requestBody:
         description: Search matrix request with optional filtering
@@ -804,7 +804,7 @@ paths:
       tags:
         - points
       summary: Search points matrix distance offsets
-      description: Retrieve distance matrix with an offset based output format
+      description: Compute distance matrix for sampled points with an offset based output format
       operationId: search_points_matrix_offsets
       requestBody:
         description: Search matrix request with optional filtering
