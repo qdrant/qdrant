@@ -337,7 +337,8 @@ impl UpdateHandler {
                                 // Perform some actions when optimization if finished
                                 Ok(num_points_optimized) => {
                                     // FIXME: Decide on ordering
-                                    total_indexed_points.fetch_add(num_points_optimized, Ordering::Relaxed);
+                                    total_indexed_points
+                                        .fetch_add(num_points_optimized, Ordering::Relaxed);
 
                                     let is_optimized = num_points_optimized > 0;
                                     tracker_handle.update(TrackerStatus::Done);
