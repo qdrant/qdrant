@@ -541,11 +541,6 @@ pub trait SegmentOptimizer {
                 .iter()
                 .all(|s| matches!(s, LockedSegment::Original(_)));
 
-        let num_points_to_optimize = optimizing_segments
-            .iter()
-            .map(|segment| segment.get().read().available_point_count())
-            .sum();
-
         if !all_segments_ok {
             // Cancel the optimization
             return Ok(0);
@@ -640,6 +635,10 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
+        // Number of points in final segment can be less than initial segments because some
+        // point IDs might be present in multiple segments and duplicates vanish on merging.
+        let num_points_optimized = optimized_segment.available_point_count();
+
         check_process_stopped(stopped).inspect_err(|_error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
         })?;
@@ -709,6 +708,6 @@ pub trait SegmentOptimizer {
         }
 
         timer.set_success(true);
-        Ok(num_points_to_optimize)
+        Ok(num_points_optimized)
     }
 }
