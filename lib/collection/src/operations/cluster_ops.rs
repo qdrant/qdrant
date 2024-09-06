@@ -200,7 +200,12 @@ pub struct ReplicateShard {
 
 impl Validate for ReplicateShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
@@ -219,13 +224,23 @@ pub struct MoveShard {
 
 impl Validate for MoveShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
 impl Validate for AbortShardTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 

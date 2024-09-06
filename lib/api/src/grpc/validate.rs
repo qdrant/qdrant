@@ -113,19 +113,34 @@ impl Validate for grpc::update_collection_cluster_setup_request::Operation {
 
 impl Validate for grpc::MoveShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
 impl Validate for grpc::ReplicateShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
 impl Validate for crate::grpc::qdrant::AbortShardTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(
+            self.from_peer_id,
+            self.to_peer_id,
+            self.shard_id,
+            self.to_shard_id,
+        )
     }
 }
 
