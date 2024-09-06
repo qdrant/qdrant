@@ -13,14 +13,14 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
     default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
-    QuantizationConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
-    VectorStorageType,
+    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 use wal::WalOptions;
 
-use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff, StrictModeConfig};
+use crate::operations::config_diff::{DiffConfig, QuantizationConfigDiff};
 use crate::operations::types::{
     CollectionError, CollectionResult, SparseVectorParams, SparseVectorsConfig, VectorParams,
     VectorParamsDiff, VectorsConfig, VectorsConfigDiff,

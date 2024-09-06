@@ -429,18 +429,15 @@ pub mod quantization_config_diff {
         Binary(super::BinaryQuantization),
     }
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StrictModeConfig {
+pub struct StrictModeConfigDiff {
     #[prost(bool, optional, tag = "1")]
     pub enabled: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "2")]
-    #[validate(range(min = 1))]
     pub max_query_limit: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "3")]
-    #[validate(range(min = 1))]
     pub max_timeout: ::core::option::Option<u32>,
     #[prost(bool, optional, tag = "4")]
     pub unindexed_filtering_retrieve: ::core::option::Option<bool>,
@@ -511,7 +508,7 @@ pub struct CreateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
-    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    pub strict_mode_config: ::core::option::Option<StrictModeConfigDiff>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -649,7 +646,7 @@ pub struct CollectionConfig {
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
-    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    pub strict_mode_config: ::core::option::Option<StrictModeConfigDiff>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -3,7 +3,9 @@ use std::num::NonZeroU32;
 
 use merge::Merge;
 use schemars::JsonSchema;
-use segment::types::{BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization};
+use segment::types::{
+    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,8 +88,8 @@ pub struct HnswConfigDiff {
     pub payload_m: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge)]
-pub struct StrictModeConfig {
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Merge, Default)]
+pub struct StrictModeConfigDiff {
     // Global
     /// Whether strict mode is enabled for a collection or not.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,7 +127,7 @@ pub struct StrictModeConfig {
     pub search_max_oversampling: Option<f64>,
 }
 
-impl Hash for StrictModeConfig {
+impl Hash for StrictModeConfigDiff {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let Self {
             enabled,
@@ -149,9 +151,9 @@ impl Hash for StrictModeConfig {
     }
 }
 
-impl Eq for StrictModeConfig {}
+impl Eq for StrictModeConfigDiff {}
 
-impl PartialEq for StrictModeConfig {
+impl PartialEq for StrictModeConfigDiff {
     fn eq(&self, other: &Self) -> bool {
         let Self {
             enabled,
@@ -294,6 +296,10 @@ impl DiffConfig<WalConfig> for WalConfigDiff {}
 
 impl DiffConfig<CollectionParams> for CollectionParamsDiff {}
 
+impl DiffConfig<StrictModeConfig> for StrictModeConfigDiff {}
+
+impl DiffConfig<StrictModeConfigDiff> for StrictModeConfigDiff {}
+
 impl From<HnswConfig> for HnswConfigDiff {
     fn from(config: HnswConfig) -> Self {
         HnswConfigDiff::from_full(&config).unwrap()
@@ -315,6 +321,12 @@ impl From<WalConfig> for WalConfigDiff {
 impl From<CollectionParams> for CollectionParamsDiff {
     fn from(config: CollectionParams) -> Self {
         CollectionParamsDiff::from_full(&config).unwrap()
+    }
+}
+
+impl From<StrictModeConfig> for StrictModeConfigDiff {
+    fn from(config: StrictModeConfig) -> Self {
+        StrictModeConfigDiff::from_full(&config).unwrap()
     }
 }
 

@@ -8,7 +8,6 @@ use collection::collection::distance_matrix::{
 use collection::collection::Collection;
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
-use collection::operations::config_diff::StrictModeConfig;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
     DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
@@ -36,7 +35,7 @@ use collection::operations::{
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
-use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
+use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint, StrictModeConfig};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex,
