@@ -12,7 +12,7 @@ use crate::shards::shard::ShardId;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HashRingRouter<T: Eq + Hash = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
@@ -30,40 +30,10 @@ impl<T: Copy + Eq + Hash> HashRingRouter<T> {
         Self::Single(HashRing::fair(HASH_RING_SHARD_SCALE))
     }
 
-    /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
-    ///
-    /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
-    pub fn resharding(shard: T, direction: ReshardingDirection) -> Self {
-        let mut ring = Self::Resharding {
-            old: HashRing::fair(HASH_RING_SHARD_SCALE),
-            new: HashRing::fair(HASH_RING_SHARD_SCALE),
-        };
-
-        ring.start_resharding(shard, direction);
-
-        ring
-    }
-
     pub fn add(&mut self, shard: T) -> bool {
         match self {
             Self::Single(ring) => ring.add(shard),
-
-            Self::Resharding { old, new } => {
-                // When resharding is in progress:
-                // - either `new` hashring contains a shard, that is not in `old` (when resharding *up*)
-                // - or `old` contains a shard, that is not in `new` (when resharding *down*)
-                //
-                // This check ensures, that we don't accidentally break this invariant when adding
-                // nodes to `Resharding` hashring.
-
-                if !old.contains(&shard) && !new.contains(&shard) {
-                    old.add(shard);
-                    new.add(shard);
-                    true
-                } else {
-                    false
-                }
-            }
+            Self::Resharding { .. } => panic!("can't add shards to hashring in resharding mode"),
         }
     }
 
