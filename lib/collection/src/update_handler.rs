@@ -281,6 +281,8 @@ impl UpdateHandler {
                     break;
                 }
 
+                debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
+
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = num_rayon_threads(max_indexing_threads);
