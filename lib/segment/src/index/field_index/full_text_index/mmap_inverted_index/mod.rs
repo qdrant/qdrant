@@ -45,7 +45,7 @@ impl MmapInvertedIndex {
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;
 
-        // Save point_to_tokens_count, separated into a bitslice and a slice
+        // Save point_to_tokens_count, separated into a bitslice for None values and a slice for actual values
         //
         // None values are represented as deleted in the bitslice
         let deleted_bitslice: BitVec = point_to_tokens_count
@@ -55,13 +55,12 @@ impl MmapInvertedIndex {
         MmapBitSlice::create(&path.clone().join(DELETED_POINTS_FILE), &deleted_bitslice)?;
 
         // The actual values go in the slice
-        let point_to_tokens_count: Vec<_> = point_to_tokens_count
+        let point_to_tokens_count_iter = point_to_tokens_count
             .into_iter()
-            .map(|count| count.unwrap_or(0))
-            .collect();
+            .map(|count| count.unwrap_or(0));
         MmapSlice::create(
             &path.clone().join(POINT_TO_TOKENS_COUNT_FILE),
-            &point_to_tokens_count,
+            point_to_tokens_count_iter,
         )?;
 
         // TODO(luis): save points_count to a file?

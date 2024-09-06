@@ -269,10 +269,7 @@ impl<T> MmapSlice<T> {
         self.mmap.flusher()
     }
 
-    pub fn create(path: &Path, slice: &[T]) -> Result<()>
-    where
-        T: Copy,
-    {
+    pub fn create(path: &Path, mut iter: impl ExactSizeIterator<Item = T>) -> Result<()> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -280,13 +277,13 @@ impl<T> MmapSlice<T> {
             .truncate(true)
             .open(path)?;
 
-        let file_len = mem::size_of_val(slice) as u64;
+        let file_len = (iter.len() + mem::size_of::<T>()) as u64;
         file.set_len(file_len)?;
 
         let mmap = unsafe { MmapMut::map_mut(&file)? };
         let mut mmap_slice = unsafe { Self::try_from(mmap)? };
 
-        mmap_slice.copy_from_slice(slice);
+        mmap_slice.fill_with(|| iter.next().unwrap());
 
         Ok(())
     }
