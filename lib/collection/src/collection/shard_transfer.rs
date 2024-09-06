@@ -275,7 +275,6 @@ impl Collection {
     pub async fn abort_shard_transfer(
         &self,
         transfer_key: ShardTransferKey,
-        shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
@@ -286,22 +285,34 @@ impl Collection {
             .stop_task(&transfer_key)
             .await;
 
-        let mut shard_holder_guard = None;
-
-        let shard_holder = match shard_holder {
-            Some(shard_holder) => shard_holder,
-            None => shard_holder_guard.insert(self.shards_holder.read().await),
-        };
+        let shard_holder = self.shards_holder.read().await;
 
         let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
             return Ok(());
         };
 
+        let is_resharding_transfer = transfer
+            .method
+            .map_or(false, |method| method.is_resharding());
+
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
         if let Some(replica_set) = shard_holder.get_shard(&shard_id) {
             if replica_set.peer_state(&transfer.to).is_some() {
-                if transfer.sync {
+                if is_resharding_transfer {
+                    // If *resharding* shard transfer failed, we don't need/want to change replica state:
+                    // - on transfer failure, the whole resharding would be aborted (see below),
+                    //   and so all changes to replicas would be discarded/rolled-back anyway
+                    // - during resharding *up*, we transfer points to a single new shard replica;
+                    //   it is expected that this node is initially empty/incomplete, and so failed
+                    //   transfer should not strictly introduce inconsistency (it just means the node
+                    //   is *still* empty/incomplete); marking this new replica as `Dead` would only
+                    //   make requests to return explicit errors
+                    // - during resharding *down*, we transfer points from shard-to-be-removed
+                    //   to all other shards; all other shards are expected to be `Active`,
+                    //   and so failed transfer does not introduce any inconsistencies to points
+                    //   that are not affected by resharding in all other shards
+                } else if transfer.sync {
                     replica_set.set_replica_state(&transfer.to, ReplicaState::Dead)?;
                 } else {
                     replica_set.remove_peer(transfer.to).await?;
@@ -314,10 +325,21 @@ impl Collection {
         }
 
         if transfer.from == self.this_peer_id {
-            transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer.shard_id).await?;
+            transfer::driver::revert_proxy_shard_to_local(&shard_holder, transfer.shard_id).await?;
         }
 
         shard_holder.register_abort_transfer(&transfer_key)?;
+
+        if is_resharding_transfer {
+            let resharding_state = shard_holder.resharding_state.read().clone();
+
+            // `abort_resharding` locks `shard_holder`!
+            drop(shard_holder);
+
+            if let Some(state) = resharding_state {
+                self.abort_resharding(state.key(), false).await?;
+            }
+        }
 
         Ok(())
     }

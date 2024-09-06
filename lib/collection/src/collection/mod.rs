@@ -431,11 +431,6 @@ impl Collection {
         // If resharding reached `ReshardingStage::WriteHashRingCommitted`, and this branch is
         // triggered *somehow*, then `Collection::abort_resharding` call should return an error,
         // so no special handling is needed for `ReshardingStage::WriteHashRingCommitted`.
-        //
-        // TODO(resharding):
-        //
-        // Abort resharding, if resharding shard is (being) marked as `Dead` and resharding is at
-        // `ReshardingStage::ReadHashRingCommitted` stage!? 🤔
         if current_state == Some(ReplicaState::Resharding) && state == ReplicaState::Dead {
             let shard_key = shard_holder
                 .get_shard_id_to_key_mapping()
@@ -470,9 +465,12 @@ impl Collection {
 
             // Terminate transfer if source or target replicas are now dead
             let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
+
+            // `abort_shard_transfer` locks `shard_holder`!
+            drop(shard_holder);
+
             for transfer in related_transfers {
-                self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
-                    .await?;
+                self.abort_shard_transfer(transfer.key()).await?;
             }
         }
 
