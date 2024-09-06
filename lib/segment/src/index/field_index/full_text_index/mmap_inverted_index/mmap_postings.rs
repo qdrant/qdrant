@@ -1,4 +1,5 @@
 use std::fs::OpenOptions;
+use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -140,25 +141,23 @@ impl MmapPostings {
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.
     /// The format of the file is compatible with the `MmapPostings` structure.
-    pub fn create_from(
+    pub fn create(
         path: PathBuf,
-        compressed_postings: &[CompressedPostingList],
+        compressed_postings: &[Option<CompressedPostingList>],
     ) -> OperationResult<()> {
         // Create a new empty file, where we will write the compressed posting lists and the header
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
+        let file = tempfile::Builder::new()
+            .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
+            .tempfile_in(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
+        let mut bufw = io::BufWriter::new(&file);
 
         let postings_header = PostingsHeader {
             posting_count: compressed_postings.len(),
             _reserved: [0; 32],
         };
 
-        // Write the header to the file
-        file.write_all(postings_header.as_bytes())?;
+        // Write the header to the buffer
+        bufw.write_all(postings_header.as_bytes())?;
 
         let postings_lists_headers_size =
             compressed_postings.len() * size_of::<PostingListHeader>();
@@ -180,8 +179,8 @@ impl MmapPostings {
                     _reserved: [0; 6],
                 };
 
-                // Write the posting list header to the file
-                file.write_all(posting_list_header.as_bytes())?;
+                // Write the posting list header to the biffer
+                bufw.write_all(posting_list_header.as_bytes())?;
 
                 posting_offset += posting_list_header.posting_size();
             } else {
@@ -194,7 +193,7 @@ impl MmapPostings {
                     remainder_count: 0,
                     _reserved: [0; 6],
                 };
-                file.write_all(posting_list_header.as_bytes())?;
+                bufw.write_all(posting_list_header.as_bytes())?;
             }
         }
 
@@ -208,13 +207,13 @@ impl MmapPostings {
 
             let last_doc_id = posting.last_doc_id();
 
-            file.write_all(last_doc_id.as_bytes())?;
+            bufw.write_all(last_doc_id.as_bytes())?;
 
             for chunk in chunks {
-                file.write_all(chunk.as_bytes())?;
+                bufw.write_all(chunk.as_bytes())?;
             }
 
-            file.write_all(data)?;
+            bufw.write_all(data)?;
 
             // Example:
             // For data size = 5, alignment_len = 3 as (5 + 3 = 8)
@@ -223,13 +222,17 @@ impl MmapPostings {
 
             if alignment_len > 0 {
                 let alignment = vec![0; alignment_len];
-                file.write_all(alignment.as_slice())?;
+                bufw.write_all(alignment.as_slice())?;
             }
 
             for posting in remainder_postings {
-                file.write_all(posting.as_bytes())?;
+                bufw.write_all(posting.as_bytes())?;
             }
         }
+
+        drop(bufw);
+
+        file.persist(path)?;
 
         Ok(())
     }
