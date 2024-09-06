@@ -5191,7 +5191,7 @@ pub struct SearchMatrixOffsets {
     /// Column indices of the matrix
     #[prost(uint64, repeated, tag = "2")]
     pub offsets_col: ::prost::alloc::vec::Vec<u64>,
-    /// Scores associate with coordinates
+    /// Scores associated with matrix coordinates
     #[prost(float, repeated, tag = "3")]
     pub scores: ::prost::alloc::vec::Vec<f32>,
     /// Ids of the points in order
@@ -6991,7 +6991,7 @@ pub mod points_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.Points", "Facet"));
             self.inner.unary(req, path, codec).await
         }
-        /// Compute distance matrix with a pair based output format
+        /// Compute distance matrix for sampled points with a pair based output format
         pub async fn search_matrix_pairs(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
@@ -7017,7 +7017,7 @@ pub mod points_client {
                 .insert(GrpcMethod::new("qdrant.Points", "SearchMatrixPairs"));
             self.inner.unary(req, path, codec).await
         }
-        /// Compute distance matrix with an offset based output format
+        /// Compute distance matrix for sampled points with an offset based output format
         pub async fn search_matrix_offsets(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchMatrixPoints>,
@@ -7256,7 +7256,7 @@ pub mod points_server {
             &self,
             request: tonic::Request<super::FacetCounts>,
         ) -> std::result::Result<tonic::Response<super::FacetResponse>, tonic::Status>;
-        /// Compute distance matrix with a pair based output format
+        /// Compute distance matrix for sampled points with a pair based output format
         async fn search_matrix_pairs(
             &self,
             request: tonic::Request<super::SearchMatrixPoints>,
@@ -7264,7 +7264,7 @@ pub mod points_server {
             tonic::Response<super::SearchMatrixPairsResponse>,
             tonic::Status,
         >;
-        /// Compute distance matrix with an offset based output format
+        /// Compute distance matrix for sampled points with an offset based output format
         async fn search_matrix_offsets(
             &self,
             request: tonic::Request<super::SearchMatrixPoints>,
