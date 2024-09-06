@@ -12,7 +12,7 @@ use crate::shards::shard::ShardId;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum HashRingRouter<T = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
@@ -22,7 +22,7 @@ pub enum HashRingRouter<T = ShardId> {
     Resharding { old: HashRing<T>, new: HashRing<T> },
 }
 
-impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
+impl<T: Hash + Copy + Eq> HashRingRouter<T> {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
@@ -195,17 +195,56 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
 
         ring.get(key) == Some(&shard)
     }
-}
 
-impl<T: Hash + Copy + PartialEq + Eq> HashRingRouter<T> {
-    /// Get unique nodes from the hashring
-    pub fn unique_nodes(&self) -> HashSet<T> {
+    fn single_ring(&self) -> Option<&HashRing<T>> {
         match self {
-            Self::Single(ring) => ring.unique_nodes(),
-            Self::Resharding { new, .. } => new.unique_nodes(),
+            Self::Single(ring) => Some(ring),
+            _ => None,
+        }
+    }
+
+    fn old_ring(&self) -> Option<&HashRing<T>> {
+        match self {
+            Self::Resharding { old, .. } => Some(old),
+            _ => None,
+        }
+    }
+
+    fn new_ring(&self) -> Option<&HashRing<T>> {
+        match self {
+            Self::Resharding { new, .. } => Some(new),
+            _ => None,
         }
     }
 }
+
+impl<T: Hash + Copy + Eq> HashRingRouter<T> {
+    /// Get unique nodes from the hashring
+    pub fn unique_nodes(&self) -> HashSet<T> {
+        let nodes = match self {
+            HashRingRouter::Single(ring) => ring.nodes(),
+            HashRingRouter::Resharding { old, new } => {
+                if old.len() > new.len() {
+                    old.nodes()
+                } else {
+                    new.nodes()
+                }
+            }
+        };
+
+        nodes.clone()
+    }
+}
+
+impl<T: Copy + Eq + Hash> PartialEq for HashRingRouter<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.single_ring() == other.single_ring()
+            && self.old_ring() == other.old_ring()
+            && self.new_ring() == other.new_ring()
+    }
+}
+
+impl<T: Copy + Eq + Hash> Eq for HashRingRouter<T> {}
 
 /// List type for shard IDs
 ///
@@ -213,19 +252,26 @@ impl<T: Hash + Copy + PartialEq + Eq> HashRingRouter<T> {
 /// with the current resharding implementation.
 pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub enum HashRing<T> {
-    Raw(hashring::HashRing<T>),
+    Raw {
+        nodes: HashSet<T>,
+        ring: hashring::HashRing<T>,
+    },
 
     Fair {
+        nodes: HashSet<T>,
         ring: hashring::HashRing<(T, u32)>,
         scale: u32,
     },
 }
 
-impl<T: Hash + Copy> HashRing<T> {
+impl<T: Hash + Copy + Eq> HashRing<T> {
     pub fn raw() -> Self {
-        Self::Raw(hashring::HashRing::new())
+        Self::Raw {
+            nodes: HashSet::new(),
+            ring: hashring::HashRing::new(),
+        }
     }
 
     /// Constructs a HashRing that tries to give all shards equal space on the ring.
@@ -233,15 +279,20 @@ impl<T: Hash + Copy> HashRing<T> {
     /// but shard search might be slower.
     pub fn fair(scale: u32) -> Self {
         Self::Fair {
+            nodes: HashSet::new(),
             ring: hashring::HashRing::new(),
             scale,
         }
     }
 
     pub fn add(&mut self, shard: T) {
+        if !self.nodes_mut().insert(shard) {
+            return;
+        }
+
         match self {
-            HashRing::Raw(ring) => ring.add(shard),
-            HashRing::Fair { ring, scale } => {
+            HashRing::Raw { ring, .. } => ring.add(shard),
+            HashRing::Fair { ring, scale, .. } => {
                 for i in 0..*scale {
                     ring.add((shard, i))
                 }
@@ -250,51 +301,69 @@ impl<T: Hash + Copy> HashRing<T> {
     }
 
     pub fn remove(&mut self, shard: &T) -> bool {
+        if !self.nodes_mut().remove(shard) {
+            return false;
+        }
+
         match self {
-            HashRing::Raw(ring) => ring.remove(shard).is_some(),
-            HashRing::Fair { ring, scale } => {
-                let mut removed = false;
+            HashRing::Raw { ring, .. } => {
+                ring.remove(shard);
+            }
+
+            HashRing::Fair { ring, scale, .. } => {
                 for i in 0..*scale {
-                    while ring.remove(&(*shard, i)).is_some() {
-                        removed = true;
-                    }
+                    ring.remove(&(*shard, i));
                 }
-                removed
             }
         }
+
+        true
     }
 
     pub fn get<U: Hash>(&self, key: &U) -> Option<&T> {
         match self {
-            HashRing::Raw(ring) => ring.get(key),
+            HashRing::Raw { ring, .. } => ring.get(key),
             HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        match self {
-            HashRing::Raw(ring) => ring.is_empty(),
-            HashRing::Fair { ring, .. } => ring.is_empty(),
-        }
+        self.nodes().is_empty()
     }
 
     pub fn len(&self) -> usize {
+        self.nodes().len()
+    }
+
+    pub fn nodes(&self) -> &HashSet<T> {
         match self {
-            HashRing::Raw(ring) => ring.len(),
-            HashRing::Fair { ring, scale } => ring.len() / *scale as usize,
+            HashRing::Raw { nodes, .. } => nodes,
+            HashRing::Fair { nodes, .. } => nodes,
+        }
+    }
+
+    fn nodes_mut(&mut self) -> &mut HashSet<T> {
+        match self {
+            HashRing::Raw { nodes, .. } => nodes,
+            HashRing::Fair { nodes, .. } => nodes,
+        }
+    }
+
+    fn scale(&self) -> Option<u32> {
+        match self {
+            HashRing::Raw { .. } => None,
+            HashRing::Fair { scale, .. } => Some(*scale),
         }
     }
 }
 
-impl<T: Hash + Copy + PartialEq + Eq> HashRing<T> {
-    /// Get unique nodes from the hashring
-    pub fn unique_nodes(&self) -> HashSet<T> {
-        match self {
-            HashRing::Raw(ring) => ring.clone().into_iter().collect(),
-            HashRing::Fair { ring, .. } => ring.clone().into_iter().map(|(node, _)| node).collect(),
-        }
+impl<T: Copy + Eq + Hash> PartialEq for HashRing<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.scale() == other.scale() && self.nodes() == other.nodes()
     }
 }
+
+impl<T: Copy + Eq + Hash> Eq for HashRing<T> {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HashRingFilter {
