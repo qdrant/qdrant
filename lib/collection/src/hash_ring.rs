@@ -59,10 +59,8 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
         match self {
             Self::Single(ring) => ring.add(shard),
             Self::Resharding { old, new } => {
-                if new.get(&shard).is_none() {
-                    old.add(shard);
-                    new.add(shard);
-                }
+                old.add(shard);
+                new.add(shard);
             }
         }
     }
