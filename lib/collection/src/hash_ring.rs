@@ -253,7 +253,7 @@ impl<T: Hash + Copy> HashRing<T> {
             HashRing::Fair { ring, scale } => {
                 let mut removed = false;
                 for i in 0..*scale {
-                    if ring.remove(&(*shard, i)).is_some() {
+                    while ring.remove(&(*shard, i)).is_some() {
                         removed = true;
                     }
                 }
