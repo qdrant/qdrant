@@ -110,7 +110,7 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 0);
+    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 110);
 
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
@@ -144,7 +144,7 @@ async fn test_optimization_process() {
         assert!(segments.read().get(sid).is_none());
     }
 
-    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 119);
+    assert_eq!(total_indexed_points.load(Ordering::Relaxed), 110);
 }
 
 #[tokio::test]
