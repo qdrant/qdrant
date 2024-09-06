@@ -22,7 +22,9 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
+use std::fs::OpenOptions;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
@@ -266,6 +268,27 @@ impl<T> MmapSlice<T> {
     pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
     }
+
+    pub fn create(path: &Path, slice: &[T]) -> Result<()>
+    where
+        T: Copy,
+    {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
+
+        let file_len = (slice.len() * mem::size_of::<T>()) as u64;
+        file.set_len(file_len)?;
+
+        let mmap = unsafe { MmapMut::map_mut(&file)? };
+        let mut mmap_slice = unsafe { Self::try_from(mmap)? };
+
+        mmap_slice.copy_from_slice(slice);
+
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapSlice<T> {
@@ -332,6 +355,26 @@ impl MmapBitSlice {
     /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
+    }
+
+    pub fn create(path: &Path, bitslice: &BitSlice) -> Result<()> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
+
+        let len = bitslice.len();
+        file.set_len(len as u64)?;
+
+        let mut mmap = unsafe { MmapMut::map_mut(&file)? };
+        mmap.fill(0);
+
+        let mut mmap_bitslice = Self::try_from(mmap, 0)?;
+
+        mmap_bitslice.copy_from_bitslice(&bitslice);
+
+        Ok(())
     }
 }
 
