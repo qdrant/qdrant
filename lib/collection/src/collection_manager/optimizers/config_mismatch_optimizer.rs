@@ -59,7 +59,6 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires sparse vectors index to be stored on disk
-    #[allow(dead_code)]
     fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &str) -> Option<bool> {
         self.collection_params
             .sparse_vectors

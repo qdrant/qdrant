@@ -191,7 +191,6 @@ struct Header {
     points_count: u64,
 }
 
-#[allow(dead_code)]
 impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
     pub fn from_iter<'a>(
         path: &Path,
@@ -342,6 +341,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         self.header.points_count as usize
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.header.points_count == 0
     }
