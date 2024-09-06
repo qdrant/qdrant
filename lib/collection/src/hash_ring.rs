@@ -59,8 +59,17 @@ impl<T: Hash + Copy + Eq> HashRingRouter<T> {
         match self {
             Self::Single(ring) => ring.add(shard),
             Self::Resharding { old, new } => {
-                old.add(shard);
-                new.add(shard);
+                // When resharding is in progress:
+                // - either `new` hashring contains a shard, that is not in `old` (when resharding *up*)
+                // - or `old` contains a shard, that is not in `new` (when resharding *down*)
+                //
+                // This check ensures, that we don't accidentally break this invariant when adding
+                // nodes to `Resharding` hashring.
+
+                if !old.contains(&shard) && !new.contains(&shard) {
+                    old.add(shard);
+                    new.add(shard);
+                }
             }
         }
     }
@@ -333,6 +342,10 @@ impl<T: Hash + Copy + Eq> HashRing<T> {
 
     pub fn len(&self) -> usize {
         self.nodes().len()
+    }
+
+    pub fn contains(&self, shard: &T) -> bool {
+        self.nodes().contains(shard)
     }
 
     pub fn nodes(&self) -> &HashSet<T> {
