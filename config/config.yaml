@@ -1,5 +1,17 @@
 log_level: INFO
 
+# Logging to disk
+# By default, Qdrant logs to stdout. You can write logs to disk by specifying a log file. 
+# This parameter can be specified in the configuration file 
+# or by updating the current configuration with `POST /logger`.
+# If both the top-level `log_level` and the `logger.log_level` directives are specified, 
+# the `logger.log_level` directive will take priority.
+# logger:
+#   on_disk:
+#     enabled: true
+#     log_file: path/to/log/file.log
+#     log_level: INFO
+
 storage:
   # Where to store all the data
   storage_path: ./storage
