@@ -18,7 +18,7 @@ use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::types::PointOffsetType;
 
-/// On-disk hash map baked by a memory-mapped file.
+/// On-disk hash map backed by a memory-mapped file.
 ///
 /// The layout of the memory-mapped file is as follows:
 ///
