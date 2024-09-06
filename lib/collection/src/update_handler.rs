@@ -22,10 +22,10 @@ use tokio::time::{timeout, Duration};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
+use crate::collection_manager::optimizers::indexing_optimizer::INDEXING_OPTIMIZER_NAME;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
-use crate::collection_manager::optimizers::indexing_optimizer::INDEXING_OPTIMIZER_NAME;
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::config::CollectionParams;
