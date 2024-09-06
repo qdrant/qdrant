@@ -11,7 +11,7 @@ use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::SeqNumberType;
+use segment::types::{SegmentType, SeqNumberType};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
@@ -336,10 +336,18 @@ impl UpdateHandler {
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
-                                Ok(num_points_optimized) => {
-                                    if optimizer.name() == INDEXING_OPTIMIZER_NAME {
-                                        total_indexed_points
-                                            .fetch_add(num_points_optimized, Ordering::Relaxed);
+                                Ok(segment_id) => {
+                                    let segment = segments.read().get(segment_id);
+                                    let num_points_optimized = 0;
+
+                                    if let Some(segment) = segment {
+                                        // Any kind of optimization could have triggered indexing
+                                        let segment_info = segment.get().read();
+                                        if segment_info.segment_type() == SegmentType::Indexed {
+                                            total_indexed_points
+                                                .fetch_add(num_points_optimized, Ordering::Relaxed);
+                                        }
+                                        num_points_optimized = segment_info.available_point_count();
                                     }
 
                                     let is_optimized = num_points_optimized > 0;

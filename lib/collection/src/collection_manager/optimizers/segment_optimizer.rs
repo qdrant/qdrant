@@ -543,7 +543,9 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
-            return Ok(0);
+            return Err(CollectionError::Cancelled {
+                description: "Some segments are not ready for optimization".to_string(),
+            });
         }
 
         check_process_stopped(stopped)?;
@@ -635,10 +637,6 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        // Number of points in final segment can be less than initial segments because some
-        // point IDs might be present in multiple segments and duplicates vanish on merging.
-        let num_points_optimized = optimized_segment.available_point_count();
-
         check_process_stopped(stopped).inspect_err(|_error| {
             self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
         })?;
@@ -669,7 +667,8 @@ pub trait SegmentOptimizer {
 
             optimized_segment.prefault_mmap_pages();
 
-            let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
+            let (new_segment_id, proxies) =
+                write_segments_guard.swap_new(optimized_segment, &proxy_ids);
             debug_assert_eq!(
                 proxies.len(),
                 proxy_ids.len(),
@@ -708,6 +707,6 @@ pub trait SegmentOptimizer {
         }
 
         timer.set_success(true);
-        Ok(num_points_optimized)
+        Ok(new_segment_id)
     }
 }
