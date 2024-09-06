@@ -242,7 +242,7 @@ impl MutableGeoMapIndex {
 
     fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
         for i in 0..=geo_hash.len() {
-            let sub_geo_hash = geo_hash.cut(i);
+            let sub_geo_hash = geo_hash.truncate(i);
             match self.values_per_hash.get_mut(&sub_geo_hash) {
                 None => {
                     self.values_per_hash.insert(sub_geo_hash, 1);
@@ -259,7 +259,7 @@ impl MutableGeoMapIndex {
 
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
-                let sub_geo_hash = geo_hash.cut(i);
+                let sub_geo_hash = geo_hash.truncate(i);
                 if seen_hashes.contains(&sub_geo_hash) {
                     continue;
                 }
@@ -278,7 +278,7 @@ impl MutableGeoMapIndex {
 
     fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
         for i in 0..=geo_hash.len() {
-            let sub_geo_hash = geo_hash.cut(i);
+            let sub_geo_hash = geo_hash.truncate(i);
             match self.values_per_hash.get_mut(&sub_geo_hash) {
                 None => {
                     debug_assert!(
@@ -299,7 +299,7 @@ impl MutableGeoMapIndex {
         let mut seen_hashes: HashSet<GeoHash> = Default::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
-                let sub_geo_hash = geo_hash.cut(i);
+                let sub_geo_hash = geo_hash.truncate(i);
                 if seen_hashes.contains(&sub_geo_hash) {
                     continue;
                 }

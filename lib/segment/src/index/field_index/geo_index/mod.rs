@@ -121,7 +121,10 @@ impl GeoMapIndex {
         let idx_str = &s[separator_pos + 1..];
         let idx = PointOffsetType::from_str(idx_str)
             .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        Ok((GeoHash::new(geohash_str), idx))
+        Ok((
+            GeoHash::new(geohash_str).map_err(OperationError::from)?,
+            idx,
+        ))
     }
 
     fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {

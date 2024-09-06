@@ -196,7 +196,7 @@ impl ImmutableGeoMapIndex {
 
     fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
         for i in 0..=geo_hash.len() {
-            let sub_geo_hash = geo_hash.cut(i);
+            let sub_geo_hash = geo_hash.truncate(i);
             if let Ok(index) = self
                 .counts_per_hash
                 .binary_search_by(|x| x.hash.cmp(&sub_geo_hash))
@@ -225,7 +225,7 @@ impl ImmutableGeoMapIndex {
         let mut seen_hashes: HashSet<GeoHash> = Default::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
-                let sub_geo_hash = geo_hash.cut(i);
+                let sub_geo_hash = geo_hash.truncate(i);
                 if seen_hashes.contains(&sub_geo_hash) {
                     continue;
                 }
