@@ -20,7 +20,6 @@ pub fn empty_segment(path: &Path) -> Segment {
 
 pub const PAYLOAD_KEY: &str = "color";
 
-#[allow(dead_code)]
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
 
@@ -71,7 +70,6 @@ pub fn build_segment_1(path: &Path) -> Segment {
     segment1
 }
 
-#[allow(dead_code)]
 pub fn build_segment_2(path: &Path) -> Segment {
     let mut segment2 = empty_segment(path);
 
@@ -122,7 +120,6 @@ pub fn build_segment_2(path: &Path) -> Segment {
     segment2
 }
 
-#[allow(dead_code)]
 pub fn build_segment_3(path: &Path) -> Segment {
     let mut segment3 = build_segment(
         path,
@@ -247,7 +244,6 @@ pub fn build_segment_3(path: &Path) -> Segment {
     segment3
 }
 
-#[allow(dead_code)]
 pub fn build_segment_sparse_1(path: &Path) -> Segment {
     let mut segment1 = build_segment(
         path,
@@ -332,7 +328,6 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
     segment1
 }
 
-#[allow(dead_code)]
 pub fn build_segment_sparse_2(path: &Path) -> Segment {
     let mut segment2 = build_segment(
         path,

@@ -15,7 +15,6 @@ impl Mem {
         }
     }
 
-    #[allow(dead_code)]
     pub fn refresh(&mut self) {
         #[cfg(target_os = "linux")]
         if let Some(cgroups) = &mut self.cgroups {

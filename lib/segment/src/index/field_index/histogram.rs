@@ -170,7 +170,6 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn load(path: &Path) -> OperationResult<Self> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);
@@ -186,7 +185,6 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
         })
     }
 
-    #[allow(dead_code)]
     pub fn save(&self, path: &Path) -> OperationResult<()> {
         let config_path = path.join(CONFIG_PATH);
         let borders_path = path.join(BORDERS_PATH);

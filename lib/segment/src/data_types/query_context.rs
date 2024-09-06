@@ -24,7 +24,6 @@ pub struct QueryContext {
     /// Statistics of the element frequency,
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
-    #[allow(dead_code)]
     idf: tiny_map::TinyMap<String, HashMap<DimId, usize>>,
 }
 
