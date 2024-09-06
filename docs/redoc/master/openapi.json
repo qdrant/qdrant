@@ -10956,6 +10956,11 @@
               "$ref": "#/components/schemas/PeerInfo"
             },
             "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
           }
         }
       },
