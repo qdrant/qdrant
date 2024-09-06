@@ -22,7 +22,6 @@ use tokio::time::{timeout, Duration};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
-use crate::collection_manager::optimizers::indexing_optimizer::INDEXING_OPTIMIZER_NAME;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
@@ -337,16 +336,17 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok((is_optimized, segment_id)) => {
-                                    if is_optimized
-                                        && let Some(segment) = segments.read().get(segment_id)
-                                    {
-                                        // Any kind of optimization could have triggered indexing
-                                        let segment_info = segment.get().read();
-                                        if segment_info.segment_type() == SegmentType::Indexed {
-                                            let points_indexed =
-                                                segment_info.available_point_count();
-                                            total_indexed_points
-                                                .fetch_add(points_indexed, Ordering::Relaxed);
+                                    if is_optimized {
+                                        if let Some(segment) = segments.read().get(segment_id) {
+                                            // Any kind of optimization could have triggered indexing
+                                            let segment_info = segment.get().read();
+
+                                            if segment_info.segment_type() == SegmentType::Indexed {
+                                                let points_indexed =
+                                                    segment_info.available_point_count();
+                                                total_indexed_points
+                                                    .fetch_add(points_indexed, Ordering::Relaxed);
+                                            }
                                         }
                                     }
 
