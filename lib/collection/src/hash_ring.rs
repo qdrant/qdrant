@@ -281,8 +281,8 @@ impl<T: Hash + Copy> HashRing<T> {
         T: std::cmp::PartialEq,
     {
         match self {
-            Inner::Raw(ring) => ring.clone().into_iter().any(|node| node == *shard),
-            Inner::Fair { ring, .. } => ring.clone().into_iter().any(|(node, _)| node == *shard),
+            HashRing::Raw(ring) => ring.clone().into_iter().any(|node| node == *shard),
+            HashRing::Fair { ring, .. } => ring.clone().into_iter().any(|(node, _)| node == *shard),
         }
     }
 
