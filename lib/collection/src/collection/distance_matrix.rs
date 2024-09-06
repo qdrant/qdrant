@@ -204,6 +204,11 @@ impl Collection {
             sampled_points.extend(filtered);
         }
 
+        // if we have less than 2 points, we can't build a matrix
+        if sampled_points.len() < 2 {
+            return Ok(CollectionSearchMatrixResponse::default());
+        }
+
         sampled_points.truncate(sample_size);
         // sort by id for a deterministic order
         sampled_points.sort_unstable_by(|(id1, _), (id2, _)| id1.cmp(id2));
