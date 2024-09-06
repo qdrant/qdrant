@@ -85,22 +85,22 @@ impl From<GeoHash> for SmolStr {
 
 pub struct GeoHashIterator {
     packed_chars: u64,
-    len: usize,
 }
 
 impl Iterator for GeoHashIterator {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.len > 0 {
+        let len = self.packed_chars & 0b1111;
+        if len > 0 {
             // take first character from the packed value
             let char_index = (self.packed_chars >> 59) & 0b11111;
-            // get character from the base32 alphabet
-            let c = BASE32_CODES[char_index as usize];
+
             // shift packed value to the left to get the next character
-            self.packed_chars <<= 5;
-            self.len -= 1;
-            Some(c)
+            self.packed_chars = (self.packed_chars << 5) | (len - 1);
+
+            // get character from the base32 alphabet
+            Some(BASE32_CODES[char_index as usize])
         } else {
             None
         }
@@ -125,13 +125,9 @@ impl GeoHash {
         if !self.is_empty() {
             GeoHashIterator {
                 packed_chars: self.packed,
-                len: self.len(),
             }
         } else {
-            GeoHashIterator {
-                packed_chars: 0,
-                len: 0,
-            }
+            GeoHashIterator { packed_chars: 0 }
         }
     }
 
