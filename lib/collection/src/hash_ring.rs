@@ -12,7 +12,7 @@ use crate::shards::shard::ShardId;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum HashRingRouter<T: Eq + Hash = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
@@ -173,8 +173,8 @@ impl<T: Eq + Hash> HashRingRouter<T> {
 /// with the current resharding implementation.
 pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
-#[derive(Clone, Debug)]
-pub enum HashRing<T> {
+#[derive(Clone, Debug, PartialEq)]
+pub enum HashRing<T: Eq + Hash> {
     Raw {
         nodes: HashSet<T>,
         ring: hashring::HashRing<T>,
@@ -280,22 +280,7 @@ impl<T: Eq + Hash> HashRing<T> {
             HashRing::Fair { nodes, .. } => nodes,
         }
     }
-
-    fn scale(&self) -> Option<u32> {
-        match self {
-            HashRing::Raw { .. } => None,
-            HashRing::Fair { scale, .. } => Some(*scale),
-        }
-    }
 }
-
-impl<T: Eq + Hash> PartialEq for HashRing<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.scale() == other.scale() && self.nodes() == other.nodes()
-    }
-}
-
-impl<T: Eq + Hash> Eq for HashRing<T> {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HashRingFilter {
