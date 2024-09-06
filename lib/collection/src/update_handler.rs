@@ -336,21 +336,18 @@ impl UpdateHandler {
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
-                                Ok(segment_id) => {
-                                    let segment = segments.read().get(segment_id);
-                                    let num_points_optimized = 0;
-
-                                    if let Some(segment) = segment {
+                                Ok((is_optimized, segment_id)) => {
+                                    if let Some(segment) = segments.read().get(segment_id) {
                                         // Any kind of optimization could have triggered indexing
                                         let segment_info = segment.get().read();
                                         if segment_info.segment_type() == SegmentType::Indexed {
+                                            let points_indexed =
+                                                segment_info.available_point_count();
                                             total_indexed_points
-                                                .fetch_add(num_points_optimized, Ordering::Relaxed);
+                                                .fetch_add(points_indexed, Ordering::Relaxed);
                                         }
-                                        num_points_optimized = segment_info.available_point_count();
                                     }
 
-                                    let is_optimized = num_points_optimized > 0;
                                     tracker_handle.update(TrackerStatus::Done);
                                     callback(is_optimized);
                                     is_optimized

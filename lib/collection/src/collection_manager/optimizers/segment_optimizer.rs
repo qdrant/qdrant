@@ -514,7 +514,7 @@ pub trait SegmentOptimizer {
         ids: Vec<SegmentId>,
         permit: CpuPermit,
         stopped: &AtomicBool,
-    ) -> CollectionResult<usize> {
+    ) -> CollectionResult<(bool, usize)> {
         check_process_stopped(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
@@ -543,9 +543,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
-            return Err(CollectionError::Cancelled {
-                description: "Some segments are not ready for optimization".to_string(),
-            });
+            return Ok((false, 0));
         }
 
         check_process_stopped(stopped)?;
@@ -707,6 +705,6 @@ pub trait SegmentOptimizer {
         }
 
         timer.set_success(true);
-        Ok(new_segment_id)
+        Ok((true, new_segment_id))
     }
 }
