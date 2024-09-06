@@ -12,8 +12,8 @@ use crate::shards::shard::ShardId;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone, Debug)]
-pub enum HashRingRouter<T = ShardId> {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum HashRingRouter<T: Eq + Hash = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
 
@@ -195,38 +195,7 @@ impl<T: Eq + Hash> HashRingRouter<T> {
             HashRingRouter::Resharding { new, .. } => new.nodes(),
         }
     }
-
-    fn single_ring(&self) -> Option<&HashRing<T>> {
-        match self {
-            Self::Single(ring) => Some(ring),
-            _ => None,
-        }
-    }
-
-    fn old_ring(&self) -> Option<&HashRing<T>> {
-        match self {
-            Self::Resharding { old, .. } => Some(old),
-            _ => None,
-        }
-    }
-
-    fn new_ring(&self) -> Option<&HashRing<T>> {
-        match self {
-            Self::Resharding { new, .. } => Some(new),
-            _ => None,
-        }
-    }
 }
-
-impl<T: Eq + Hash> PartialEq for HashRingRouter<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.single_ring() == other.single_ring()
-            && self.old_ring() == other.old_ring()
-            && self.new_ring() == other.new_ring()
-    }
-}
-
-impl<T: Eq + Hash> Eq for HashRingRouter<T> {}
 
 /// List type for shard IDs
 ///
