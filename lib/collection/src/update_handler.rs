@@ -25,6 +25,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
+use crate::collection_manager::optimizers::indexing_optimizer::INDEXING_OPTIMIZER_NAME;
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::config::CollectionParams;
@@ -336,7 +337,7 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok(num_points_optimized) => {
-                                    if optimizer.name() == "indexing" {
+                                    if optimizer.name() == INDEXING_OPTIMIZER_NAME {
                                         total_indexed_points
                                             .fetch_add(num_points_optimized, Ordering::Relaxed);
                                     }

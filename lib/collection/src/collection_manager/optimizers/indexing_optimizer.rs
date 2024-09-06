@@ -14,6 +14,7 @@ use crate::collection_manager::optimizers::segment_optimizer::{
 };
 use crate::config::CollectionParams;
 
+pub const INDEXING_OPTIMIZER_NAME: &str = "indexing";
 const BYTES_IN_KB: usize = 1024;
 
 /// Looks for the segments, which require to be indexed.
@@ -236,7 +237,7 @@ impl IndexingOptimizer {
 
 impl SegmentOptimizer for IndexingOptimizer {
     fn name(&self) -> &str {
-        "indexing"
+        INDEXING_OPTIMIZER_NAME
     }
 
     fn segments_path(&self) -> &Path {
