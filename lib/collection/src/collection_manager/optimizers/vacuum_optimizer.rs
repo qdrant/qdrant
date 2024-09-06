@@ -460,7 +460,7 @@ mod tests {
         );
 
         // Use indexing optimizer to build index for vacuum index test
-        let changed = index_optimizer
+        let (changed, _) = index_optimizer
             .optimize(
                 locked_holder.clone(),
                 vec![segment_id],
@@ -468,7 +468,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed > 0, "optimizer should have rebuilt this segment");
+        assert!(changed, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -575,7 +575,7 @@ mod tests {
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
-        let changed = vacuum_optimizer
+        let (changed, _) = vacuum_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
@@ -583,7 +583,7 @@ mod tests {
                 &false.into(),
             )
             .unwrap();
-        assert!(changed > 0, "optimizer should have rebuilt this segment");
+        assert!(changed, "optimizer should have rebuilt this segment");
 
         // Ensure deleted points and vectors are optimized
         locked_holder

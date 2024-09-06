@@ -339,7 +339,8 @@ impl UpdateHandler {
                                     if is_optimized {
                                         if let Some(segment) = segments.read().get(segment_id) {
                                             // Any kind of optimization could have triggered indexing
-                                            let segment_info = segment.get().read();
+                                            let segment_lock = segment.get();
+                                            let segment_info = segment_lock.read();
 
                                             if segment_info.segment_type() == SegmentType::Indexed {
                                                 let points_indexed =
