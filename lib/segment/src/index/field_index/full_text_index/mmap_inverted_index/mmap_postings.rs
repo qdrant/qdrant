@@ -1,4 +1,3 @@
-use std::fs::OpenOptions;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
@@ -8,7 +7,6 @@ use common::types::PointOffsetType;
 use memmap2::Mmap;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;

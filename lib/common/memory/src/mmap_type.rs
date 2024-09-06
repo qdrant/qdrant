@@ -277,9 +277,10 @@ impl<T> MmapSlice<T> {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)?;
 
-        let file_len = (slice.len() * mem::size_of::<T>()) as u64;
+        let file_len = mem::size_of_val(slice) as u64;
         file.set_len(file_len)?;
 
         let mmap = unsafe { MmapMut::map_mut(&file)? };
@@ -362,6 +363,7 @@ impl MmapBitSlice {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)?;
 
         let len = bitslice.len();
@@ -372,7 +374,7 @@ impl MmapBitSlice {
 
         let mut mmap_bitslice = Self::try_from(mmap, 0)?;
 
-        mmap_bitslice.copy_from_bitslice(&bitslice);
+        mmap_bitslice.copy_from_bitslice(bitslice);
 
         Ok(())
     }
