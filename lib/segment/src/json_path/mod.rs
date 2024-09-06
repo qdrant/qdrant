@@ -509,9 +509,10 @@ impl Serialize for JsonPath {
 
 impl<'de> Deserialize<'de> for JsonPath {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer)?
+        let string = String::deserialize(deserializer)?;
+        string
             .parse()
-            .map_err(|_| serde::de::Error::custom("Invalid json path"))
+            .map_err(|_| serde::de::Error::custom(format!("Invalid json path: \'{string}\'")))
     }
 }
 
