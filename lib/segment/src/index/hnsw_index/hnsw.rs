@@ -494,7 +494,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn search_with_graph(
         &self,
         vector: &QueryVector,

@@ -51,7 +51,6 @@ use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
 /// Collection's data is split into several shards.
-#[allow(dead_code)]
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,

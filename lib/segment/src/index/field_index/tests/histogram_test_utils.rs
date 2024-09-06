@@ -8,7 +8,6 @@ use serde::Serialize;
 
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 
-#[allow(dead_code)]
 pub fn print_results<T: Numericable + Serialize + DeserializeOwned + Display>(
     points_index: &BTreeSet<Point<T>>,
     histogram: &Histogram<T>,
