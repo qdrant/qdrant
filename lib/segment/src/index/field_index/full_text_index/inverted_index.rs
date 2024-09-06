@@ -552,11 +552,9 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             .vocab
             .into_iter()
             .filter_map(|(key, orig_token)| {
-                if let Some(new_token) = orig_to_new_token.get(&orig_token) {
-                    Some((key, *new_token))
-                } else {
-                    None
-                }
+                orig_to_new_token
+                    .get(&orig_token)
+                    .map(|new_token| (key, *new_token))
             })
             .collect();
 
@@ -633,7 +631,7 @@ mod tests {
 
         assert!(index.vocab.len() < orig_vocab.len());
         assert!(index.postings.len() < orig_postings.len());
-        assert!(index.vocab.len() > 0);
+        assert!(!index.vocab.is_empty());
 
         // Check that new vocabulary token ids leads to the same posting lists
         assert!({
