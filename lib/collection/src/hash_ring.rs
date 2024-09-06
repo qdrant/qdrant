@@ -73,16 +73,20 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
             *self = Self::Resharding { old, new };
         }
 
-        let Self::Resharding { new, .. } = self else {
+        let Self::Resharding { old, new } = self else {
             unreachable!();
         };
 
         match direction {
             ReshardingDirection::Up => {
+                old.remove(&shard);
                 new.add(shard);
             }
+
             ReshardingDirection::Down => {
                 assert!(new.len() > 1, "cannot remove last shard from hash ring");
+
+                old.add(shard);
                 new.remove(&shard);
             }
         }
