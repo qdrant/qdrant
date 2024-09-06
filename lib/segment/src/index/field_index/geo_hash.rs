@@ -84,8 +84,7 @@ impl From<GeoHash> for SmolStr {
 }
 
 pub struct GeoHashIterator {
-    hash: GeoHash,
-    index: usize,
+    packed_chars: u64,
     len: usize,
 }
 
@@ -93,10 +92,15 @@ impl Iterator for GeoHashIterator {
     type Item = char;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.len {
-            let result = Some(self.hash[self.index]);
-            self.index += 1;
-            result
+        if self.len > 0 {
+            // take first character from the packed value
+            let char_index = (self.packed_chars >> 59) & 0b11111;
+            // get character from the base32 alphabet
+            let c = BASE32_CODES[char_index as usize];
+            // shift packed value to the left to get the next character
+            self.packed_chars <<= 5;
+            self.len -= 1;
+            Some(c)
         } else {
             None
         }
@@ -118,10 +122,16 @@ impl GeoHash {
     }
 
     pub fn iter(&self) -> GeoHashIterator {
-        GeoHashIterator {
-            hash: *self,
-            index: 0,
-            len: self.len(),
+        if !self.is_empty() {
+            GeoHashIterator {
+                packed_chars: self.packed,
+                len: self.len(),
+            }
+        } else {
+            GeoHashIterator {
+                packed_chars: 0,
+                len: 0,
+            }
         }
     }
 
@@ -641,6 +651,15 @@ mod tests {
         assert!(GeoHash::new("uft560000000")
             .unwrap()
             .starts_with(GeoHash::new("uft5600").unwrap()));
+        assert!(GeoHash::new("uft5600")
+            .unwrap()
+            .starts_with(GeoHash::new("").unwrap()));
+        assert!(GeoHash::new("")
+            .unwrap()
+            .starts_with(GeoHash::new("").unwrap()));
+        assert!(GeoHash::new("uft56000000r")
+            .unwrap()
+            .starts_with(GeoHash::new("uft56000000r").unwrap()));
     }
 
     #[test]
