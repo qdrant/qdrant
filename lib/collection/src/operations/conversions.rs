@@ -18,7 +18,9 @@ use itertools::Itertools;
 use segment::data_types::vectors::{
     BatchVectorStructInternal, NamedQuery, Vector, VectorStructInternal,
 };
-use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
+use segment::types::{
+    Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint, StrictModeConfig,
+};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
@@ -431,18 +433,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
-                strict_mode_config: config.strict_mode_config.map(|value| {
-                    api::grpc::qdrant::StrictModeConfigDiff {
-                        enabled: value.enabled,
-                        max_query_limit: value.max_query_limit.map(|i| i as u32),
-                        max_timeout: value.max_timeout.map(|i| i as u32),
-                        unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
-                        unindexed_filtering_update: value.unindexed_filtering_update,
-                        search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as u32),
-                        search_allow_exact: value.search_allow_exact,
-                        search_max_oversampling: value.search_max_oversampling.map(|i| i as f32),
-                    }
-                }),
+                strict_mode_config: config
+                    .strict_mode_config
+                    .map(api::grpc::qdrant::StrictModeConfigDiff::from),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -782,7 +775,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
-            strict_mode_config: config.strict_mode_config.map(|i| i.into()),
+            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
         })
     }
 }
