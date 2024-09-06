@@ -336,7 +336,7 @@ impl UpdateHandler {
                             ) {
                                 // Perform some actions when optimization if finished
                                 Ok((is_optimized, segment_id)) => {
-                                    if is_optimized {
+                                    if let Some(segment_id) = segment_id {
                                         if let Some(segment) = segments.read().get(segment_id) {
                                             // Any kind of optimization could have triggered indexing
                                             let segment_ref = segment.get();
