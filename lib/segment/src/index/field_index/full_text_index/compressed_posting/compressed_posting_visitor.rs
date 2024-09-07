@@ -95,7 +95,7 @@ impl<'a> CompressedPostingVisitor<'a> {
             self.decompressed_chunk_idx = None;
             return self
                 .chunk_reader
-                .reminder_postings
+                .remainder_postings
                 .binary_search(val)
                 .is_ok();
         };
@@ -131,7 +131,7 @@ impl<'a> CompressedPostingVisitor<'a> {
             let reminder_idx = offset - self.chunk_reader.chunks.len() * BitPackerImpl::BLOCK_LEN;
             return self
                 .chunk_reader
-                .reminder_postings
+                .remainder_postings
                 .get(reminder_idx)
                 .copied();
         }

@@ -13,6 +13,7 @@ use super::inverted_index::ImmutableInvertedIndex;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
 
+mod inverted_index_ops;
 mod mmap_postings;
 
 const POSTINGS_FILE: &str = "postings.dat";
@@ -26,7 +27,8 @@ pub struct MmapInvertedIndex {
     vocab: MmapHashMap<str>,
     point_to_tokens_count: MmapSlice<usize>,
     deleted_points: MmapBitSliceBufferedUpdateWrapper,
-    points_count: usize,
+    /// Number of points which are not deleted
+    active_points_count: usize,
 }
 
 impl MmapInvertedIndex {
@@ -37,6 +39,9 @@ impl MmapInvertedIndex {
             point_to_tokens_count,
             points_count: _,
         } = inverted_index;
+
+        debug_assert_eq!(point_to_tokens_count.len(), postings.len());
+        debug_assert_eq!(point_to_tokens_count.len(), vocab.len());
 
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
@@ -90,9 +95,10 @@ impl MmapInvertedIndex {
 
         let deleted = mmap_ops::open_write_mmap(&deleted_points_path, AdviceSetting::Global)?;
         let deleted = MmapBitSlice::from(deleted, 0);
-        let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
 
-        let points_count = point_to_tokens_count.len();
+        let num_deleted_points = deleted.count_ones();
+        let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
+        let points_count = point_to_tokens_count.len() - num_deleted_points;
 
         Ok(Self {
             path,
@@ -100,7 +106,7 @@ impl MmapInvertedIndex {
             vocab,
             point_to_tokens_count,
             deleted_points,
-            points_count,
+            active_points_count: points_count,
         })
     }
 }

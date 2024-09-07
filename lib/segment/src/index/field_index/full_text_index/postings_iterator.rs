@@ -1,7 +1,8 @@
 use common::types::PointOffsetType;
 
 use super::posting_list::PostingList;
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 
 pub fn intersect_postings_iterator<'a>(
@@ -23,7 +24,7 @@ pub fn intersect_postings_iterator<'a>(
 }
 
 pub fn intersect_compressed_postings_iterator<'a>(
-    mut postings: Vec<&'a CompressedPostingList>,
+    mut postings: Vec<ChunkReader<'a>>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
@@ -33,14 +34,15 @@ pub fn intersect_compressed_postings_iterator<'a>(
         .map(|(idx, _posting)| idx)
         .unwrap();
     let smallest_posting = postings.remove(smallest_posting_idx);
+    let smallest_posting_iterator =
+        CompressedPostingIterator::new(CompressedPostingVisitor::new(smallest_posting));
 
     let mut posting_visitors = postings
         .into_iter()
-        .map(|p| CompressedPostingVisitor::new(p.reader()))
+        .map(CompressedPostingVisitor::new)
         .collect::<Vec<_>>();
 
-    let and_iter = smallest_posting
-        .iter()
+    let and_iter = smallest_posting_iterator
         .filter(move |doc_id| filter(*doc_id))
         .filter(move |doc_id| {
             posting_visitors
@@ -54,6 +56,7 @@ pub fn intersect_compressed_postings_iterator<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_postings_iterator() {
@@ -85,8 +88,12 @@ mod tests {
         let p1_compressed = CompressedPostingList::new(&p1.into_vec());
         let p2_compressed = CompressedPostingList::new(&p2.into_vec());
         let p3_compressed = CompressedPostingList::new(&p3.into_vec());
-        let compressed_postings = vec![&p1_compressed, &p2_compressed, &p3_compressed];
-        let merged = intersect_compressed_postings_iterator(compressed_postings, |_| true);
+        let compressed_posting_reades = vec![
+            p1_compressed.reader(),
+            p2_compressed.reader(),
+            p3_compressed.reader(),
+        ];
+        let merged = intersect_compressed_postings_iterator(compressed_posting_reades, |_| true);
 
         let res = merged.collect::<Vec<_>>();
 
