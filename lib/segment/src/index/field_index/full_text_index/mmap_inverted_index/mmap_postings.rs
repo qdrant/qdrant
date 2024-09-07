@@ -8,6 +8,7 @@ use memory::madvise::AdviceSetting;
 use memory::mmap_ops::open_read_mmap;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
@@ -21,6 +22,17 @@ pub struct CompressedMmapPostingListView<'a> {
     /// 0-3 extra bytes to align the data
     _alignment: &'a [u8],
     remainder_postings: &'a [PointOffsetType],
+}
+
+impl CompressedMmapPostingListView<'_> {
+    pub fn reader(&self) -> ChunkReader<'_> {
+        ChunkReader::new(
+            self.data,
+            self.chunks_index,
+            self.remainder_postings,
+            *self.last_doc_id,
+        )
+    }
 }
 
 #[derive(Debug, Default, Clone, AsBytes, FromBytes, FromZeroes)]

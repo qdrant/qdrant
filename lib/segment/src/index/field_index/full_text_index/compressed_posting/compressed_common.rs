@@ -1,8 +1,7 @@
 use bitpacking::BitPacker;
-use common::types::PointOffsetType;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use common::types::PointOffsetType;
 
 pub type BitPackerImpl = bitpacking::BitPacker4x;
 
@@ -48,6 +47,19 @@ fn estimate_chunks(
     (chunks, remainder, compressed_data_size)
 }
 
+pub fn get_chunk_size(
+    chunks: &[CompressedPostingChunksIndex],
+    data_len_bytes: usize,
+    chunk_index: usize,
+) -> usize {
+    assert!(chunk_index < chunks.len());
+    if chunk_index + 1 < chunks.len() {
+        chunks[chunk_index + 1].offset as usize - chunks[chunk_index].offset as usize
+    } else {
+        data_len_bytes - chunks[chunk_index].offset as usize
+    }
+}
+
 /// This function takes a sorted list of ids (posting list of a term) and compresses it into a byte array.
 ///
 /// Function requires a pre-allocated byte array to store compressed data.
@@ -64,7 +76,7 @@ fn compress_chunks(
         .enumerate()
     {
         let chunk = &chunks[chunk_index];
-        let chunk_size = ChunkReader::get_chunk_size(chunks, data.len(), chunk_index);
+        let chunk_size = get_chunk_size(chunks, data.len(), chunk_index);
         let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
         bitpacker.compress_sorted(
             chunk.initial,

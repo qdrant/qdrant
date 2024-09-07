@@ -1,9 +1,10 @@
 use bitpacking::BitPacker;
+
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    compress_posting, BitPackerImpl, CompressedPostingChunksIndex,
+    BitPackerImpl, compress_posting, CompressedPostingChunksIndex,
 };
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
@@ -49,6 +50,7 @@ impl CompressedPostingList {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
     }
 
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         let reader = self.reader();
         let visitor = CompressedPostingVisitor::new(reader);

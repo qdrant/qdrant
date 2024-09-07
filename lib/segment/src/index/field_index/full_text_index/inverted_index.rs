@@ -488,7 +488,8 @@ impl ImmutableInvertedIndex {
         // in case of immutable index, deleted documents are still in the postings
         let filter =
             move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
-        intersect_compressed_postings_iterator(postings, filter)
+        let posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
+        intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
@@ -649,6 +650,7 @@ mod tests {
                 let new_contains_orig = orig_posting
                     .iter()
                     .all(|point_id| new_posting.contains(&point_id));
+
                 let orig_contains_new = new_posting
                     .iter()
                     .all(|point_id| orig_posting.contains(&point_id));

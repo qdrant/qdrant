@@ -2,13 +2,13 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    BitPackerImpl, CompressedPostingChunksIndex,
+    get_chunk_size, BitPackerImpl, CompressedPostingChunksIndex,
 };
 
 pub struct ChunkReader<'a> {
     data: &'a [u8],
     pub chunks: &'a [CompressedPostingChunksIndex],
-    pub reminder_postings: &'a [PointOffsetType],
+    pub remainder_postings: &'a [PointOffsetType],
     last_doc_id: PointOffsetType,
 }
 
@@ -22,16 +22,20 @@ impl<'a> ChunkReader<'a> {
         Self {
             data,
             chunks,
-            reminder_postings,
+            remainder_postings: reminder_postings,
             last_doc_id,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
     }
 
     pub fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
         let in_chunks_range =
             !self.chunks.is_empty() && val >= self.chunks[0].initial && val <= self.last_doc_id;
-        let in_noncompressed_range = !self.reminder_postings.is_empty()
-            && val >= self.reminder_postings[0]
+        let in_noncompressed_range = !self.remainder_postings.is_empty()
+            && val >= self.remainder_postings[0]
             && val <= self.last_doc_id;
         in_chunks_range || in_noncompressed_range
     }
@@ -52,20 +56,7 @@ impl<'a> ChunkReader<'a> {
             self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
             decompressed.binary_search(val).is_ok()
         } else {
-            self.reminder_postings.binary_search(val).is_ok()
-        }
-    }
-
-    pub fn get_chunk_size(
-        chunks: &[CompressedPostingChunksIndex],
-        data_len_bytes: usize,
-        chunk_index: usize,
-    ) -> usize {
-        assert!(chunk_index < chunks.len());
-        if chunk_index + 1 < chunks.len() {
-            chunks[chunk_index + 1].offset as usize - chunks[chunk_index].offset as usize
-        } else {
-            data_len_bytes - chunks[chunk_index].offset as usize
+            self.remainder_postings.binary_search(val).is_ok()
         }
     }
 
@@ -74,7 +65,8 @@ impl<'a> ChunkReader<'a> {
         doc_id: &PointOffsetType,
         start_chunk: Option<usize>,
     ) -> Option<usize> {
-        if !self.reminder_postings.is_empty() && doc_id >= self.reminder_postings.first().unwrap() {
+        if !self.remainder_postings.is_empty() && doc_id >= self.remainder_postings.first().unwrap()
+        {
             // doc_id is in the noncompressed postings range
             return None;
         }
@@ -102,7 +94,7 @@ impl<'a> ChunkReader<'a> {
     ) {
         assert_eq!(decompressed.len(), BitPackerImpl::BLOCK_LEN);
         let chunk = &self.chunks[chunk_index];
-        let chunk_size = Self::get_chunk_size(self.chunks, self.data.len(), chunk_index);
+        let chunk_size = get_chunk_size(self.chunks, self.data.len(), chunk_index);
         let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
         bitpacker.decompress_sorted(
             chunk.initial,
