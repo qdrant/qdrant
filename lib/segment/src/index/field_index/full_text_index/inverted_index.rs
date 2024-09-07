@@ -543,7 +543,7 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             })
             .enumerate()
             .map(|(new_token, (orig_token, posting))| {
-                (posting, (orig_token as u32, new_token as u32))
+                (posting, (orig_token as TokenId, new_token as TokenId))
             })
             .unzip();
 
