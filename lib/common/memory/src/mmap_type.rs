@@ -285,6 +285,8 @@ impl<T> MmapSlice<T> {
 
         mmap_slice.fill_with(|| iter.next().expect("iterator size mismatch"));
 
+        mmap_slice.flusher()()?;
+
         Ok(())
     }
 }
@@ -372,6 +374,8 @@ impl MmapBitSlice {
         let mut mmap_bitslice = Self::try_from(mmap, 0)?;
 
         mmap_bitslice.copy_from_bitslice(bitslice);
+
+        mmap_bitslice.flusher()()?;
 
         Ok(())
     }

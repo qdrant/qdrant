@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use common::mmap_hashmap::MmapHashMap;
+use memory::madvise::AdviceSetting;
+use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
 
@@ -36,12 +38,17 @@ impl MmapInvertedIndex {
             points_count: _,
         } = inverted_index;
 
-        MmapPostings::create(path.clone().join(POSTINGS_FILE), &postings)?;
+        let postings_path = path.join(POSTINGS_FILE);
+        let vocab_path = path.join(VOCAB_FILE);
+        let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let deleted_points_path = path.join(DELETED_POINTS_FILE);
+
+        MmapPostings::create(postings_path, &postings)?;
 
         // TODO(luis): Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
         // Consider making another mmap structure for this case.
         MmapHashMap::<str>::create(
-            path.clone().join(VOCAB_FILE).as_path(),
+            &vocab_path,
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;
 
@@ -52,19 +59,48 @@ impl MmapInvertedIndex {
             .iter()
             .map(|count| count.is_none())
             .collect();
-        MmapBitSlice::create(&path.clone().join(DELETED_POINTS_FILE), &deleted_bitslice)?;
+        MmapBitSlice::create(&deleted_points_path, &deleted_bitslice)?;
 
         // The actual values go in the slice
         let point_to_tokens_count_iter = point_to_tokens_count
             .into_iter()
             .map(|count| count.unwrap_or(0));
 
-        MmapSlice::create(
-            &path.clone().join(POINT_TO_TOKENS_COUNT_FILE),
-            point_to_tokens_count_iter,
-        )?;
+        MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
         // TODO(luis): save points_count to a file?
         Ok(())
+    }
+
+    pub fn open(path: PathBuf) -> OperationResult<Self> {
+        let postings_path = path.clone().join(POSTINGS_FILE);
+        let vocab_path = path.clone().join(VOCAB_FILE);
+        let point_to_tokens_count_path = path.clone().join(POINT_TO_TOKENS_COUNT_FILE);
+        let deleted_points_path = path.clone().join(DELETED_POINTS_FILE);
+
+        let postings = MmapPostings::open(&postings_path)?;
+        let vocab = MmapHashMap::<str>::open(&vocab_path)?;
+
+        let point_to_tokens_count = unsafe {
+            MmapSlice::try_from(mmap_ops::open_write_mmap(
+                &point_to_tokens_count_path,
+                AdviceSetting::Global,
+            )?)?
+        };
+
+        let deleted = mmap_ops::open_write_mmap(&deleted_points_path, AdviceSetting::Global)?;
+        let deleted = MmapBitSlice::from(deleted, 0);
+        let deleted_points = MmapBitSliceBufferedUpdateWrapper::new(deleted);
+
+        let points_count = point_to_tokens_count.len();
+
+        Ok(Self {
+            path,
+            postings,
+            vocab,
+            point_to_tokens_count,
+            deleted_points,
+            points_count,
+        })
     }
 }
