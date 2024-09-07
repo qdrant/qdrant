@@ -1,7 +1,6 @@
 use bitpacking::BitPacker;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
-
 use common::types::PointOffsetType;
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 pub type BitPackerImpl = bitpacking::BitPacker4x;
 
