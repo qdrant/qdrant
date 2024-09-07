@@ -1070,28 +1070,26 @@ impl SegmentEntry for ProxySegment {
         &self,
         temp_path: &Path,
         snapshot_dir_path: &Path,
-    ) -> OperationResult<PathBuf> {
+        snapshotted_segments: &mut HashSet<String>,
+    ) -> OperationResult<()> {
         log::info!(
             "Taking a snapshot of a proxy segment into {:?}",
             snapshot_dir_path
         );
 
-        let archive_path = {
-            let wrapped_segment_arc = self.wrapped_segment.get();
-            let wrapped_segment_guard = wrapped_segment_arc.read();
+        self.wrapped_segment.get().read().take_snapshot(
+            temp_path,
+            snapshot_dir_path,
+            snapshotted_segments,
+        )?;
 
-            // snapshot wrapped segment data into the temporary dir
-            wrapped_segment_guard.take_snapshot(temp_path, snapshot_dir_path)?
-        };
+        self.write_segment.get().read().take_snapshot(
+            temp_path,
+            snapshot_dir_path,
+            snapshotted_segments,
+        )?;
 
-        // snapshot write_segment
-        let write_segment_rw = self.write_segment.get();
-        let write_segment_guard = write_segment_rw.read();
-
-        // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
-        write_segment_guard.take_snapshot(temp_path, snapshot_dir_path)?;
-
-        Ok(archive_path)
+        Ok(())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
@@ -1567,11 +1565,20 @@ mod tests {
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
 
+        let mut snapshotted_segments = HashSet::new();
         proxy_segment
-            .take_snapshot(temp_dir.path(), snapshot_dir.path())
+            .take_snapshot(
+                temp_dir.path(),
+                snapshot_dir.path(),
+                &mut snapshotted_segments,
+            )
             .unwrap();
         proxy_segment2
-            .take_snapshot(temp_dir2.path(), snapshot_dir.path())
+            .take_snapshot(
+                temp_dir2.path(),
+                snapshot_dir.path(),
+                &mut snapshotted_segments,
+            )
             .unwrap();
 
         // validate that 3 archives were created:

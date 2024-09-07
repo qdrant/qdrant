@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
+use itertools::Itertools as _;
 use tempfile::Builder;
 
 use super::*;
@@ -215,9 +217,17 @@ fn test_snapshot() {
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
 
     // snapshotting!
-    let archive = segment
-        .take_snapshot(temp_dir.path(), snapshot_dir.path())
+    segment
+        .take_snapshot(temp_dir.path(), snapshot_dir.path(), &mut HashSet::new())
         .unwrap();
+    let archive = snapshot_dir
+        .path()
+        .read_dir()
+        .unwrap()
+        .exactly_one()
+        .unwrap()
+        .unwrap()
+        .path();
     let archive_extension = archive.extension().unwrap();
     let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 

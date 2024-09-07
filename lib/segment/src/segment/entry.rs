@@ -725,7 +725,19 @@ impl SegmentEntry for Segment {
         &self,
         temp_path: &Path,
         snapshot_dir_path: &Path,
-    ) -> OperationResult<PathBuf> {
+        snapshotted_segments: &mut HashSet<String>,
+    ) -> OperationResult<()> {
+        let segment_id = self
+            .current_path
+            .file_stem()
+            .and_then(|f| f.to_str())
+            .unwrap();
+
+        if !snapshotted_segments.insert(segment_id.to_string()) {
+            // Already snapshotted.
+            return Ok(());
+        }
+
         log::debug!(
             "Taking snapshot of segment {:?} into {snapshot_dir_path:?}",
             self.current_path,
@@ -759,12 +771,6 @@ impl SegmentEntry for Segment {
         self.payload_index
             .borrow()
             .take_database_snapshot(&payload_index_db_backup_path)?;
-
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
 
         let archive_path = snapshot_dir_path.join(format!("{segment_id}.tar"));
 
@@ -858,7 +864,7 @@ impl SegmentEntry for Segment {
             }
         });
 
-        Ok(archive_path)
+        Ok(())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {

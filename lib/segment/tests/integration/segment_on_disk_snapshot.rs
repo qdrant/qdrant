@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
 use common::cpu::CpuPermit;
+use itertools::Itertools as _;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -133,9 +134,17 @@ fn test_on_disk_segment_snapshot() {
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
 
     // take snapshot
-    let archive = segment
-        .take_snapshot(temp_dir.path(), snapshot_dir.path())
+    segment
+        .take_snapshot(temp_dir.path(), snapshot_dir.path(), &mut HashSet::new())
         .unwrap();
+    let archive = snapshot_dir
+        .path()
+        .read_dir()
+        .unwrap()
+        .exactly_one()
+        .unwrap()
+        .unwrap()
+        .path();
     let archive_extension = archive.extension().unwrap();
     let archive_name = archive.file_name().unwrap().to_str().unwrap().to_string();
 

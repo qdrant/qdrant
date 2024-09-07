@@ -799,10 +799,10 @@ impl<'s> SegmentHolder {
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
         payload_index_schema: &PayloadIndexSchema,
-        f: F,
+        mut f: F,
     ) -> OperationResult<()>
     where
-        F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
+        F: FnMut(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
     {
         let segments_lock = segments.upgradable_read();
 
@@ -1157,6 +1157,8 @@ impl<'s> SegmentHolder {
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
+
+        let mut snapshotted_segments = HashSet::<String>::new();
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
@@ -1164,7 +1166,11 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
+                read_segment.take_snapshot(
+                    temp_dir,
+                    snapshot_dir_path,
+                    &mut snapshotted_segments,
+                )?;
                 Ok(())
             },
         )
