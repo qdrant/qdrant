@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use collection::shards::CollectionId;
@@ -43,9 +42,7 @@ impl AliasPersistence {
     fn init_file(dir_path: &Path) -> Result<PathBuf, StorageError> {
         let data_path = Self::get_config_path(dir_path);
         if !data_path.exists() {
-            let mut file = fs::File::create(&data_path)?;
-            let empty_json = "{}";
-            file.write_all(empty_json.as_bytes())?;
+            atomic_save_json(&data_path, &AliasMapping::default())?;
         }
         Ok(data_path)
     }
