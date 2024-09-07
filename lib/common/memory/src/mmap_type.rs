@@ -277,13 +277,13 @@ impl<T> MmapSlice<T> {
             .truncate(true)
             .open(path)?;
 
-        let file_len = (iter.len() + mem::size_of::<T>()) as u64;
+        let file_len = (iter.len() * mem::size_of::<T>()) as u64;
         file.set_len(file_len)?;
 
         let mmap = unsafe { MmapMut::map_mut(&file)? };
         let mut mmap_slice = unsafe { Self::try_from(mmap)? };
 
-        mmap_slice.fill_with(|| iter.next().unwrap());
+        mmap_slice.fill_with(|| iter.next().expect("iterator size mismatch"));
 
         Ok(())
     }

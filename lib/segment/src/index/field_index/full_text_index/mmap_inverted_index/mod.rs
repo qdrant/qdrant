@@ -8,7 +8,7 @@ use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
 
 use super::inverted_index::ImmutableInvertedIndex;
-use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
+use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
 
 mod mmap_postings;
@@ -22,8 +22,8 @@ pub struct MmapInvertedIndex {
     path: PathBuf,
     postings: MmapPostings,
     vocab: MmapHashMap<str>,
-    point_to_tokens_count: MmapSliceBufferedUpdateWrapper<usize>,
-    deleted_points: MmapBitSlice,
+    point_to_tokens_count: MmapSlice<usize>,
+    deleted_points: MmapBitSliceBufferedUpdateWrapper,
     points_count: usize,
 }
 
@@ -58,6 +58,7 @@ impl MmapInvertedIndex {
         let point_to_tokens_count_iter = point_to_tokens_count
             .into_iter()
             .map(|count| count.unwrap_or(0));
+
         MmapSlice::create(
             &path.clone().join(POINT_TO_TOKENS_COUNT_FILE),
             point_to_tokens_count_iter,
