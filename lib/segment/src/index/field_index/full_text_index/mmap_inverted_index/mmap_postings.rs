@@ -1,10 +1,11 @@
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use memmap2::Mmap;
+use memory::madvise::AdviceSetting;
+use memory::mmap_ops::open_read_mmap;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
@@ -68,7 +69,7 @@ impl PostingListHeader {
 /// [ CompressedMmapPostingList, CompressedMmapPostingList, ... ] |`
 pub struct MmapPostings {
     path: PathBuf,
-    mmap: Arc<Mmap>,
+    mmap: Mmap,
     header: PostingsHeader,
 }
 
@@ -212,5 +213,26 @@ impl MmapPostings {
         file.persist(path)?;
 
         Ok(())
+    }
+
+    pub fn open(path: impl Into<PathBuf>) -> io::Result<Self> {
+        let path = path.into();
+        let mmap = open_read_mmap(&path, AdviceSetting::Global)?;
+
+        let header_bytes = mmap.get(0..size_of::<PostingsHeader>()).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid header in {}", path.display()),
+            )
+        })?;
+
+        let header = PostingsHeader::read_from(header_bytes).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid header deserialization in {}", path.display()),
+            )
+        })?;
+
+        Ok(Self { path, mmap, header })
     }
 }
