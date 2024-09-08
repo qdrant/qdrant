@@ -18,6 +18,8 @@ use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::types::PointOffsetType;
 
+type ValuesLen = u32;
+
 /// On-disk hash map backed by a memory-mapped file.
 ///
 /// The layout of the memory-mapped file is as follows:
@@ -37,11 +39,12 @@ use crate::types::PointOffsetType;
 /// | key   | values_len | values              |
 /// |-------|------------|---------------------|
 /// | `i64` | `u32`      | `PointOffsetType[]` |
-pub struct MmapHashMap<K: ?Sized> {
+pub struct MmapHashMap<K: ?Sized, V: Sized + AsBytes + FromBytes> {
     mmap: Mmap,
     header: Header,
     phf: Function,
-    _phantom: PhantomData<K>,
+    _phantom_key: PhantomData<K>,
+    _phantom_value: PhantomData<V>,
 }
 
 #[repr(C)]
@@ -56,16 +59,16 @@ const PADDING_SIZE: usize = 4096;
 
 type BucketOffset = u64;
 
-impl<K: Key + ?Sized> MmapHashMap<K> {
+impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
     /// Save `map` contents to `path`.
     pub fn create<'a>(
         path: &Path,
-        map: impl Iterator<Item = (&'a K, impl ExactSizeIterator<Item = PointOffsetType>)> + Clone,
+        map: impl Iterator<Item = (&'a K, impl ExactSizeIterator<Item = V>)> + Clone,
     ) -> io::Result<()>
     where
         K: 'a,
     {
-        let keys_vec = map.clone().map(|(k, _)| k).collect::<Vec<_>>();
+        let keys_vec: Vec<_> = map.clone().map(|(k, _)| k).collect();
         let keys_count = keys_vec.len();
         let phf = Function::from(keys_vec);
 
@@ -136,7 +139,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
             pos += entry_size;
             key.write(&mut bufw)?;
             bufw.write_all(zeroes(padding))?;
-            bufw.write_all((values.len() as PointOffsetType).as_bytes())?;
+            bufw.write_all(AsBytes::as_bytes(&(values.len() as ValuesLen)))?;
             for i in values {
                 bufw.write_all(AsBytes::as_bytes(&i))?;
             }
@@ -185,7 +188,8 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
             mmap,
             header,
             phf,
-            _phantom: PhantomData,
+            _phantom_key: PhantomData,
+            _phantom_value: PhantomData,
         })
     }
 
@@ -200,7 +204,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         })
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &[PointOffsetType])> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &[V])> {
         (0..self.keys_count()).filter_map(|i| {
             let entry = self.get_entry(i).ok()?;
             let key = K::from_bytes(entry)?;
@@ -210,7 +214,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
     }
 
     /// Get the values associated with the `key`.
-    pub fn get(&self, key: &K) -> io::Result<Option<&[PointOffsetType]>> {
+    pub fn get(&self, key: &K) -> io::Result<Option<&[V]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
         };
@@ -224,7 +228,7 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         Ok(Some(Self::get_values_from_entry(entry, key)?))
     }
 
-    fn get_values_from_entry<'a>(entry: &'a [u8], key: &K) -> io::Result<&'a [PointOffsetType]> {
+    fn get_values_from_entry<'a>(entry: &'a [u8], key: &K) -> io::Result<&'a [V]> {
         let entry_start = entry.as_ptr() as usize;
         let entry = &entry[key.write_bytes()..];
 
@@ -235,14 +239,11 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         let entry = entry.get(padding..).ok_or(io::ErrorKind::InvalidData)?;
 
         let values_len =
-            PointOffsetType::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
+            ValuesLen::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
         let entry = entry
-            .get(
-                size_of::<PointOffsetType>()
-                    ..size_of::<PointOffsetType>() + values_len * size_of::<PointOffsetType>(),
-            )
+            .get(size_of::<ValuesLen>()..size_of::<ValuesLen>() + values_len * size_of::<V>())
             .ok_or(io::ErrorKind::InvalidData)?;
-        let result = PointOffsetType::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
+        let result = V::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
         Ok(result)
     }
 
@@ -441,12 +442,12 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let map = gen_map(&mut rng, gen.clone(), 1000);
-        MmapHashMap::<K>::create(
+        MmapHashMap::<K, PointOffsetType>::create(
             &tmpdir.path().join("map"),
             map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
         )
         .unwrap();
-        let mmap = MmapHashMap::<K>::open(&tmpdir.path().join("map")).unwrap();
+        let mmap = MmapHashMap::<K, PointOffsetType>::open(&tmpdir.path().join("map")).unwrap();
 
         // Non-existing keys should return None
         for _ in 0..1000 {
