@@ -15,37 +15,6 @@ use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 const ALIGNMENT: usize = 4;
 
-pub struct CompressedMmapPostingListView<'a> {
-    last_doc_id: &'a PointOffsetType,
-    chunks_index: &'a [CompressedPostingChunksIndex],
-    data: &'a [u8],
-    /// 0-3 extra bytes to align the data
-    _alignment: &'a [u8],
-    remainder_postings: &'a [PointOffsetType],
-}
-
-impl<'a> ChunkReader for CompressedMmapPostingListView<'a> {
-    #[inline]
-    fn data(&self) -> &[u8] {
-        self.data
-    }
-
-    #[inline]
-    fn chunks(&self) -> &[CompressedPostingChunksIndex] {
-        self.chunks_index
-    }
-
-    #[inline]
-    fn remainder_postings(&self) -> &[PointOffsetType] {
-        self.remainder_postings
-    }
-
-    #[inline]
-    fn last_doc_id(&self) -> PointOffsetType {
-        *self.last_doc_id
-    }
-}
-
 #[derive(Debug, Default, Clone, AsBytes, FromBytes, FromZeroes)]
 #[repr(C)]
 struct PostingsHeader {
@@ -111,10 +80,17 @@ impl MmapPostings {
         PostingListHeader::ref_from(header_bytes)
     }
 
-    fn read_compressed_mmap_posting_list_view(
-        &self,
-        header: &PostingListHeader,
-    ) -> Option<CompressedMmapPostingListView<'_>> {
+    /// Create ChunkReader from the given header
+    ///
+    /// Assume the following layout:
+    ///
+    /// * `last_doc_id: &'a PointOffsetType,`
+    /// * `chunks_index: &'a [CompressedPostingChunksIndex],`
+    /// * `data: &'a [u8],`
+    /// * `_alignment: &'a [u8], // 0-3 extra bytes to align the data`
+    /// * `remainder_postings: &'a [PointOffsetType],`
+    /// ```
+    fn get_reader(&self, header: &PostingListHeader) -> Option<ChunkReader<'_>> {
         let offset = header.offset as usize;
         let chunks_len = header.chunks_count as usize;
         let data_len = header.data_bytes_count as usize;
@@ -134,31 +110,29 @@ impl MmapPostings {
         let remainder_offset = alignment_offset + alignment_size_bytes;
 
         let last_doc_id_mem = self.mmap.get(last_doc_id_offset..chunks_offset)?;
-        let last_doc_id = u32::ref_from(last_doc_id_mem)?;
+        let last_doc_id = u32::read_from(last_doc_id_mem)?;
 
         let chunks_mem = self.mmap.get(chunks_offset..data_offset)?;
         let chunks = CompressedPostingChunksIndex::slice_from(chunks_mem)?;
 
         let data = self.mmap.get(data_offset..alignment_offset)?;
-        let alignment = self.mmap.get(alignment_offset..remainder_offset)?;
 
         let remainder_mem = self
             .mmap
             .get(remainder_offset..remainder_offset + remainder_size_bytes)?;
         let remainder_postings = u32::slice_from(remainder_mem)?;
 
-        Some(CompressedMmapPostingListView {
+        Some(ChunkReader::new(
             last_doc_id,
-            chunks_index: chunks,
+            chunks,
             data,
-            _alignment: alignment,
             remainder_postings,
-        })
+        ))
     }
 
-    pub fn get(&self, token_id: TokenId) -> Option<CompressedMmapPostingListView<'_>> {
+    pub fn get(&self, token_id: TokenId) -> Option<ChunkReader<'_>> {
         let header = self.get_header(token_id)?;
-        self.read_compressed_mmap_posting_list_view(header)
+        self.get_reader(header)
     }
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.

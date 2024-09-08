@@ -6,9 +6,9 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
 
 /// Help structure to find intersection of compressed postings and set of sorted values.
 /// This help structure reuse the decompressed chunk to avoid unnecessary decompression.
-pub struct CompressedPostingVisitor<R: ChunkReader> {
+pub struct CompressedPostingVisitor<'a> {
     bitpacker: BitPackerImpl,
-    chunk_reader: R,
+    chunk_reader: ChunkReader<'a>,
 
     /// Data for the decompressed chunk.
     decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
@@ -26,8 +26,8 @@ pub struct CompressedPostingVisitor<R: ChunkReader> {
     last_checked: Option<PointOffsetType>,
 }
 
-impl<R: ChunkReader> CompressedPostingVisitor<R> {
-    pub fn new(chunk_reader: R) -> CompressedPostingVisitor<R> {
+impl<'a> CompressedPostingVisitor<'a> {
+    pub fn new(chunk_reader: ChunkReader<'a>) -> CompressedPostingVisitor<'a> {
         CompressedPostingVisitor {
             bitpacker: BitPackerImpl::new(),
             chunk_reader,
@@ -95,12 +95,12 @@ impl<R: ChunkReader> CompressedPostingVisitor<R> {
             self.decompressed_chunk_idx = None;
             return self
                 .chunk_reader
-                .remainder_postings()
+                .remainder_postings
                 .binary_search(val)
                 .is_ok();
         };
         // if the value is the initial value of the chunk, we don't need to decompress the chunk
-        if self.chunk_reader.chunks()[chunk_index].initial == *val {
+        if self.chunk_reader.chunks[chunk_index].initial == *val {
             return true;
         }
 
@@ -126,12 +126,12 @@ impl<R: ChunkReader> CompressedPostingVisitor<R> {
     pub fn get_by_offset(&mut self, offset: usize) -> Option<PointOffsetType> {
         let chunk_idx = offset / BitPackerImpl::BLOCK_LEN;
 
-        if chunk_idx >= self.chunk_reader.chunks().len() {
+        if chunk_idx >= self.chunk_reader.chunks.len() {
             // Reminder postings
-            let reminder_idx = offset - self.chunk_reader.chunks().len() * BitPackerImpl::BLOCK_LEN;
+            let reminder_idx = offset - self.chunk_reader.chunks.len() * BitPackerImpl::BLOCK_LEN;
             return self
                 .chunk_reader
-                .remainder_postings()
+                .remainder_postings
                 .get(reminder_idx)
                 .copied();
         }
