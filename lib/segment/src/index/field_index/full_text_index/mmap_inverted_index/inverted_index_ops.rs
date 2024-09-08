@@ -2,6 +2,7 @@ use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::inverted_index::ParsedQuery;
 use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
+use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
 impl MmapInvertedIndex {
     fn remove_document(&mut self, idx: PointOffsetType) -> bool {
@@ -45,12 +46,9 @@ impl MmapInvertedIndex {
         }
 
         // in case of immutable index, deleted documents are still in the postings
-        let _filter = move |idx| !self.deleted_points.get(idx).unwrap_or(true);
+        let filter =
+            move |idx: PointOffsetType| !self.deleted_points.get(idx as usize).unwrap_or(true);
 
-        let _posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
-
-        // intersect_compressed_postings_iterator(posting_readers, filter)
-
-        unimplemented!("intersect_compressed_postings_iterator")
+        intersect_compressed_postings_iterator(postings, filter)
     }
 }
