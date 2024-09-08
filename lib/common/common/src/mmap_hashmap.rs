@@ -16,8 +16,6 @@ use rand::rngs::StdRng;
 use rand::Rng as _;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::types::PointOffsetType;
-
 type ValuesLen = u32;
 
 /// On-disk hash map backed by a memory-mapped file.
@@ -30,15 +28,15 @@ type ValuesLen = u32;
 ///
 /// ## Entry format for the `str` key
 ///
-/// | key    | `'\0xff'` | padding | values_len | values              |
-/// |--------|-----------|---------|------------|---------------------|
-/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `PointOffsetType[]` |
+/// | key    | `'\0xff'` | padding | values_len | alignment | values   |
+/// |--------|-----------|---------|------------|-----------|----------|
+/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `u8[]`    | `V[]`    |
 ///
 /// ## Entry format for the `i64` key
 ///
-/// | key   | values_len | values              |
-/// |-------|------------|---------------------|
-/// | `i64` | `u32`      | `PointOffsetType[]` |
+/// | key   | values_len | alignment | values    |
+/// |-------|------------|-----------|-----------|
+/// | `i64` | `u32`      | `u8[]`    | `V[]`     |
 pub struct MmapHashMap<K: ?Sized, V: Sized + AsBytes + FromBytes> {
     mmap: Mmap,
     header: Header,
@@ -96,7 +94,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
             last_bucket = last_bucket.next_multiple_of(K::ALIGN);
             buckets[phf.get(k).expect("Key not found in phf") as usize] =
                 last_bucket as BucketOffset;
-            last_bucket += Self::entry_bytes(k, v.len()).0;
+            last_bucket += Self::entry_bytes(k, v.len());
         }
         file_size += last_bucket;
         _ = file_size;
@@ -133,13 +131,13 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
                 pos = next_pos;
             }
 
-            buckets.push(pos as BucketOffset);
-
-            let (entry_size, padding) = Self::entry_bytes(key, values.len());
+            let entry_size = Self::entry_bytes(key, values.len());
             pos += entry_size;
+
             key.write(&mut bufw)?;
-            bufw.write_all(zeroes(padding))?;
-            bufw.write_all(AsBytes::as_bytes(&(values.len() as ValuesLen)))?;
+            bufw.write_all(zeroes(Self::key_padding_bytes(key)))?;
+            bufw.write_all((values.len() as ValuesLen).as_bytes())?;
+            bufw.write_all(zeroes(Self::values_len_padding_bytes()))?;
             for i in values {
                 bufw.write_all(AsBytes::as_bytes(&i))?;
             }
@@ -151,14 +149,32 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         Ok(())
     }
 
-    fn entry_bytes(key: &K, values_len: usize) -> (usize, usize) {
+    const VALUES_LEN_SIZE: usize = size_of::<ValuesLen>();
+    const VALUE_SIZE: usize = size_of::<V>();
+
+    fn key_size_with_padding(key: &K) -> usize {
         let key_size = key.write_bytes();
-        let padding_bytes = key_size.next_multiple_of(size_of::<PointOffsetType>()) - key_size;
-        let total_bytes = key_size
-            + padding_bytes
-            + size_of::<PointOffsetType>()
-            + values_len * size_of::<PointOffsetType>();
-        (total_bytes, padding_bytes)
+        key_size.next_multiple_of(Self::VALUE_SIZE)
+    }
+
+    fn key_padding_bytes(key: &K) -> usize {
+        let key_size = key.write_bytes();
+        key_size.next_multiple_of(Self::VALUE_SIZE) - key_size
+    }
+
+    const fn values_len_size_with_padding() -> usize {
+        Self::VALUES_LEN_SIZE.next_multiple_of(Self::VALUE_SIZE)
+    }
+
+    const fn values_len_padding_bytes() -> usize {
+        Self::VALUES_LEN_SIZE.next_multiple_of(Self::VALUE_SIZE) - Self::VALUES_LEN_SIZE
+    }
+
+    /// Return total size of the entry in bytes, including: key, values_len, values all with padding.
+    fn entry_bytes(key: &K, values_len: usize) -> usize {
+        Self::key_size_with_padding(key)
+            + Self::values_len_size_with_padding()
+            + values_len * Self::VALUE_SIZE
     }
 
     /// Load the hash map from file.
@@ -229,44 +245,76 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
     }
 
     fn get_values_from_entry<'a>(entry: &'a [u8], key: &K) -> io::Result<&'a [V]> {
-        let entry_start = entry.as_ptr() as usize;
-        let entry = &entry[key.write_bytes()..];
+        // ## Entry format for the `i64` key
+        //
+        // | key   | values_len | alignment | values    |
+        // |-------|------------|-----------|-----------|
+        // | `i64` | `u32`      | u8[]      | `V[]`     |
 
-        let padding = {
-            let pos = entry.as_ptr() as usize - entry_start;
-            pos.next_multiple_of(4) - pos
-        };
-        let entry = entry.get(padding..).ok_or(io::ErrorKind::InvalidData)?;
+        let key_size = key.write_bytes();
+        let key_size_with_padding = key_size.next_multiple_of(size_of::<V>());
 
-        let values_len =
-            ValuesLen::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
-        let entry = entry
-            .get(size_of::<ValuesLen>()..size_of::<ValuesLen>() + values_len * size_of::<V>())
-            .ok_or(io::ErrorKind::InvalidData)?;
-        let result = V::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
+        let entry = entry.get(key_size_with_padding..).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Can't read entry from mmap, key_size_with_padding {key_size_with_padding} is out of bounds"),
+            )
+        })?;
+
+        let values_len = ValuesLen::read_from_prefix(entry).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Can't read values_len from mmap",
+            )
+        })? as usize;
+
+        let values_from = Self::values_len_size_with_padding();
+        let values_to = values_from + values_len * size_of::<V>();
+
+        let entry = entry.get(values_from..values_to).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Can't read values from mmap, relative range: {values_from}:{values_to}"),
+            )
+        })?;
+
+        let result = V::slice_from(entry).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Can't convert mmap range into slice",
+            )
+        })?;
         Ok(result)
     }
 
     fn get_entry(&self, index: usize) -> io::Result<&[u8]> {
+        // Absolute position of the bucket array in the mmap.
+        let bucket_from = self.header.buckets_pos as usize;
+        let bucket_to =
+            bucket_from + self.header.buckets_count as usize * size_of::<BucketOffset>();
+
         let bucket_val = self
             .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    ..self.header.buckets_pos as usize
-                        + self.header.buckets_count as usize * size_of::<BucketOffset>(),
-            )
+            .get(bucket_from..bucket_to)
             .and_then(BucketOffset::slice_from)
             .and_then(|buckets| buckets.get(index).copied())
-            .ok_or(io::ErrorKind::InvalidData)?;
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Can't read bucket from mmap, pos: {bucket_from}:{bucket_to}"),
+                )
+            })?;
 
-        Ok(self
-            .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    + self.header.buckets_count as usize * size_of::<BucketOffset>()
-                    + bucket_val as usize..,
+        let entry_start = self.header.buckets_pos as usize
+            + self.header.buckets_count as usize * size_of::<BucketOffset>()
+            + bucket_val as usize;
+
+        self.mmap.get(entry_start..).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Can't read entry from mmap, bucket_val {entry_start} is out of bounds"),
             )
-            .ok_or(io::ErrorKind::InvalidData)?)
+        })
     }
 }
 
@@ -423,6 +471,8 @@ fn repeat_until<T>(mut f: impl FnMut() -> T, cond: impl Fn(&T) -> bool) -> T {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use rand::SeedableRng as _;
 
     use super::*;
@@ -442,12 +492,12 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let map = gen_map(&mut rng, gen.clone(), 1000);
-        MmapHashMap::<K, PointOffsetType>::create(
+        MmapHashMap::<K, u32>::create(
             &tmpdir.path().join("map"),
             map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
         )
         .unwrap();
-        let mmap = MmapHashMap::<K, PointOffsetType>::open(&tmpdir.path().join("map")).unwrap();
+        let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map")).unwrap();
 
         // Non-existing keys should return None
         for _ in 0..1000 {
@@ -475,5 +525,34 @@ mod tests {
                 &v.into_iter().collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn test_mmap_hash_impl_u64_value() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
+
+        let mut map: HashMap<i64, BTreeSet<u64>> = Default::default();
+
+        for key in 0..10i64 {
+            map.insert(key, (0..100).map(|_| rng.gen_range(0..=1000)).collect());
+        }
+
+        MmapHashMap::<i64, u64>::create(
+            &tmpdir.path().join("map"),
+            map.iter().map(|(k, v)| (k, v.iter().copied())),
+        )
+        .unwrap();
+
+        let mmap = MmapHashMap::<i64, u64>::open(&tmpdir.path().join("map")).unwrap();
+
+        for (k, v) in map {
+            assert_eq!(
+                mmap.get(&k).unwrap().unwrap(),
+                &v.into_iter().collect::<Vec<_>>()
+            );
+        }
+
+        assert!(mmap.get(&100).unwrap().is_none())
     }
 }

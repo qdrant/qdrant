@@ -1,6 +1,6 @@
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
+use crate::index::field_index::full_text_index::inverted_index::ParsedQuery;
 use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
@@ -91,7 +91,7 @@ impl MmapInvertedIndex {
     pub fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
         self.vocab.iter().filter_map(|(token, posting_idx)| {
             self.postings
-                .get(posting_idx[0] as TokenId)
+                .get(posting_idx[0])
                 .map(|posting| (token, posting.len()))
         })
     }
