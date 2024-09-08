@@ -5,7 +5,7 @@ use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInverte
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
 impl MmapInvertedIndex {
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    pub fn remove_document(&mut self, idx: PointOffsetType) -> bool {
         if idx >= self.point_to_tokens_count.len() as PointOffsetType {
             return false; // Already removed or never actually existed
         }
@@ -24,7 +24,7 @@ impl MmapInvertedIndex {
         true
     }
 
-    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()

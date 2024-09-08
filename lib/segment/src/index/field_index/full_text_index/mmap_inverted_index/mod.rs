@@ -9,9 +9,9 @@ use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
 
-use super::inverted_index::ImmutableInvertedIndex;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
 
 mod inverted_index_ops;
 mod mmap_postings;
