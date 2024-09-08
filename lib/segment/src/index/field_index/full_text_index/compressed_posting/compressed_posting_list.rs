@@ -1,7 +1,7 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::{ChunkReader, ChunkReaderImpl};
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
     compress_posting, BitPackerImpl, CompressedPostingChunksIndex,
 };
@@ -32,8 +32,8 @@ impl CompressedPostingList {
         }
     }
 
-    pub fn reader(&self) -> ChunkReader {
-        ChunkReader::new(
+    pub fn reader(&self) -> ChunkReaderImpl {
+        ChunkReaderImpl::new(
             &self.data,
             &self.chunks,
             &self.remainder_postings,

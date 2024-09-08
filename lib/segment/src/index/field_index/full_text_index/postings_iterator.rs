@@ -23,8 +23,8 @@ pub fn intersect_postings_iterator<'a>(
     Box::new(and_iter)
 }
 
-pub fn intersect_compressed_postings_iterator<'a>(
-    mut postings: Vec<ChunkReader<'a>>,
+pub fn intersect_compressed_postings_iterator<'a, R: ChunkReader + 'a>(
+    mut postings: Vec<R>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings

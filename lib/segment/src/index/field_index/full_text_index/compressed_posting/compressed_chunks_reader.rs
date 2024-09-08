@@ -5,53 +5,13 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
     get_chunk_size, BitPackerImpl, CompressedPostingChunksIndex,
 };
 
-pub struct ChunkReader<'a> {
-    data: &'a [u8],
-    chunks: &'a [CompressedPostingChunksIndex],
-    remainder_postings: &'a [PointOffsetType],
-    last_doc_id: PointOffsetType,
-}
+pub trait ChunkReader {
+    fn data(&self) -> &[u8];
+    fn chunks(&self) -> &[CompressedPostingChunksIndex];
+    fn remainder_postings(&self) -> &[PointOffsetType];
+    fn last_doc_id(&self) -> PointOffsetType;
 
-impl<'a> ChunkReader<'a> {
-    pub fn new(
-        data: &'a [u8],
-        chunks: &'a [CompressedPostingChunksIndex],
-        reminder_postings: &'a [PointOffsetType],
-        last_doc_id: PointOffsetType,
-    ) -> Self {
-        Self {
-            data,
-            chunks,
-            remainder_postings: reminder_postings,
-            last_doc_id,
-        }
-    }
-
-    #[inline]
-    pub fn data(&self) -> &[u8] {
-        self.data
-    }
-
-    #[inline]
-    pub fn chunks(&self) -> &[CompressedPostingChunksIndex] {
-        self.chunks
-    }
-
-    #[inline]
-    pub fn remainder_postings(&self) -> &[PointOffsetType] {
-        self.remainder_postings
-    }
-
-    #[inline]
-    pub fn last_doc_id(&self) -> PointOffsetType {
-        self.last_doc_id
-    }
-
-    pub fn len(&self) -> usize {
-        self.chunks().len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings().len()
-    }
-
-    pub fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
+    fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
         let last_doc_id = self.last_doc_id();
         let chunks = self.chunks();
         let remainder_postings = self.remainder_postings();
@@ -62,7 +22,7 @@ impl<'a> ChunkReader<'a> {
         in_chunks_range || in_noncompressed_range
     }
 
-    pub fn contains(&self, val: &PointOffsetType) -> bool {
+    fn contains(&self, val: &PointOffsetType) -> bool {
         if !self.is_in_postings_range(*val) {
             return false;
         }
@@ -81,11 +41,7 @@ impl<'a> ChunkReader<'a> {
         }
     }
 
-    pub fn find_chunk(
-        &self,
-        doc_id: &PointOffsetType,
-        start_chunk: Option<usize>,
-    ) -> Option<usize> {
+    fn find_chunk(&self, doc_id: &PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
         let remainder_postings = self.remainder_postings();
         let chunks = self.chunks();
 
@@ -109,7 +65,7 @@ impl<'a> ChunkReader<'a> {
         }
     }
 
-    pub fn decompress_chunk(
+    fn decompress_chunk(
         &self,
         bitpacker: &BitPackerImpl,
         chunk_index: usize,
@@ -128,5 +84,54 @@ impl<'a> ChunkReader<'a> {
             decompressed,
             chunk_bits as u8,
         );
+    }
+
+    fn len(&self) -> usize {
+        self.chunks().len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings().len()
+    }
+}
+
+pub struct ChunkReaderImpl<'a> {
+    data: &'a [u8],
+    chunks: &'a [CompressedPostingChunksIndex],
+    remainder_postings: &'a [PointOffsetType],
+    last_doc_id: PointOffsetType,
+}
+
+impl<'a> ChunkReaderImpl<'a> {
+    pub fn new(
+        data: &'a [u8],
+        chunks: &'a [CompressedPostingChunksIndex],
+        reminder_postings: &'a [PointOffsetType],
+        last_doc_id: PointOffsetType,
+    ) -> Self {
+        Self {
+            data,
+            chunks,
+            remainder_postings: reminder_postings,
+            last_doc_id,
+        }
+    }
+}
+
+impl<'a> ChunkReader for ChunkReaderImpl<'a> {
+    #[inline]
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+
+    #[inline]
+    fn chunks(&self) -> &[CompressedPostingChunksIndex] {
+        self.chunks
+    }
+
+    #[inline]
+    fn remainder_postings(&self) -> &[PointOffsetType] {
+        self.remainder_postings
+    }
+
+    #[inline]
+    fn last_doc_id(&self) -> PointOffsetType {
+        self.last_doc_id
     }
 }
