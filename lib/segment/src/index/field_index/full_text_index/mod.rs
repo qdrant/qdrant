@@ -6,5 +6,7 @@ pub mod text_index;
 mod tokenizers;
 
 mod compressed_posting;
+mod immutable_inverted_index;
+mod mutable_inverted_index;
 #[cfg(test)]
 mod tests;
