@@ -1,4 +1,5 @@
 use bitpacking::BitPacker;
+
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
@@ -6,9 +7,9 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
 
 /// Help structure to find intersection of compressed postings and set of sorted values.
 /// This help structure reuse the decompressed chunk to avoid unnecessary decompression.
-pub struct CompressedPostingVisitor<'a> {
+pub struct CompressedPostingVisitor<R: ChunkReader> {
     bitpacker: BitPackerImpl,
-    chunk_reader: ChunkReader<'a>,
+    chunk_reader: R,
 
     /// Data for the decompressed chunk.
     decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
@@ -26,8 +27,8 @@ pub struct CompressedPostingVisitor<'a> {
     last_checked: Option<PointOffsetType>,
 }
 
-impl<'a> CompressedPostingVisitor<'a> {
-    pub fn new(chunk_reader: ChunkReader<'a>) -> CompressedPostingVisitor<'a> {
+impl<R: ChunkReader> CompressedPostingVisitor<R> {
+    pub fn new(chunk_reader: R) -> CompressedPostingVisitor<R> {
         CompressedPostingVisitor {
             bitpacker: BitPackerImpl::new(),
             chunk_reader,
@@ -148,8 +149,9 @@ impl<'a> CompressedPostingVisitor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
+
+    use super::*;
 
     #[test]
     fn test_compressed_posting_visitor() {
