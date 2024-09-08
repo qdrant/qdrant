@@ -1,5 +1,4 @@
 use bitpacking::BitPacker;
-
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
@@ -149,9 +148,8 @@ impl<R: ChunkReader> CompressedPostingVisitor<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
-
     use super::*;
+    use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_compressed_posting_visitor() {

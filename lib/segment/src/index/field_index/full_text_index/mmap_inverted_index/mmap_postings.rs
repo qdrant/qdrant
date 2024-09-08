@@ -8,7 +8,7 @@ use memory::madvise::AdviceSetting;
 use memory::mmap_ops::open_read_mmap;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
-use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReaderImpl;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
@@ -24,14 +24,25 @@ pub struct CompressedMmapPostingListView<'a> {
     remainder_postings: &'a [PointOffsetType],
 }
 
-impl CompressedMmapPostingListView<'_> {
-    pub fn reader(&self) -> ChunkReaderImpl<'_> {
-        ChunkReaderImpl::new(
-            self.data,
-            self.chunks_index,
-            self.remainder_postings,
-            *self.last_doc_id,
-        )
+impl<'a> ChunkReader for CompressedMmapPostingListView<'a> {
+    #[inline]
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+
+    #[inline]
+    fn chunks(&self) -> &[CompressedPostingChunksIndex] {
+        self.chunks_index
+    }
+
+    #[inline]
+    fn remainder_postings(&self) -> &[PointOffsetType] {
+        self.remainder_postings
+    }
+
+    #[inline]
+    fn last_doc_id(&self) -> PointOffsetType {
+        *self.last_doc_id
     }
 }
 
