@@ -33,7 +33,22 @@ impl<T: Copy + Eq + Hash> HashRingRouter<T> {
     pub fn add(&mut self, shard: T) -> bool {
         match self {
             Self::Single(ring) => ring.add(shard),
-            Self::Resharding { .. } => panic!("can't add shards to hashring in resharding mode"),
+            Self::Resharding { old, new } => {
+                // When resharding is in progress:
+                // - either `new` hashring contains a shard, that is not in `old` (when resharding *up*)
+                // - or `old` contains a shard, that is not in `new` (when resharding *down*)
+                //
+                // This check ensures, that we don't accidentally break this invariant when adding
+                // nodes to `Resharding` hashring.
+
+                if !old.contains(&shard) && !new.contains(&shard) {
+                    old.add(shard);
+                    new.add(shard);
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
 
