@@ -202,7 +202,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
             Err(err) => {
-                debug_assert!(false, "Error while getting count for value {value:?}: {err:?}");
+                debug_assert!(
+                    false,
+                    "Error while getting count for value {value:?}: {err:?}",
+                );
                 log::error!("Error while getting count for value {value:?}: {err:?}");
                 None
             }
@@ -214,7 +217,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             Ok(Some(slice)) => Box::new(slice.iter()),
             Ok(None) => Box::new(iter::empty()),
             Err(err) => {
-                debug_assert!(false, "Error while getting iterator for value {value:?}: {err:?}");
+                debug_assert!(
+                    false,
+                    "Error while getting iterator for value {value:?}: {err:?}",
+                );
                 log::error!("Error while getting iterator for value {value:?}: {err:?}");
                 Box::new(iter::empty())
             }
