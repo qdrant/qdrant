@@ -644,18 +644,31 @@ mod tests {
 
     #[test]
     fn geohash_starts_with() {
-        assert!(GeoHash::new("uft560000000")
-            .unwrap()
-            .starts_with(GeoHash::new("uft5600").unwrap()));
-        assert!(GeoHash::new("uft5600")
-            .unwrap()
-            .starts_with(GeoHash::new("").unwrap()));
-        assert!(GeoHash::new("")
-            .unwrap()
-            .starts_with(GeoHash::new("").unwrap()));
-        assert!(GeoHash::new("uft56000000r")
-            .unwrap()
-            .starts_with(GeoHash::new("uft56000000r").unwrap()));
+        let samples = [
+            "",
+            "uft5601",
+            "uft560100000",
+            "uft56010000r",
+            "uft5602",
+            "uft560200000",
+        ];
+        for a_str in samples.iter() {
+            let a_hash = GeoHash::new(a_str).unwrap();
+            for b_str in samples.iter() {
+                let b_hash = GeoHash::new(b_str).unwrap();
+                if a_str.starts_with(b_str) {
+                    assert!(
+                        a_hash.starts_with(b_hash),
+                        "{a_str:?} expected to start with {b_str:?}",
+                    );
+                } else {
+                    assert!(
+                        !a_hash.starts_with(b_hash),
+                        "{a_str:?} expected to not start with {b_str:?}",
+                    );
+                }
+            }
+        }
     }
 
     #[test]
