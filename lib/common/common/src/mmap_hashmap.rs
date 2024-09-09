@@ -269,7 +269,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         })? as usize;
 
         let values_from = Self::values_len_size_with_padding();
-        let values_to = values_from + values_len * size_of::<V>();
+        let values_to = values_from + values_len * Self::VALUE_SIZE;
 
         let entry = entry.get(values_from..values_to).ok_or_else(|| {
             io::Error::new(
