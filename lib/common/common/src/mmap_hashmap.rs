@@ -194,18 +194,34 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        (0..self.keys_count()).filter_map(|i| {
-            let entry = self.get_entry(i).ok()?;
-            K::from_bytes(entry)
+        (0..self.keys_count()).filter_map(|i| match self.get_entry(i) {
+            Ok(entry) => K::from_bytes(entry),
+            Err(err) => {
+                debug_assert!(false, "Error reading entry for key {i}: {err}");
+                log::error!("Error reading entry for key {i}: {err}");
+                None
+            }
         })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&K, &[PointOffsetType])> {
-        (0..self.keys_count()).filter_map(|i| {
-            let entry = self.get_entry(i).ok()?;
-            let key = K::from_bytes(entry)?;
-            let values = Self::get_values_from_entry(entry, key).ok()?;
-            Some((key, values))
+        (0..self.keys_count()).filter_map(|i| match self.get_entry(i) {
+            Ok(entry) => {
+                let key = K::from_bytes(entry)?;
+                match Self::get_values_from_entry(entry, key) {
+                    Ok(values) => Some((key, values)),
+                    Err(err) => {
+                        debug_assert!(false, "Error reading values for key {i}: {err}");
+                        log::error!("Error reading values for key {i}: {err}");
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                debug_assert!(false, "Error reading entry for key {i}: {err}");
+                log::error!("Error reading entry for key {i}: {err}");
+                None
+            }
         })
     }
 
@@ -232,14 +248,24 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
             let pos = entry.as_ptr() as usize - entry_start;
             pos.next_multiple_of(4) - pos
         };
-        let entry = entry.get(padding..).ok_or(io::ErrorKind::InvalidData)?;
+        let Some(entry) = entry.get(padding..) else {
+            let error_message = format!(
+                "Invalid padding {padding:?} in entry, entry len: {:?}",
+                entry.len(),
+            );
+            return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
+        };
 
-        let values_len =
-            PointOffsetType::read_from_prefix(entry).ok_or(io::ErrorKind::InvalidData)? as usize;
+        let Some(values_len) = PointOffsetType::read_from_prefix(entry) else {
+            let error_message = format!("Can't read values_len, entry len: {:?}", entry.len());
+            return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
+        };
+
         let entry = entry
             .get(
                 size_of::<PointOffsetType>()
-                    ..size_of::<PointOffsetType>() + values_len * size_of::<PointOffsetType>(),
+                    ..size_of::<PointOffsetType>()
+                        + values_len as usize * size_of::<PointOffsetType>(),
             )
             .ok_or(io::ErrorKind::InvalidData)?;
         let result = PointOffsetType::slice_from(entry).ok_or(io::ErrorKind::InvalidData)?;
@@ -247,25 +273,41 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
     }
 
     fn get_entry(&self, index: usize) -> io::Result<&[u8]> {
+        let mmap_offset_from = self.header.buckets_pos as usize;
+        let mmap_offset_to = self.header.buckets_pos as usize
+            + self.header.buckets_count as usize * size_of::<BucketOffset>();
+
         let bucket_val = self
             .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    ..self.header.buckets_pos as usize
-                        + self.header.buckets_count as usize * size_of::<BucketOffset>(),
-            )
+            .get(mmap_offset_from..mmap_offset_to)
             .and_then(BucketOffset::slice_from)
-            .and_then(|buckets| buckets.get(index).copied())
-            .ok_or(io::ErrorKind::InvalidData)?;
+            .and_then(|buckets| buckets.get(index).copied());
 
-        Ok(self
-            .mmap
-            .get(
-                self.header.buckets_pos as usize
-                    + self.header.buckets_count as usize * size_of::<BucketOffset>()
-                    + bucket_val as usize..,
-            )
-            .ok_or(io::ErrorKind::InvalidData)?)
+        let Some(bucket_val) = bucket_val else {
+            let error_message =
+                format!(
+                "Can't read entry for mmap hash map for index {index}, mmap offset: {mmap_offset_from}:{mmap_offset_to}, mmap len: {}",
+                self.mmap.len(),
+            );
+            return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
+        };
+
+        let mmap_value_offset = self.header.buckets_pos as usize
+            + self.header.buckets_count as usize * size_of::<BucketOffset>()
+            + bucket_val as usize;
+
+        let entry_opt = self.mmap.get(mmap_value_offset..);
+
+        let Some(entry) = entry_opt else {
+            let error_message =
+                format!(
+                "Can't read entry for mmap hash map for index {index}, mmap offset: {mmap_value_offset:?}, mmap len: {}",
+                self.mmap.len(),
+            );
+            return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
+        };
+
+        Ok(entry)
     }
 }
 

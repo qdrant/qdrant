@@ -198,18 +198,32 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        self.value_to_points
-            .get(value)
-            .ok()
-            .flatten()
-            .map(|p| p.len())
+        match self.value_to_points.get(value) {
+            Ok(Some(points)) => Some(points.len()),
+            Ok(None) => None,
+            Err(err) => {
+                debug_assert!(
+                    false,
+                    "Error while getting count for value {value:?}: {err:?}",
+                );
+                log::error!("Error while getting count for value {value:?}: {err:?}");
+                None
+            }
+        }
     }
 
     pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
-        if let Some(slice) = self.value_to_points.get(value).ok().flatten() {
-            Box::new(slice.iter())
-        } else {
-            Box::new(iter::empty())
+        match self.value_to_points.get(value) {
+            Ok(Some(slice)) => Box::new(slice.iter()),
+            Ok(None) => Box::new(iter::empty()),
+            Err(err) => {
+                debug_assert!(
+                    false,
+                    "Error while getting iterator for value {value:?}: {err:?}",
+                );
+                log::error!("Error while getting iterator for value {value:?}: {err:?}");
+                Box::new(iter::empty())
+            }
         }
     }
 
