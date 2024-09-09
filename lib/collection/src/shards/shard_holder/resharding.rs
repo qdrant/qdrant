@@ -458,7 +458,7 @@ impl ShardHolder {
         if target_point_ids.is_empty() {
             operation.into()
         } else if target_point_ids.len() == point_ids.len() {
-            OperationsByMode::default().update_existing(operation)
+            OperationsByMode::default().with_update_existing(operation)
         } else {
             let mut update_all = operation.clone();
             update_all.retain_point_ids(|point_id| !target_point_ids.contains(point_id));
@@ -466,7 +466,7 @@ impl ShardHolder {
             let mut update_existing = operation;
             update_existing.retain_point_ids(|point_id| target_point_ids.contains(point_id));
 
-            OperationsByMode::from(update_all).update_existing(update_existing)
+            OperationsByMode::from(update_all).with_update_existing(update_existing)
         }
     }
 
@@ -504,7 +504,7 @@ pub struct OperationsByMode {
 }
 
 impl OperationsByMode {
-    pub fn update_existing(mut self, operation: CollectionUpdateOperations) -> Self {
+    pub fn with_update_existing(mut self, operation: CollectionUpdateOperations) -> Self {
         match operation {
             CollectionUpdateOperations::PointOperation(
                 point_ops::PointOperations::UpsertPoints(operation),
