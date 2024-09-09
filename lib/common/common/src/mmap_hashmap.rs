@@ -250,9 +250,8 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         };
         let Some(entry) = entry.get(padding..) else {
             let error_message = format!(
-                "Invalid padding {:?} in entry, entry len: {:?}",
-                padding,
-                entry.len()
+                "Invalid padding {padding:?} in entry, entry len: {:?}",
+                entry.len(),
             );
             return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
         };
@@ -287,8 +286,8 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         let Some(bucket_val) = bucket_val else {
             let error_message =
                 format!(
-                "Can't read entry for mmap hash map for index {}, mmap offset: {}:{}, mmap len: {}",
-                index, mmap_offset_from, mmap_offset_to, self.mmap.len()
+                "Can't read entry for mmap hash map for index {index}, mmap offset: {mmap_offset_from}:{mmap_offset_to}, mmap len: {}",
+                self.mmap.len(),
             );
             return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
         };
@@ -302,8 +301,8 @@ impl<K: Key + ?Sized> MmapHashMap<K> {
         let Some(entry) = entry_opt else {
             let error_message =
                 format!(
-                "Can't read entry for mmap hash map for index {}, mmap offset: {:?}, mmap len: {}",
-                index, mmap_value_offset, self.mmap.len()
+                "Can't read entry for mmap hash map for index {index}, mmap offset: {mmap_value_offset:?}, mmap len: {}",
+                self.mmap.len(),
             );
             return Err(io::Error::new(io::ErrorKind::InvalidData, error_message));
         };
