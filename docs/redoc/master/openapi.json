@@ -10032,6 +10032,10 @@
             "type": "boolean",
             "nullable": true
           },
+          "hide_jwt_dashboard": {
+            "type": "boolean",
+            "nullable": true
+          },
           "startup": {
             "type": "string",
             "format": "date-time"

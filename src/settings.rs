@@ -34,6 +34,9 @@ pub struct ServiceConfig {
     #[serde(default)]
     pub jwt_rbac: Option<bool>,
 
+    #[serde(default)]
+    pub hide_jwt_dashboard: Option<bool>,
+
     /// Directory where static files are served from.
     /// For example, the Web-UI should be placed here.
     #[serde(default)]
