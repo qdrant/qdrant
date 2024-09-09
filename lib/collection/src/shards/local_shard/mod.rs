@@ -992,14 +992,20 @@ impl LocalShard {
             }
         }
 
-        // If status looks green/ok but optimizations can be triggered, mark as grey
-        if status == ShardStatus::Green
-            && optimizer_status == OptimizersStatus::Ok
-            && self.update_handler.lock().await.has_non_optimal_segments()
-        {
-            // This can happen when a node is restarted (crashed), because we don't
-            // automatically trigger optimizations on restart to avoid a crash loop
-            status = ShardStatus::Grey;
+        // If status looks green/ok but some optimizations are suboptimal
+        if status == ShardStatus::Green && optimizer_status == OptimizersStatus::Ok {
+            let (has_triggered_any_optimizers, has_suboptimal_optimizers) =
+                self.update_handler.lock().await.pending_optimizations();
+
+            if has_suboptimal_optimizers {
+                if has_triggered_any_optimizers {
+                    status = ShardStatus::Yellow;
+                } else {
+                    // This can happen when a node is restarted (crashed), because we don't
+                    // automatically trigger optimizations on restart to avoid a crash loop
+                    status = ShardStatus::Grey;
+                }
+            }
         }
 
         (status, optimizer_status)

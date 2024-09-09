@@ -433,18 +433,18 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers and returns whether any is satisfied
     ///
     /// In other words, if this returns true we have pending optimizations.
-    pub(crate) fn has_non_optimal_segments(&self) -> bool {
-        // If we did trigger optimizers at least once, we do not consider to be pending
-        if self.has_triggered_optimizers.load(Ordering::Relaxed) {
-            return false;
-        }
+    pub(crate) fn pending_optimizations(&self) -> (bool, bool) {
+        // Check if Qdrant triggered any optimizations since starting at all
+        let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
 
         let excluded_ids = HashSet::<_>::default();
-        self.optimizers.iter().any(|optimizer| {
+        let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
             let nonoptimal_segment_ids =
                 optimizer.check_condition(self.segments.clone(), &excluded_ids);
             !nonoptimal_segment_ids.is_empty()
-        })
+        });
+
+        (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 
     pub(crate) async fn process_optimization(
