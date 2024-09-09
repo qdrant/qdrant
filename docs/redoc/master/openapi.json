@@ -10216,7 +10216,7 @@
         "required": [
           "optimizations",
           "segments",
-          "total_indexed_points"
+          "total_optimized_points"
         ],
         "properties": {
           "variant_name": {
@@ -10233,8 +10233,8 @@
               }
             ]
           },
-          "total_indexed_points": {
-            "description": "Total number of indexed points since last start.",
+          "total_optimized_points": {
+            "description": "Total number of optimized points since the last start.",
             "type": "integer",
             "format": "uint",
             "minimum": 0

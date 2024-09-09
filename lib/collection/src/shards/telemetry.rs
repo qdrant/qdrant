@@ -31,7 +31,7 @@ pub struct RemoteShardTelemetry {
 pub struct LocalShardTelemetry {
     pub variant_name: Option<String>,
     pub status: Option<ShardStatus>,
-    /// Total number of indexed points since last start.
+    /// Total number of optimized points since the last start.
     pub total_optimized_points: usize,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
