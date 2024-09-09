@@ -99,12 +99,22 @@ where
     Ok(())
 }
 
-/// Validate that shard request has two different peers.
+/// Validate that shard request has two different peers
+///
+/// We do allow transferring from/to the same peer if the source and target shard are different.
+/// This may be used during resharding shard transfers.
 pub fn validate_shard_different_peers(
     from_peer_id: u64,
     to_peer_id: u64,
+    shard_id: u32,
+    to_shard_id: Option<u32>,
 ) -> Result<(), ValidationErrors> {
     if to_peer_id != from_peer_id {
+        return Ok(());
+    }
+
+    // If source and target shard is different, we do allow transferring from/to the same peer
+    if to_shard_id.map_or(false, |to_shard_id| to_shard_id != shard_id) {
         return Ok(());
     }
 
