@@ -998,7 +998,7 @@ impl LocalShard {
                 .update_handler
                 .lock()
                 .await
-                .check_suboptimal_optimizations();
+                .check_optimizer_conditions();
 
             if has_suboptimal_optimizers {
                 // Check if any optimizations were triggered after starting the node
