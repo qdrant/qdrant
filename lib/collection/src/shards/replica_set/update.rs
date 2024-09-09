@@ -455,8 +455,8 @@ impl ShardReplicaSet {
                 _ => continue,
             }
 
-            if peer_state == ReplicaState::Partial
-                && matches!(err, CollectionError::PreConditionFailed { .. })
+            if matches!(peer_state, ReplicaState::Partial | ReplicaState::Resharding)
+                && err.is_pre_condition_failed()
             {
                 // Handles a special case where transfer receiver haven't created a shard yet.
                 // In this case update should be handled by source shard and forward proxy.
