@@ -369,6 +369,16 @@ impl ShardHolder {
         Ok(())
     }
 
+    /// Split collection update operation by "update mode":
+    /// - update all:
+    ///   - "regular" operation
+    ///   - `upsert` inserts new points and updates existing ones
+    ///   - other update operations return error, if a point does not exist in collection
+    /// - update existing:
+    ///   - `upsert` does *not* insert new points, only updates existing ones
+    ///   - other update operations ignore points that do not exist in collection
+    ///
+    /// Depends on the current resharding state. If resharding is not active operations are not split.
     pub fn split_by_mode(
         &self,
         shard_id: ShardId,
