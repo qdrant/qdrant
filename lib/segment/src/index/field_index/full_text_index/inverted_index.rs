@@ -408,7 +408,11 @@ mod tests {
 
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
             // Check same deleted points
-            assert_eq!(mmap.deleted_points.get(point_id).unwrap(), count.is_none());
+            assert_eq!(
+                mmap.deleted_points.get(point_id).unwrap(),
+                count.is_none(),
+                "point_id: {point_id}"
+            );
 
             // Check same count
             assert_eq!(
@@ -416,5 +420,8 @@ mod tests {
                 count.unwrap_or(0)
             );
         }
+
+        // Check same points count
+        assert_eq!(mmap.active_points_count, immutable.points_count);
     }
 }

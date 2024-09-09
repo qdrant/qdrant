@@ -22,9 +22,7 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
-use std::cmp::max;
 use std::fs::OpenOptions;
-use std::io::Read;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
@@ -32,6 +30,9 @@ use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
+
+use crate::madvise::AdviceSetting;
+use crate::mmap_ops;
 
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
@@ -363,33 +364,26 @@ impl MmapBitSlice {
     }
 
     pub fn create(path: &Path, bitslice: &BitSlice) -> Result<()> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-
         let bits_count = bitslice.len();
+        let bytes_count = bits_count
+            .div_ceil(u8::BITS as usize)
+            .next_multiple_of(Self::MIN_FILE_SIZE);
 
-        let bytes_count = bits_count.div_ceil(u8::BITS as usize);
+        let _file = mmap_ops::create_and_ensure_length(path, bytes_count)?;
 
-        let bytes_count = max(Self::MIN_FILE_SIZE, bytes_count.next_power_of_two());
+        let mmap = mmap_ops::open_write_mmap(path, AdviceSetting::Global)?;
 
-        let mut bytes_reader = bitslice.bytes();
+        let mut mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
 
-        file.set_len(bytes_count as u64)?;
-
-        let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-
-        mmap.fill_with(|| {
-            bytes_reader
-                .next()
-                .unwrap_or(Ok(0x0))
-                .expect("failed to get byte from bitslice iterator")
+        mmap_bitslice.fill_with(|idx| {
+            bitslice
+                .get(idx)
+                .map(|bitref| bitref.as_ref().to_owned())
+                // mmap bitslice can be bigger than bitslice because it must align with size of `usize`
+                .unwrap_or(false)
         });
 
-        mmap.flush()?;
+        mmap_bitslice.flusher()()?;
 
         Ok(())
     }
