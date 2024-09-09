@@ -210,11 +210,14 @@ impl ShardHolder {
         // Restore resharding hash ring if resharding is active and haven't reached
         // `WriteHashRingCommitted` stage yet
         if let Some(state) = self.resharding_state.read().deref() {
-            if state.stage < ReshardStage::WriteHashRingCommitted {
-                rings
-                    .get_mut(&state.shard_key)
-                    .expect("must have hash ring for current resharding shard key")
-                    .start_resharding(state.shard_id, state.direction);
+            let ring = rings
+                .get_mut(&state.shard_key)
+                .expect("must have hash ring for current resharding shard key");
+
+            ring.start_resharding(state.shard_id, state.direction);
+
+            if state.stage >= ReshardStage::WriteHashRingCommitted {
+                ring.commit_resharding();
             }
         }
 
