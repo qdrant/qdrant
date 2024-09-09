@@ -1,6 +1,7 @@
 mod resharding;
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -196,8 +197,6 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        // TODO(resharding): Correctly rebuild resharding hashrings!
-
         let mut rings = HashMap::from([(None, HashRingRouter::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
@@ -206,6 +205,20 @@ impl ShardHolder {
                 .entry(shard_key)
                 .or_insert_with(HashRingRouter::single)
                 .add(*shard_id);
+        }
+
+        // Restore resharding hash ring if resharding is active and haven't reached
+        // `WriteHashRingCommitted` stage yet
+        if let Some(state) = self.resharding_state.read().deref() {
+            let ring = rings
+                .get_mut(&state.shard_key)
+                .expect("must have hash ring for current resharding shard key");
+
+            ring.start_resharding(state.shard_id, state.direction);
+
+            if state.stage >= ReshardStage::WriteHashRingCommitted {
+                ring.commit_resharding();
+            }
         }
 
         self.rings = rings;
@@ -673,11 +686,9 @@ impl ShardHolder {
             }
         }
 
-        // After loading shards, recover the resharding hash ring state
-        if let Some(state) = self.resharding_state.read().clone() {
-            self.rings
-                .entry(state.shard_key)
-                .and_modify(|ring| ring.start_resharding(state.shard_id, state.direction));
+        // If resharding, rebuild the hash rings because they'll be messed up
+        if self.resharding_state.read().is_some() {
+            self.rebuild_rings();
         }
     }
 

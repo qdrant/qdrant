@@ -285,8 +285,8 @@ impl ShardHolder {
         };
 
         if let Some(ring) = self.rings.get_mut(shard_key) {
-            log::debug!("ending resharding hash ring for shard {shard_id}");
-            ring.end_resharding(shard_id, direction);
+            log::debug!("reverting resharding hashring for shard {shard_id}");
+            ring.abort_resharding(shard_id, direction);
         } else {
             log::warn!(
                 "aborting resharding {resharding_key}, \
