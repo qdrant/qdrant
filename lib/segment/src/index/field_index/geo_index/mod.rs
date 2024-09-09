@@ -8,7 +8,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
-use smol_str::SmolStr;
+use smol_str::{format_smolstr, SmolStr};
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
@@ -104,9 +104,9 @@ impl GeoMapIndex {
         format!("{field}_geo")
     }
 
-    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> String {
+    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> SmolStr {
         let value_str = SmolStr::from(value);
-        format!("{value_str}/{idx}")
+        format_smolstr!("{value_str}/{idx}")
     }
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {

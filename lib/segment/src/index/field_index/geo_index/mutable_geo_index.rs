@@ -159,7 +159,7 @@ impl MutableGeoMapIndex {
             removed_geo_hashes.push(removed_geo_hash);
 
             let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
-            self.db_wrapper.remove(key)?;
+            self.db_wrapper.remove(key.as_bytes())?;
 
             let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
                 hash_ids.remove(&idx);
@@ -210,7 +210,7 @@ impl MutableGeoMapIndex {
 
             geo_hashes.push(added_geo_hash);
 
-            self.db_wrapper.put(key, value)?;
+            self.db_wrapper.put(key.as_bytes(), value)?;
         }
 
         for geo_hash in &geo_hashes {

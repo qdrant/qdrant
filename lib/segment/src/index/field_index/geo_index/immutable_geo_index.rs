@@ -159,7 +159,7 @@ impl ImmutableGeoMapIndex {
             removed_geo_hashes.push(removed_geo_hash);
 
             let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
-            self.db_wrapper.remove(key)?;
+            self.db_wrapper.remove(key.as_bytes())?;
 
             if let Ok(index) = self
                 .points_map
