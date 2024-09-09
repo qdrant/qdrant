@@ -788,7 +788,9 @@ impl ShardReplicaSet {
         let local_shard_guard = self.local.read().await;
 
         let Some(local_shard) = local_shard_guard.deref() else {
-            return Err(CollectionError::bad_request("TODO"));
+            return Err(CollectionError::NotFound {
+                what: format!("local shard {}:{}", self.collection_id, self.shard_id),
+            });
         };
 
         let mut next_offset = Some(ExtendedPointId::NumId(0));
@@ -836,9 +838,14 @@ impl ShardReplicaSet {
             });
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
-        self.update_local(op.into(), false)
-            .await?
-            .ok_or_else(|| CollectionError::bad_request("TODO"))
+        let result = self.update_local(op.into(), false).await?.ok_or_else(|| {
+            CollectionError::bad_request(format!(
+                "local shard {}:{} does not exist or is unavailable",
+                self.collection_id, self.shard_id,
+            ))
+        })?;
+
+        Ok(result)
     }
 
     fn init_remote_shards(
