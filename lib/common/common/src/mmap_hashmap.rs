@@ -252,7 +252,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         // | `i64` | `u32`      | u8[]      | `V[]`     |
 
         let key_size = key.write_bytes();
-        let key_size_with_padding = key_size.next_multiple_of(size_of::<V>());
+        let key_size_with_padding = key_size.next_multiple_of(Self::VALUE_SIZE);
 
         let entry = entry.get(key_size_with_padding..).ok_or_else(|| {
             io::Error::new(
