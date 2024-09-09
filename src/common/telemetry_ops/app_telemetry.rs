@@ -49,6 +49,8 @@ pub struct AppBuildTelemetry {
     pub system: Option<RunningEnvironmentTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub jwt_rbac: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hide_jwt_dashboard: Option<bool>,
     pub startup: DateTime<Utc>,
 }
 
@@ -69,6 +71,7 @@ impl AppBuildTelemetry {
             }),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
             jwt_rbac: settings.service.jwt_rbac,
+            hide_jwt_dashboard: settings.service.hide_jwt_dashboard,
             startup: collector.startup,
         }
     }
@@ -149,6 +152,7 @@ impl Anonymize for AppBuildTelemetry {
             features: self.features.anonymize(),
             system: self.system.anonymize(),
             jwt_rbac: self.jwt_rbac,
+            hide_jwt_dashboard: self.hide_jwt_dashboard,
             startup: self.startup.anonymize(),
         }
     }
