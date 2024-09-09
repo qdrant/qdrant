@@ -508,13 +508,15 @@ pub trait SegmentOptimizer {
     /// New optimized segment should be added into `segments`.
     /// If there were any record changes during the optimization - an additional plain segment will be created.
     ///
+    /// Returns id of the created optimized segment. If no optimization was done - returns None
+    ///
     fn optimize(
         &self,
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
         permit: CpuPermit,
         stopped: &AtomicBool,
-    ) -> CollectionResult<(bool, Option<SegmentId>)> {
+    ) -> CollectionResult<Option<SegmentId>> {
         check_process_stopped(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
@@ -543,7 +545,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
-            return Ok((false, None));
+            return Ok(None);
         }
 
         check_process_stopped(stopped)?;
@@ -704,7 +706,7 @@ pub trait SegmentOptimizer {
             }
 
             timer.set_success(true);
-            Ok((true, Some(new_segment_id)))
+            Ok(Some(new_segment_id))
         }
     }
 }

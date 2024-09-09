@@ -349,14 +349,15 @@ mod tests {
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for HNSW mismatch test
-        let (changed, _) = index_optimizer
+        let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -380,14 +381,15 @@ mod tests {
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
-        let (changed, _) = config_mismatch_optimizer
+        let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
@@ -504,14 +506,15 @@ mod tests {
         );
 
         // Use indexing optimizer to build index for HNSW mismatch test
-        let (changed, _) = index_optimizer
+        let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -543,14 +546,15 @@ mod tests {
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
-        let (changed, _) = config_mismatch_optimizer
+        let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed HNSW config
@@ -674,14 +678,15 @@ mod tests {
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for quantization mismatch test
-        let (changed, _) = index_optimizer
+        let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
@@ -716,14 +721,15 @@ mod tests {
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
-        let (changed, _) = config_mismatch_optimizer
+        let changed = config_mismatch_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(changed, "optimizer should have rebuilt this segment");
 
         // Ensure new segment has changed quantization config

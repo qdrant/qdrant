@@ -11,7 +11,7 @@ use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::types::{SegmentType, SeqNumberType};
+use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
@@ -335,19 +335,19 @@ impl UpdateHandler {
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
-                                Ok((is_optimized, segment_id)) => {
-                                    if let Some(segment_id) = segment_id {
+                                Ok(optimized_segment_id) => {
+                                    let is_optimized = optimized_segment_id.is_some();
+
+                                    if let Some(segment_id) = optimized_segment_id {
                                         if let Some(segment) = segments.read().get(segment_id) {
                                             // Any kind of optimization could have triggered indexing
                                             let segment_ref = segment.get();
                                             let segment_info = segment_ref.read();
 
-                                            if segment_info.segment_type() == SegmentType::Indexed {
-                                                let points_indexed =
-                                                    segment_info.available_point_count();
-                                                total_indexed_points
-                                                    .fetch_add(points_indexed, Ordering::Relaxed);
-                                            }
+                                            let points_indexed =
+                                                segment_info.available_point_count();
+                                            total_indexed_points
+                                                .fetch_add(points_indexed, Ordering::Relaxed);
                                         }
                                     }
 

@@ -938,14 +938,15 @@ mod tests {
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build mmap
-        let (changed, _) = index_optimizer
+        let changed = index_optimizer
             .optimize(
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
                 &false.into(),
             )
-            .unwrap();
+            .unwrap()
+            .is_some();
         assert!(
             changed,
             "optimizer should have rebuilt this segment for mmap"
