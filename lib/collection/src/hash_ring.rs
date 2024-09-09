@@ -12,8 +12,8 @@ use crate::shards::shard::ShardId;
 
 pub const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum HashRingRouter<T = ShardId> {
+#[derive(Clone, Debug, PartialEq)]
+pub enum HashRingRouter<T: Eq + Hash = ShardId> {
     /// Single hashring
     Single(HashRing<T>),
 
@@ -22,7 +22,7 @@ pub enum HashRingRouter<T = ShardId> {
     Resharding { old: HashRing<T>, new: HashRing<T> },
 }
 
-impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
+impl<T: Copy + Eq + Hash> HashRingRouter<T> {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
@@ -30,38 +30,23 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
         Self::Single(HashRing::fair(HASH_RING_SHARD_SCALE))
     }
 
-    /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
-    ///
-    /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
-    pub fn resharding(shard: T, direction: ReshardingDirection) -> Self {
-        let mut ring = Self::Resharding {
-            old: HashRing::fair(HASH_RING_SHARD_SCALE),
-            new: HashRing::fair(HASH_RING_SHARD_SCALE),
-        };
-
-        ring.start_resharding(shard, direction);
-
-        ring
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Single(ring) => ring.is_empty(),
-            Self::Resharding { old, new } => old.is_empty() && new.is_empty(),
-        }
-    }
-
-    pub fn is_resharding(&self) -> bool {
-        matches!(self, Self::Resharding { .. })
-    }
-
-    pub fn add(&mut self, shard: T) {
+    pub fn add(&mut self, shard: T) -> bool {
         match self {
             Self::Single(ring) => ring.add(shard),
             Self::Resharding { old, new } => {
-                if new.get(&shard).is_none() {
+                // When resharding is in progress:
+                // - either `new` hashring contains a shard, that is not in `old` (when resharding *up*)
+                // - or `old` contains a shard, that is not in `new` (when resharding *down*)
+                //
+                // This check ensures, that we don't accidentally break this invariant when adding
+                // nodes to `Resharding` hashring.
+
+                if !old.contains(&shard) && !new.contains(&shard) {
                     old.add(shard);
                     new.add(shard);
+                    true
+                } else {
+                    false
                 }
             }
         }
@@ -73,16 +58,20 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
             *self = Self::Resharding { old, new };
         }
 
-        let Self::Resharding { new, .. } = self else {
+        let Self::Resharding { old, new } = self else {
             unreachable!();
         };
 
         match direction {
             ReshardingDirection::Up => {
+                old.remove(&shard);
                 new.add(shard);
             }
+
             ReshardingDirection::Down => {
                 assert!(new.len() > 1, "cannot remove last shard from hash ring");
+
+                old.add(shard);
                 new.remove(&shard);
             }
         }
@@ -98,83 +87,63 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
         true
     }
 
-    pub fn end_resharding(&mut self, shard: T, direction: ReshardingDirection) -> bool
+    pub fn abort_resharding(&mut self, shard: T, direction: ReshardingDirection) -> bool
     where
         T: fmt::Display,
     {
+        let context = match direction {
+            ReshardingDirection::Up => "reverting scale-up hashring into single mode",
+            ReshardingDirection::Down => "reverting scale-down hashring into single mode",
+        };
+
         let Self::Resharding { old, new } = self else {
-            log::warn!("ending resharding hashring, but it is not in resharding mode");
+            log::warn!("{context}, but hashring is not in resharding mode");
             return false;
         };
 
         let mut old = old.clone();
         let mut new = new.clone();
 
-        let (updated_old, updated_new) = match direction {
+        let (expected_in_old, expected_in_new) = match direction {
             ReshardingDirection::Up => (old.remove(&shard), new.remove(&shard)),
-            ReshardingDirection::Down => {
-                old.add(shard);
-                new.add(shard);
-                (false, true)
-            }
+            ReshardingDirection::Down => (old.add(shard), new.add(shard)),
         };
 
-        let updated = match (updated_old, updated_new) {
-            (false, true) => true,
-
-            (true, true) => {
-                log::error!(
-                    "ending resharding shard, \
-                     but {shard} is not resharding shard"
-                );
-
-                false
-            }
+        match (expected_in_old, expected_in_new) {
+            (false, true) => (),
 
             (true, false) => {
-                log::error!(
-                    "ending resharding shard, \
-                     but shard {shard} only exists in the old hashring"
-                );
+                log::error!("{context}, but expected state of hashrings is reversed");
+            }
 
-                false
+            (true, true) => {
+                log::error!("{context}, but {shard} is not a target shard");
             }
 
             (false, false) => {
-                log::warn!(
-                    "ending resharding shard, \
-                     but shard {shard} does not exist in the hashring"
-                );
-
-                false
+                log::warn!("{context}, but shard {shard} does not exist in the hashring");
             }
         };
 
         if old == new {
-            log::debug!(
-                "switching hashring into single mode, \
-                 because the rerouting for resharding is done",
-            );
-
-            *self = Self::Single(old);
+            log::debug!("{context}, because the rerouting for resharding is done");
+            *self = Self::Single(old.clone());
+            true
+        } else {
+            log::warn!("{context}, but rerouting for resharding is not done yet");
+            false
         }
-
-        updated
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T>
-    where
-        T: PartialEq,
-    {
+    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
         match self {
-            Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
+            Self::Single(ring) => ring.get(key).into_iter().copied().collect(),
             Self::Resharding { old, new } => old
                 .get(key)
                 .into_iter()
                 .chain(new.get(key))
-                // Both hash rings may return the same shard ID, take it once
-                .dedup()
-                .cloned()
+                .copied()
+                .dedup() // Both hash rings may return the same shard ID, take it once
                 .collect(),
         }
     }
@@ -182,10 +151,7 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
     /// Check whether the given point is in the given shard
     ///
     /// In case of resharding, the new hashring is checked.
-    pub fn is_in_shard<U: Hash>(&self, key: &U, shard: T) -> bool
-    where
-        T: PartialEq,
-    {
+    pub fn is_in_shard<U: Hash>(&self, key: &U, shard: T) -> bool {
         let ring = match self {
             Self::Resharding { new, .. } => new,
             Self::Single(ring) => ring,
@@ -195,12 +161,23 @@ impl<T: Hash + Copy + PartialEq> HashRingRouter<T> {
     }
 }
 
-impl<T: Hash + Copy + PartialEq + Eq> HashRingRouter<T> {
-    /// Get unique nodes from the hashring
-    pub fn unique_nodes(&self) -> HashSet<T> {
+impl<T: Eq + Hash> HashRingRouter<T> {
+    pub fn is_resharding(&self) -> bool {
+        matches!(self, Self::Resharding { .. })
+    }
+
+    pub fn is_empty(&self) -> bool {
         match self {
-            Self::Single(ring) => ring.unique_nodes(),
-            Self::Resharding { new, .. } => new.unique_nodes(),
+            Self::Single(ring) => ring.is_empty(),
+            Self::Resharding { old, new } => old.is_empty() && new.is_empty(),
+        }
+    }
+
+    /// Get unique nodes from the hashring
+    pub fn nodes(&self) -> &HashSet<T> {
+        match self {
+            HashRingRouter::Single(ring) => ring.nodes(),
+            HashRingRouter::Resharding { new, .. } => new.nodes(),
         }
     }
 }
@@ -211,19 +188,26 @@ impl<T: Hash + Copy + PartialEq + Eq> HashRingRouter<T> {
 /// with the current resharding implementation.
 pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum HashRing<T> {
-    Raw(hashring::HashRing<T>),
+#[derive(Clone, Debug, PartialEq)]
+pub enum HashRing<T: Eq + Hash> {
+    Raw {
+        nodes: HashSet<T>,
+        ring: hashring::HashRing<T>,
+    },
 
     Fair {
+        nodes: HashSet<T>,
         ring: hashring::HashRing<(T, u32)>,
         scale: u32,
     },
 }
 
-impl<T: Hash + Copy> HashRing<T> {
+impl<T: Copy + Eq + Hash> HashRing<T> {
     pub fn raw() -> Self {
-        Self::Raw(hashring::HashRing::new())
+        Self::Raw {
+            nodes: HashSet::new(),
+            ring: hashring::HashRing::new(),
+        }
     }
 
     /// Constructs a HashRing that tries to give all shards equal space on the ring.
@@ -231,65 +215,84 @@ impl<T: Hash + Copy> HashRing<T> {
     /// but shard search might be slower.
     pub fn fair(scale: u32) -> Self {
         Self::Fair {
+            nodes: HashSet::new(),
             ring: hashring::HashRing::new(),
             scale,
         }
     }
 
-    pub fn add(&mut self, shard: T) {
+    pub fn add(&mut self, shard: T) -> bool {
+        if !self.nodes_mut().insert(shard) {
+            return false;
+        }
+
         match self {
-            HashRing::Raw(ring) => ring.add(shard),
-            HashRing::Fair { ring, scale } => {
-                for i in 0..*scale {
-                    ring.add((shard, i))
+            HashRing::Raw { ring, .. } => {
+                ring.add(shard);
+            }
+
+            HashRing::Fair { ring, scale, .. } => {
+                for idx in 0..*scale {
+                    ring.add((shard, idx));
                 }
             }
         }
+
+        true
     }
 
     pub fn remove(&mut self, shard: &T) -> bool {
+        if !self.nodes_mut().remove(shard) {
+            return false;
+        }
+
         match self {
-            HashRing::Raw(ring) => ring.remove(shard).is_some(),
-            HashRing::Fair { ring, scale } => {
-                let mut removed = false;
-                for i in 0..*scale {
-                    if ring.remove(&(*shard, i)).is_some() {
-                        removed = true;
-                    }
+            HashRing::Raw { ring, .. } => {
+                ring.remove(shard);
+            }
+
+            HashRing::Fair { ring, scale, .. } => {
+                for idx in 0..*scale {
+                    ring.remove(&(*shard, idx));
                 }
-                removed
             }
         }
-    }
 
+        true
+    }
+}
+
+impl<T: Eq + Hash> HashRing<T> {
     pub fn get<U: Hash>(&self, key: &U) -> Option<&T> {
         match self {
-            HashRing::Raw(ring) => ring.get(key),
+            HashRing::Raw { ring, .. } => ring.get(key),
             HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        match self {
-            HashRing::Raw(ring) => ring.is_empty(),
-            HashRing::Fair { ring, .. } => ring.is_empty(),
-        }
+        self.nodes().is_empty()
     }
 
     pub fn len(&self) -> usize {
+        self.nodes().len()
+    }
+
+    pub fn contains(&self, shard: &T) -> bool {
+        self.nodes().contains(shard)
+    }
+
+    pub fn nodes(&self) -> &HashSet<T> {
         match self {
-            HashRing::Raw(ring) => ring.len(),
-            HashRing::Fair { ring, scale } => ring.len() / *scale as usize,
+            HashRing::Raw { nodes, .. } => nodes,
+            HashRing::Fair { nodes, .. } => nodes,
         }
     }
-}
 
-impl<T: Hash + Copy + PartialEq + Eq> HashRing<T> {
-    /// Get unique nodes from the hashring
-    pub fn unique_nodes(&self) -> HashSet<T> {
+    fn nodes_mut(&mut self) -> &mut HashSet<T> {
         match self {
-            HashRing::Raw(ring) => ring.clone().into_iter().collect(),
-            HashRing::Fair { ring, .. } => ring.clone().into_iter().map(|(node, _)| node).collect(),
+            HashRing::Raw { nodes, .. } => nodes,
+            HashRing::Fair { nodes, .. } => nodes,
         }
     }
 }

@@ -241,7 +241,7 @@ pub async fn drive_resharding(
 
     // Load or initialize resharding state
     let init_state = || {
-        let shard_ids = hash_ring.unique_nodes();
+        let shard_ids = hash_ring.nodes().clone();
         DriverState::new(reshard_key.clone(), shard_ids, &consensus.peers())
     };
     let state: PersistedState = if can_resume {
