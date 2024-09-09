@@ -28,15 +28,15 @@ type ValuesLen = u32;
 ///
 /// ## Entry format for the `str` key
 ///
-/// | key    | `'\0xff'` | padding | values_len | alignment | values   |
-/// |--------|-----------|---------|------------|-----------|----------|
-/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `u8[]`    | `V[]`    |
+/// | key    | `'\0xff'` | padding | values_len | padding | values |
+/// |--------|-----------|---------|------------|---------|--------|
+/// | `u8[]` | `u8`      | `u8[]`  | `u32`      | `u8[]`  | `V[]`  |
 ///
 /// ## Entry format for the `i64` key
 ///
-/// | key   | values_len | alignment | values    |
-/// |-------|------------|-----------|-----------|
-/// | `i64` | `u32`      | `u8[]`    | `V[]`     |
+/// | key   | values_len | padding | values |
+/// |-------|------------|---------|--------|
+/// | `i64` | `u32`      | `u8[]`  | `V[]`  |
 pub struct MmapHashMap<K: ?Sized, V: Sized + AsBytes + FromBytes> {
     mmap: Mmap,
     header: Header,
@@ -170,7 +170,8 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         Self::VALUES_LEN_SIZE.next_multiple_of(Self::VALUE_SIZE) - Self::VALUES_LEN_SIZE
     }
 
-    /// Return total size of the entry in bytes, including: key, values_len, values all with padding.
+    /// Return the total size of the entry in bytes, including: key, values_len, values, all with
+    /// padding.
     fn entry_bytes(key: &K, values_len: usize) -> usize {
         Self::key_size_with_padding(key)
             + Self::values_len_size_with_padding()
@@ -247,9 +248,9 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
     fn get_values_from_entry<'a>(entry: &'a [u8], key: &K) -> io::Result<&'a [V]> {
         // ## Entry format for the `i64` key
         //
-        // | key   | values_len | alignment | values    |
-        // |-------|------------|-----------|-----------|
-        // | `i64` | `u32`      | u8[]      | `V[]`     |
+        // | key   | values_len | padding | values |
+        // |-------|------------|---------|--------|
+        // | `i64` | `u32`      | u8[]    | `V[]`  |
 
         let key_size = key.write_bytes();
         let key_size_with_padding = key_size.next_multiple_of(Self::VALUE_SIZE);
@@ -257,7 +258,10 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         let entry = entry.get(key_size_with_padding..).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Can't read entry from mmap, key_size_with_padding {key_size_with_padding} is out of bounds"),
+                format!(
+                    "Can't read entry from mmap, \
+                         key_size_with_padding {key_size_with_padding} is out of bounds"
+                ),
             )
         })?;
 
