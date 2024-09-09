@@ -419,18 +419,17 @@ impl Collection {
 
         // Abort resharding, if resharding shard is marked as `Dead`.
         //
-        // This branch should only be triggered, if resharding is currently at
-        // `ReshardStage::MigratingPoints` stage, because resharding shard should be marked as
-        // `Active` when all resharding transfers are successfully completed, and so the check
-        // *right above* this one should be triggered.
+        // This branch should only be triggered, if resharding is currently at `MigratingPoints`
+        // stage, because target shard should be marked as `Active`, when all resharding transfers
+        // are successfully completed, and so the check *right above* this one would be triggered.
         //
-        // So, if resharding reached `ReshardingStage::ReadHashRingCommitted`, this branch *won't*
-        // be triggered, and in this case, resharding *won't* be cancelled. Though, the update
-        // request should *fail* with "failed to update all replicas of a shard" error.
+        // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
+        // and resharding *won't* be cancelled. The update request should *fail* with "failed to
+        // update all replicas of a shard" error.
         //
-        // If resharding reached `ReshardingStage::WriteHashRingCommitted`, and this branch is
-        // triggered *somehow*, then `Collection::abort_resharding` call should return an error,
-        // so no special handling is needed for `ReshardingStage::WriteHashRingCommitted`.
+        // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
+        // then `Collection::abort_resharding` call should return an error, so no special handling
+        // is needed.
         if current_state == Some(ReplicaState::Resharding) && state == ReplicaState::Dead {
             let shard_key = shard_holder
                 .get_shard_id_to_key_mapping()
