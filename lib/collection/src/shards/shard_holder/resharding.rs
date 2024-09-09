@@ -439,9 +439,9 @@ impl ShardHolder {
             return operation.into();
         }
 
-        let filter = self
-            .resharding_filter()
-            .expect("resharding filter is available when resharding is in progress");
+        let Some(filter) = self.resharding_filter() else {
+            return operation.into();
+        };
 
         let point_ids = operation.point_ids();
 
