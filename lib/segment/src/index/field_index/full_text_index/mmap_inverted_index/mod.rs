@@ -12,6 +12,7 @@ use mmap_postings::MmapPostings;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 mod inverted_index_ops;
 mod mmap_postings;
@@ -24,7 +25,7 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 pub struct MmapInvertedIndex {
     path: PathBuf,
     postings: MmapPostings,
-    vocab: MmapHashMap<str>,
+    vocab: MmapHashMap<str, TokenId>,
     point_to_tokens_count: MmapSlice<usize>,
     deleted_points: MmapBitSliceBufferedUpdateWrapper,
     /// Number of points which are not deleted
@@ -52,7 +53,7 @@ impl MmapInvertedIndex {
 
         // TODO(luis): Currently MmapHashMap maps str -> [u32], but we only need to map str -> u32.
         // Consider making another mmap structure for this case.
-        MmapHashMap::<str>::create(
+        MmapHashMap::<str, TokenId>::create(
             &vocab_path,
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;
@@ -84,7 +85,7 @@ impl MmapInvertedIndex {
         let deleted_points_path = path.clone().join(DELETED_POINTS_FILE);
 
         let postings = MmapPostings::open(&postings_path)?;
-        let vocab = MmapHashMap::<str>::open(&vocab_path)?;
+        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path)?;
 
         let point_to_tokens_count = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(
