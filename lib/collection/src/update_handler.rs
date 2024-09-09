@@ -433,7 +433,7 @@ impl UpdateHandler {
     /// Checks conditions for all optimizers and returns whether any is satisfied
     ///
     /// In other words, if this returns true we have pending optimizations.
-    pub(crate) fn pending_optimizations(&self) -> (bool, bool) {
+    pub(crate) fn check_suboptimal_optimizations(&self) -> (bool, bool) {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
 

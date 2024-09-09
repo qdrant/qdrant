@@ -994,10 +994,14 @@ impl LocalShard {
 
         // If status looks green/ok but some optimizations are suboptimal
         if status == ShardStatus::Green && optimizer_status == OptimizersStatus::Ok {
-            let (has_triggered_any_optimizers, has_suboptimal_optimizers) =
-                self.update_handler.lock().await.pending_optimizations();
+            let (has_triggered_any_optimizers, has_suboptimal_optimizers) = self
+                .update_handler
+                .lock()
+                .await
+                .check_suboptimal_optimizations();
 
             if has_suboptimal_optimizers {
+                // Check if any optimizations were triggered after starting the node
                 if has_triggered_any_optimizers {
                     status = ShardStatus::Yellow;
                 } else {
