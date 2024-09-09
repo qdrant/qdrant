@@ -291,21 +291,19 @@ impl InvertedIndex {
 mod tests {
     use std::collections::BTreeSet;
 
+    use rand::seq::SliceRandom;
     use rand::Rng;
+    use rstest::rstest;
 
     use super::InvertedIndex;
     use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+    use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 
-    fn mutable_inverted_index() -> InvertedIndex {
+    fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
         let mut index = InvertedIndex::Mutable(MutableInvertedIndex::default());
 
-        let indexed_points = 2000;
-
-        // 20% of indexed points get removed
-        let deleted_points = 400;
-
-        for idx in 0..indexed_points {
+        for idx in 0..indexed_count {
             // Generate 10-word documents
             let tokens: BTreeSet<String> = (0..10)
                 .map(|_| {
@@ -323,35 +321,42 @@ mod tests {
         }
 
         // Remove some points
-        for idx in 0..deleted_points {
-            index.remove_document(idx);
+        let mut points_to_delete = (0..indexed_count).collect::<Vec<_>>();
+        points_to_delete.shuffle(&mut rand::thread_rng());
+        for idx in &points_to_delete[..deleted_count as usize] {
+            index.remove_document(*idx);
         }
+
+        let InvertedIndex::Mutable(index) = index else {
+            panic!("Expected mutable index");
+        };
 
         index
     }
 
     #[test]
     fn test_mutable_to_immutable() {
-        let InvertedIndex::Mutable(index) = mutable_inverted_index() else {
-            panic!("Expected mutable index");
-        };
+        let mutable = mutable_inverted_index(2000, 400);
 
-        let (orig_vocab, orig_postings) = (index.vocab.clone(), index.postings.clone());
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
-        let index = ImmutableInvertedIndex::from(index);
-
-        assert!(index.vocab.len() < orig_vocab.len());
-        assert!(index.postings.len() < orig_postings.len());
-        assert!(!index.vocab.is_empty());
+        assert!(immutable.vocab.len() < mutable.vocab.len());
+        assert!(immutable.postings.len() < mutable.postings.len());
+        assert!(!immutable.vocab.is_empty());
 
         // Check that new vocabulary token ids leads to the same posting lists
         assert!({
-            index.vocab.iter().all(|(key, new_token)| {
-                let new_posting = index.postings.get(*new_token as usize).cloned().unwrap();
+            immutable.vocab.iter().all(|(key, new_token)| {
+                let new_posting = immutable
+                    .postings
+                    .get(*new_token as usize)
+                    .cloned()
+                    .unwrap();
 
-                let orig_token = orig_vocab.get(key).unwrap();
+                let orig_token = mutable.vocab.get(key).unwrap();
 
-                let orig_posting = orig_postings
+                let orig_posting = mutable
+                    .postings
                     .get(*orig_token as usize)
                     .cloned()
                     .unwrap()
@@ -368,5 +373,48 @@ mod tests {
                 new_contains_orig && orig_contains_new
             })
         });
+    }
+
+    #[rstest]
+    #[case(2000, 400)]
+    #[case(2000, 2000)]
+    #[case(1111, 1110)]
+    #[case(1111, 0)]
+    #[case(10, 2)]
+    #[test]
+    fn test_immutable_to_mmap(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+        let mutable = mutable_inverted_index(indexed_count, deleted_count);
+        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let path = tempfile::tempdir().unwrap().into_path();
+
+        MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
+
+        let mmap = MmapInvertedIndex::open(path).unwrap();
+
+        // Check same vocabulary
+        for (token, token_id) in immutable.vocab.iter() {
+            assert_eq!(mmap.get_token_id(token).unwrap(), Some(*token_id));
+        }
+
+        // Check same postings
+        for (token_id, posting) in immutable.postings.iter().enumerate() {
+            let chunk_reader = mmap.postings.get(token_id as u32).unwrap();
+
+            for point_id in posting.iter() {
+                assert!(chunk_reader.contains(&point_id));
+            }
+        }
+
+        for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
+            // Check same deleted points
+            assert_eq!(mmap.deleted_points.get(point_id).unwrap(), count.is_none());
+
+            // Check same count
+            assert_eq!(
+                *mmap.point_to_tokens_count.get(point_id).unwrap(),
+                count.unwrap_or(0)
+            );
+        }
     }
 }

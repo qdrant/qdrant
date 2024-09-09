@@ -22,7 +22,9 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
+use std::cmp::max;
 use std::fs::OpenOptions;
+use std::io::Read;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
@@ -314,6 +316,9 @@ pub struct MmapBitSlice {
 }
 
 impl MmapBitSlice {
+    /// Minimum file size for the mmap file, in bytes.
+    const MIN_FILE_SIZE: usize = mem::size_of::<usize>();
+
     /// Transform a mmap into a [`BitSlice`].
     ///
     /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
@@ -365,17 +370,26 @@ impl MmapBitSlice {
             .truncate(true)
             .open(path)?;
 
-        let len = bitslice.len();
-        file.set_len(len as u64)?;
+        let bits_count = bitslice.len();
+
+        let bytes_count = bits_count.div_ceil(u8::BITS as usize);
+
+        let bytes_count = max(Self::MIN_FILE_SIZE, bytes_count.next_power_of_two());
+
+        let mut bytes_reader = bitslice.bytes();
+
+        file.set_len(bytes_count as u64)?;
 
         let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-        mmap.fill(0);
 
-        let mut mmap_bitslice = Self::try_from(mmap, 0)?;
+        mmap.fill_with(|| {
+            bytes_reader
+                .next()
+                .unwrap_or(Ok(0x0))
+                .expect("failed to get byte from bitslice iterator")
+        });
 
-        mmap_bitslice.copy_from_bitslice(bitslice);
-
-        mmap_bitslice.flusher()()?;
+        mmap.flush()?;
 
         Ok(())
     }

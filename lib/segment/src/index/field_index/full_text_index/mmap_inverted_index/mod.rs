@@ -24,12 +24,13 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 pub struct MmapInvertedIndex {
     path: PathBuf,
-    postings: MmapPostings,
-    vocab: MmapHashMap<str, TokenId>,
-    point_to_tokens_count: MmapSlice<usize>,
-    deleted_points: MmapBitSliceBufferedUpdateWrapper,
+    pub(in crate::index::field_index::full_text_index) postings: MmapPostings,
+    pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
+    pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
+    pub(in crate::index::field_index::full_text_index) deleted_points:
+        MmapBitSliceBufferedUpdateWrapper,
     /// Number of points which are not deleted
-    active_points_count: usize,
+    pub(in crate::index::field_index::full_text_index) active_points_count: usize,
 }
 
 impl MmapInvertedIndex {
@@ -41,8 +42,7 @@ impl MmapInvertedIndex {
             points_count: _,
         } = inverted_index;
 
-        debug_assert_eq!(point_to_tokens_count.len(), postings.len());
-        debug_assert_eq!(point_to_tokens_count.len(), vocab.len());
+        debug_assert_eq!(vocab.len(), postings.len());
 
         let postings_path = path.join(POSTINGS_FILE);
         let vocab_path = path.join(VOCAB_FILE);
@@ -109,5 +109,12 @@ impl MmapInvertedIndex {
             deleted_points,
             active_points_count: points_count,
         })
+    }
+
+    #[cfg(test)]
+    pub fn get_token_id(&self, token: &str) -> OperationResult<Option<TokenId>> {
+        let token_id = self.vocab.get(token)?.and_then(<[TokenId]>::first).copied();
+
+        Ok(token_id)
     }
 }

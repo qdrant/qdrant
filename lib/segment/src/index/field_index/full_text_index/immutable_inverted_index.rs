@@ -7,6 +7,7 @@ use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, To
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
+#[cfg_attr(test, derive(Clone))]
 #[derive(Default)]
 pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) postings: Vec<CompressedPostingList>,

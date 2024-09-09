@@ -9,6 +9,7 @@ use crate::index::field_index::full_text_index::inverted_index::{
 use crate::index::field_index::full_text_index::posting_list::PostingList;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_postings_iterator;
 
+#[cfg_attr(test, derive(Clone))]
 #[derive(Default)]
 pub struct MutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) postings: Vec<Option<PostingList>>,
