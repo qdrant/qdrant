@@ -97,10 +97,12 @@ Expected response:
       "optimizer_config": {
         "deleted_threshold": 0.2,
         "vacuum_min_vector_number": 1000,
-        "max_segment_number": 5,
-        "memmap_threshold": 50000,
+        "default_segment_number": 2,
+        "max_segment_size": null,
+        "memmap_threshold": null,
         "indexing_threshold": 20000,
-        "flush_interval_sec": 1
+        "flush_interval_sec": 5,
+        "max_optimization_threads": null
       },
       "wal_config": {
         "wal_capacity_mb": 32,
