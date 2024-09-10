@@ -153,6 +153,12 @@ impl From<fs_extra::error::Error> for OperationError {
     }
 }
 
+impl From<geohash::GeohashError> for OperationError {
+    fn from(err: geohash::GeohashError) -> Self {
+        OperationError::service_error(format!("Geohash error: {err}"))
+    }
+}
+
 impl From<quantization::EncodingError> for OperationError {
     fn from(err: quantization::EncodingError) -> Self {
         match err {
