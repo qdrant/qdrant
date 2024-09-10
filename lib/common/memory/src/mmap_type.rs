@@ -22,16 +22,15 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
-use std::fs::OpenOptions;
+use std::{fmt, mem, slice};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
-use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
-use crate::madvise::AdviceSetting;
+use crate::madvise::{Advice, AdviceSetting};
 use crate::mmap_ops;
 
 /// Result for mmap errors.
@@ -273,17 +272,15 @@ impl<T> MmapSlice<T> {
     }
 
     pub fn create(path: &Path, mut iter: impl ExactSizeIterator<Item = T>) -> Result<()> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
+        let file_len = iter.len() * mem::size_of::<T>();
 
-        let file_len = (iter.len() * mem::size_of::<T>()) as u64;
-        file.set_len(file_len)?;
+        let _file = mmap_ops::create_and_ensure_length(path, file_len)?;
 
-        let mmap = unsafe { MmapMut::map_mut(&file)? };
+        let mmap = mmap_ops::open_write_mmap(
+            path,
+            AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+        )?;
+
         let mut mmap_slice = unsafe { Self::try_from(mmap)? };
 
         mmap_slice.fill_with(|| iter.next().expect("iterator size mismatch"));
@@ -371,7 +368,10 @@ impl MmapBitSlice {
 
         let _file = mmap_ops::create_and_ensure_length(path, bytes_count)?;
 
-        let mmap = mmap_ops::open_write_mmap(path, AdviceSetting::Global)?;
+        let mmap = mmap_ops::open_write_mmap(
+            path,
+            AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+        )?;
 
         let mut mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
 
@@ -536,13 +536,14 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
-    use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
+    use rand::rngs::StdRng;
     use tempfile::{Builder, NamedTempFile};
 
-    use super::*;
     use crate::madvise::AdviceSetting;
     use crate::mmap_ops;
+
+    use super::*;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
         let tempfile = Builder::new()

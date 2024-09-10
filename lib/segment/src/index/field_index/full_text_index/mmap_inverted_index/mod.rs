@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
+
 use common::mmap_hashmap::MmapHashMap;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
@@ -72,7 +73,10 @@ impl MmapInvertedIndex {
             .into_iter()
             .map(|count| count.unwrap_or(0));
 
-        MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
+        MmapSlice::create(
+            &point_to_tokens_count_path,
+            point_to_tokens_count_iter,
+        )?;
 
         // TODO(luis): save points_count to a file?
         Ok(())

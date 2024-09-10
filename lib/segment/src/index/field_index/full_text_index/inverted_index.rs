@@ -295,27 +295,43 @@ mod tests {
     use rand::Rng;
     use rstest::rstest;
 
-    use super::InvertedIndex;
+    use super::{InvertedIndex, ParsedQuery, TokenId};
     use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
+
+    fn generate_word() -> String {
+        let mut rng = rand::thread_rng();
+
+        // Each word is 1 to 3 characters long
+        let len = rng.gen_range(1..=3);
+        rng.sample_iter(rand::distributions::Alphanumeric)
+            .take(len)
+            .map(char::from)
+            .collect()
+    }
+
+    fn generate_query() -> Vec<String> {
+        let mut rng = rand::thread_rng();
+        let len = rng.gen_range(1..=2);
+        (0..len).map(|_| generate_word()).collect()
+    }
+
+    fn to_parsed_query(
+        query: Vec<String>,
+        token_to_id: impl Fn(String) -> Option<TokenId>,
+    ) -> ParsedQuery {
+        let tokens: Vec<_> = query.into_iter().map(token_to_id).collect();
+        ParsedQuery { tokens }
+    }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
         let mut index = InvertedIndex::Mutable(MutableInvertedIndex::default());
 
         for idx in 0..indexed_count {
-            // Generate 10-word documents
-            let tokens: BTreeSet<String> = (0..10)
-                .map(|_| {
-                    let mut rng = rand::thread_rng();
-                    // Each word is 1 to 3 characters long
-                    let len = rng.gen_range(1..=3);
-                    rng.sample_iter(rand::distributions::Alphanumeric)
-                        .take(len)
-                        .map(char::from)
-                        .collect()
-                })
-                .collect();
+            // Generate 10 tot 30-word documents
+            let doc_len = rand::thread_rng().gen_range(10..=30);
+            let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
             let document = index.document_from_tokens(&tokens);
             index.index_document(idx, document).unwrap();
         }
@@ -423,5 +439,60 @@ mod tests {
 
         // Check same points count
         assert_eq!(mmap.active_points_count, immutable.points_count);
+    }
+
+    #[test]
+    fn test_mmap_index_congruence() {
+        let indexed_count = 10000;
+        let deleted_count = 500;
+
+        let mut mutable = mutable_inverted_index(indexed_count, deleted_count);
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+
+        let path = tempfile::tempdir().unwrap().into_path();
+
+        MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
+
+        let mut mmap_index = MmapInvertedIndex::open(path).unwrap();
+
+        let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
+
+        let mut_parsed_queries: Vec<_> = queries
+            .clone()
+            .into_iter()
+            .map(|query| to_parsed_query(query, |token| mutable.vocab.get(&token).copied()))
+            .collect();
+
+        let imm_parsed_queries: Vec<_> = queries
+            .into_iter()
+            .map(|query| to_parsed_query(query, |token| mmap_index.get_token_id(&token).unwrap()))
+            .collect();
+
+        for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
+            let mut_filtered = mutable.filter(mut_query).collect::<Vec<_>>();
+            let imm_filtered = mmap_index.filter(imm_query).collect::<Vec<_>>();
+
+            assert_eq!(mut_filtered, imm_filtered);
+        }
+
+        // Delete random documents from both indexes
+
+        let points_to_delete: Vec<_> = (0..deleted_count)
+            .map(|_| rand::thread_rng().gen_range(0..indexed_count))
+            .collect();
+
+        for point_id in &points_to_delete {
+            mutable.remove_document(*point_id);
+            mmap_index.remove_document(*point_id);
+        }
+
+        // Check congruence after deletion
+
+        for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
+            let mut_filtered = mutable.filter(mut_query).collect::<Vec<_>>();
+            let imm_filtered = mmap_index.filter(imm_query).collect::<Vec<_>>();
+
+            assert_eq!(mut_filtered, imm_filtered);
+        }
     }
 }

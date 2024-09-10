@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::open_read_mmap;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
@@ -214,7 +214,7 @@ impl MmapPostings {
 
     pub fn open(path: impl Into<PathBuf>) -> io::Result<Self> {
         let path = path.into();
-        let mmap = open_read_mmap(&path, AdviceSetting::Global)?;
+        let mmap = open_read_mmap(&path, AdviceSetting::Advice(Advice::Normal))?;
 
         let header_bytes = mmap.get(0..size_of::<PostingsHeader>()).ok_or_else(|| {
             io::Error::new(
