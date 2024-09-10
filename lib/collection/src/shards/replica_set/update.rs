@@ -71,7 +71,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
-        update_existing: bool,
+        update_only_existing: bool,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -92,7 +92,7 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(operation, wait, update_existing).await
+            self.update(operation, wait, update_only_existing).await
         } else {
             // Forward the update to the designated leader
             self.forward_update(leader_peer, operation, wait, ordering)
@@ -144,7 +144,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        update_existing: bool,
+        update_only_existing: bool,
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
@@ -160,7 +160,7 @@ impl ShardReplicaSet {
             let is_non_zero_tick = clock.current_tick().is_some();
 
             let res = self
-                .update_impl(operation.clone(), wait, &mut clock, update_existing)
+                .update_impl(operation.clone(), wait, &mut clock, update_only_existing)
                 .await?;
 
             if let Some(res) = res {
@@ -192,7 +192,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         clock: &mut clock_set::ClockGuard,
-        update_existing: bool,
+        update_only_existing: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
@@ -333,8 +333,11 @@ impl ShardReplicaSet {
         };
 
         if successes.len() >= minimal_success_count {
-            let wait_for_deactivation =
-                self.handle_failed_replicas(&failures, &self.replica_state.read(), update_existing);
+            let wait_for_deactivation = self.handle_failed_replicas(
+                &failures,
+                &self.replica_state.read(),
+                update_only_existing,
+            );
 
             // report all failing peers to consensus
             if wait && wait_for_deactivation && !failures.is_empty() {
@@ -376,7 +379,7 @@ impl ShardReplicaSet {
                     .iter()
                     .filter(|(peer_id, _)| self.peer_is_resharding(peer_id)),
                 &self.replica_state.read(),
-                update_existing,
+                update_only_existing,
             );
 
             // completely failed - report error to user
@@ -435,7 +438,7 @@ impl ShardReplicaSet {
         &self,
         failures: impl IntoIterator<Item = &'a (PeerId, CollectionError)>,
         state: &ReplicaSetState,
-        update_existing: bool,
+        update_only_existing: bool,
     ) -> bool {
         let mut wait_for_deactivation = false;
 
@@ -463,7 +466,7 @@ impl ShardReplicaSet {
                 continue;
             }
 
-            if update_existing && err.is_missing_point() {
+            if update_only_existing && err.is_missing_point() {
                 continue;
             }
 

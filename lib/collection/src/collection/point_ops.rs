@@ -164,7 +164,7 @@ impl Collection {
                             .await?;
                     }
 
-                    for operation in operation.update_existing {
+                    for operation in operation.update_only_existing {
                         let res = shard
                             .update_with_consistency(operation, wait, ordering, true)
                             .await;

@@ -441,22 +441,22 @@ impl ShardHolder {
             && state.direction == ReshardingDirection::Up;
 
         if !should_split_receiver && !should_split_sender {
-            return operation.into();
+            return OperationsByMode::from(operation);
         }
 
         // There's no point splitting delete operations
         if operation.is_delete_points() {
-            return operation.into();
+            return OperationsByMode::from(operation);
         }
 
         let Some(filter) = self.resharding_filter() else {
-            return operation.into();
+            return OperationsByMode::from(operation);
         };
 
         let point_ids = operation.point_ids();
 
         if point_ids.is_empty() {
-            return operation.into();
+            return OperationsByMode::from(operation);
         }
 
         let target_point_ids: HashSet<_> = point_ids
@@ -466,17 +466,17 @@ impl ShardHolder {
             .collect();
 
         if target_point_ids.is_empty() {
-            operation.into()
+            OperationsByMode::from(operation)
         } else if target_point_ids.len() == point_ids.len() {
-            OperationsByMode::default().with_update_existing(operation)
+            OperationsByMode::default().with_update_only_existing(operation)
         } else {
             let mut update_all = operation.clone();
             update_all.retain_point_ids(|point_id| !target_point_ids.contains(point_id));
 
-            let mut update_existing = operation;
-            update_existing.retain_point_ids(|point_id| target_point_ids.contains(point_id));
+            let mut update_only_existing = operation;
+            update_only_existing.retain_point_ids(|point_id| target_point_ids.contains(point_id));
 
-            OperationsByMode::from(update_all).with_update_existing(update_existing)
+            OperationsByMode::from(update_all).with_update_only_existing(update_only_existing)
         }
     }
 
@@ -510,20 +510,20 @@ impl ShardHolder {
 #[derive(Clone, Debug, Default)]
 pub struct OperationsByMode {
     pub update_all: Vec<CollectionUpdateOperations>,
-    pub update_existing: Vec<CollectionUpdateOperations>,
+    pub update_only_existing: Vec<CollectionUpdateOperations>,
 }
 
 impl OperationsByMode {
-    pub fn with_update_existing(mut self, operation: CollectionUpdateOperations) -> Self {
+    pub fn with_update_only_existing(mut self, operation: CollectionUpdateOperations) -> Self {
         match operation {
             CollectionUpdateOperations::PointOperation(
                 point_ops::PointOperations::UpsertPoints(operation),
             ) => {
-                self.update_existing = operation.into_update_only();
+                self.update_only_existing = operation.into_update_only();
             }
 
             operation => {
-                self.update_existing = vec![operation];
+                self.update_only_existing = vec![operation];
             }
         }
 
@@ -535,7 +535,7 @@ impl From<CollectionUpdateOperations> for OperationsByMode {
     fn from(operation: CollectionUpdateOperations) -> Self {
         Self {
             update_all: vec![operation],
-            update_existing: Vec::new(),
+            update_only_existing: Vec::new(),
         }
     }
 }

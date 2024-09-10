@@ -98,4 +98,4 @@ jobs:
           PR: "#${{ github.event.pull_request.number }}"
         with:
           filename: .github/ISSUE_TEMPLATE/flaky_test.md
-          update_existing: true
+          update_only_existing: true
