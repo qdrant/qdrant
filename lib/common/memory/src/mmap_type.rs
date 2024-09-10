@@ -23,11 +23,15 @@
 //! behavior. Problems caused by this are very hard to debug.
 
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
+
+use crate::madvise::{Advice, AdviceSetting};
+use crate::mmap_ops;
 
 /// Result for mmap errors.
 type Result<T> = std::result::Result<T, Error>;
@@ -266,6 +270,25 @@ impl<T> MmapSlice<T> {
     pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
     }
+
+    pub fn create(path: &Path, mut iter: impl ExactSizeIterator<Item = T>) -> Result<()> {
+        let file_len = iter.len() * mem::size_of::<T>();
+
+        let _file = mmap_ops::create_and_ensure_length(path, file_len)?;
+
+        let mmap = mmap_ops::open_write_mmap(
+            path,
+            AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+        )?;
+
+        let mut mmap_slice = unsafe { Self::try_from(mmap)? };
+
+        mmap_slice.fill_with(|| iter.next().expect("iterator size mismatch"));
+
+        mmap_slice.flusher()()?;
+
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapSlice<T> {
@@ -291,6 +314,9 @@ pub struct MmapBitSlice {
 }
 
 impl MmapBitSlice {
+    /// Minimum file size for the mmap file, in bytes.
+    const MIN_FILE_SIZE: usize = mem::size_of::<usize>();
+
     /// Transform a mmap into a [`BitSlice`].
     ///
     /// A (non-zero) header size in bytes may be provided to omit from the BitSlice data.
@@ -332,6 +358,34 @@ impl MmapBitSlice {
     /// Get flusher to explicitly flush mmap at a later time
     pub fn flusher(&self) -> MmapFlusher {
         self.mmap.flusher()
+    }
+
+    pub fn create(path: &Path, bitslice: &BitSlice) -> Result<()> {
+        let bits_count = bitslice.len();
+        let bytes_count = bits_count
+            .div_ceil(u8::BITS as usize)
+            .next_multiple_of(Self::MIN_FILE_SIZE);
+
+        let _file = mmap_ops::create_and_ensure_length(path, bytes_count)?;
+
+        let mmap = mmap_ops::open_write_mmap(
+            path,
+            AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+        )?;
+
+        let mut mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
+
+        mmap_bitslice.fill_with(|idx| {
+            bitslice
+                .get(idx)
+                .map(|bitref| bitref.as_ref().to_owned())
+                // mmap bitslice can be bigger than bitslice because it must align with size of `usize`
+                .unwrap_or(false)
+        });
+
+        mmap_bitslice.flusher()()?;
+
+        Ok(())
     }
 }
 

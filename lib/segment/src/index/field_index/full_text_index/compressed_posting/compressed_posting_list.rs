@@ -34,10 +34,10 @@ impl CompressedPostingList {
 
     pub fn reader(&self) -> ChunkReader {
         ChunkReader::new(
-            &self.data,
-            &self.chunks,
-            &self.remainder_postings,
             self.last_doc_id,
+            &self.chunks,
+            &self.data,
+            &self.remainder_postings,
         )
     }
 
@@ -49,6 +49,7 @@ impl CompressedPostingList {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
     }
 
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         let reader = self.reader();
         let visitor = CompressedPostingVisitor::new(reader);
@@ -70,6 +71,16 @@ impl CompressedPostingList {
         }
         let compressed_posting_list = CompressedPostingList::new(&posting_list);
         (compressed_posting_list, set)
+    }
+
+    pub(crate) fn internal_structs(
+        &self,
+    ) -> (&[u8], &[CompressedPostingChunksIndex], &[PointOffsetType]) {
+        (&self.data, &self.chunks, &self.remainder_postings)
+    }
+
+    pub(crate) fn last_doc_id(&self) -> PointOffsetType {
+        self.last_doc_id
     }
 }
 
