@@ -22,10 +22,10 @@
 //! utmost care. Security is critical here as this is an easy place to introduce undefined
 //! behavior. Problems caused by this are very hard to debug.
 
-use std::{fmt, mem, slice};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
+use std::{fmt, mem, slice};
 
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
@@ -536,14 +536,13 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
-    use rand::{Rng, SeedableRng};
     use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
     use tempfile::{Builder, NamedTempFile};
 
+    use super::*;
     use crate::madvise::AdviceSetting;
     use crate::mmap_ops;
-
-    use super::*;
 
     fn create_temp_mmap_file(len: usize) -> NamedTempFile {
         let tempfile = Builder::new()
