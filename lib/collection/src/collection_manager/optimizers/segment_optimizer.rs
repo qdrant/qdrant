@@ -667,8 +667,9 @@ pub trait SegmentOptimizer {
 
             optimized_segment.prefault_mmap_pages();
 
-            let (new_segment_id, proxies) =
-                write_segments_guard.swap_new(optimized_segment, &proxy_ids);
+            let point_count = optimized_segment.available_point_count();
+
+            let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
             debug_assert_eq!(
                 proxies.len(),
                 proxy_ids.len(),
@@ -707,11 +708,7 @@ pub trait SegmentOptimizer {
 
             timer.set_success(true);
 
-            if let Some(new_segment) = segments.read().get(new_segment_id) {
-                return Ok(new_segment.get().read().available_point_count());
-            }
-
-            Ok(0)
+            Ok(point_count)
         }
     }
 }
