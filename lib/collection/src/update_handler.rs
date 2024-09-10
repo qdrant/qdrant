@@ -1,7 +1,7 @@
 use std::cmp::min;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
@@ -88,6 +88,8 @@ pub struct UpdateHandler {
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
     optimizers_log: Arc<Mutex<TrackerLog>>,
+    /// Total number of optimized points since last start
+    total_optimized_points: Arc<AtomicUsize>,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
     optimizer_cpu_budget: CpuBudget,
@@ -129,6 +131,7 @@ impl UpdateHandler {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        total_optimized_points: Arc<AtomicUsize>,
         optimizer_cpu_budget: CpuBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
@@ -146,6 +149,7 @@ impl UpdateHandler {
             update_worker: None,
             optimizer_worker: None,
             optimizers_log,
+            total_optimized_points,
             optimizer_cpu_budget,
             flush_worker: None,
             flush_stop: None,
@@ -171,6 +175,7 @@ impl UpdateHandler {
             self.wal.clone(),
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
+            self.total_optimized_points.clone(),
             self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
             self.has_triggered_optimizers.clone(),
@@ -256,6 +261,7 @@ impl UpdateHandler {
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        total_optimized_points: Arc<AtomicUsize>,
         optimizer_cpu_budget: &CpuBudget,
         segments: LockedSegmentHolder,
         callback: F,
@@ -307,6 +313,7 @@ impl UpdateHandler {
 
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
+                let total_optimized_points = total_optimized_points.clone();
                 let segments = segments.clone();
                 let nsi = nonoptimal_segment_ids.clone();
                 scheduled_segment_ids.extend(&nsi);
@@ -330,10 +337,13 @@ impl UpdateHandler {
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
-                                Ok(result) => {
+                                Ok(optimized_points) => {
+                                    let is_optimized = optimized_points > 0;
+                                    total_optimized_points
+                                        .fetch_add(optimized_points, Ordering::Relaxed);
                                     tracker_handle.update(TrackerStatus::Done);
-                                    callback(result);
-                                    result
+                                    callback(is_optimized);
+                                    is_optimized
                                 }
                                 // Handle and report errors
                                 Err(error) => match error {
@@ -449,11 +459,13 @@ impl UpdateHandler {
         (has_triggered_any_optimizers, has_suboptimal_optimizers)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        total_optimized_points: Arc<AtomicUsize>,
         optimizer_cpu_budget: &CpuBudget,
         sender: Sender<OptimizerSignal>,
         limit: usize,
@@ -461,6 +473,7 @@ impl UpdateHandler {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             optimizers_log,
+            total_optimized_points,
             optimizer_cpu_budget,
             segments.clone(),
             move |_optimization_result| {
@@ -512,6 +525,7 @@ impl UpdateHandler {
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        total_optimized_points: Arc<AtomicUsize>,
         optimizer_cpu_budget: CpuBudget,
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
@@ -608,6 +622,7 @@ impl UpdateHandler {
                         segments.clone(),
                         optimization_handles.clone(),
                         optimizers_log.clone(),
+                        total_optimized_points.clone(),
                         &optimizer_cpu_budget,
                         sender.clone(),
                         limit,

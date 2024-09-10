@@ -10219,7 +10219,8 @@
         "type": "object",
         "required": [
           "optimizations",
-          "segments"
+          "segments",
+          "total_optimized_points"
         ],
         "properties": {
           "variant_name": {
@@ -10235,6 +10236,12 @@
                 "nullable": true
               }
             ]
+          },
+          "total_optimized_points": {
+            "description": "Total number of optimized points since the last start.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           },
           "segments": {
             "type": "array",
