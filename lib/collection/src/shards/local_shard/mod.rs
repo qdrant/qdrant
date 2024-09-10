@@ -69,6 +69,10 @@ use crate::wal_delta::{LockedWal, RecoverableWal};
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 
+const WAL_PATH: &str = "wal";
+
+const SEGMENTS_PATH: &str = "segments";
+
 /// LocalShard
 ///
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
@@ -396,11 +400,11 @@ impl LocalShard {
     }
 
     pub fn wal_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("wal")
+        shard_path.join(WAL_PATH)
     }
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("segments")
+        shard_path.join(SEGMENTS_PATH)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -451,7 +455,7 @@ impl LocalShard {
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
-        let wal_path = shard_path.join("wal");
+        let wal_path = Self::wal_path(shard_path);
 
         create_dir_all(&wal_path).await.map_err(|err| {
             CollectionError::service_error(format!(
@@ -459,7 +463,7 @@ impl LocalShard {
             ))
         })?;
 
-        let segments_path = shard_path.join("segments");
+        let segments_path = Self::segments_path(shard_path);
 
         create_dir_all(&segments_path).await.map_err(|err| {
             CollectionError::service_error(format!(
@@ -1097,6 +1101,10 @@ impl Drop for LocalShard {
     }
 }
 
+const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
+
+const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
+
 /// Convenience struct for combining clock maps belonging to a shard
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
@@ -1191,10 +1199,10 @@ impl LocalShardClocks {
     }
 
     fn newest_clocks_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("newest_clocks.json")
+        shard_path.join(NEWEST_CLOCKS_PATH)
     }
 
     fn oldest_clocks_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("oldest_clocks.json")
+        shard_path.join(OLDEST_CLOCKS_PATH)
     }
 }
