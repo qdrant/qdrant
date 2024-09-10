@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -86,6 +86,7 @@ pub struct LocalShard {
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
+    pub(super) total_optimized_points: Arc<AtomicUsize>,
     update_runtime: Handle,
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
@@ -153,6 +154,7 @@ impl LocalShard {
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
+        let total_optimized_points = Arc::new(AtomicUsize::new(0));
 
         // default to 2x the WAL capacity
         let disk_buffer_threshold_mb =
@@ -169,6 +171,7 @@ impl LocalShard {
             payload_index_schema.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
+            total_optimized_points.clone(),
             optimizer_cpu_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
@@ -201,6 +204,7 @@ impl LocalShard {
             search_runtime,
             optimizers,
             optimizers_log,
+            total_optimized_points,
             disk_usage_watcher,
         }
     }
@@ -916,9 +920,12 @@ impl LocalShard {
             })
             .fold(Default::default(), |acc, x| acc + x);
 
+        let total_optimized_points = self.total_optimized_points.load(Ordering::Relaxed);
+
         LocalShardTelemetry {
             variant_name: None,
             status: None,
+            total_optimized_points,
             segments,
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
