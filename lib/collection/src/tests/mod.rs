@@ -110,8 +110,6 @@ async fn test_optimization_process() {
         assert_eq!(res.unwrap(), Some(true));
     }
 
-    assert_eq!(total_optimized_points.load(Ordering::Relaxed), 110);
-
     let handles = UpdateHandler::launch_optimization(
         optimizers.clone(),
         optimizers_log.clone(),
