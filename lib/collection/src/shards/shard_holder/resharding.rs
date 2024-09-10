@@ -303,11 +303,19 @@ impl ShardHolder {
                     continue;
                 }
 
+                // Revert replicas in `Resharding` state back into `Active` state
+                for (peer, state) in shard.peers() {
+                    if state == ReplicaState::Resharding {
+                        shard.set_replica_state(&peer, ReplicaState::Active)?;
+                    }
+                }
+
                 // We only cleanup local shards
                 if !shard.is_local().await {
                     continue;
                 }
 
+                // Remove any points that might have been transferred from target shard
                 let filter = self.hash_ring_filter(id).expect("hash ring filter");
                 let filter = Filter::new_must(Condition::CustomIdChecker(Arc::new(filter)));
                 shard.cleanup_local_shard(filter).await?;
