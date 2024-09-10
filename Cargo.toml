@@ -77,7 +77,7 @@ actix-web = { version = "4.9.0", optional = true, features = ["rustls-0_23", "ac
 actix-web-validator = "6.0.0"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
-tower = { version = "0.5.0", features = ["util"] }
+tower = { version = "0.5.1", features = ["util"] }
 tower-layer = "0.3.3"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
