@@ -385,7 +385,7 @@ impl ShardHolder {
         operation: CollectionUpdateOperations,
     ) -> OperationsByMode {
         let Some(state) = self.resharding_state() else {
-            return operation.into();
+            return OperationsByMode::from(operation);
         };
 
         // Resharding *UP*
