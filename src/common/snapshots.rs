@@ -1,6 +1,6 @@
-use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
+use std::{fmt, fs};
 
 use collection::collection::Collection;
 use collection::common::sha_256::hash_file;
@@ -152,6 +152,9 @@ pub async fn recover_shard_snapshot(
             if let Some(checksum) = checksum {
                 let snapshot_checksum = hash_file(&snapshot_path).await?;
                 if snapshot_checksum != checksum {
+                    // Checksum is invalid, cleanup the file
+                    fs::remove_file(snapshot_path)?;
+
                     return Err(StorageError::bad_input(format!(
                         "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
                     )));
