@@ -431,7 +431,7 @@ impl ShardHolder {
     pub fn get_resharding_operations_info(
         &self,
         tasks_pool: &ReshardTasksPool,
-    ) -> Vec<ReshardingInfo> {
+    ) -> Option<Vec<ReshardingInfo>> {
         let mut resharding_operations = vec![];
 
         // We eventually expect to extend this to multiple concurrent operations, which is why
@@ -445,10 +445,12 @@ impl ShardHolder {
                 shard_key: resharding_state.shard_key.clone(),
                 comment: status.map(|p| p.comment),
             });
+        } else {
+            return None;
         }
 
         resharding_operations.sort_by_key(|k| k.shard_id);
-        resharding_operations
+        Some(resharding_operations)
     }
 
     pub fn get_related_transfers(

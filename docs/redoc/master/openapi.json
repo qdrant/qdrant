@@ -9705,7 +9705,6 @@
           "local_shards",
           "peer_id",
           "remote_shards",
-          "resharding_operations",
           "shard_count",
           "shard_transfers"
         ],
@@ -9748,7 +9747,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
-            }
+            },
+            "nullable": true
           }
         }
       },
