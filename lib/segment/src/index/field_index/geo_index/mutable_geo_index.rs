@@ -5,6 +5,7 @@ use std::sync::Arc;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
+use smol_str::SmolStr;
 
 use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -119,16 +120,10 @@ impl MutableGeoMapIndex {
                 self.points_count += 1;
             }
 
-            points_to_hashes
-                .entry(idx)
-                .or_default()
-                .push(geo_hash.clone());
+            points_to_hashes.entry(idx).or_default().push(geo_hash);
 
             self.point_to_values[idx as usize].push(geo_point);
-            self.points_map
-                .entry(geo_hash.clone())
-                .or_default()
-                .insert(idx);
+            self.points_map.entry(geo_hash).or_default().insert(idx);
 
             self.points_values_count += 1;
         }
@@ -161,10 +156,10 @@ impl MutableGeoMapIndex {
         for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
                 encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
-            removed_geo_hashes.push(removed_geo_hash.clone());
+            removed_geo_hashes.push(removed_geo_hash);
 
-            let key = GeoMapIndex::encode_db_key(&removed_geo_hash, idx);
-            self.db_wrapper.remove(key)?;
+            let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
+            self.db_wrapper.remove(key.as_bytes())?;
 
             let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
                 hash_ids.remove(&idx);
@@ -172,7 +167,7 @@ impl MutableGeoMapIndex {
             } else {
                 log::warn!(
                     "Geo index error: no points for hash {} was found",
-                    removed_geo_hash
+                    SmolStr::from(removed_geo_hash),
                 );
                 false
             };
@@ -210,12 +205,12 @@ impl MutableGeoMapIndex {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
                 .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
 
-            let key = GeoMapIndex::encode_db_key(&added_geo_hash, idx);
+            let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
             let value = GeoMapIndex::encode_db_value(added_point);
 
             geo_hashes.push(added_geo_hash);
 
-            self.db_wrapper.put(key, value)?;
+            self.db_wrapper.put(key.as_bytes(), value)?;
         }
 
         for geo_hash in &geo_hashes {
@@ -239,18 +234,18 @@ impl MutableGeoMapIndex {
         &self,
         geo: &GeoHash,
     ) -> impl Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_ {
-        let geo_clone = geo.clone();
+        let geo_clone = *geo;
         self.points_map
-            .range(geo.clone()..)
-            .take_while(move |(p, _h)| p.starts_with(geo_clone.as_str()))
+            .range(*geo..)
+            .take_while(move |(p, _h)| p.starts_with(geo_clone))
     }
 
     fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
         for i in 0..=geo_hash.len() {
-            let sub_geo_hash = &geo_hash[0..i];
-            match self.values_per_hash.get_mut(sub_geo_hash) {
+            let sub_geo_hash = geo_hash.truncate(i);
+            match self.values_per_hash.get_mut(&sub_geo_hash) {
                 None => {
-                    self.values_per_hash.insert(sub_geo_hash.into(), 1);
+                    self.values_per_hash.insert(sub_geo_hash, 1);
                 }
                 Some(count) => {
                     *count += 1;
@@ -260,18 +255,18 @@ impl MutableGeoMapIndex {
     }
 
     fn increment_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut seen_hashes: HashSet<GeoHash> = Default::default();
 
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
-                let sub_geo_hash = &geo_hash[0..i];
-                if seen_hashes.contains(sub_geo_hash) {
+                let sub_geo_hash = geo_hash.truncate(i);
+                if seen_hashes.contains(&sub_geo_hash) {
                     continue;
                 }
                 seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(sub_geo_hash) {
+                match self.points_per_hash.get_mut(&sub_geo_hash) {
                     None => {
-                        self.points_per_hash.insert(sub_geo_hash.into(), 1);
+                        self.points_per_hash.insert(sub_geo_hash, 1);
                     }
                     Some(count) => {
                         *count += 1;
@@ -283,14 +278,15 @@ impl MutableGeoMapIndex {
 
     fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
         for i in 0..=geo_hash.len() {
-            let sub_geo_hash = &geo_hash[0..i];
-            match self.values_per_hash.get_mut(sub_geo_hash) {
+            let sub_geo_hash = geo_hash.truncate(i);
+            match self.values_per_hash.get_mut(&sub_geo_hash) {
                 None => {
                     debug_assert!(
                         false,
-                        "Hash value count is not found for hash: {sub_geo_hash}"
+                        "Hash value count is not found for hash: {}",
+                        SmolStr::from(sub_geo_hash),
                     );
-                    self.values_per_hash.insert(sub_geo_hash.into(), 0);
+                    self.values_per_hash.insert(sub_geo_hash, 0);
                 }
                 Some(count) => {
                     *count -= 1;
@@ -300,21 +296,22 @@ impl MutableGeoMapIndex {
     }
 
     fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<&str> = Default::default();
+        let mut seen_hashes: HashSet<GeoHash> = Default::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
-                let sub_geo_hash = &geo_hash[0..i];
-                if seen_hashes.contains(sub_geo_hash) {
+                let sub_geo_hash = geo_hash.truncate(i);
+                if seen_hashes.contains(&sub_geo_hash) {
                     continue;
                 }
                 seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(sub_geo_hash) {
+                match self.points_per_hash.get_mut(&sub_geo_hash) {
                     None => {
                         debug_assert!(
                             false,
-                            "Hash point count is not found for hash: {sub_geo_hash}"
+                            "Hash point count is not found for hash: {}",
+                            SmolStr::from(sub_geo_hash),
                         );
-                        self.points_per_hash.insert(sub_geo_hash.into(), 0);
+                        self.points_per_hash.insert(sub_geo_hash, 0);
                     }
                     Some(count) => {
                         *count -= 1;
