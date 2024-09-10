@@ -13,7 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.87"
 flate2 = { version = "1.0.33" }
 indicatif = { workspace = true }
 reqwest = { workspace = true }
