@@ -707,7 +707,6 @@ pub trait SegmentOptimizer {
 
             timer.set_success(true);
 
-
             if let Some(new_segment) = segments.read().get(new_segment_id) {
                 return Ok(new_segment.get().read().available_point_count());
             }
