@@ -860,10 +860,30 @@ impl LocalShard {
         let mut wal_guard = wal.lock();
         wal_guard.flush()?;
         let source_wal_path = wal_guard.path();
-        tar.blocking_append_dir_all(source_wal_path, Path::new(WAL_PATH))
-            .map_err(|err| {
-                CollectionError::service_error(format!("Error while archiving WAL: {err}"))
-            })
+
+        let tar = tar.descend(Path::new(WAL_PATH))?;
+        for entry in std::fs::read_dir(source_wal_path).map_err(|err| {
+            CollectionError::service_error(format!("Can't read WAL directory: {err}",))
+        })? {
+            let entry = entry.map_err(|err| {
+                CollectionError::service_error(format!("Can't read WAL directory: {err}",))
+            })?;
+
+            if entry.file_name() == ".wal" {
+                // This sentinel file is used for WAL locking. Trying to archive
+                // or open it will cause the following error on Windows:
+                // > The process cannot access the file because another process
+                // > has locked a portion of the file. (os error 33)
+                // https://github.com/qdrant/wal/blob/7c9202d0874/src/lib.rs#L125-L145
+                continue;
+            }
+
+            tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
+                .map_err(|err| {
+                    CollectionError::service_error(format!("Error while archiving WAL: {err}"))
+                })?;
+        }
+        Ok(())
     }
 
     pub fn estimate_cardinality<'a>(

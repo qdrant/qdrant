@@ -82,6 +82,17 @@ impl BuilderExt {
     }
 
     /// Append a file to the tar archive.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
+    /// Use [`BuilderExt::append_file`] instead.
+    pub fn blocking_append_file(&self, src: &Path, dst: &Path) -> std::io::Result<()> {
+        let dst = join_relative(&self.path, dst)?;
+        self.tar.blocking_lock().append_path_with_name(src, dst)
+    }
+
+    /// Append a file to the tar archive.
     pub async fn append_file(&self, src: &Path, dst: &Path) -> std::io::Result<()> {
         let src = src.to_path_buf();
         let dst = join_relative(&self.path, dst)?;
