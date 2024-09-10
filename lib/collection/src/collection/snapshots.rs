@@ -155,6 +155,7 @@ impl Collection {
         log::debug!("Archiving snapshot {snapshot_temp_target_dir_path:?}");
         let archiving = tokio::task::spawn_blocking(move || -> CollectionResult<_> {
             let mut builder = tar::Builder::new(snapshot_temp_arc_file.as_file_mut());
+            builder.sparse(true);
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
             builder.append_dir_all(".", &snapshot_temp_target_dir_path)?;
             builder.finish()?;

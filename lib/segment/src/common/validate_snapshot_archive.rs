@@ -31,7 +31,7 @@ pub fn open_snapshot_archive_with_validation<P: AsRef<Path>>(
             };
             if !matches!(
                 entry_type,
-                tar::EntryType::Regular | tar::EntryType::Directory,
+                tar::EntryType::Regular | tar::EntryType::Directory | tar::EntryType::GNUSparse
             ) {
                 return Err(OperationError::ValidationError {
                     description: format!(

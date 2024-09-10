@@ -877,6 +877,7 @@ impl ShardHolder {
 
             cancel::blocking::spawn_cancel_on_drop(move |cancel| -> CollectionResult<_> {
                 let mut tar = TarBuilder::new(temp_file.as_file_mut());
+                tar.sparse(true);
 
                 if cancel.is_cancelled() {
                     return Err(cancel::Error::Cancelled.into());
