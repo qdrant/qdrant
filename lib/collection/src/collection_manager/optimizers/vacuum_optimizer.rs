@@ -467,9 +467,8 @@ mod tests {
                 permit,
                 &false.into(),
             )
-            .unwrap()
-            .is_some();
-        assert!(changed, "optimizer should have rebuilt this segment");
+            .unwrap();
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
         assert!(
             locked_holder.read().get(segment_id).is_none(),
             "optimized segment should be gone",
@@ -583,9 +582,8 @@ mod tests {
                 permit,
                 &false.into(),
             )
-            .unwrap()
-            .is_some();
-        assert!(changed, "optimizer should have rebuilt this segment");
+            .unwrap();
+        assert!(changed > 0, "optimizer should have rebuilt this segment");
 
         // Ensure deleted points and vectors are optimized
         locked_holder
