@@ -710,6 +710,8 @@ pub trait SegmentOptimizer {
             if let Some(new_segment) = segments_lock.get(new_segment_id) {
                 return Ok(new_segment.get().read().available_point_count());
             }
+
+            Ok(0)
         }
     }
 }
