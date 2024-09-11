@@ -1019,6 +1019,18 @@ impl CollectionError {
             Self::StrictMode { .. } => false,
         }
     }
+
+    pub fn is_pre_condition_failed(&self) -> bool {
+        matches!(self, Self::PreConditionFailed { .. })
+    }
+
+    pub fn is_missing_point(&self) -> bool {
+        match self {
+            CollectionError::NotFound { what } => what.contains("No point with id"),
+            CollectionError::PointNotFound { .. } => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<SystemTimeError> for CollectionError {
