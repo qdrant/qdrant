@@ -406,7 +406,7 @@ mod tests {
 
         MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
 
-        let mmap = MmapInvertedIndex::open(path).unwrap();
+        let mmap = MmapInvertedIndex::open(path, false).unwrap();
 
         // Check same vocabulary
         for (token, token_id) in immutable.vocab.iter() {
@@ -453,7 +453,7 @@ mod tests {
 
         MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
 
-        let mut mmap_index = MmapInvertedIndex::open(path).unwrap();
+        let mut mmap_index = MmapInvertedIndex::open(path, false).unwrap();
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 

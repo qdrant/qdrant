@@ -279,6 +279,7 @@ impl<T> MmapSlice<T> {
         let mmap = mmap_ops::open_write_mmap(
             path,
             AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+            false,
         )?;
 
         let mut mmap_slice = unsafe { Self::try_from(mmap)? };
@@ -371,6 +372,7 @@ impl MmapBitSlice {
         let mmap = mmap_ops::open_write_mmap(
             path,
             AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+            false,
         )?;
 
         let mut mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
