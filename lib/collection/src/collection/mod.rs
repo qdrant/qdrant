@@ -752,7 +752,9 @@ impl Collection {
             (
                 shards_telemetry,
                 shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
-                shards_holder.get_resharding_operations_info(&*self.reshard_tasks.lock().await),
+                shards_holder
+                    .get_resharding_operations_info(&*self.reshard_tasks.lock().await)
+                    .unwrap_or_default(),
             )
         };
 
