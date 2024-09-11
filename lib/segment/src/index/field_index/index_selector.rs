@@ -13,7 +13,7 @@ use super::numeric_index::{
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::text_index::FullTextIndex;
+use crate::index::field_index::full_text_index::mutable_text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
