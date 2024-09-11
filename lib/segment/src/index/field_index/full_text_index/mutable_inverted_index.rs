@@ -3,11 +3,11 @@ use std::collections::{BTreeSet, HashMap};
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, ParsedQuery, TokenId,
-};
+use crate::index::field_index::full_text_index::inverted_index::{Document, ParsedQuery, TokenId};
 use crate::index::field_index::full_text_index::posting_list::PostingList;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_postings_iterator;
+
+use super::inverted_index::InvertedIndex;
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Default)]
@@ -38,7 +38,7 @@ impl MutableInvertedIndex {
                     .resize_with(idx as usize + 1, Default::default);
             }
 
-            let document = InvertedIndex::document_from_tokens_impl(&mut self.vocab, &tokens);
+            let document = self.document_from_tokens(&tokens);
             self.point_to_docs[idx as usize] = Some(document);
         }
 
@@ -66,7 +66,17 @@ impl MutableInvertedIndex {
         Ok(())
     }
 
-    pub fn index_document(&mut self, idx: PointOffsetType, document: Document) {
+    fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
+        self.point_to_docs.get(idx as usize)?.as_ref()
+    }
+}
+
+impl InvertedIndex for MutableInvertedIndex {
+    fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
+        &mut self.vocab
+    }
+
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()> {
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
             self.point_to_docs
@@ -89,9 +99,11 @@ impl MutableInvertedIndex {
             }
         }
         self.point_to_docs[idx as usize] = Some(document);
+
+        Ok(())
     }
 
-    pub fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
         if self.point_to_docs.len() <= idx as usize {
             return false; // Already removed or never actually existed
         }
@@ -112,7 +124,7 @@ impl MutableInvertedIndex {
         true
     }
 
-    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
@@ -135,28 +147,11 @@ impl MutableInvertedIndex {
         intersect_postings_iterator(postings)
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        // Maybe we want number of documents in the future?
-        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
+    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
+        todo!()
     }
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
-    }
-
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
-        if let Some(doc) = self.get_doc(point_id) {
-            parsed_query.check_match(doc)
-        } else {
-            false
-        }
-    }
-
-    fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
-        self.point_to_docs.get(idx as usize)?.as_ref()
-    }
-
-    pub fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+    fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
         self.vocab.iter().filter_map(|(token, &posting_idx)| {
             if let Some(Some(postings)) = self.postings.get(posting_idx as usize) {
                 Some((token.as_str(), postings.len()))
@@ -164,5 +159,30 @@ impl MutableInvertedIndex {
                 None
             }
         })
+    }
+
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+        if let Some(doc) = self.get_doc(point_id) {
+            parsed_query.check_match(doc)
+        } else {
+            false
+        }
+    }
+
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.get_doc(point_id).map(|x| x.is_empty()).unwrap_or(true)
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        // Maybe we want number of documents in the future?
+        self.get_doc(point_id).map(|x| x.len()).unwrap_or(0)
+    }
+
+    fn points_count(&self) -> usize {
+        self.points_count
+    }
+
+    fn get_token(&self, token: &str) -> Option<TokenId> {
+        self.vocab.get(token).copied()
     }
 }
