@@ -110,4 +110,37 @@ mod tests {
         assert!(hashes_equal("0123abc", "0123abc "));
         assert!(!hashes_equal("0123abc", "0123abd"));
     }
+
+    /// Test consistency between built-in sha256 hasher and sha256sum binary
+    #[tokio::test]
+    #[cfg(all(debug_assertions, unix))]
+    async fn test_hash_file_bin() {
+        use std::io::Write;
+
+        use rand::{thread_rng, Rng};
+
+        // Create a temporary file with random data
+        let mut temp_file = tempfile::Builder::new()
+            .prefix("test-sha256sum")
+            .tempfile()
+            .unwrap();
+        let mut buf = [0u8; 128];
+        thread_rng().fill(&mut buf[..]);
+        temp_file.write_all(&buf).unwrap();
+
+        let hash_builtin = hash_file_builtin(temp_file.path()).await.unwrap();
+        let hash_bin = match hash_file_bin(temp_file.path()).await {
+            Ok(hash) => hash,
+            // May error if the sha256bin binary is not available on this system
+            Err(err) => {
+                log::warn!("Failed to compute checksum with sha256sum, skipping test: {err}");
+                return;
+            }
+        };
+
+        assert_eq!(
+            hash_builtin, hash_bin,
+            "built-in hasher and sha256sum binary must produce the same hash",
+        );
+    }
 }
