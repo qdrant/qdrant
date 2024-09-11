@@ -160,6 +160,38 @@ impl PayloadOps {
             PayloadOps::OverwritePayload(_) => true,
         }
     }
+
+    pub fn point_ids(&self) -> Vec<PointIdType> {
+        match self {
+            Self::SetPayload(op) => op.points.clone().unwrap_or(Vec::new()),
+            Self::DeletePayload(op) => op.points.clone().unwrap_or(Vec::new()),
+            Self::ClearPayload { points } => points.clone(),
+            Self::ClearPayloadByFilter(_) => Vec::new(),
+            Self::OverwritePayload(op) => op.points.clone().unwrap_or(Vec::new()),
+        }
+    }
+
+    pub fn retain_point_ids<F>(&mut self, filter: F)
+    where
+        F: Fn(&PointIdType) -> bool,
+    {
+        match self {
+            Self::SetPayload(op) => retain_opt(op.points.as_mut(), filter),
+            Self::DeletePayload(op) => retain_opt(op.points.as_mut(), filter),
+            Self::ClearPayload { points } => points.retain(filter),
+            Self::ClearPayloadByFilter(_) => (),
+            Self::OverwritePayload(op) => retain_opt(op.points.as_mut(), filter),
+        }
+    }
+}
+
+fn retain_opt<T, F>(vec: Option<&mut Vec<T>>, filter: F)
+where
+    F: Fn(&T) -> bool,
+{
+    if let Some(vec) = vec {
+        vec.retain(filter);
+    }
 }
 
 impl Validate for PayloadOps {

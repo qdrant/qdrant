@@ -108,7 +108,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering)
+                        .update_with_consistency(operation.operation, wait, ordering, false)
                         .await
                         .map(Some)
                 }
@@ -145,13 +145,42 @@ impl Collection {
         let mut results = tokio::task::spawn(async move {
             let _update_lock = update_lock;
 
-            let updates: FuturesUnordered<_> = shard_holder
-                .split_by_shard(operation, &shard_keys_selection)?
-                .into_iter()
-                .map(move |(shard, operation)| {
-                    shard.update_with_consistency(operation, wait, ordering)
-                })
-                .collect();
+            let updates = FuturesUnordered::new();
+            let operations = shard_holder.split_by_shard(operation, &shard_keys_selection)?;
+
+            for (shard, operation) in operations {
+                let operation = shard_holder.split_by_mode(shard.shard_id, operation);
+
+                updates.push(async move {
+                    let mut result = UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::Acknowledged,
+                        clock_tag: None,
+                    };
+
+                    for operation in operation.update_all {
+                        result = shard
+                            .update_with_consistency(operation, wait, ordering, false)
+                            .await?;
+                    }
+
+                    for operation in operation.update_only_existing {
+                        let res = shard
+                            .update_with_consistency(operation, wait, ordering, true)
+                            .await;
+
+                        if let Err(err) = &res {
+                            if err.is_missing_point() {
+                                continue;
+                            }
+                        }
+
+                        result = res?;
+                    }
+
+                    CollectionResult::Ok(result)
+                });
+            }
 
             let results: Vec<_> = updates.collect().await;
 
