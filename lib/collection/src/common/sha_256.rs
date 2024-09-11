@@ -11,8 +11,8 @@ const SHA256_HASH_LENGTH: usize = 64;
 pub async fn hash_file(file_path: &Path) -> io::Result<String> {
     log::debug!("Computing checksum for file: {file_path:?}");
 
-    // On unix in debug builds, get hash through sha256sum because it's significantly faster
-    #[cfg(all(debug_assertions, unix))]
+    // On Linux in debug builds, get hash through sha256sum because it's significantly faster
+    #[cfg(all(debug_assertions, target_os = "linux"))]
     match hash_file_bin(file_path).await {
         Ok(hash) => return Ok(hash),
         Err(err) => log::warn!(
@@ -44,7 +44,7 @@ async fn hash_file_builtin(file_path: &Path) -> io::Result<String> {
 /// Compute sha256 hash for the given file using the `sha256sum` binary
 ///
 /// May fail if the binary does not exist on the system.
-#[cfg(all(debug_assertions, unix))]
+#[cfg(all(debug_assertions, target_os = "linux"))]
 async fn hash_file_bin(file_path: &Path) -> io::Result<String> {
     use tokio::process::Command;
 
@@ -111,7 +111,7 @@ mod tests {
 
     /// Test consistency between built-in sha256 hasher and sha256sum binary
     #[tokio::test]
-    #[cfg(all(debug_assertions, unix))]
+    #[cfg(all(debug_assertions, target_os = "linux"))]
     async fn test_hash_file_bin() {
         use std::io::Write;
 
