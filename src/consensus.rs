@@ -104,7 +104,7 @@ impl Consensus {
                 }
 
                 if let Err(err) = consensus.start() {
-                    log::error!("Consensus stopped with error: {err}");
+                    log::error!("Consensus stopped with error: {err:#}");
                     state_ref_clone.on_consensus_thread_err(err);
                 } else {
                     log::info!("Consensus stopped");
