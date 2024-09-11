@@ -50,12 +50,12 @@ async fn hash_file_bin(file_path: &Path) -> io::Result<String> {
 
     let output = match Command::new("sha256sum")
         .arg("-b")
-        .arg(file_path.as_os_str())
+        .arg(file_path)
         .output()
         .await
     {
-        // Binary must have success exit code
-        Ok(command) if !command.status.success() => {
+        Ok(command) if command.status.success() => command,
+        Ok(command) => {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!(
@@ -64,14 +64,12 @@ async fn hash_file_bin(file_path: &Path) -> io::Result<String> {
                 ),
             ));
         }
-        // Binary must have been called successfully
         Err(err) => {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("Failed to compute checksum with sha256sum: {err}"),
             ));
         }
-        Ok(command) => command,
     };
 
     let stdout = String::from_utf8(output.stdout).unwrap();
