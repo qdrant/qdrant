@@ -234,8 +234,8 @@ pub struct CollectionClusterInfo {
     pub shard_transfers: Vec<ShardTransferInfo>,
     /// Resharding operations
     // TODO(resharding): remove this skip when releasing resharding
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub resharding_operations: Vec<ReshardingInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resharding_operations: Option<Vec<ReshardingInfo>>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone)]

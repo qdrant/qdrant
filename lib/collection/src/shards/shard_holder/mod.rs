@@ -431,24 +431,26 @@ impl ShardHolder {
     pub fn get_resharding_operations_info(
         &self,
         tasks_pool: &ReshardTasksPool,
-    ) -> Vec<ReshardingInfo> {
+    ) -> Option<Vec<ReshardingInfo>> {
         let mut resharding_operations = vec![];
 
         // We eventually expect to extend this to multiple concurrent operations, which is why
         // we're using a list here
-        if let Some(resharding_state) = &*self.resharding_state.read() {
-            let status = tasks_pool.get_task_status(&resharding_state.key());
-            resharding_operations.push(ReshardingInfo {
-                shard_id: resharding_state.shard_id,
-                peer_id: resharding_state.peer_id,
-                direction: resharding_state.direction,
-                shard_key: resharding_state.shard_key.clone(),
-                comment: status.map(|p| p.comment),
-            });
-        }
+        let Some(resharding_state) = &*self.resharding_state.read() else {
+            return None;
+        };
+
+        let status = tasks_pool.get_task_status(&resharding_state.key());
+        resharding_operations.push(ReshardingInfo {
+            shard_id: resharding_state.shard_id,
+            peer_id: resharding_state.peer_id,
+            direction: resharding_state.direction,
+            shard_key: resharding_state.shard_key.clone(),
+            comment: status.map(|p| p.comment),
+        });
 
         resharding_operations.sort_by_key(|k| k.shard_id);
-        resharding_operations
+        Some(resharding_operations)
     }
 
     pub fn get_related_transfers(
