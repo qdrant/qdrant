@@ -461,8 +461,16 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+
+    let start_time = std::time::Instant::now();
+
     let database = open_segment_db(segment_path, config)?;
+
+    log::warn!("open_segment_db: {:?}", start_time.elapsed());
+
     let payload_storage = sp(create_payload_storage(database.clone(), config)?);
+
+    log::warn!("create_payload_storage: {:?}", start_time.elapsed());
 
     let appendable_flag = config.is_appendable();
 
@@ -470,13 +478,19 @@ fn create_segment(
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
     let id_tracker = if mutable_id_tracker {
-        sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+        let res = sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
             database.clone(),
-        )?))
+        )?));
+
+        log::warn!("create_mutable_id_tracker: {:?}", start_time.elapsed());
+        res
     } else {
-        sp(IdTrackerEnum::ImmutableIdTracker(
+        let res = sp(IdTrackerEnum::ImmutableIdTracker(
             create_immutable_id_tracker(segment_path)?,
-        ))
+        ));
+
+        log::warn!("create_immutable_id_tracker: {:?}", start_time.elapsed());
+        res
     };
 
     let payload_index_path = get_payload_index_path(segment_path);
@@ -486,6 +500,8 @@ fn create_segment(
         &payload_index_path,
         appendable_flag,
     )?);
+
+    log::warn!("StructPayloadIndex::open: {:?}", start_time.elapsed());
 
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
@@ -546,6 +562,8 @@ fn create_segment(
             },
         );
     }
+
+    log::warn!("Vectors loaded: {:?}", start_time.elapsed());
 
     for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
