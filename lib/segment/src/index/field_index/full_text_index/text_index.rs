@@ -212,7 +212,7 @@ impl FullTextIndex {
 
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
-        Tokenizer::tokenize_query(text, &self.config(), |token| {
+        Tokenizer::tokenize_query(text, self.config(), |token| {
             tokens.insert(self.get_token(token));
         });
         ParsedQuery {
@@ -222,7 +222,7 @@ impl FullTextIndex {
 
     pub fn parse_document(&self, text: &str) -> Document {
         let mut document_tokens = vec![];
-        Tokenizer::tokenize_doc(text, &self.config(), |token| {
+        Tokenizer::tokenize_doc(text, self.config(), |token| {
             if let Some(token_id) = self.get_token(token) {
                 document_tokens.push(token_id);
             }
@@ -266,7 +266,7 @@ impl ValueIndexer for FullTextIndex {
         let mut tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
-            Tokenizer::tokenize_doc(&value, &self.config(), |token| {
+            Tokenizer::tokenize_doc(&value, self.config(), |token| {
                 tokens.insert(token.to_owned());
             });
         }
