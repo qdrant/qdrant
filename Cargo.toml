@@ -246,6 +246,14 @@ lto = false
 opt-level = 3
 codegen-units = 256 # restore default value for faster compilation
 
+# Override for fast sha256 hashing in dev builds
+[profile.dev.package.sha2]
+opt-level = 3
+
+# Override for fast sha256 hashing in ci builds
+[profile.ci.package.sha2]
+opt-level = 3
+
 [patch.crates-io]
 # Temporary patch until our PRs are merged.
 tar = { git = "https://github.com/qdrant/tar-rs", branch="main" }
