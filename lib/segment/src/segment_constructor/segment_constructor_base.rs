@@ -461,7 +461,6 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
-
     let start_time = std::time::Instant::now();
 
     let database = open_segment_db(segment_path, config)?;
