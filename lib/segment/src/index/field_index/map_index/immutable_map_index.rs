@@ -110,12 +110,12 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             return;
         };
 
-        // Finds the index of `idx` in values-to-points map and swaps it with the last element.
-        // So that removed element is out of the shrunk range.
-        // The slice of values is sorted so we can use binary search.
+        // Finds the index of `idx` in values-to-points map which we want to remove
+        // From there we rotate to the left so it becomes the last element, we remove it by
+        // shrinking the range.
+        // This effectively shifts all remaining elements so it remains sorted for binary search.
         if let Ok(pos) = values.binary_search(&idx) {
-            // remove `idx` from values-to-points map by swapping it with the last element
-            values.swap(pos, values.len() - 1);
+            values[pos..].rotate_left(1);
         }
 
         if Self::shrink_value_range(value_to_points, value) {
