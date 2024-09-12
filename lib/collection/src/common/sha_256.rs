@@ -5,6 +5,7 @@ use bytes::BytesMut;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
+/// Compute sha256 hash for the given file
 pub async fn hash_file(file_path: &Path) -> io::Result<String> {
     log::debug!("Computing checksum for file: {file_path:?}");
 
