@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::binary_index::BinaryIndexBuilder;
 use super::facet_index::FacetIndex;
-use super::full_text_index::text_index::FullTextIndex;
+use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{

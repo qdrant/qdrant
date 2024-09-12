@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
-use super::inverted_index::{Document, InvertedIndex, ParsedQuery};
+use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -44,7 +44,7 @@ impl FullTextIndex {
         if is_appendable {
             Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
         } else {
-            Self::Immutable(ImmutableTextIndex::new(db_wrapper, config))
+            Self::Immutable(ImmutableFullTextIndex::new(db_wrapper, config))
         }
     }
 
@@ -67,10 +67,92 @@ impl FullTextIndex {
         format!("{field}_fts")
     }
 
-    fn inverted_index(&self) -> InvertedIndex<'_> {
+    fn points_count(&self) -> usize {
         match self {
-            Self::Mutable(index) => InvertedIndex::Mutable(index.inverted_index),
-            Self::Immutable(index) => InvertedIndex::Immutable(index.inverted_index),
+            Self::Mutable(index) => index.inverted_index.points_count(),
+            Self::Immutable(index) => index.inverted_index.points_count(),
+        }
+    }
+
+    fn get_token(&self, token: &str) -> Option<TokenId> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.get_token_id(token),
+            Self::Immutable(index) => index.inverted_index.get_token_id(token),
+        }
+    }
+
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+        match self {
+            Self::Mutable(index) => index.inverted_index.document_from_tokens(tokens),
+            Self::Immutable(index) => index.inverted_index.document_from_tokens(tokens),
+        }
+    }
+
+    fn index_document(
+        &mut self,
+        point_id: PointOffsetType,
+        document: Document,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.index_document(point_id, document),
+            Self::Immutable(index) => index.inverted_index.index_document(point_id, document),
+        }
+    }
+
+    fn remove_document(&mut self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.remove_document(point_id),
+            Self::Immutable(index) => index.inverted_index.remove_document(point_id),
+        }
+    }
+
+    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.filter(query),
+            Self::Immutable(index) => index.inverted_index.filter(query),
+        }
+    }
+
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        match self {
+            Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+        }
+    }
+
+    fn estimate_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+    ) -> CardinalityEstimation {
+        match self {
+            Self::Mutable(index) => index.inverted_index.estimate_cardinality(query, condition),
+            Self::Immutable(index) => index.inverted_index.estimate_cardinality(query, condition),
+        }
+    }
+
+    pub fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_count(point_id),
+            Self::Immutable(index) => index.inverted_index.values_count(point_id),
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
         }
     }
 
@@ -92,7 +174,7 @@ impl FullTextIndex {
         bincode::serialize(&id).unwrap()
     }
 
-    fn restore_key(data: &[u8]) -> PointOffsetType {
+    pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
         bincode::deserialize(data).unwrap()
     }
 
@@ -107,7 +189,7 @@ impl FullTextIndex {
         })
     }
 
-    fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -122,8 +204,8 @@ impl FullTextIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            points_values_count: self.inverted_index().points_count(),
-            points_count: self.inverted_index().points_count(),
+            points_values_count: self.points_count(),
+            points_count: self.points_count(),
             histogram_bucket_size: None,
         }
     }
@@ -131,7 +213,7 @@ impl FullTextIndex {
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config(), |token| {
-            tokens.insert(self.inverted_index().get_token(token));
+            tokens.insert(self.get_token(token));
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
@@ -141,7 +223,7 @@ impl FullTextIndex {
     pub fn parse_document(&self, text: &str) -> Document {
         let mut document_tokens = vec![];
         Tokenizer::tokenize_doc(text, &self.config(), |token| {
-            if let Some(token_id) = self.inverted_index().get_token(token) {
+            if let Some(token_id) = self.get_token(token) {
                 document_tokens.push(token_id);
             }
         });
@@ -151,7 +233,7 @@ impl FullTextIndex {
     #[cfg(test)]
     pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let parsed_query = self.parse_query(query);
-        self.inverted_index().filter(&parsed_query)
+        self.filter(&parsed_query)
     }
 }
 
@@ -189,8 +271,8 @@ impl ValueIndexer for FullTextIndex {
             });
         }
 
-        let document = self.inverted_index().document_from_tokens(&tokens);
-        self.inverted_index().index_document(idx, document)?;
+        let document = self.document_from_tokens(&tokens);
+        self.index_document(idx, document)?;
 
         let db_idx = Self::store_key(&idx);
         let db_document = Self::serialize_document_tokens(tokens)?;
@@ -208,7 +290,7 @@ impl ValueIndexer for FullTextIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index().remove_document(id) {
+        if self.remove_document(id) {
             let db_doc_id = Self::store_key(&id);
             self.db_wrapper().remove(db_doc_id)?;
         }
@@ -218,23 +300,14 @@ impl ValueIndexer for FullTextIndex {
 
 impl PayloadFieldIndex for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
-        self.inverted_index().points_count()
+        self.points_count()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper().has_column_family()? {
-            return Ok(false);
-        };
-
-        let db = self.db_wrapper().lock_db();
-        let i = db.iter()?.map(|(key, value)| {
-            let idx = Self::restore_key(&key);
-            let tokens = Self::deserialize_document(&value)?;
-            Ok((idx, tokens))
-        });
-        self.inverted_index().build_index(i)?;
-
-        Ok(true)
+        match self {
+            Self::Mutable(index) => index.load_from_db(),
+            Self::Immutable(index) => index.load_from_db(),
+        }
     }
 
     fn clear(self) -> OperationResult<()> {
@@ -255,7 +328,7 @@ impl PayloadFieldIndex for FullTextIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.inverted_index().filter(&parsed_query));
+            return Some(self.filter(&parsed_query));
         }
         None
     }
@@ -263,10 +336,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(
-                self.inverted_index
-                    .estimate_cardinality(&parsed_query, condition),
-            );
+            return Some(self.estimate_cardinality(&parsed_query, condition));
         }
         None
     }
@@ -276,6 +346,6 @@ impl PayloadFieldIndex for FullTextIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        self.inverted_index.payload_blocks(threshold, key)
+        self.payload_blocks(threshold, key)
     }
 }

@@ -1,29 +1,8 @@
-use std::collections::{BTreeSet, HashSet};
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use common::types::PointOffsetType;
-use parking_lot::RwLock;
-use rocksdb::DB;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
 use super::mutable_inverted_index::MutableInvertedIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use super::text_index::FullTextIndex;
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::common::Flusher;
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, ParsedQuery,
-};
-use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
-use crate::index::field_index::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
-    ValueIndexer,
-};
-use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub struct MutableFullTextIndex {
     pub(super) inverted_index: MutableInvertedIndex,
@@ -39,21 +18,26 @@ impl MutableFullTextIndex {
             config,
         }
     }
-    
+
     pub fn init(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inverted_index.values_count(point_id)
-    }
+    pub fn load_from_db(&mut self) -> OperationResult<bool> {
+        if !self.db_wrapper.has_column_family()? {
+            return Ok(false);
+        };
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inverted_index.values_is_empty(point_id)
-    }
+        let db = self.db_wrapper.lock_db();
+        let iter = db.iter()?.map(|(key, value)| {
+            let idx = FullTextIndex::restore_key(&key);
+            let tokens = FullTextIndex::deserialize_document(&value)?;
+            Ok((idx, tokens))
+        });
 
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
-        self.inverted_index.check_match(parsed_query, point_id)
+        self.inverted_index = MutableInvertedIndex::build_index(iter)?;
+
+        Ok(true)
     }
 }
 
@@ -66,6 +50,7 @@ mod tests {
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::data_types::index::{TextIndexType, TokenizerType};
     use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match};
 
     fn filter_request(text: &str) -> FieldCondition {
         FieldCondition::new_match(JsonPath::new("text"), Match::new_text(text))
@@ -75,6 +60,10 @@ mod tests {
     #[case(true)]
     #[case(false)]
     fn test_full_text_indexing(#[case] immutable: bool) {
+        use common::types::PointOffsetType;
+
+        use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+
         let payloads: Vec<_> = vec![
             serde_json::json!("The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."),
             serde_json::json!("If nothing else, there was the mere fact of isolation and silence."),

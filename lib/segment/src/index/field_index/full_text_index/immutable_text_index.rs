@@ -1,8 +1,9 @@
-use common::types::PointOffsetType;
-
-use crate::{common::{operation_error::OperationResult, rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper}, data_types::index::TextIndexParams};
-
-use super::{immutable_inverted_index::ImmutableInvertedIndex, inverted_index::ParsedQuery};
+use super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::mutable_inverted_index::MutableInvertedIndex;
+use super::text_index::FullTextIndex;
+use crate::common::operation_error::OperationResult;
+use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
+use crate::data_types::index::TextIndexParams;
 
 pub struct ImmutableFullTextIndex {
     pub(super) inverted_index: ImmutableInvertedIndex,
@@ -18,20 +19,27 @@ impl ImmutableFullTextIndex {
             config,
         }
     }
-    
+
     pub fn init(&self) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inverted_index.values_count(point_id)
-    }
+    pub fn load_from_db(&mut self) -> OperationResult<bool> {
+        if !self.db_wrapper.has_column_family()? {
+            return Ok(false);
+        };
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inverted_index.values_is_empty(point_id)
-    }
+        let db = self.db_wrapper.lock_db();
+        let iter = db.iter()?.map(|(key, value)| {
+            let idx = FullTextIndex::restore_key(&key);
+            let tokens = FullTextIndex::deserialize_document(&value)?;
+            Ok((idx, tokens))
+        });
 
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
-        self.inverted_index.check_match(parsed_query, point_id)
+        let mutable = MutableInvertedIndex::build_index(iter)?;
+
+        self.inverted_index = ImmutableInvertedIndex::from(mutable);
+
+        Ok(true)
     }
 }

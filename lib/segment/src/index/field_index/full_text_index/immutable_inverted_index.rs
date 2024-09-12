@@ -2,13 +2,12 @@ use std::collections::HashMap;
 
 use common::types::PointOffsetType;
 
+use super::inverted_index::InvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
-
-use super::inverted_index::InvertedIndex;
 
 #[cfg_attr(test, derive(Clone))]
 #[derive(Default)]
@@ -116,7 +115,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token(&self, token: &str) -> Option<TokenId> {
+    fn get_token_id(&self, token: &str) -> Option<TokenId> {
         self.vocab.get(token).copied()
     }
 }

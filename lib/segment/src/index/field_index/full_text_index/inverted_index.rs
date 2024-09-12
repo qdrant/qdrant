@@ -3,9 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
-use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
@@ -170,21 +168,6 @@ pub trait InvertedIndex {
             .filter_map(map_filter_condition)
     }
 
-    fn build_index(
-        &mut self,
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-    ) -> OperationResult<()>
-    where
-        Self: Sized + From<MutableInvertedIndex>,
-    {
-        let mut mutable = MutableInvertedIndex::default();
-        mutable.build_index(iter)?;
-
-        *self = Self::from(mutable);
-
-        Ok(())
-    }
-
     fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
@@ -193,7 +176,7 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
-    fn get_token(&self, token: &str) -> Option<TokenId>;
+    fn get_token_id(&self, token: &str) -> Option<TokenId>;
 }
 
 #[cfg(test)]
@@ -235,7 +218,7 @@ mod tests {
     }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
-        let mut index = InvertedIndex::Mutable(MutableInvertedIndex::default());
+        let mut index = MutableInvertedIndex::default();
 
         for idx in 0..indexed_count {
             // Generate 10 tot 30-word documents
@@ -251,10 +234,6 @@ mod tests {
         for idx in &points_to_delete[..deleted_count as usize] {
             index.remove_document(*idx);
         }
-
-        let InvertedIndex::Mutable(index) = index else {
-            panic!("Expected mutable index");
-        };
 
         index
     }
