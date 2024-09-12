@@ -1243,6 +1243,7 @@ dependencies = [
  "rand 0.8.5",
  "semver",
  "serde",
+ "tar",
  "tempfile",
  "thiserror",
  "thread-priority",

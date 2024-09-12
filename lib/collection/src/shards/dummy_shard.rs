@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -34,7 +35,7 @@ impl DummyShard {
     pub async fn create_snapshot(
         &self,
         _temp_path: &Path,
-        _target_path: &Path,
+        _tar: &tar_ext::BuilderExt,
         _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()

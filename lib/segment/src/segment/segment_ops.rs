@@ -424,6 +424,9 @@ impl Segment {
         payload_index.infer_payload_type(key)
     }
 
+    /// Unpacks segment snapshot archive.
+    /// A call `restore_snapshot("foo/bar/baz/snapshot.tar", "segment-id")`
+    /// will result in a directory `foo/bar/baz/segment-id/`.
     pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
 

@@ -8,6 +8,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use common::iterator_ext::IteratorExt;
+use common::tar_ext;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
@@ -799,10 +800,10 @@ impl<'s> SegmentHolder {
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
         payload_index_schema: &PayloadIndexSchema,
-        f: F,
+        mut f: F,
     ) -> OperationResult<()>
     where
-        F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
+        F: FnMut(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
     {
         let segments_lock = segments.upgradable_read();
 
@@ -1153,10 +1154,12 @@ impl<'s> SegmentHolder {
         collection_params: Option<&CollectionParams>,
         payload_index_schema: &PayloadIndexSchema,
         temp_dir: &Path,
-        snapshot_dir_path: &Path,
+        tar: &tar_ext::BuilderExt,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
+
+        let mut snapshotted_segments = HashSet::<String>::new();
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
@@ -1164,7 +1167,7 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
+                read_segment.take_snapshot(temp_dir, tar, &mut snapshotted_segments)?;
                 Ok(())
             },
         )
@@ -1285,7 +1288,7 @@ impl<'s> SegmentHolder {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::read_dir;
+    use std::fs::File;
     use std::str::FromStr;
 
     use segment::data_types::vectors::Vector;
@@ -1622,14 +1625,15 @@ mod tests {
 
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-        let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
+        let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+        let tar = tar_ext::BuilderExt::new(File::create(&snapshot_file).unwrap());
         SegmentHolder::snapshot_all_segments(
             holder.clone(),
             segments_dir.path(),
             None,
             &PayloadIndexSchema::default(),
             temp_dir.path(),
-            snapshot_dir.path(),
+            &tar,
         )
         .unwrap();
 
@@ -1644,7 +1648,8 @@ mod tests {
             "segment holder IDs before and after snapshotting must be equal",
         );
 
-        let archive_count = read_dir(&snapshot_dir).unwrap().count();
+        let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+        let archive_count = tar.entries_with_seek().unwrap().count();
         // one archive produced per concrete segment in the SegmentHolder
         assert_eq!(archive_count, 2);
     }
