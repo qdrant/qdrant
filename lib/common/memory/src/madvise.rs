@@ -1,14 +1,11 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
-#[cfg(not(target_os = "linux"))]
 use std::hint::black_box;
 use std::io;
+use std::num::Wrapping;
 
 use serde::Deserialize;
-
-#[cfg(not(target_os = "linux"))]
-const PAGE_SIZE: usize = 4096;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
 /// used by all memmaps created by the `segment` crate.
@@ -117,19 +114,10 @@ impl Madviseable for memmap2::Mmap {
 
     fn populate(&self) -> io::Result<()> {
         #[cfg(target_os = "linux")]
-        self.advise(memmap2::Advice::PopulateRead)?;
-        #[cfg(not(target_os = "linux"))]
-        {
-            // On non-Unix platforms, we just iterate over the memory to populate it.
-            // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
-            let mut dst = [0; PAGE_SIZE * 2];
-
-            for chunk in self.chunks(dst.len()) {
-                dst[..chunk.len()].copy_from_slice(chunk);
-            }
-
-            black_box(dst);
+        if *POPULATE_READ_IS_SUPPORTED {
+            return self.advise(memmap2::Advice::PopulateRead);
         }
+        populate_simple(self);
         Ok(())
     }
 }
@@ -145,19 +133,29 @@ impl Madviseable for memmap2::MmapMut {
 
     fn populate(&self) -> io::Result<()> {
         #[cfg(target_os = "linux")]
-        self.advise(memmap2::Advice::PopulateRead)?;
-        #[cfg(not(target_os = "linux"))]
-        {
-            // On non-Unix platforms, we just iterate over the memory to populate it.
-            // This is not as efficient as `madvise(2)` with `PopulateRead` but it's better than nothing.
-            let mut dst = [0; PAGE_SIZE * 2];
-
-            for chunk in self.chunks(dst.len()) {
-                dst[..chunk.len()].copy_from_slice(chunk);
-            }
-
-            black_box(dst);
+        if *POPULATE_READ_IS_SUPPORTED {
+            return self.advise(memmap2::Advice::PopulateRead);
         }
+        populate_simple(self);
         Ok(())
     }
+}
+
+/// True if `MADV_POPULATE_READ` is supported (added in Linux 5.14).
+#[cfg(target_os = "linux")]
+static POPULATE_READ_IS_SUPPORTED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| memmap2::Advice::PopulateRead.is_supported());
+
+/// On older Linuxes and non-Unix platforms, we just read every 512th byte to
+/// populate the page cache. This is not as efficient as `madvise(2)` with
+/// `MADV_POPULATE_READ` but it's better than nothing.
+fn populate_simple(slice: &[u8]) {
+    black_box(
+        slice
+            .iter()
+            .copied()
+            .map(Wrapping)
+            .step_by(512)
+            .sum::<Wrapping<u8>>(),
+    );
 }
