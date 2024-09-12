@@ -516,6 +516,8 @@ fn create_segment(
             vector_name,
         )?));
 
+        log::warn!("open_vector_storage: {:?}", start_time.elapsed());
+
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();
         let vector_count = vector_storage.borrow().total_vector_count();
@@ -531,6 +533,7 @@ fn create_segment(
             if QuantizedVectors::config_exists(&quantized_data_path) {
                 let quantized_vectors =
                     QuantizedVectors::load(&vector_storage.borrow(), &quantized_data_path)?;
+                log::warn!("QuantizedVectors::load: {:?}", start_time.elapsed());
                 Some(quantized_vectors)
             } else {
                 None
@@ -549,6 +552,8 @@ fn create_segment(
             None,
             stopped,
         )?);
+
+        log::warn!("create_vector_index: {:?}", start_time.elapsed());
 
         check_process_stopped(stopped)?;
 
