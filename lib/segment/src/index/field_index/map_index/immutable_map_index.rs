@@ -156,6 +156,8 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         // To avoid code duplication, use `MutableMapIndex` to load data from db
         // and convert to immutable state
 
+        let start_time = std::time::Instant::now();
+
         let mut mutable = MutableMapIndex::<N> {
             map: Default::default(),
             point_to_values: Vec::new(),
@@ -164,6 +166,14 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             db_wrapper: self.db_wrapper.clone(),
         };
         let result = mutable.load_from_db()?;
+
+        log::warn!(
+            "Loaded keyword map index from db in {}ms",
+            start_time.elapsed().as_millis()
+        );
+
+        let start_time = std::time::Instant::now();
+
         let MutableMapIndex::<N> {
             map,
             point_to_values,
@@ -187,6 +197,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         }
 
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
+
+        log::warn!(
+            "Converted mutable to immutable db in {}ms",
+            start_time.elapsed().as_millis()
+        );
 
         Ok(result)
     }
