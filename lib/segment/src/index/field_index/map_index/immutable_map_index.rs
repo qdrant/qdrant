@@ -17,6 +17,8 @@ use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues
 
 pub struct ImmutableMapIndex<N: MapIndexKey + ?Sized> {
     value_to_points: HashMap<N::Owned, Range<u32>>,
+    /// Container holding a slice of point IDs per value. `value_to_point` holds the range per value.
+    /// Each slice MUST be sorted so that we can binary search over it.
     value_to_points_container: Vec<PointOffsetType>,
     point_to_values: ImmutablePointToValues<N::Owned>,
     /// Amount of point which have at least one indexed payload value
@@ -44,7 +46,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
 
     /// Return mutable slice of a container which holds point_ids for given value.
     fn get_mut_point_ids_slice<'a>(
-        value_to_points: &mut HashMap<N::Owned, Range<u32>>,
+        value_to_points: &HashMap<N::Owned, Range<u32>>,
         value_to_points_container: &'a mut [PointOffsetType],
         value: &N,
     ) -> Option<&'a mut [PointOffsetType]> {
@@ -109,8 +111,9 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         };
 
         // Finds the index of `idx` in values-to-points map and swaps it with the last element.
-        // So that removed element is out of the shrank range.
-        if let Some(pos) = values.iter().position(|&x| x == idx) {
+        // So that removed element is out of the shrunk range.
+        // The slice of values is sorted so we can use binary search.
+        if let Ok(pos) = values.binary_search(&idx) {
             // remove `idx` from values-to-points map by swapping it with the last element
             values.swap(pos, values.len() - 1);
         }
@@ -184,6 +187,18 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             let range = container_len..container_len + points.len() as u32;
             self.value_to_points.insert(value, range.clone());
             self.value_to_points_container.extend(points);
+        }
+
+        // Sort IDs in each slice of points
+        // This is very important because we binary search
+        for value in self.value_to_points.keys() {
+            if let Some(slice) = Self::get_mut_point_ids_slice(
+                &self.value_to_points,
+                &mut self.value_to_points_container,
+                value.borrow(),
+            ) {
+                slice.sort_unstable();
+            }
         }
 
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
