@@ -318,7 +318,7 @@ impl LocalShard {
             segment_holder.add_new(segment);
         }
 
-        let res = segment_holder.deduplicate_points()?;
+        let res = segment_holder.deduplicate_points().await?;
         if res > 0 {
             log::debug!("Deduplicated {} points", res);
         }
