@@ -1,16 +1,17 @@
 mod resharding;
 
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::tar_ext::BuilderExt;
 use futures::Future;
 use itertools::Itertools;
 use segment::types::ShardKey;
-use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, RwLock};
 
@@ -94,9 +95,13 @@ impl ShardHolder {
         })
     }
 
-    pub fn save_key_mapping_to_dir(&self, dir: &Path) -> CollectionResult<()> {
-        let path = dir.join(SHARD_KEY_MAPPING_FILE);
-        self.key_mapping.save_to(path)?;
+    pub async fn save_key_mapping_to_tar(
+        &self,
+        tar: &common::tar_ext::BuilderExt,
+    ) -> CollectionResult<()> {
+        self.key_mapping
+            .save_to_tar(tar, Path::new(SHARD_KEY_MAPPING_FILE))
+            .await?;
         Ok(())
     }
 
@@ -832,7 +837,7 @@ impl ShardHolder {
         shard_id: ShardId,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        // - `snapshot_temp_dir`, `snapshot_target_dir` and `temp_file` are handled by `tempfile`
+        // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is cancelled
 
         let shard = self
@@ -854,12 +859,15 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
 
-        let snapshot_target_dir = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-target-"))
-            .tempdir_in(temp_dir)?;
+        let temp_file = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_file_name}-"))
+            .suffix(".tar")
+            .tempfile_in(temp_dir)?;
+
+        let tar = BuilderExt::new(File::create(temp_file.path())?);
 
         shard
-            .create_snapshot(snapshot_temp_dir.path(), snapshot_target_dir.path(), false)
+            .create_snapshot(snapshot_temp_dir.path(), &tar, false)
             .await?;
 
         let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
@@ -870,45 +878,7 @@ impl ShardHolder {
             );
         }
 
-        let mut temp_file = tempfile::Builder::new()
-            .prefix(&format!("{snapshot_file_name}-"))
-            .tempfile_in(temp_dir)?;
-
-        let task = {
-            let snapshot_target_dir = snapshot_target_dir.path().to_path_buf();
-
-            cancel::blocking::spawn_cancel_on_drop(move |cancel| -> CollectionResult<_> {
-                let mut tar = TarBuilder::new(temp_file.as_file_mut());
-                tar.sparse(true);
-
-                if cancel.is_cancelled() {
-                    return Err(cancel::Error::Cancelled.into());
-                }
-
-                tar.append_dir_all(".", &snapshot_target_dir)?;
-
-                if cancel.is_cancelled() {
-                    return Err(cancel::Error::Cancelled.into());
-                }
-
-                tar.finish()?;
-                drop(tar);
-
-                Ok(temp_file)
-            })
-        };
-
-        let task_result = task.await;
-
-        let snapshot_target_dir_path = snapshot_target_dir.path().to_path_buf();
-        if let Err(err) = snapshot_target_dir.close() {
-            log::error!(
-                "Failed to remove temporary directory {}: {err}",
-                snapshot_target_dir_path.display(),
-            );
-        }
-
-        let temp_file = task_result??;
+        tar.finish().await?;
 
         let snapshot_path =
             Self::shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;

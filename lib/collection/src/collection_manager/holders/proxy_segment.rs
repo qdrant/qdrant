@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
@@ -1069,29 +1070,25 @@ impl SegmentEntry for ProxySegment {
     fn take_snapshot(
         &self,
         temp_path: &Path,
-        snapshot_dir_path: &Path,
-    ) -> OperationResult<PathBuf> {
-        log::info!(
-            "Taking a snapshot of a proxy segment into {:?}",
-            snapshot_dir_path
-        );
+        tar: &tar_ext::BuilderExt,
+        snapshotted_segments: &mut HashSet<String>,
+    ) -> OperationResult<()> {
+        log::info!("Taking a snapshot of a proxy segment");
 
-        let archive_path = {
-            let wrapped_segment_arc = self.wrapped_segment.get();
-            let wrapped_segment_guard = wrapped_segment_arc.read();
-
-            // snapshot wrapped segment data into the temporary dir
-            wrapped_segment_guard.take_snapshot(temp_path, snapshot_dir_path)?
-        };
+        // snapshot wrapped segment data into the temporary dir
+        self.wrapped_segment
+            .get()
+            .read()
+            .take_snapshot(temp_path, tar, snapshotted_segments)?;
 
         // snapshot write_segment
-        let write_segment_rw = self.write_segment.get();
-        let write_segment_guard = write_segment_rw.read();
-
         // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
-        write_segment_guard.take_snapshot(temp_path, snapshot_dir_path)?;
+        self.write_segment
+            .get()
+            .read()
+            .take_snapshot(temp_path, tar, snapshotted_segments)?;
 
-        Ok(archive_path)
+        Ok(())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
@@ -1109,7 +1106,7 @@ impl SegmentEntry for ProxySegment {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::read_dir;
+    use std::fs::File;
 
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::types::{FieldCondition, PayloadSchemaType};
@@ -1561,26 +1558,30 @@ mod tests {
             .upsert_point(201, 11.into(), only_default_vector(&vec6))
             .unwrap();
 
-        let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
-        eprintln!("Snapshot into {:?}", snapshot_dir.path());
-
+        let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
+        eprintln!("Snapshot into {:?}", snapshot_file.path());
+        let tar = tar_ext::BuilderExt::new(File::create(&snapshot_file).unwrap());
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
-
+        let mut snapshotted_segments = HashSet::new();
         proxy_segment
-            .take_snapshot(temp_dir.path(), snapshot_dir.path())
+            .take_snapshot(temp_dir.path(), &tar, &mut snapshotted_segments)
             .unwrap();
         proxy_segment2
-            .take_snapshot(temp_dir2.path(), snapshot_dir.path())
+            .take_snapshot(temp_dir2.path(), &tar, &mut snapshotted_segments)
             .unwrap();
+        tar.blocking_finish().unwrap();
 
         // validate that 3 archives were created:
         // wrapped_segment1, wrapped_segment2 & shared write_segment
-        let archive_count = read_dir(&snapshot_dir).unwrap().count();
+        let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+        let archive_count = tar.entries_with_seek().unwrap().count();
         assert_eq!(archive_count, 3);
+        assert_eq!(snapshotted_segments.len(), 3);
 
-        for archive in read_dir(&snapshot_dir).unwrap() {
-            let archive_path = archive.unwrap().path();
+        let mut tar = tar::Archive::new(File::open(&snapshot_file).unwrap());
+        for entry in tar.entries_with_seek().unwrap() {
+            let archive_path = entry.unwrap().path().unwrap().into_owned();
             let archive_extension = archive_path.extension().unwrap();
             // correct file extension
             assert_eq!(archive_extension, "tar");

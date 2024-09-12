@@ -168,6 +168,10 @@ pub struct CollectionConfig {
 }
 
 impl CollectionConfig {
+    pub fn to_bytes(&self) -> CollectionResult<Vec<u8>> {
+        serde_json::to_vec(self).map_err(|err| CollectionError::service_error(err.to_string()))
+    }
+
     pub fn save(&self, path: &Path) -> CollectionResult<()> {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         let af = AtomicFile::new(&config_path, AllowOverwrite);

@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::tar_ext;
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
@@ -268,8 +269,13 @@ pub trait SegmentEntry {
     ///
     /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
     /// Uses `temp_path` to prepare files to archive.
-    fn take_snapshot(&self, temp_path: &Path, snapshot_dir_path: &Path)
-        -> OperationResult<PathBuf>;
+    /// The `snapshotted_segments` set is used to avoid writing the same snapshot twice.
+    fn take_snapshot(
+        &self,
+        temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        snapshotted_segments: &mut HashSet<String>,
+    ) -> OperationResult<()>;
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;

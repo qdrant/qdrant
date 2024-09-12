@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::tar_ext;
 use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 
@@ -44,5 +45,13 @@ impl ShardConfig {
     pub fn save(&self, shard_path: &Path) -> CollectionResult<()> {
         let config_path = Self::get_config_path(shard_path);
         Ok(atomic_save_json(&config_path, self)?)
+    }
+
+    pub async fn save_to_tar(&self, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
+        tar.write_fn(Path::new(SHARD_CONFIG_FILE), |writer| {
+            serde_json::to_writer(writer, self)?;
+            Ok(())
+        })
+        .await
     }
 }

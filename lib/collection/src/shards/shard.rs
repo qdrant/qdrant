@@ -2,6 +2,7 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use common::tar_ext;
 use common::types::TelemetryDetail;
 
 use super::local_shard::clock_map::RecoveryPoint;
@@ -84,34 +85,24 @@ impl Shard {
     pub async fn create_snapshot(
         &self,
         temp_path: &Path,
-        target_path: &Path,
+        tar: &tar_ext::BuilderExt,
         save_wal: bool,
     ) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => {
-                local_shard
-                    .create_snapshot(temp_path, target_path, save_wal)
-                    .await
+                local_shard.create_snapshot(temp_path, tar, save_wal).await
             }
             Shard::Proxy(proxy_shard) => {
-                proxy_shard
-                    .create_snapshot(temp_path, target_path, save_wal)
-                    .await
+                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
             }
             Shard::ForwardProxy(proxy_shard) => {
-                proxy_shard
-                    .create_snapshot(temp_path, target_path, save_wal)
-                    .await
+                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
             }
             Shard::QueueProxy(proxy_shard) => {
-                proxy_shard
-                    .create_snapshot(temp_path, target_path, save_wal)
-                    .await
+                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
             }
             Shard::Dummy(dummy_shard) => {
-                dummy_shard
-                    .create_snapshot(temp_path, target_path, save_wal)
-                    .await
+                dummy_shard.create_snapshot(temp_path, tar, save_wal).await
             }
         }
     }
