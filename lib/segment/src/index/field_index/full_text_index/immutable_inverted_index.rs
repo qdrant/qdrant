@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use common::types::PointOffsetType;
 
+use super::inverted_index::InvertedIndex;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
@@ -16,8 +18,22 @@ pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) points_count: usize,
 }
 
-impl ImmutableInvertedIndex {
-    pub fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+impl InvertedIndex for ImmutableInvertedIndex {
+    fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
+        &mut self.vocab
+    }
+
+    fn index_document(
+        &mut self,
+        _idx: PointOffsetType,
+        _document: super::inverted_index::Document,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "Can't add values to immutable text index",
+        ))
+    }
+
+    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
         if self.values_is_empty(idx) {
             return false; // Already removed or never actually existed
         }
@@ -26,7 +42,7 @@ impl ImmutableInvertedIndex {
         true
     }
 
-    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
@@ -53,21 +69,19 @@ impl ImmutableInvertedIndex {
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        if self.point_to_tokens_count.len() <= point_id as usize {
-            return true;
-        }
-        self.point_to_tokens_count[point_id as usize].is_none()
+    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
+        self.postings.get(token_id as usize).map(|p| p.len())
     }
 
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        if self.point_to_tokens_count.len() <= point_id as usize {
-            return 0;
-        }
-        self.point_to_tokens_count[point_id as usize].unwrap_or(0)
+    fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+        self.vocab.iter().filter_map(|(token, &posting_idx)| {
+            self.postings
+                .get(posting_idx as usize)
+                .map(|posting| (token.as_str(), posting.len()))
+        })
     }
 
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
         if parsed_query.tokens.contains(&None) {
             return false;
         }
@@ -83,12 +97,25 @@ impl ImmutableInvertedIndex {
             .all(|query_token| self.postings[query_token.unwrap() as usize].contains(&point_id))
     }
 
-    pub fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
-        self.vocab.iter().filter_map(|(token, &posting_idx)| {
-            self.postings
-                .get(posting_idx as usize)
-                .map(|posting| (token.as_str(), posting.len()))
-        })
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        self.point_to_tokens_count
+            .get(point_id as usize)
+            .map_or(true, |count| count.is_none())
+    }
+
+    fn values_count(&self, point_id: PointOffsetType) -> usize {
+        self.point_to_tokens_count
+            .get(point_id as usize)
+            .and_then(|&count| count)
+            .unwrap_or(0)
+    }
+
+    fn points_count(&self) -> usize {
+        self.points_count
+    }
+
+    fn get_token_id(&self, token: &str) -> Option<TokenId> {
+        self.vocab.get(token).copied()
     }
 }
 

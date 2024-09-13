@@ -3,9 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
-use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
@@ -57,32 +55,11 @@ impl ParsedQuery {
     }
 }
 
-pub enum InvertedIndex {
-    Mutable(MutableInvertedIndex),
-    Immutable(ImmutableInvertedIndex),
-}
+pub trait InvertedIndex {
+    fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId>;
 
-impl InvertedIndex {
-    pub fn new(is_appendable: bool) -> InvertedIndex {
-        if is_appendable {
-            InvertedIndex::Mutable(MutableInvertedIndex::default())
-        } else {
-            InvertedIndex::Immutable(ImmutableInvertedIndex::default())
-        }
-    }
-
-    pub fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
-        let vocab = match self {
-            InvertedIndex::Mutable(index) => &mut index.vocab,
-            InvertedIndex::Immutable(index) => &mut index.vocab,
-        };
-        Self::document_from_tokens_impl(vocab, tokens)
-    }
-
-    pub fn document_from_tokens_impl(
-        vocab: &mut HashMap<String, TokenId>,
-        tokens: &BTreeSet<String>,
-    ) -> Document {
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+        let vocab = self.get_vocab_mut();
         let mut document_tokens = vec![];
         for token in tokens {
             // check if in vocab
@@ -100,60 +77,27 @@ impl InvertedIndex {
         Document::new(document_tokens)
     }
 
-    pub fn index_document(
-        &mut self,
-        idx: PointOffsetType,
-        document: Document,
-    ) -> OperationResult<()> {
-        match self {
-            InvertedIndex::Mutable(index) => {
-                index.index_document(idx, document);
-                Ok(())
-            }
-            InvertedIndex::Immutable(_index) => Err(OperationError::service_error(
-                "Can't add values to immutable text index",
-            )),
-        }
-    }
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
 
-    pub fn remove_document(&mut self, idx: PointOffsetType) -> bool {
-        match self {
-            InvertedIndex::Mutable(index) => index.remove_document(idx),
-            InvertedIndex::Immutable(index) => index.remove_document(idx),
-        }
-    }
+    fn remove_document(&mut self, idx: PointOffsetType) -> bool;
 
-    pub fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        match self {
-            InvertedIndex::Mutable(index) => index.filter(query),
-            InvertedIndex::Immutable(index) => index.filter(query),
-        }
-    }
+    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
-    pub fn estimate_cardinality(
+    fn get_posting_len(&self, token_id: TokenId) -> Option<usize>;
+
+    fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
     ) -> CardinalityEstimation {
-        let points_count = match self {
-            InvertedIndex::Mutable(index) => index.points_count,
-            InvertedIndex::Immutable(index) => index.points_count,
-        };
+        let points_count = self.points_count();
+
         let posting_lengths: Option<Vec<usize>> = query
             .tokens
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
-                // unwrap safety: same as in filter()
-                Some(idx) => match &self {
-                    Self::Mutable(index) => index
-                        .postings
-                        .get(idx as usize)
-                        .unwrap()
-                        .as_ref()
-                        .map(|p| p.len()),
-                    Self::Immutable(index) => index.postings.get(idx as usize).map(|p| p.len()),
-                },
+                Some(idx) => self.get_posting_len(idx),
             })
             .collect();
         if posting_lengths.is_none() || points_count == 0 {
@@ -200,11 +144,13 @@ impl InvertedIndex {
         };
     }
 
-    pub fn payload_blocks(
+    fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_;
+
+    fn payload_blocks(
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+    ) -> impl Iterator<Item = PayloadBlockCondition> + '_ {
         let map_filter_condition = move |(token, postings_len): (&str, usize)| {
             if postings_len >= threshold {
                 Some(PayloadBlockCondition {
@@ -218,73 +164,19 @@ impl InvertedIndex {
 
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        match &self {
-            InvertedIndex::Mutable(index) => Box::new(
-                index
-                    .vocab_with_postings_len_iter()
-                    .filter_map(map_filter_condition),
-            ),
-            InvertedIndex::Immutable(index) => Box::new(
-                index
-                    .vocab_with_postings_len_iter()
-                    .filter_map(map_filter_condition),
-            ),
-        }
+        self.vocab_with_postings_len_iter()
+            .filter_map(map_filter_condition)
     }
 
-    pub fn build_index(
-        &mut self,
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-    ) -> OperationResult<()> {
-        let mut index = MutableInvertedIndex::default();
-        index.build_index(iter)?;
+    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool;
 
-        match self {
-            InvertedIndex::Mutable(i) => {
-                *i = index;
-            }
-            InvertedIndex::Immutable(i) => {
-                *i = index.into();
-            }
-        }
+    fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
-        Ok(())
-    }
+    fn values_count(&self, point_id: PointOffsetType) -> usize;
 
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
-        match self {
-            InvertedIndex::Mutable(index) => index.check_match(parsed_query, point_id),
-            InvertedIndex::Immutable(index) => index.check_match(parsed_query, point_id),
-        }
-    }
+    fn points_count(&self) -> usize;
 
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        match self {
-            InvertedIndex::Mutable(index) => index.values_is_empty(point_id),
-            InvertedIndex::Immutable(index) => index.values_is_empty(point_id),
-        }
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        match self {
-            InvertedIndex::Mutable(index) => index.values_count(point_id),
-            InvertedIndex::Immutable(index) => index.values_count(point_id),
-        }
-    }
-
-    pub fn points_count(&self) -> usize {
-        match self {
-            InvertedIndex::Mutable(index) => index.points_count,
-            InvertedIndex::Immutable(index) => index.points_count,
-        }
-    }
-
-    pub fn get_token(&self, token: &str) -> Option<TokenId> {
-        match self {
-            InvertedIndex::Mutable(index) => index.vocab.get(token).copied(),
-            InvertedIndex::Immutable(index) => index.vocab.get(token).copied(),
-        }
-    }
+    fn get_token_id(&self, token: &str) -> Option<TokenId>;
 }
 
 #[cfg(test)]
@@ -326,7 +218,7 @@ mod tests {
     }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
-        let mut index = InvertedIndex::Mutable(MutableInvertedIndex::default());
+        let mut index = MutableInvertedIndex::default();
 
         for idx in 0..indexed_count {
             // Generate 10 tot 30-word documents
@@ -342,10 +234,6 @@ mod tests {
         for idx in &points_to_delete[..deleted_count as usize] {
             index.remove_document(*idx);
         }
-
-        let InvertedIndex::Mutable(index) = index else {
-            panic!("Expected mutable index");
-        };
 
         index
     }
