@@ -1194,7 +1194,7 @@ impl<'s> SegmentHolder {
     pub async fn deduplicate_points(&self) -> OperationResult<usize> {
         let points_to_remove = self.find_duplicated_points();
 
-        // Create (blocking) task per segment for points to delete so we can paralellize
+        // Create (blocking) task per segment for points to delete so we can parallelize
         let tasks = points_to_remove
             .into_iter()
             .map(|(segment_id, points)| {
