@@ -176,6 +176,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         self.values_count = values_count;
         self.value_to_points.clear();
         self.value_to_points_container.clear();
+        self.value_to_points_container.reserve_exact(values_count);
 
         // flatten values-to-points map
         for (value, points) in map {
@@ -185,6 +186,8 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             self.value_to_points.insert(value, range.clone());
             self.value_to_points_container.extend(points);
         }
+
+        self.value_to_points.shrink_to_fit();
 
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
