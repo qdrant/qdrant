@@ -147,8 +147,7 @@ impl InvertedIndex for MutableInvertedIndex {
     fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
         self.postings
             .get(token_id as usize)
-            // unwrap safety: token_id is a valid index. Same case as in `filter` method.
-            .unwrap()
+            .and_then(|posting| posting.as_ref())
             .as_ref()
             .map(|x| x.len())
     }

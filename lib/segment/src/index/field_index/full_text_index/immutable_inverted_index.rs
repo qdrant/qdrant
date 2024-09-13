@@ -98,17 +98,16 @@ impl InvertedIndex for ImmutableInvertedIndex {
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        if self.point_to_tokens_count.len() <= point_id as usize {
-            return true;
-        }
-        self.point_to_tokens_count[point_id as usize].is_none()
+        self.point_to_tokens_count
+            .get(point_id as usize)
+            .map_or(true, |count| count.is_none())
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
-        if self.point_to_tokens_count.len() <= point_id as usize {
-            return 0;
-        }
-        self.point_to_tokens_count[point_id as usize].unwrap_or(0)
+        self.point_to_tokens_count
+            .get(point_id as usize)
+            .and_then(|&count| count)
+            .unwrap_or(0)
     }
 
     fn points_count(&self) -> usize {
