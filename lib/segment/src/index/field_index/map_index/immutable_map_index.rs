@@ -186,6 +186,10 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             self.value_to_points_container.extend(points);
         }
 
+        // Shrink vectors because we won't be adding any new points or values
+        self.value_to_points.shrink_to_fit();
+        self.value_to_points_container.shrink_to_fit();
+
         self.point_to_values = ImmutablePointToValues::new(point_to_values);
 
         Ok(result)
