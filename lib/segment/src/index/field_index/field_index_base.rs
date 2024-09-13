@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::binary_index::BinaryIndexBuilder;
 use super::facet_index::FacetIndex;
-use super::full_text_index::text_index::FullTextIndexBuilder;
+use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
@@ -16,7 +16,6 @@ use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::binary_index::BinaryIndex;
-use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};

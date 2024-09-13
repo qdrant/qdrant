@@ -8,15 +8,15 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::immutable_text_index::ImmutableFullTextIndex;
+use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
+use super::mutable_text_index::MutableFullTextIndex;
+use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::index::TextIndexParams;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, InvertedIndex, ParsedQuery,
-};
-use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     ValueIndexer,
@@ -24,18 +24,157 @@ use crate::index::field_index::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
-pub struct FullTextIndex {
-    inverted_index: InvertedIndex,
-    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-    config: TextIndexParams,
+pub enum FullTextIndex {
+    Mutable(MutableFullTextIndex),
+    Immutable(ImmutableFullTextIndex),
 }
 
 impl FullTextIndex {
+    pub fn new(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+        is_appendable: bool,
+    ) -> Self {
+        let store_cf_name = Self::storage_cf_name(field);
+        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
+            db,
+            &store_cf_name,
+        ));
+        if is_appendable {
+            Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
+        } else {
+            Self::Immutable(ImmutableFullTextIndex::new(db_wrapper, config))
+        }
+    }
+
+    pub fn init(&mut self) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.init(),
+            Self::Immutable(index) => index.init(),
+        }
+    }
+
+    pub fn builder(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+    ) -> FullTextIndexBuilder {
+        FullTextIndexBuilder(Self::new(db, config, field, true))
+    }
+
+    fn storage_cf_name(field: &str) -> String {
+        format!("{field}_fts")
+    }
+
+    fn points_count(&self) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.points_count(),
+            Self::Immutable(index) => index.inverted_index.points_count(),
+        }
+    }
+
+    fn get_token(&self, token: &str) -> Option<TokenId> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.get_token_id(token),
+            Self::Immutable(index) => index.inverted_index.get_token_id(token),
+        }
+    }
+
+    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+        match self {
+            Self::Mutable(index) => index.inverted_index.document_from_tokens(tokens),
+            Self::Immutable(index) => index.inverted_index.document_from_tokens(tokens),
+        }
+    }
+
+    fn index_document(
+        &mut self,
+        point_id: PointOffsetType,
+        document: Document,
+    ) -> OperationResult<()> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.index_document(point_id, document),
+            Self::Immutable(index) => index.inverted_index.index_document(point_id, document),
+        }
+    }
+
+    fn remove_document(&mut self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.remove_document(point_id),
+            Self::Immutable(index) => index.inverted_index.remove_document(point_id),
+        }
+    }
+
+    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        match self {
+            Self::Mutable(index) => index.inverted_index.filter(query),
+            Self::Immutable(index) => index.inverted_index.filter(query),
+        }
+    }
+
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        match self {
+            Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+        }
+    }
+
+    fn estimate_cardinality(
+        &self,
+        query: &ParsedQuery,
+        condition: &FieldCondition,
+    ) -> CardinalityEstimation {
+        match self {
+            Self::Mutable(index) => index.inverted_index.estimate_cardinality(query, condition),
+            Self::Immutable(index) => index.inverted_index.estimate_cardinality(query, condition),
+        }
+    }
+
+    pub fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_count(point_id),
+            Self::Immutable(index) => index.inverted_index.values_count(point_id),
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
+        }
+    }
+
+    fn config(&self) -> &TextIndexParams {
+        match self {
+            Self::Mutable(index) => &index.config,
+            Self::Immutable(index) => &index.config,
+        }
+    }
+
+    fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+        match self {
+            Self::Mutable(index) => &index.db_wrapper,
+            Self::Immutable(index) => &index.db_wrapper,
+        }
+    }
+
     fn store_key(id: &PointOffsetType) -> Vec<u8> {
         bincode::serialize(&id).unwrap()
     }
 
-    fn restore_key(data: &[u8]) -> PointOffsetType {
+    pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
         bincode::deserialize(data).unwrap()
     }
 
@@ -50,7 +189,7 @@ impl FullTextIndex {
         })
     }
 
-    fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -62,49 +201,19 @@ impl FullTextIndex {
             .map(|doc| doc.tokens)
     }
 
-    fn storage_cf_name(field: &str) -> String {
-        format!("{field}_fts")
-    }
-
-    pub fn new(
-        db: Arc<RwLock<DB>>,
-        config: TextIndexParams,
-        field: &str,
-        is_appendable: bool,
-    ) -> Self {
-        let store_cf_name = Self::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
-            db,
-            &store_cf_name,
-        ));
-        FullTextIndex {
-            inverted_index: InvertedIndex::new(is_appendable),
-            db_wrapper,
-            config,
-        }
-    }
-
-    pub fn builder(
-        db: Arc<RwLock<DB>>,
-        config: TextIndexParams,
-        field: &str,
-    ) -> FullTextIndexBuilder {
-        FullTextIndexBuilder(Self::new(db, config, field, true))
-    }
-
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            points_values_count: self.inverted_index.points_count(),
-            points_count: self.inverted_index.points_count(),
+            points_values_count: self.points_count(),
+            points_count: self.points_count(),
             histogram_bucket_size: None,
         }
     }
 
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
-        Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.insert(self.inverted_index.get_token(token));
+        Tokenizer::tokenize_query(text, self.config(), |token| {
+            tokens.insert(self.get_token(token));
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
@@ -113,8 +222,8 @@ impl FullTextIndex {
 
     pub fn parse_document(&self, text: &str) -> Document {
         let mut document_tokens = vec![];
-        Tokenizer::tokenize_doc(text, &self.config, |token| {
-            if let Some(token_id) = self.inverted_index.get_token(token) {
+        Tokenizer::tokenize_doc(text, self.config(), |token| {
+            if let Some(token_id) = self.get_token(token) {
                 document_tokens.push(token_id);
             }
         });
@@ -124,19 +233,7 @@ impl FullTextIndex {
     #[cfg(test)]
     pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let parsed_query = self.parse_query(query);
-        self.inverted_index.filter(&parsed_query)
-    }
-
-    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
-        self.inverted_index.values_count(point_id)
-    }
-
-    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.inverted_index.values_is_empty(point_id)
-    }
-
-    pub fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
-        self.inverted_index.check_match(parsed_query, point_id)
+        self.filter(&parsed_query)
     }
 }
 
@@ -146,7 +243,7 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
     type FieldIndexType = FullTextIndex;
 
     fn init(&mut self) -> OperationResult<()> {
-        self.0.db_wrapper.recreate_column_family()
+        self.0.init()
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
@@ -169,18 +266,18 @@ impl ValueIndexer for FullTextIndex {
         let mut tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
-            Tokenizer::tokenize_doc(&value, &self.config, |token| {
+            Tokenizer::tokenize_doc(&value, self.config(), |token| {
                 tokens.insert(token.to_owned());
             });
         }
 
-        let document = self.inverted_index.document_from_tokens(&tokens);
-        self.inverted_index.index_document(idx, document)?;
+        let document = self.document_from_tokens(&tokens);
+        self.index_document(idx, document)?;
 
         let db_idx = Self::store_key(&idx);
         let db_document = Self::serialize_document_tokens(tokens)?;
 
-        self.db_wrapper.put(db_idx, db_document)?;
+        self.db_wrapper().put(db_idx, db_document)?;
 
         Ok(())
     }
@@ -193,9 +290,9 @@ impl ValueIndexer for FullTextIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index.remove_document(id) {
+        if self.remove_document(id) {
             let db_doc_id = Self::store_key(&id);
-            self.db_wrapper.remove(db_doc_id)?;
+            self.db_wrapper().remove(db_doc_id)?;
         }
         Ok(())
     }
@@ -203,31 +300,22 @@ impl ValueIndexer for FullTextIndex {
 
 impl PayloadFieldIndex for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count()
+        self.points_count()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
-            return Ok(false);
-        };
-
-        let db = self.db_wrapper.lock_db();
-        let i = db.iter()?.map(|(key, value)| {
-            let idx = Self::restore_key(&key);
-            let tokens = Self::deserialize_document(&value)?;
-            Ok((idx, tokens))
-        });
-        self.inverted_index.build_index(i)?;
-
-        Ok(true)
+        match self {
+            Self::Mutable(index) => index.load_from_db(),
+            Self::Immutable(index) => index.load_from_db(),
+        }
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.db_wrapper.remove_column_family()
+        self.db_wrapper().remove_column_family()
     }
 
     fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
+        self.db_wrapper().flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -240,7 +328,7 @@ impl PayloadFieldIndex for FullTextIndex {
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.inverted_index.filter(&parsed_query));
+            return Some(self.filter(&parsed_query));
         }
         None
     }
@@ -248,10 +336,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);
-            return Some(
-                self.inverted_index
-                    .estimate_cardinality(&parsed_query, condition),
-            );
+            return Some(self.estimate_cardinality(&parsed_query, condition));
         }
         None
     }
@@ -261,129 +346,6 @@ impl PayloadFieldIndex for FullTextIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
-        self.inverted_index.payload_blocks(threshold, key)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-    use tempfile::Builder;
-
-    use super::*;
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::data_types::index::{TextIndexType, TokenizerType};
-    use crate::json_path::JsonPath;
-
-    fn filter_request(text: &str) -> FieldCondition {
-        FieldCondition::new_match(JsonPath::new("text"), Match::new_text(text))
-    }
-
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    fn test_full_text_indexing(#[case] immutable: bool) {
-        let payloads: Vec<_> = vec![
-            serde_json::json!("The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."),
-            serde_json::json!("If nothing else, there was the mere fact of isolation and silence."),
-            serde_json::json!([
-                "For the first time in a decade, technicians were not scurrying about the vitals of the giant computer, ",
-                "the soft lights did not wink out their erratic patterns, the flow of information in and out had halted."
-            ]),
-            serde_json::json!("It would not be halted long, of course, for the needs of peace would be pressing."),
-            serde_json::json!("Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."),
-        ];
-
-        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
-        let config = TextIndexParams {
-            r#type: TextIndexType::Text,
-            tokenizer: TokenizerType::Word,
-            min_token_len: None,
-            max_token_len: None,
-            lowercase: None,
-        };
-
-        {
-            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-
-            let mut index = FullTextIndex::builder(db, config.clone(), "text")
-                .make_empty()
-                .unwrap();
-
-            for (idx, payload) in payloads.iter().enumerate() {
-                index.add_point(idx as PointOffsetType, &[payload]).unwrap();
-            }
-
-            assert_eq!(index.count_indexed_points(), payloads.len());
-
-            let filter_condition = filter_request("multivac");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0, 4]);
-
-            let filter_condition = filter_request("giant computer");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![2]);
-
-            let filter_condition = filter_request("the great time");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![4]);
-
-            index.remove_point(2).unwrap();
-            index.remove_point(3).unwrap();
-
-            let filter_condition = filter_request("giant computer");
-            assert!(index.filter(&filter_condition).unwrap().next().is_none());
-
-            assert_eq!(index.count_indexed_points(), payloads.len() - 2);
-
-            let payload = serde_json::json!([
-                "The last question was asked for the first time, half in jest, on May 21, 2061,",
-                "at a time when humanity first stepped into the light."
-            ]);
-            index.add_point(3, &[&payload]).unwrap();
-
-            let payload = serde_json::json!([
-                "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
-            ]);
-            index.add_point(4, &[&payload]).unwrap();
-
-            assert_eq!(index.count_indexed_points(), payloads.len() - 1);
-
-            index.flusher()().unwrap();
-        }
-
-        {
-            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new(db, config, "text", immutable);
-            let loaded = index.load().unwrap();
-            assert!(loaded);
-
-            assert_eq!(index.count_indexed_points(), 4);
-
-            let filter_condition = filter_request("multivac");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0]);
-
-            let filter_condition = filter_request("the");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![0, 1, 3, 4]);
-
-            // check deletion
-            index.remove_point(0).unwrap();
-            let filter_condition = filter_request("multivac");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert!(search_res.is_empty());
-            assert_eq!(index.count_indexed_points(), 3);
-
-            index.remove_point(3).unwrap();
-            let filter_condition = filter_request("the");
-            let search_res: Vec<_> = index.filter(&filter_condition).unwrap().collect();
-            assert_eq!(search_res, vec![1, 4]);
-            assert_eq!(index.count_indexed_points(), 2);
-
-            // check deletion of non-existing point
-            index.remove_point(3).unwrap();
-            assert_eq!(index.count_indexed_points(), 2);
-        }
+        self.payload_blocks(threshold, key)
     }
 }
