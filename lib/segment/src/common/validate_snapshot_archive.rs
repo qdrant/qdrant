@@ -47,6 +47,7 @@ pub fn open_snapshot_archive_with_validation(path: &Path) -> OperationResult<Arc
 
     let mut ar = Archive::new(archive_file);
     ar.set_overwrite(false);
+    ar.set_sync(true);
 
     Ok(ar)
 }
