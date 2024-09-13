@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
-use super::mmap_text_index::MmapFullTextIndex;
+use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -69,6 +69,10 @@ impl FullTextIndex {
         field: &str,
     ) -> FullTextIndexBuilder {
         FullTextIndexBuilder(Self::new(db, config, field, true))
+    }
+
+    pub fn builder_mmap(path: PathBuf, config: TextIndexParams) -> FullTextMmapIndexBuilder {
+        FullTextMmapIndexBuilder::new(path, config)
     }
 
     fn storage_cf_name(field: &str) -> String {

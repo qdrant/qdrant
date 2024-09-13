@@ -1228,11 +1228,7 @@ fn test_keyword_facet() {
         .facet(&request, &Default::default())
         .unwrap();
 
-    validate_facet_result(
-        &test_segments.mmap_segment,
-        facet_hits,
-        None,
-    );
+    validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
 
     // *** With filter ***
     let mut rng = rand::thread_rng();

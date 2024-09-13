@@ -120,6 +120,13 @@ impl MmapInvertedIndex {
         self.vocab.iter().map(|(k, v)| (k, v.first().unwrap()))
     }
 
+    /// Returns whether the point id is valid and active.
+    fn is_active(&self, point_id: PointOffsetType) -> bool {
+        let is_deleted = self.deleted_points.get(point_id as usize).unwrap_or(true);
+
+        !is_deleted
+    }
+
     pub fn files(&self) -> Vec<PathBuf> {
         vec![
             self.path.join(POSTINGS_FILE),
@@ -181,7 +188,7 @@ impl InvertedIndex for MmapInvertedIndex {
         }
 
         // in case of mmap immutable index, deleted points are still in the postings
-        let filter = move |idx| self.deleted_points.get(idx as usize).unwrap_or(true);
+        let filter = move |idx| self.is_active(idx);
 
         intersect_compressed_postings_iterator(posting_readers, filter)
     }

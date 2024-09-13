@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::fs::remove_dir;
+use std::fs::{create_dir_all, remove_dir};
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
@@ -66,6 +66,16 @@ pub struct FullTextMmapIndexBuilder {
     config: TextIndexParams,
 }
 
+impl FullTextMmapIndexBuilder {
+    pub fn new(path: PathBuf, config: TextIndexParams) -> Self {
+        Self {
+            path,
+            mutable_index: MutableInvertedIndex::default(),
+            config,
+        }
+    }
+}
+
 impl ValueIndexer for FullTextMmapIndexBuilder {
     type ValueType = String;
 
@@ -125,6 +135,8 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         } = self;
 
         let immutable = ImmutableInvertedIndex::from(mutable_index);
+
+        create_dir_all(path.as_path())?;
 
         MmapInvertedIndex::create(path.clone(), immutable)?;
 

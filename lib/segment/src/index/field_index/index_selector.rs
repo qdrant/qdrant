@@ -132,11 +132,7 @@ impl<'a> IndexSelector<'a> {
                 ))]
             }
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![FieldIndexBuilder::FullTextIndex(FullTextIndex::builder(
-                    self.as_rocksdb()?.db.clone(),
-                    text_index_params.clone(),
-                    &field.to_string(),
-                ))]
+                vec![self.text_builder(field, text_index_params.clone())]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![FieldIndexBuilder::BinaryIndex(BinaryIndex::builder(
@@ -235,6 +231,25 @@ impl<'a> IndexSelector<'a> {
                 FullTextIndex::new_mmap(text_dir(dir, field), config)?
             }
         })
+    }
+
+    fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
+        match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => FieldIndexBuilder::FullTextIndex(FullTextIndex::builder(
+                Arc::clone(db),
+                config,
+                &field.to_string(),
+            )),
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
+                    text_dir(dir, field),
+                    config,
+                ))
+            }
+        }
     }
 
     fn as_rocksdb(&self) -> OperationResult<&IndexSelectorRocksDb> {
