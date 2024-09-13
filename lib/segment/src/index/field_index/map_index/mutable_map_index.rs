@@ -103,17 +103,19 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
                 OperationError::service_error("Index load error: UTF8 error while DB parsing")
             })?;
             let (value, idx) = MapIndex::<N>::decode_db_record(record)?;
+
             if self.point_to_values.len() <= idx as usize {
                 self.point_to_values.resize_with(idx as usize + 1, Vec::new)
             }
-            if self.point_to_values[idx as usize].is_empty() {
+            let point_values = &mut self.point_to_values[idx as usize];
+
+            if point_values.is_empty() {
                 self.indexed_points += 1;
             }
             self.values_count += 1;
 
-            let entry = self.map.entry(value);
-            self.point_to_values[idx as usize].push(entry.key().clone());
-            entry.or_default().insert(idx);
+            point_values.push(value.clone());
+            self.map.entry(value).or_default().insert(idx);
         }
         Ok(true)
     }
