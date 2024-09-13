@@ -11,6 +11,7 @@ use common::cpu::CpuBudget;
 use common::tar_ext::BuilderExt;
 use futures::Future;
 use itertools::Itertools;
+use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::ShardKey;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, RwLock};
@@ -20,7 +21,6 @@ use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -930,7 +930,7 @@ impl ShardHolder {
             cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
-                    let mut tar = validate_open_snapshot_archive(snapshot_path)?;
+                    let mut tar = open_snapshot_archive_with_validation(&snapshot_path)?;
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
