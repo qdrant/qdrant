@@ -1,5 +1,11 @@
+use std::collections::BTreeSet;
+
+use common::types::PointOffsetType;
+
+use super::inverted_index::InvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
+use super::tokenizers::Tokenizer;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::data_types::index::TextIndexParams;
@@ -38,6 +44,43 @@ impl MutableFullTextIndex {
         self.inverted_index = MutableInvertedIndex::build_index(iter)?;
 
         Ok(true)
+    }
+
+    pub fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+        if values.is_empty() {
+            return Ok(());
+        }
+
+        let mut tokens: BTreeSet<String> = BTreeSet::new();
+
+        for value in values {
+            Tokenizer::tokenize_doc(&value, &self.config, |token| {
+                tokens.insert(token.to_owned());
+            });
+        }
+
+        let document = self.inverted_index.document_from_tokens(&tokens);
+        self.inverted_index.index_document(idx, document)?;
+
+        let db_idx = FullTextIndex::store_key(&idx);
+        let db_document = FullTextIndex::serialize_document_tokens(tokens)?;
+
+        self.db_wrapper.put(db_idx, db_document)?;
+
+        Ok(())
+    }
+
+    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        if self.inverted_index.remove_document(id) {
+            let db_doc_id = FullTextIndex::store_key(&id);
+            self.db_wrapper.remove(db_doc_id)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn clear(self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()
     }
 }
 
@@ -82,6 +125,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: None,
+            on_disk: None,
         };
 
         {

@@ -73,11 +73,15 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()> {
+    fn index_document(
+        &mut self,
+        point_id: PointOffsetType,
+        document: Document,
+    ) -> OperationResult<()> {
         self.points_count += 1;
-        if self.point_to_docs.len() <= idx as usize {
+        if self.point_to_docs.len() <= point_id as usize {
             self.point_to_docs
-                .resize_with(idx as usize + 1, Default::default);
+                .resize_with(point_id as usize + 1, Default::default);
         }
 
         for token_idx in document.tokens() {
@@ -91,11 +95,11 @@ impl InvertedIndex for MutableInvertedIndex {
                 .get_mut(token_idx_usize)
                 .expect("posting must exist even if with None");
             match posting {
-                None => *posting = Some(PostingList::new(idx)),
-                Some(vec) => vec.insert(idx),
+                None => *posting = Some(PostingList::new(point_id)),
+                Some(vec) => vec.insert(point_id),
             }
         }
-        self.point_to_docs[idx as usize] = Some(document);
+        self.point_to_docs[point_id as usize] = Some(document);
 
         Ok(())
     }

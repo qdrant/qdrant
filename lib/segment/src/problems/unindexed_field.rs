@@ -228,6 +228,7 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
                         min_token_len: None,
                         max_token_len: None,
                         lowercase: None,
+                        on_disk: None,
                     },
                 ))]
             }
