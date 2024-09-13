@@ -275,6 +275,7 @@ impl Collection {
     pub async fn abort_shard_transfer(
         &self,
         transfer_key: ShardTransferKey,
+        shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
@@ -285,7 +286,12 @@ impl Collection {
             .stop_task(&transfer_key)
             .await;
 
-        let shard_holder = self.shards_holder.read().await;
+        let mut shard_holder_guard = None;
+
+        let shard_holder = match shard_holder {
+            Some(shard_holder) => shard_holder,
+            None => shard_holder_guard.insert(self.shards_holder.read().await),
+        };
 
         let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
             return Ok(());
@@ -325,7 +331,7 @@ impl Collection {
         }
 
         if transfer.from == self.this_peer_id {
-            transfer::driver::revert_proxy_shard_to_local(&shard_holder, transfer.shard_id).await?;
+            transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer.shard_id).await?;
         }
 
         shard_holder.register_abort_transfer(&transfer_key)?;
@@ -334,7 +340,7 @@ impl Collection {
             let resharding_state = shard_holder.resharding_state.read().clone();
 
             // `abort_resharding` locks `shard_holder`!
-            drop(shard_holder);
+            drop(shard_holder_guard);
 
             if let Some(state) = resharding_state {
                 self.abort_resharding(state.key(), false).await?;
