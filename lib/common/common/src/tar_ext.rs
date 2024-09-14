@@ -20,7 +20,7 @@ pub struct BuilderExt {
 impl BuilderExt {
     pub fn new(tar_file: File) -> Self {
         let mut tar = tar::Builder::new(tar_file);
-        tar.sparse(false);
+        tar.sparse(true);
         Self {
             tar: Arc::new(Mutex::new(tar)),
             path: PathBuf::new(),

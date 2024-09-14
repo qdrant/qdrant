@@ -759,7 +759,7 @@ impl SegmentEntry for Segment {
 
         tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
             let mut builder = tar::Builder::new(writer);
-            builder.sparse(false);
+            builder.sparse(true);
 
             builder
                 .append_dir_all(SNAPSHOT_PATH, &temp_path)
