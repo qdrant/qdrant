@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
+use common::cpu::CpuBudget;
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
@@ -90,7 +91,7 @@ pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionR
     // check if the file size exceeds the maximum part number
     // if so, adjust the chunk size to fit the maximum part number
     if file_size > DEFAULT_CHUNK_SIZE * MAX_PART_NUMBER {
-        let chunk_size = (file_size - 1 / MAX_PART_NUMBER) + 1; // ceil(file_size / MAX_PART_NUMBER)
+        let chunk_size = ((file_size - 1) / MAX_PART_NUMBER) + 1; // ceil((file_size) / MAX_PART_NUMBER)
         return Ok(chunk_size);
     }
     Ok(DEFAULT_CHUNK_SIZE)
@@ -113,6 +114,10 @@ pub async fn multipart_upload(
     let mut reader = BufReader::new(file);
     let mut buffer = vec![0u8; chunk_size];
 
+    // Initialize CpuBudget to manage concurrency
+    let cpu_budget = CpuBudget::default();
+    let max_concurrency = cpu_budget.available_cpu_budget();
+
     // Note:
     //  1. write.write() is sync but a worker thread is spawned internally.
     //  2. write.finish() will wait for all the worker threads to finish.
@@ -121,7 +126,16 @@ pub async fn multipart_upload(
             break;
         }
         let buffer = &buffer[..bytes_read];
-        write.write(buffer); // 1. write.write() is sync but a worker thread is spawned internally.
+
+        // Wait for capacity before writing the buffer
+        write
+            .wait_for_capacity(max_concurrency)
+            .await
+            .map_err(|e| {
+                CollectionError::service_error(format!("Failed to wait for capacity: {e}"))
+            })?;
+
+        write.write(buffer);
     }
     write
         .finish() //  2. write.finish() will wait for all the worker threads to finish.
