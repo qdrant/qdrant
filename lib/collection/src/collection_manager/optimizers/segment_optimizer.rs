@@ -637,9 +637,8 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        check_process_stopped(stopped).inspect_err(|_error| {
-            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
-        })?;
+        check_process_stopped(stopped)
+            .inspect_err(|_| self.handle_cancellation(&segments, &proxy_ids, &tmp_segment))?;
 
         {
             // This block locks all operations with collection. It should be fast

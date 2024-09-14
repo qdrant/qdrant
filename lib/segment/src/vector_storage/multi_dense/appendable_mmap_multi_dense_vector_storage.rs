@@ -337,8 +337,20 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let offsets_path = path.join(OFFSETS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors = ChunkedMmapVectors::open(&vectors_path, dim, Some(false), AdviceSetting::Global)?;
-    let offsets = ChunkedMmapVectors::open(&offsets_path, 1, Some(false), AdviceSetting::Global)?;
+    let vectors = ChunkedMmapVectors::open(
+        &vectors_path,
+        dim,
+        Some(false),
+        AdviceSetting::Global,
+        Some(false),
+    )?;
+    let offsets = ChunkedMmapVectors::open(
+        &offsets_path,
+        1,
+        Some(false),
+        AdviceSetting::Global,
+        Some(false),
+    )?;
 
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();

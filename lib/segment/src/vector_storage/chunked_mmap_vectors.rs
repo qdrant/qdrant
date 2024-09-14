@@ -33,6 +33,8 @@ struct ChunkedMmapConfig {
     dim: usize,
     #[serde(default)]
     mlock: Option<bool>,
+    #[serde(default)]
+    populate: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -63,6 +65,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         Ok(open_write_mmap(
             &status_file,
             AdviceSetting::from(Advice::Normal),
+            false, // Status file is write-only
         )?)
     }
 
@@ -70,6 +73,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         directory: &Path,
         dim: usize,
         mlock: Option<bool>,
+        populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
         if !config_file.exists() {
@@ -83,6 +87,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 chunk_size_vectors,
                 dim,
                 mlock,
+                populate,
             };
             let mut file = OpenOptions::new()
                 .write(true)
@@ -113,14 +118,19 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         dim: usize,
         mlock: Option<bool>,
         advice: AdviceSetting,
+        populate: Option<bool>,
     ) -> OperationResult<Self> {
         create_dir_all(directory)?;
         let status_mmap = Self::ensure_status_file(directory)?;
         let status = unsafe { MmapType::from(status_mmap) };
 
-        let config = Self::ensure_config(directory, dim, mlock)?;
-        let chunks = read_mmaps(directory, config.mlock.unwrap_or_default(), advice)?;
-
+        let config = Self::ensure_config(directory, dim, mlock, populate)?;
+        let chunks = read_mmaps(
+            directory,
+            config.mlock.unwrap_or_default(),
+            populate.unwrap_or_default(),
+            advice,
+        )?;
         let vectors = Self {
             status,
             config,
@@ -392,9 +402,14 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
-                    .unwrap();
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> = ChunkedMmapVectors::open(
+                dir.path(),
+                dim,
+                Some(false),
+                AdviceSetting::Global,
+                Some(true),
+            )
+            .unwrap();
 
             for vec in &vectors {
                 chunked_mmap.push(vec).unwrap();
@@ -419,9 +434,14 @@ mod tests {
         }
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
-                ChunkedMmapVectors::open(dir.path(), dim, Some(false), AdviceSetting::Global)
-                    .unwrap();
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> = ChunkedMmapVectors::open(
+                dir.path(),
+                dim,
+                Some(false),
+                AdviceSetting::Global,
+                Some(false),
+            )
+            .unwrap();
 
             let mut loaded_vectors = Vec::new();
             chunked_mmap

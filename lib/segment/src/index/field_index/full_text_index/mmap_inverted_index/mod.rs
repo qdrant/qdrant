@@ -78,23 +78,25 @@ impl MmapInvertedIndex {
         Ok(())
     }
 
-    pub fn open(path: PathBuf) -> OperationResult<Self> {
+    pub fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
         let postings_path = path.clone().join(POSTINGS_FILE);
         let vocab_path = path.clone().join(VOCAB_FILE);
         let point_to_tokens_count_path = path.clone().join(POINT_TO_TOKENS_COUNT_FILE);
         let deleted_points_path = path.clone().join(DELETED_POINTS_FILE);
 
-        let postings = MmapPostings::open(&postings_path)?;
+        let postings = MmapPostings::open(&postings_path, populate)?;
         let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path)?;
 
         let point_to_tokens_count = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(
                 &point_to_tokens_count_path,
                 AdviceSetting::Global,
+                populate,
             )?)?
         };
 
-        let deleted = mmap_ops::open_write_mmap(&deleted_points_path, AdviceSetting::Global)?;
+        let deleted =
+            mmap_ops::open_write_mmap(&deleted_points_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
 
         let num_deleted_points = deleted.count_ones();
