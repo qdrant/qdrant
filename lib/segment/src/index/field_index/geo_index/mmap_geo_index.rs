@@ -176,20 +176,26 @@ impl MmapGeoMapIndex {
             MmapSlice::try_from(open_write_mmap(
                 &counts_per_hash_path,
                 AdviceSetting::Global,
+                false,
             )?)?
         };
         let points_map = unsafe {
-            MmapSlice::try_from(open_write_mmap(&points_map_path, AdviceSetting::Global)?)?
+            MmapSlice::try_from(open_write_mmap(
+                &points_map_path,
+                AdviceSetting::Global,
+                false,
+            )?)?
         };
         let points_map_ids = unsafe {
             MmapSlice::try_from(open_write_mmap(
                 &points_map_ids_path,
                 AdviceSetting::Global,
+                false,
             )?)?
         };
         let point_to_values = MmapPointToValues::open(path)?;
 
-        let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global)?;
+        let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 
