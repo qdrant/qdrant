@@ -317,8 +317,16 @@ function upload {
 	fixture-with-downloaded-snapshot
 	fixture-with-empty-collection
 
+    # Memory usage before upload
+    echo "Memory usage before upload:"
+    free -h
+
 	do-upload "$@"
 	check-recovered - "$DOWNLOADED_SNAPSHOT_POINTS" "$@"
+
+    # Memory usage after upload
+    echo "Memory usage after upload:"
+    free -h
 }
 
 function upload-priority-snapshot {
@@ -437,7 +445,7 @@ function fixture-with-points {
 				--uri "http://$QDRANT_HOST:$QDRANT_GRPC_PORT" \
 				--collection-name "$(basename "$(url)")" \
 				--dim 128 \
-				--num-vectors 10000 \
+                --num-vectors 100000 \
 				--skip-create
 		else
 			curl-ok \
