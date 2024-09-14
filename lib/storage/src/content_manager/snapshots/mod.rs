@@ -180,7 +180,7 @@ async fn _do_create_full_snapshot(
         // have to use std here, cause TarBuilder is not async
         let file = std::fs::File::create(&full_snapshot_path_clone)?;
         let mut builder = TarBuilder::new(file);
-        builder.sparse(true);
+        builder.sparse(false);
         for (temp_file, snapshot_name) in temp_collection_snapshots {
             builder.append_path_with_name(&temp_file, &snapshot_name)?;
         }
