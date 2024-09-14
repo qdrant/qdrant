@@ -52,7 +52,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         // Allocate/open vectors mmap
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
-        let mmap = mmap_ops::open_read_mmap(vectors_path, AdviceSetting::Global)
+        let mmap = mmap_ops::open_read_mmap(vectors_path, AdviceSetting::Global, false)
             .describe("Open mmap for reading")?;
         let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<T>();
 
@@ -60,7 +60,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
         ensure_mmap_file_size(deleted_path, DELETED_HEADER, Some(deleted_mmap_size as u64))
             .describe("Create mmap deleted file")?;
-        let deleted_mmap = mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global)
+        let deleted_mmap = mmap_ops::open_write_mmap(deleted_path, AdviceSetting::Global, false)
             .describe("Open mmap deleted for writing")?;
 
         // Advise kernel that we'll need this page soon so the kernel can prepare

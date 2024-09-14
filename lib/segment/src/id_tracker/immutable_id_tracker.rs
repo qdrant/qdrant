@@ -231,6 +231,7 @@ impl ImmutableIdTracker {
         let deleted_raw = open_write_mmap(
             &Self::deleted_file_path(segment_path),
             AdviceSetting::Global,
+            true,
         )?;
         let deleted_mmap = MmapBitSlice::try_from(deleted_raw, 0)?;
         let deleted_bitvec = deleted_mmap.to_bitvec();
@@ -239,6 +240,7 @@ impl ImmutableIdTracker {
         let internal_to_version_map = open_write_mmap(
             &Self::version_mapping_file_path(segment_path),
             AdviceSetting::Global,
+            true,
         )?;
         let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
@@ -272,7 +274,7 @@ impl ImmutableIdTracker {
 
         debug_assert!(mappings.deleted().len() <= mappings.total_point_count());
 
-        let deleted_mmap = open_write_mmap(&deleted_filepath, AdviceSetting::Global)?;
+        let deleted_mmap = open_write_mmap(&deleted_filepath, AdviceSetting::Global, false)?;
         let mut deleted_new = MmapBitSlice::try_from(deleted_mmap, 0)?;
         deleted_new[..mappings.deleted().len()].copy_from_bitslice(mappings.deleted());
 
@@ -298,7 +300,11 @@ impl ImmutableIdTracker {
             create_and_ensure_length(&version_filepath, version_size)?;
         }
         let mut internal_to_version_wrapper = unsafe {
-            MmapSlice::try_from(open_write_mmap(&version_filepath, AdviceSetting::Global)?)?
+            MmapSlice::try_from(open_write_mmap(
+                &version_filepath,
+                AdviceSetting::Global,
+                false,
+            )?)?
         };
 
         internal_to_version_wrapper[..internal_to_version.len()]

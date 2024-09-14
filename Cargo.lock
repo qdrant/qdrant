@@ -3513,8 +3513,7 @@ dependencies = [
 [[package]]
 name = "memmap2"
 version = "0.9.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe751422e4a8caa417e13c3ea66452215d7d63e19e604f4980461212f3ae1322"
+source = "git+https://github.com/RazrFalcon/memmap2-rs#34776c1f83b0ef17ecbc838a580c66e3d703b51d"
 dependencies = [
  "libc",
 ]

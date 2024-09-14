@@ -23,6 +23,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
 pub fn read_mmaps<T: Sized>(
     directory: &Path,
     mlock: bool,
+    populate: bool,
     advice: AdviceSetting,
 ) -> Result<Vec<MmapChunk<T>>, MmapError> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
@@ -50,7 +51,7 @@ pub fn read_mmaps<T: Sized>(
                 directory.display(),
             ))
         })?;
-        let mmap = open_write_mmap(&mmap_file, advice)?;
+        let mmap = open_write_mmap(&mmap_file, advice, populate)?;
         // If unix, lock the memory
         #[cfg(unix)]
         if mlock {
@@ -61,6 +62,7 @@ pub fn read_mmaps<T: Sized>(
         if mlock {
             log::warn!("Can't lock vectors in RAM, is not supported on this platform");
         }
+
         let chunk = unsafe { MmapChunk::try_from(mmap)? };
         result.push(chunk);
     }
@@ -81,7 +83,11 @@ pub fn create_chunk<T: Sized>(
 ) -> Result<MmapChunk<T>, MmapError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
-    let mmap = open_write_mmap(&chunk_file_path, AdviceSetting::Global)?;
+    let mmap = open_write_mmap(
+        &chunk_file_path,
+        AdviceSetting::Global,
+        false, // don't populate newly created chunk, as it's empty and will be filled later
+    )?;
     #[cfg(unix)]
     if mlock {
         mmap.lock()?;

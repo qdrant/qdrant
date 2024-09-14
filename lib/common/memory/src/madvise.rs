@@ -1,7 +1,9 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
+use std::hint::black_box;
 use std::io;
+use std::num::Wrapping;
 
 use serde::Deserialize;
 
@@ -97,6 +99,8 @@ pub fn madvise(madviseable: &impl Madviseable, advice: Advice) -> io::Result<()>
 pub trait Madviseable {
     /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
     fn madvise(&self, advice: Advice) -> io::Result<()>;
+
+    fn populate(&self) -> io::Result<()>;
 }
 
 impl Madviseable for memmap2::Mmap {
@@ -105,6 +109,15 @@ impl Madviseable for memmap2::Mmap {
         self.advise(advice.into())?;
         #[cfg(not(unix))]
         log::debug!("Ignore {advice:?} on this platform");
+        Ok(())
+    }
+
+    fn populate(&self) -> io::Result<()> {
+        #[cfg(target_os = "linux")]
+        if *POPULATE_READ_IS_SUPPORTED {
+            return self.advise(memmap2::Advice::PopulateRead);
+        }
+        populate_simple(self);
         Ok(())
     }
 }
@@ -117,4 +130,32 @@ impl Madviseable for memmap2::MmapMut {
         log::debug!("Ignore {advice:?} on this platform");
         Ok(())
     }
+
+    fn populate(&self) -> io::Result<()> {
+        #[cfg(target_os = "linux")]
+        if *POPULATE_READ_IS_SUPPORTED {
+            return self.advise(memmap2::Advice::PopulateRead);
+        }
+        populate_simple(self);
+        Ok(())
+    }
+}
+
+/// True if `MADV_POPULATE_READ` is supported (added in Linux 5.14).
+#[cfg(target_os = "linux")]
+static POPULATE_READ_IS_SUPPORTED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| memmap2::Advice::PopulateRead.is_supported());
+
+/// On older Linuxes and non-Unix platforms, we just read every 512th byte to
+/// populate the page cache. This is not as efficient as `madvise(2)` with
+/// `MADV_POPULATE_READ` but it's better than nothing.
+fn populate_simple(slice: &[u8]) {
+    black_box(
+        slice
+            .iter()
+            .copied()
+            .map(Wrapping)
+            .step_by(512)
+            .sum::<Wrapping<u8>>(),
+    );
 }

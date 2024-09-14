@@ -257,3 +257,5 @@ opt-level = 3
 [patch.crates-io]
 # Temporary patch until our PRs are merged.
 tar = { git = "https://github.com/qdrant/tar-rs", branch="main" }
+# Temporary patch until memmap2 0.9.5 is released.
+memmap2 = { git = "https://github.com/RazrFalcon/memmap2-rs" }

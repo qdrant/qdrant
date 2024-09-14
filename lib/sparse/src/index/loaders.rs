@@ -38,6 +38,7 @@ impl Csr {
         Self::from_mmap(open_read_mmap(
             path.as_ref(),
             AdviceSetting::from(Advice::Normal),
+            false,
         )?)
     }
 

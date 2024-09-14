@@ -212,9 +212,9 @@ impl MmapPostings {
         Ok(())
     }
 
-    pub fn open(path: impl Into<PathBuf>) -> io::Result<Self> {
+    pub fn open(path: impl Into<PathBuf>, populate: bool) -> io::Result<Self> {
         let path = path.into();
-        let mmap = open_read_mmap(&path, AdviceSetting::Advice(Advice::Normal))?;
+        let mmap = open_read_mmap(&path, AdviceSetting::Advice(Advice::Normal), populate)?;
 
         let header_bytes = mmap.get(0..size_of::<PostingsHeader>()).ok_or_else(|| {
             io::Error::new(

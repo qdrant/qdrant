@@ -149,13 +149,14 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         let histogram = Histogram::<T>::load(path)?;
         let config: MmapNumericIndexConfig = read_json(&config_path)?;
-        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global)?;
+        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
         let map = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(
                 &pairs_path,
                 AdviceSetting::Global,
+                false,
             )?)?
         };
         let point_to_values = MmapPointToValues::open(path)?;

@@ -279,6 +279,7 @@ impl<T> MmapSlice<T> {
         let mmap = mmap_ops::open_write_mmap(
             path,
             AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+            false,
         )?;
 
         let mut mmap_slice = unsafe { Self::try_from(mmap)? };
@@ -371,6 +372,7 @@ impl MmapBitSlice {
         let mmap = mmap_ops::open_write_mmap(
             path,
             AdviceSetting::Advice(Advice::Normal), // We only write sequentially
+            false,
         )?;
 
         let mut mmap_bitslice = MmapBitSlice::try_from(mmap, 0)?;
@@ -565,7 +567,8 @@ mod tests {
     fn check_open_zero_type<T: Sized + PartialEq + Debug + 'static>(zero: T) {
         let bytes = mem::size_of::<T>();
         let tempfile = create_temp_mmap_file(bytes);
-        let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+        let mmap =
+            mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
 
         let mmap_type: MmapType<T> = unsafe { MmapType::from(mmap) };
         assert_eq!(mmap_type.deref(), &zero);
@@ -595,7 +598,8 @@ mod tests {
     fn check_open_zero_slice<T: Sized + PartialEq + Debug + 'static>(len: usize, zero: T) {
         let bytes = mem::size_of::<T>() * len;
         let tempfile = create_temp_mmap_file(bytes);
-        let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+        let mmap =
+            mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
 
         let mmap_slice: MmapSlice<T> = unsafe { MmapSlice::from(mmap) };
         assert_eq!(mmap_slice.len(), len);
@@ -629,7 +633,8 @@ mod tests {
 
         // Write random values from template into mmap
         {
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mut mmap_slice: MmapSlice<T> = unsafe { MmapSlice::from(mmap) };
             assert_eq!(mmap_slice.len(), len);
             mmap_slice.copy_from_slice(&template);
@@ -637,7 +642,8 @@ mod tests {
 
         // Reopen and assert values from template
         {
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mmap_slice: MmapSlice<T> = unsafe { MmapSlice::from(mmap) };
             assert_eq!(mmap_slice.as_ref(), template);
         }
@@ -659,7 +665,8 @@ mod tests {
         // Fill bitslice
         {
             let mut rng = StdRng::seed_from_u64(42);
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mut mmap_bitslice = MmapBitSlice::from(mmap, header_size);
             (0..bits).for_each(|i| mmap_bitslice.set(i, rng.gen()));
         }
@@ -667,7 +674,8 @@ mod tests {
         // Reopen and assert contents
         {
             let mut rng = StdRng::seed_from_u64(42);
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mmap_bitslice = MmapBitSlice::from(mmap, header_size);
             (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.gen::<bool>()));
         }
@@ -677,14 +685,16 @@ mod tests {
     fn test_zero_sized_type() {
         {
             let tempfile = create_temp_mmap_file(0);
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let result = unsafe { MmapType::<()>::try_from(mmap).unwrap() };
             assert_eq!(result.deref(), &());
         }
 
         {
             let tempfile = create_temp_mmap_file(0);
-            let mmap = mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global).unwrap();
+            let mmap =
+                mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let result = unsafe { MmapSlice::<()>::try_from(mmap).unwrap() };
             assert_eq!(result.as_ref(), &[]);
             assert_alignment::<_, ()>(result.as_ref());

@@ -50,7 +50,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path)?;
         let point_to_values = MmapPointToValues::open(path)?;
 
-        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global)?;
+        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 

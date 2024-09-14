@@ -258,7 +258,11 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         Ok(Self {
             path: path.as_ref().to_owned(),
-            mmap: Arc::new(open_read_mmap(file_path.as_ref(), AdviceSetting::Global)?),
+            mmap: Arc::new(open_read_mmap(
+                file_path.as_ref(),
+                AdviceSetting::Global,
+                false,
+            )?),
             file_header,
             _phantom: PhantomData,
         })
@@ -271,7 +275,11 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let file_header: InvertedIndexFileHeader = read_json(&config_file_path)?;
         // read index data into mmap
         let file_path = Self::index_file_path(path.as_ref());
-        let mmap = open_read_mmap(file_path.as_ref(), AdviceSetting::from(Advice::Normal))?;
+        let mmap = open_read_mmap(
+            file_path.as_ref(),
+            AdviceSetting::from(Advice::Normal),
+            false,
+        )?;
         Ok(Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),
