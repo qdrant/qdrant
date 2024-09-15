@@ -305,7 +305,11 @@ impl PayloadFieldIndex for FullTextIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![]
+        match self {
+            Self::Mutable(_) => vec![],
+            Self::Immutable(_) => vec![],
+            Self::Mmap(index) => index.files(),
+        }
     }
 
     fn filter(
