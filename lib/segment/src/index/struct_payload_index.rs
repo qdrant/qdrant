@@ -524,8 +524,12 @@ impl PayloadIndex for StructPayloadIndex {
         }
     }
 
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.payload.borrow_mut().assign_all(point_id, payload)?;
+    fn overwrite_payload(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+    ) -> OperationResult<()> {
+        self.payload.borrow_mut().overwrite(point_id, payload)?;
 
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
@@ -542,7 +546,7 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn assign(
+    fn set_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -551,12 +555,12 @@ impl PayloadIndex for StructPayloadIndex {
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
-                .assign_by_key(point_id, payload, key)?;
+                .set_by_key(point_id, payload, key)?;
         } else {
-            self.payload.borrow_mut().assign(point_id, payload)?;
+            self.payload.borrow_mut().set(point_id, payload)?;
         };
 
-        let updated_payload = self.payload(point_id)?;
+        let updated_payload = self.get_payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
@@ -575,11 +579,11 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
-        self.payload.borrow().payload(point_id)
+    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+        self.payload.borrow().get(point_id)
     }
 
-    fn delete(
+    fn delete_payload(
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
@@ -592,9 +596,9 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().delete(point_id, key)
     }
 
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.payload.borrow_mut().drop(point_id)
+        self.payload.borrow_mut().clear(point_id)
     }
 
     fn flusher(&self) -> Flusher {

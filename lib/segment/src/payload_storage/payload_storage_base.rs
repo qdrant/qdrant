@@ -8,31 +8,30 @@ use crate::types::{Filter, Payload};
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
-    /// Assign same payload to each given point
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    /// Overwrite payload for point_id. If payload already exists, replace it
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
-    /// Assign payload to a concrete point with a concrete payload value
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    /// Set payload for point_id. If payload already exists, merge it with existing
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
-    /// Assign payload to a concrete point with a concrete payload value by path
-    fn assign_by_key(
+    /// Set payload to a point_id by key. If payload already exists, merge it with existing
+    fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
     ) -> OperationResult<()>;
 
-    /// Get payload for point
-    /// If no payload found, return empty payload
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
+    /// Get payload for point. If no payload found, return empty payload
+    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
-    /// Delete payload by key
+    /// Delete payload by point_id and key
     fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>>;
 
-    /// Drop all payload of the point
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+    /// Clear all payload of the point
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
-    /// Completely drop payload. Pufff!
+    /// Completely delete payload storage. Pufff!
     fn wipe(&mut self) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.

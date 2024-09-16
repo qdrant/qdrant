@@ -409,7 +409,7 @@ impl Segment {
         &self,
         point_offset: PointOffsetType,
     ) -> OperationResult<Payload> {
-        self.payload_index.borrow().payload(point_offset)
+        self.payload_index.borrow().get_payload(point_offset)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {
@@ -521,7 +521,9 @@ impl Segment {
 
             for internal_id in &internal_ids_to_delete {
                 // Drop removed points from payload index
-                self.payload_index.borrow_mut().drop(*internal_id)?;
+                self.payload_index
+                    .borrow_mut()
+                    .clear_payload(*internal_id)?;
 
                 // Drop removed points from vector storage
                 for vector_data in self.vector_data.values() {

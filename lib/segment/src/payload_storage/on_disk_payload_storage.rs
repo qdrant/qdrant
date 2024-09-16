@@ -71,11 +71,11 @@ impl OnDiskPayloadStorage {
 }
 
 impl PayloadStorage for OnDiskPayloadStorage {
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.update_storage(point_id, payload)
     }
 
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         let stored_payload = self.read_payload(point_id)?;
         match stored_payload {
             Some(mut point_payload) => {
@@ -87,7 +87,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         Ok(())
     }
 
-    fn assign_by_key(
+    fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -107,7 +107,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         let payload = self.read_payload(point_id)?;
         match payload {
             Some(payload) => Ok(payload),
@@ -130,7 +130,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let payload = self.read_payload(point_id)?;
         self.remove_from_storage(point_id)?;
         Ok(payload)

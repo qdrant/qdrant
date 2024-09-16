@@ -1078,7 +1078,7 @@ fn test_update_payload_index_type() {
     for (idx, payload) in payloads.into_iter().enumerate() {
         points.insert(idx, payload.clone());
         payload_storage
-            .assign(idx as PointOffsetType, &payload)
+            .set(idx as PointOffsetType, &payload)
             .unwrap();
     }
 

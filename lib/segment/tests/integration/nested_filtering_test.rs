@@ -64,7 +64,7 @@ fn test_filtering_context_consistency() {
     for (idx, payload) in nested_payloads().into_iter().enumerate() {
         points.insert(idx, payload.clone());
         payload_storage
-            .assign(idx as PointOffsetType, &payload)
+            .set(idx as PointOffsetType, &payload)
             .unwrap();
     }
 
