@@ -192,10 +192,12 @@ impl ImmutableGeoMapIndex {
         Ok(())
     }
 
+    /// Returns an iterator over all point IDs which have the `geohash` prefix.
+    /// Note. Point ID may be repeated multiple times in the iterator.
     pub fn get_stored_sub_regions(
         &self,
         geo: &GeoHash,
-    ) -> impl Iterator<Item = &(GeoHash, HashSet<PointOffsetType>)> + '_ {
+    ) -> impl Iterator<Item = PointOffsetType> + '_ {
         let geo_clone = *geo;
         let start_index = self
             .points_map
@@ -204,6 +206,7 @@ impl ImmutableGeoMapIndex {
         self.points_map[start_index..]
             .iter()
             .take_while(move |(p, _h)| p.starts_with(geo_clone))
+            .flat_map(|(_, points)| points.iter().copied())
     }
 
     fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {

@@ -290,10 +290,12 @@ impl MmapGeoMapIndex {
         }
     }
 
+    /// Returns an iterator over all point IDs which have the `geohash` prefix.
+    /// Note. Point ID may be repeated multiple times in the iterator.
     pub fn get_stored_sub_regions(
         &self,
         geohash: GeoHash,
-    ) -> impl Iterator<Item = (GeoHash, impl Iterator<Item = PointOffsetType> + '_)> + '_ {
+    ) -> impl Iterator<Item = PointOffsetType> + '_ {
         let start_index = self
             .points_map
             .binary_search_by(|point_key_value| point_key_value.hash.cmp(&geohash))
@@ -302,15 +304,15 @@ impl MmapGeoMapIndex {
             .iter()
             .take_while(move |point_key_value| point_key_value.hash.starts_with(geohash))
             .filter_map(|point_key_value| {
-                Some((
-                    point_key_value.hash,
+                Some(
                     self.points_map_ids
                         .get(point_key_value.ids_start as usize..point_key_value.ids_end as usize)?
                         .iter()
                         .cloned()
                         .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true)),
-                ))
+                )
             })
+            .flatten()
     }
 
     pub fn get_indexed_points(&self) -> usize {

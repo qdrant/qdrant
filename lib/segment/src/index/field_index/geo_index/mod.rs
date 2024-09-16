@@ -259,31 +259,19 @@ impl GeoMapIndex {
             GeoMapIndex::Mutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| {
-                        index
-                            .get_stored_sub_regions(&top_geo_hash)
-                            .flat_map(|(_geohash, points)| points.iter().copied())
-                    })
+                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(&top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Immutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| {
-                        index
-                            .get_stored_sub_regions(&top_geo_hash)
-                            .flat_map(|(_geohash, points)| points.iter().copied())
-                    })
+                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(&top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Mmap(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| {
-                        index
-                            .get_stored_sub_regions(top_geo_hash)
-                            .flat_map(|(_geohash, points)| points)
-                    })
+                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
         }
