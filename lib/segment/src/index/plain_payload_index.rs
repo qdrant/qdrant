@@ -166,7 +166,7 @@ impl PayloadIndex for PlainPayloadIndex {
         Box::new(vec![].into_iter())
     }
 
-    fn assign_all(
+    fn overwrite_payload(
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
@@ -174,7 +174,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn assign(
+    fn set_payload(
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
@@ -183,11 +183,11 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn get_payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
         unreachable!()
     }
 
-    fn delete(
+    fn delete_payload(
         &mut self,
         _point_id: PointOffsetType,
         _key: PayloadKeyTypeRef,
@@ -195,7 +195,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn drop(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear_payload(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         unreachable!()
     }
 

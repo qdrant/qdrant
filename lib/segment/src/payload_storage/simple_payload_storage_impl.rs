@@ -11,13 +11,13 @@ use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};
 
 impl PayloadStorage for SimplePayloadStorage {
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.payload.insert(point_id, payload.to_owned());
         self.update_storage(&point_id)?;
         Ok(())
     }
 
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
             None => {
@@ -30,7 +30,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
-    fn assign_by_key(
+    fn set_by_key(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -47,7 +47,7 @@ impl PayloadStorage for SimplePayloadStorage {
         }
     }
 
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
             Some(payload) => Ok(payload.to_owned()),
             None => Ok(Default::default()),
@@ -71,7 +71,7 @@ impl PayloadStorage for SimplePayloadStorage {
         }
     }
 
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
         self.update_storage(&point_id)?;
         Ok(res)
@@ -101,14 +101,14 @@ mod tests {
 
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-        storage.assign(100, &payload).unwrap();
+        storage.set(100, &payload).unwrap();
         storage.wipe().unwrap();
-        storage.assign(100, &payload).unwrap();
+        storage.set(100, &payload).unwrap();
         storage.wipe().unwrap();
-        storage.assign(100, &payload).unwrap();
-        assert!(!storage.payload(100).unwrap().is_empty());
+        storage.set(100, &payload).unwrap();
+        assert!(!storage.get(100).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.payload(100).unwrap(), Default::default());
+        assert_eq!(storage.get(100).unwrap(), Default::default());
     }
 
     #[test]
@@ -139,8 +139,8 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
-        storage.assign(100, &payload).unwrap();
-        let pload = storage.payload(100).unwrap();
+        storage.set(100, &payload).unwrap();
+        let pload = storage.get(100).unwrap();
         assert_eq!(pload, payload);
     }
 }

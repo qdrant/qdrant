@@ -53,7 +53,7 @@ fn range_filtering(c: &mut Criterion) {
         })
         .into();
         payload_storage
-            .assign(id as PointOffsetType, &payload)
+            .set(id as PointOffsetType, &payload)
             .unwrap();
     }
 

@@ -83,11 +83,15 @@ pub trait PayloadIndex {
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_>;
 
-    /// Assign same payload to each given point
-    fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    /// Overwrite payload for point_id. If payload already exists, replace it.
+    fn overwrite_payload(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+    ) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
-    fn assign(
+    fn set_payload(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
@@ -95,17 +99,17 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Get payload for point
-    fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
+    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Delete payload by key
-    fn delete(
+    fn delete_payload(
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
-    fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

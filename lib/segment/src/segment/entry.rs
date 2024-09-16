@@ -115,7 +115,10 @@ impl SegmentEntry for Segment {
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     // Mark point as deleted, drop mapping
-                    segment.payload_index.borrow_mut().drop(internal_id)?;
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .clear_payload(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
                     // Before, we propagated point deletions to also delete its vectors. This turns
@@ -197,7 +200,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .assign_all(internal_id, full_payload)?;
+                    .overwrite_payload(internal_id, full_payload)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -219,7 +222,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .assign(internal_id, payload, key)?;
+                    .set_payload(internal_id, payload, key)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -240,7 +243,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .delete(internal_id, key)?;
+                    .delete_payload(internal_id, key)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -257,7 +260,10 @@ impl SegmentEntry for Segment {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment.payload_index.borrow_mut().drop(internal_id)?;
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .clear_payload(internal_id)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
