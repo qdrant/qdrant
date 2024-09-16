@@ -23,7 +23,7 @@ pub struct MmapFullTextIndex {
 
 impl MmapFullTextIndex {
     pub fn open(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
-        let inverted_index = MmapInvertedIndex::open(path)?;
+        let inverted_index = MmapInvertedIndex::open(path, false)?;
 
         Ok(Self {
             inverted_index,
@@ -140,7 +140,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         MmapInvertedIndex::create(path.clone(), immutable)?;
 
-        let inverted_index = MmapInvertedIndex::open(path)?;
+        let inverted_index = MmapInvertedIndex::open(path, false)?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,
