@@ -1096,7 +1096,6 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongMulti => Self::BadInput {
                 description: "Conversion between multi and regular vectors failed".to_string(),
             },
-            OperationError::WrongPayloadKey { description } => Self::BadInput { description },
             OperationError::MissingRangeIndexForOrderBy { .. } => Self::bad_input(format!("{err}")),
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(format!("{err}")),
         }
