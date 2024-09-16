@@ -52,20 +52,19 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 Some(idx) => self.postings.get(idx as usize),
             })
             .collect();
-        if postings_opt.is_none() {
-            // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
-        }
-        let postings = postings_opt.unwrap();
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return Box::new(vec![].into_iter());
-        }
+
+        let postings = match postings_opt {
+            // All tokens must have postings and query must not be empty
+            Some(postings) if !postings.is_empty() => postings,
+            _ => return Box::new(vec![].into_iter()),
+        };
+
+        let posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
 
         // in case of immutable index, deleted documents are still in the postings
         let filter =
             move |idx| matches!(self.point_to_tokens_count.get(idx as usize), Some(Some(_)));
-        let posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
+
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 

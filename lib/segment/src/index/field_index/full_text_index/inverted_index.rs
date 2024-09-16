@@ -298,7 +298,7 @@ mod tests {
 
         // Check same vocabulary
         for (token, token_id) in immutable.vocab.iter() {
-            assert_eq!(mmap.get_token_id(token).unwrap(), Some(*token_id));
+            assert_eq!(mmap.get_token_id(token), Some(*token_id));
         }
 
         // Check same postings
@@ -353,7 +353,7 @@ mod tests {
 
         let imm_parsed_queries: Vec<_> = queries
             .into_iter()
-            .map(|query| to_parsed_query(query, |token| mmap_index.get_token_id(&token).unwrap()))
+            .map(|query| to_parsed_query(query, |token| mmap_index.get_token_id(&token)))
             .collect();
 
         for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {

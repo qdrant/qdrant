@@ -152,15 +152,21 @@ pub struct TextIndexParams {
     #[serde(default)]
     pub tokenizer: TokenizerType,
 
+    /// Minimum characters to be tokenized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_token_len: Option<usize>,
 
+    /// Maximum characters to be tokenized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_token_len: Option<usize>,
 
     /// If true, lowercase all tokens. Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lowercase: Option<bool>,
+
+    /// If true, store the index on disk. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_disk: Option<bool>,
 }
 
 // Bool

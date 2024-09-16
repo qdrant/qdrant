@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
 use super::inverted_index::{Document, InvertedIndex, ParsedQuery, TokenId};
+use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -24,9 +25,11 @@ use crate::index::field_index::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
+#[allow(clippy::large_enum_variant)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
+    Mmap(MmapFullTextIndex),
 }
 
 impl FullTextIndex {
@@ -48,10 +51,15 @@ impl FullTextIndex {
         }
     }
 
+    pub fn new_mmap(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
+        Ok(Self::Mmap(MmapFullTextIndex::open(path, config)?))
+    }
+
     pub fn init(&mut self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.init(),
             Self::Immutable(index) => index.init(),
+            Self::Mmap(_) => unreachable!("not applicable for mmap immutable index"),
         }
     }
 
@@ -63,14 +71,27 @@ impl FullTextIndex {
         FullTextIndexBuilder(Self::new(db, config, field, true))
     }
 
+    pub fn builder_mmap(path: PathBuf, config: TextIndexParams) -> FullTextMmapIndexBuilder {
+        FullTextMmapIndexBuilder::new(path, config)
+    }
+
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_fts")
+    }
+
+    fn config(&self) -> &TextIndexParams {
+        match self {
+            Self::Mutable(index) => &index.config,
+            Self::Immutable(index) => &index.config,
+            Self::Mmap(index) => &index.config,
+        }
     }
 
     fn points_count(&self) -> usize {
         match self {
             Self::Mutable(index) => index.inverted_index.points_count(),
             Self::Immutable(index) => index.inverted_index.points_count(),
+            Self::Mmap(index) => index.inverted_index.points_count(),
         }
     }
 
@@ -78,31 +99,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.get_token_id(token),
             Self::Immutable(index) => index.inverted_index.get_token_id(token),
-        }
-    }
-
-    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
-        match self {
-            Self::Mutable(index) => index.inverted_index.document_from_tokens(tokens),
-            Self::Immutable(index) => index.inverted_index.document_from_tokens(tokens),
-        }
-    }
-
-    fn index_document(
-        &mut self,
-        point_id: PointOffsetType,
-        document: Document,
-    ) -> OperationResult<()> {
-        match self {
-            Self::Mutable(index) => index.inverted_index.index_document(point_id, document),
-            Self::Immutable(index) => index.inverted_index.index_document(point_id, document),
-        }
-    }
-
-    fn remove_document(&mut self, point_id: PointOffsetType) -> bool {
-        match self {
-            Self::Mutable(index) => index.inverted_index.remove_document(point_id),
-            Self::Immutable(index) => index.inverted_index.remove_document(point_id),
+            Self::Mmap(index) => index.inverted_index.get_token_id(token),
         }
     }
 
@@ -110,6 +107,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.filter(query),
             Self::Immutable(index) => index.inverted_index.filter(query),
+            Self::Mmap(index) => index.inverted_index.filter(query),
         }
     }
 
@@ -121,6 +119,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
             Self::Immutable(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
+            Self::Mmap(index) => Box::new(index.inverted_index.payload_blocks(threshold, key)),
         }
     }
 
@@ -132,6 +131,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.estimate_cardinality(query, condition),
             Self::Immutable(index) => index.inverted_index.estimate_cardinality(query, condition),
+            Self::Mmap(index) => index.inverted_index.estimate_cardinality(query, condition),
         }
     }
 
@@ -139,6 +139,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
             Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
         }
     }
 
@@ -146,6 +147,7 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.values_count(point_id),
             Self::Immutable(index) => index.inverted_index.values_count(point_id),
+            Self::Mmap(index) => index.inverted_index.values_count(point_id),
         }
     }
 
@@ -153,24 +155,11 @@ impl FullTextIndex {
         match self {
             Self::Mutable(index) => index.inverted_index.values_is_empty(point_id),
             Self::Immutable(index) => index.inverted_index.values_is_empty(point_id),
+            Self::Mmap(index) => index.inverted_index.values_is_empty(point_id),
         }
     }
 
-    fn config(&self) -> &TextIndexParams {
-        match self {
-            Self::Mutable(index) => &index.config,
-            Self::Immutable(index) => &index.config,
-        }
-    }
-
-    fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        match self {
-            Self::Mutable(index) => &index.db_wrapper,
-            Self::Immutable(index) => &index.db_wrapper,
-        }
-    }
-
-    fn store_key(id: &PointOffsetType) -> Vec<u8> {
+    pub(super) fn store_key(id: &PointOffsetType) -> Vec<u8> {
         bincode::serialize(&id).unwrap()
     }
 
@@ -178,7 +167,7 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -259,27 +248,15 @@ impl ValueIndexer for FullTextIndex {
     type ValueType = String;
 
     fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
-        if values.is_empty() {
-            return Ok(());
+        match self {
+            Self::Mutable(index) => index.add_many(idx, values),
+            Self::Immutable(_) => Err(OperationError::service_error(
+                "Cannot add values to immutable text index",
+            )),
+            Self::Mmap(_) => Err(OperationError::service_error(
+                "Cannot add values to mmap text index",
+            )),
         }
-
-        let mut tokens: BTreeSet<String> = BTreeSet::new();
-
-        for value in values {
-            Tokenizer::tokenize_doc(&value, self.config(), |token| {
-                tokens.insert(token.to_owned());
-            });
-        }
-
-        let document = self.document_from_tokens(&tokens);
-        self.index_document(idx, document)?;
-
-        let db_idx = Self::store_key(&idx);
-        let db_document = Self::serialize_document_tokens(tokens)?;
-
-        self.db_wrapper().put(db_idx, db_document)?;
-
-        Ok(())
     }
 
     fn get_value(value: &Value) -> Option<String> {
@@ -290,11 +267,11 @@ impl ValueIndexer for FullTextIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.remove_document(id) {
-            let db_doc_id = Self::store_key(&id);
-            self.db_wrapper().remove(db_doc_id)?;
+        match self {
+            FullTextIndex::Mutable(index) => index.remove_point(id),
+            FullTextIndex::Immutable(index) => index.remove_point(id),
+            FullTextIndex::Mmap(index) => index.remove_point(id),
         }
-        Ok(())
     }
 }
 
@@ -307,19 +284,32 @@ impl PayloadFieldIndex for FullTextIndex {
         match self {
             Self::Mutable(index) => index.load_from_db(),
             Self::Immutable(index) => index.load_from_db(),
+            Self::Mmap(_index) => Ok(true), // mmap index is always loaded
         }
     }
 
     fn clear(self) -> OperationResult<()> {
-        self.db_wrapper().remove_column_family()
+        match self {
+            Self::Mutable(index) => index.clear(),
+            Self::Immutable(index) => index.clear(),
+            Self::Mmap(index) => index.clear(),
+        }
     }
 
     fn flusher(&self) -> Flusher {
-        self.db_wrapper().flusher()
+        match self {
+            Self::Mutable(index) => index.db_wrapper.flusher(),
+            Self::Immutable(index) => index.db_wrapper.flusher(),
+            Self::Mmap(index) => index.flusher(),
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![]
+        match self {
+            Self::Mutable(_) => vec![],
+            Self::Immutable(_) => vec![],
+            Self::Mmap(index) => index.files(),
+        }
     }
 
     fn filter(

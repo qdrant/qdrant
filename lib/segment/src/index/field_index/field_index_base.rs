@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::binary_index::BinaryIndexBuilder;
 use super::facet_index::FacetIndex;
+use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
 use super::geo_index::GeoMapIndexBuilder;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
@@ -421,6 +422,7 @@ pub enum FieldIndexBuilder {
     FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     GeoIndex(GeoMapIndexBuilder),
     FullTextIndex(FullTextIndexBuilder),
+    FullTextMmapIndex(FullTextMmapIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
@@ -444,6 +446,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => index.init(),
             Self::BinaryIndex(index) => index.init(),
             Self::FullTextIndex(index) => index.init(),
+            Self::FullTextMmapIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
         }
@@ -464,6 +467,9 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => index.add_point(id, payload),
             Self::BinaryIndex(index) => index.add_point(id, payload),
             Self::FullTextIndex(index) => index.add_point(id, payload),
+            Self::FullTextMmapIndex(builder) => {
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
+            }
             Self::UuidIndex(index) => index.add_point(id, payload),
             Self::UuidMmapIndex(index) => index.add_point(id, payload),
         }
@@ -484,6 +490,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
+            Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
         })

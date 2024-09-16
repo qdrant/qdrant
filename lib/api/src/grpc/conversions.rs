@@ -274,6 +274,7 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
                 lowercase: params.lowercase,
                 min_token_len: params.min_token_len.map(|x| x as u64),
                 max_token_len: params.max_token_len.map(|x| x as u64),
+                on_disk: params.on_disk,
             })),
         }
     }
@@ -434,6 +435,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             lowercase: params.lowercase,
             min_token_len: params.min_token_len.map(|x| x as usize),
             max_token_len: params.max_token_len.map(|x| x as usize),
+            on_disk: params.on_disk,
         })
     }
 }

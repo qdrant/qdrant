@@ -15,7 +15,7 @@ use rand::{Rng, SeedableRng};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
-    KeywordIndexType,
+    KeywordIndexType, TextIndexParams, TextIndexType,
 };
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -53,11 +53,11 @@ struct TestSegments {
     _base_dir: TempDir,
     struct_segment: Segment,
     plain_segment: Segment,
-    mmap_segment: Option<Segment>,
+    mmap_segment: Segment,
 }
 
 impl TestSegments {
-    fn new(make_mmap: bool) -> Self {
+    fn new() -> Self {
         let base_dir = Builder::new().prefix("test_segments").tempdir().unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
@@ -155,8 +155,8 @@ impl TestSegments {
             .unwrap();
 
         // Make mmap segment after inserting the points, but after deleting some of them
-        let mut mmap_segment = make_mmap
-            .then(|| Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment));
+        let mut mmap_segment =
+            Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment);
 
         for _ in 0..points_to_clear {
             opnum += 1;
@@ -167,11 +167,9 @@ impl TestSegments {
             struct_segment
                 .clear_payload(opnum, idx_to_remove.into())
                 .unwrap();
-            mmap_segment.as_mut().map(|mmap_segment| {
-                mmap_segment
-                    .clear_payload(opnum, idx_to_remove.into())
-                    .unwrap()
-            });
+            mmap_segment
+                .clear_payload(opnum, idx_to_remove.into())
+                .unwrap();
         }
 
         for _ in 0..points_to_delete {
@@ -183,11 +181,9 @@ impl TestSegments {
             struct_segment
                 .delete_point(opnum, idx_to_remove.into())
                 .unwrap();
-            mmap_segment.as_mut().map(|mmap_segment| {
-                mmap_segment
-                    .delete_point(opnum, idx_to_remove.into())
-                    .unwrap()
-            });
+            mmap_segment
+                .delete_point(opnum, idx_to_remove.into())
+                .unwrap();
         }
 
         for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
@@ -321,6 +317,17 @@ impl TestSegments {
                 }))),
             )
             .unwrap();
+        segment
+            .create_field_index(
+                opnum,
+                &JsonPath::new(TEXT_KEY),
+                Some(&FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                    r#type: TextIndexType::Text,
+                    on_disk: Some(true),
+                    ..Default::default()
+                }))),
+            )
+            .unwrap();
 
         segment
     }
@@ -437,7 +444,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::thread_rng();
     let query = random_vector(&mut rnd, DIM).into();
-    let test_segments = TestSegments::new(false);
+    let test_segments = TestSegments::new();
 
     for _i in 0..ATTEMPTS {
         let plain_result = test_segments
@@ -514,7 +521,7 @@ fn validate_geo_filter(query_filter: Filter) {
 
 #[test]
 fn test_is_empty_conditions() {
-    let test_segments = TestSegments::new(false);
+    let test_segments = TestSegments::new();
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
@@ -568,22 +575,14 @@ fn test_is_empty_conditions() {
 
 #[test]
 fn test_integer_index_types() {
-    let test_segments = TestSegments::new(true);
+    let test_segments = TestSegments::new();
 
     for (kind, indexes) in [
         (
             "struct",
             &test_segments.struct_segment.payload_index.borrow(),
         ),
-        (
-            "mmap",
-            &test_segments
-                .mmap_segment
-                .as_ref()
-                .unwrap()
-                .payload_index
-                .borrow(),
-        ),
+        ("mmap", &test_segments.mmap_segment.payload_index.borrow()),
     ] {
         eprintln!("Checking {kind}_segment");
         assert!(matches!(
@@ -615,7 +614,7 @@ fn test_integer_index_types() {
 
 #[test]
 fn test_cardinality_estimation() {
-    let test_segments = TestSegments::new(false);
+    let test_segments = TestSegments::new();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
@@ -774,7 +773,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 fn test_struct_payload_index() {
     let mut rnd = rand::thread_rng();
 
-    let test_segments = TestSegments::new(true);
+    let test_segments = TestSegments::new();
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rnd, DIM).into();
@@ -806,8 +805,6 @@ fn test_struct_payload_index() {
             .unwrap();
         let mmap_result = test_segments
             .mmap_segment
-            .as_ref()
-            .unwrap()
             .search(
                 DEFAULT_VECTOR_NAME,
                 &query_vector,
@@ -1122,7 +1119,7 @@ fn test_update_payload_index_type() {
 
 #[test]
 fn test_any_matcher_cardinality_estimation() {
-    let test_segments = TestSegments::new(false);
+    let test_segments = TestSegments::new();
 
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
@@ -1197,7 +1194,7 @@ fn validate_facet_result(
 
 #[test]
 fn test_keyword_facet() {
-    let test_segments = TestSegments::new(true);
+    let test_segments = TestSegments::new();
 
     let limit = 100;
     let key: JsonPath = STR_KEY.try_into().unwrap();
@@ -1228,16 +1225,10 @@ fn test_keyword_facet() {
     // Mmap segment
     let facet_hits = test_segments
         .mmap_segment
-        .as_ref()
-        .unwrap()
         .facet(&request, &Default::default())
         .unwrap();
 
-    validate_facet_result(
-        test_segments.mmap_segment.as_ref().unwrap(),
-        facet_hits,
-        None,
-    );
+    validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
 
     // *** With filter ***
     let mut rng = rand::thread_rng();
@@ -1264,14 +1255,8 @@ fn test_keyword_facet() {
     // Mmap segment
     let facet_hits = test_segments
         .mmap_segment
-        .as_ref()
-        .unwrap()
         .facet(&request, &Default::default())
         .unwrap();
 
-    validate_facet_result(
-        test_segments.mmap_segment.as_ref().unwrap(),
-        facet_hits,
-        Some(filter),
-    );
+    validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter));
 }

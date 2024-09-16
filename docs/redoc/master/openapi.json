@@ -6854,12 +6854,14 @@
             "$ref": "#/components/schemas/TokenizerType"
           },
           "min_token_len": {
+            "description": "Minimum characters to be tokenized.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
             "nullable": true
           },
           "max_token_len": {
+            "description": "Maximum characters to be tokenized.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -6867,6 +6869,11 @@
           },
           "lowercase": {
             "description": "If true, lowercase all tokens. Default: true.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",
             "nullable": true
           }
