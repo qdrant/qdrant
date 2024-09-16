@@ -191,7 +191,7 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
         payload_storage
-            .assign(id as PointOffsetType, &payload)
+            .set(id as PointOffsetType, &payload)
             .unwrap();
     }
 
