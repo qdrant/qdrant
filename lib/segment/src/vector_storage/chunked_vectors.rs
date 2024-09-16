@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::TryReserveError;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::mem;
 use std::path::Path;
 
@@ -188,9 +188,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
                     format!("Failed to load quantized vectors from file: {err}"),
                 )
             })?;
-        let mut file = File::open(path)?;
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
         let mut buffer = vec![0u8; quantized_vector_size];
-        while file.read_exact(&mut buffer).is_ok() {
+        while reader.read_exact(&mut buffer).is_ok() {
             vectors.push(&buffer).map_err(|err| {
                 std::io::Error::new(
                     std::io::ErrorKind::OutOfMemory,
