@@ -53,15 +53,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
             })
             .collect();
 
-        let Some(postings) = postings_opt else {
-            // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
+        let postings = match postings_opt {
+            // All tokens must have postings and query must not be empty
+            Some(postings) if !postings.is_empty() => postings,
+            _ => return Box::new(vec![].into_iter()),
         };
-
-        if postings.is_empty() {
-            // Empty request -> no matches
-            return Box::new(vec![].into_iter());
-        }
 
         let posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
 
