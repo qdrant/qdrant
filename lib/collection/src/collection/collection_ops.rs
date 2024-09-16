@@ -194,13 +194,12 @@ impl Collection {
                 });
             }
 
-            if peers.len() == 1 {
+            // Check that we are not removing the
+            if replica_set.is_last_active_replica(peer_id) {
                 return Err(CollectionError::BadRequest {
-                    description: format!("Shard {shard_id} must have at least one replica"),
+                    description: format!("Shard {shard_id} must have at least one active replica after removing {peer_id}"),
                 });
             }
-
-            replica_set.remove_peer(peer_id).await?;
 
             let all_nodes_cancel_transfers = self
                 .channel_service
@@ -212,10 +211,12 @@ impl Collection {
 
                 // ...and cancel transfer tasks and remove transfers from internal state
                 for transfer in transfers {
-                    self.finish_shard_transfer(transfer, Some(&shard_holder))
+                    self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
                         .await?;
                 }
             }
+
+            replica_set.remove_peer(peer_id).await?;
 
             // We can't remove the last repilca of a shard, so this should prevent removing
             // resharding shard, because it's always the *only* replica.

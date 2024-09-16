@@ -11,7 +11,7 @@ mod sharding_keys;
 mod snapshots;
 mod state_management;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -398,23 +398,10 @@ impl Collection {
         }
 
         // 3. Do not deactivate the last active replica
-        if state != ReplicaState::Active {
-            let active_replicas: HashSet<_> = replica_set
-                .peers()
-                .into_iter()
-                .filter_map(|(peer, state)| {
-                    if state == ReplicaState::Active {
-                        Some(peer)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if active_replicas.len() == 1 && active_replicas.contains(&peer_id) {
-                return Err(CollectionError::bad_input(format!(
-                    "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
-                )));
-            }
+        if state != ReplicaState::Active && replica_set.is_last_active_replica(peer_id) {
+            return Err(CollectionError::bad_input(format!(
+                "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
+            )));
         }
 
         // Abort resharding, if resharding shard is marked as `Dead`.
@@ -469,7 +456,7 @@ impl Collection {
             drop(shard_holder);
 
             for transfer in related_transfers {
-                self.abort_shard_transfer(transfer.key()).await?;
+                self.abort_shard_transfer(transfer.key(), None).await?;
             }
         }
 

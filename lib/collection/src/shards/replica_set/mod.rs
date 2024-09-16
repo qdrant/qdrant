@@ -357,6 +357,11 @@ impl ShardReplicaSet {
         self.replica_state.read().peers()
     }
 
+    pub fn is_last_active_replica(&self, peer_id: PeerId) -> bool {
+        let active_peers = self.replica_state.read().active_peers();
+        active_peers.len() == 1 && active_peers.contains(&peer_id)
+    }
+
     pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
