@@ -214,7 +214,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
         match self.value_to_points.get(value) {
-            Ok(Some(slice)) => Box::new(slice.iter()),
+            Ok(Some(slice)) => Box::new(
+                slice
+                    .iter()
+                    .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
+            ),
             Ok(None) => Box::new(iter::empty()),
             Err(err) => {
                 debug_assert!(
