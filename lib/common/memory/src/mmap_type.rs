@@ -99,7 +99,7 @@ where
     ///
     /// - panics when the size of the mmap doesn't match size `T`
     /// - panics when the mmap data is not correctly aligned for type `T`
-    /// - See: [`mmap_to_type_unbounded`]
+    /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn from(mmap_with_type: MmapMut) -> Self {
         Self::try_from(mmap_with_type).unwrap()
     }
@@ -116,9 +116,9 @@ where
     /// # Panics
     ///
     /// - panics when the mmap data is not correctly aligned for type `T`
-    /// - See: [`mmap_to_type_unbounded`]
+    /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn try_from(mut mmap_with_type: MmapMut) -> Result<Self> {
-        let r#type = mmap_to_type_unbounded(&mut mmap_with_type)?;
+        let r#type = mmap_prefix_to_type_unbounded(&mut mmap_with_type)?;
         let mmap = Arc::new(mmap_with_type);
         Ok(Self { r#type, mmap })
     }
@@ -410,6 +410,8 @@ impl DerefMut for MmapBitSlice {
 pub enum Error {
     #[error("Mmap length must be {0} to match the size of type, but it is {1}")]
     SizeExact(usize, usize),
+    #[error("Mmap length must be at least {0} to match the size of type, but it is {1}")]
+    SizeLess(usize, usize),
     #[error("Mmap length must be multiple of {0} to match the size of type, but it is {1}")]
     SizeMultiple(usize, usize),
     #[error("{0}")]
@@ -432,26 +434,36 @@ pub enum Error {
 /// # Panics
 ///
 /// - panics when the mmap data is not correctly aligned for type `T`
-unsafe fn mmap_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbnd mut T>
+unsafe fn mmap_prefix_to_type_unbounded<'unbnd, T>(mmap: &mut MmapMut) -> Result<&'unbnd mut T>
 where
     T: Sized,
 {
     let size_t = mem::size_of::<T>();
 
     // Assert size
-    if mmap.len() != size_t {
-        return Err(Error::SizeExact(size_t, mmap.len()));
+    if mmap.len() < size_t {
+        return Err(Error::SizeLess(size_t, mmap.len()));
     }
 
     // Obtain unbounded bytes slice into mmap
     let bytes: &'unbnd mut [u8] = {
         let slice = mmap.deref_mut();
-        slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())
+        slice::from_raw_parts_mut(slice.as_mut_ptr(), size_t)
     };
 
     // Assert alignment and size
     assert_alignment::<_, T>(bytes);
-    debug_assert_eq!(mmap.len(), bytes.len());
+
+    #[cfg(debug_assertions)]
+    if mmap.len() != size_t {
+        log::warn!(
+            "Mmap length {} is not equal to size of type {}",
+            mmap.len(),
+            size_t,
+        );
+    }
+
+    #[cfg(debug_assertions)]
     if bytes.len() != mem::size_of::<T>() {
         return Err(Error::SizeExact(mem::size_of::<T>(), bytes.len()));
     }
