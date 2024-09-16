@@ -710,6 +710,9 @@ pub struct TextIndexParams {
     /// Maximal token length
     #[prost(uint64, optional, tag = "4")]
     pub max_token_len: ::core::option::Option<u64>,
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "5")]
+    pub on_disk: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

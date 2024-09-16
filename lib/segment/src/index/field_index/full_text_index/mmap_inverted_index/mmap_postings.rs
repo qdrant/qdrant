@@ -205,6 +205,7 @@ impl MmapPostings {
             }
         }
 
+        // Dropping will flush the buffer to the file
         drop(bufw);
 
         file.persist(path)?;

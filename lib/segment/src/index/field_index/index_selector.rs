@@ -13,6 +13,7 @@ use super::numeric_index::{
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
@@ -67,12 +68,9 @@ impl<'a> IndexSelector<'a> {
                 self.as_rocksdb()?.is_appendable,
             ))],
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![FieldIndex::FullTextIndex(FullTextIndex::new(
-                    self.as_rocksdb()?.db.clone(),
-                    text_index_params.clone(),
-                    &field.to_string(),
-                    self.as_rocksdb()?.is_appendable,
-                ))]
+                vec![FieldIndex::FullTextIndex(
+                    self.text_new(field, text_index_params.clone())?,
+                )]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![FieldIndex::BinaryIndex(BinaryIndex::new(
@@ -134,11 +132,7 @@ impl<'a> IndexSelector<'a> {
                 ))]
             }
             PayloadSchemaParams::Text(text_index_params) => {
-                vec![FieldIndexBuilder::FullTextIndex(FullTextIndex::builder(
-                    self.as_rocksdb()?.db.clone(),
-                    text_index_params.clone(),
-                    &field.to_string(),
-                ))]
+                vec![self.text_builder(field, text_index_params.clone())]
             }
             PayloadSchemaParams::Bool(_) => {
                 vec![FieldIndexBuilder::BinaryIndex(BinaryIndex::builder(
@@ -224,6 +218,40 @@ impl<'a> IndexSelector<'a> {
         }
     }
 
+    fn text_new(
+        &self,
+        field: &JsonPath,
+        config: TextIndexParams,
+    ) -> OperationResult<FullTextIndex> {
+        Ok(match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
+                FullTextIndex::new(Arc::clone(db), config, &field.to_string(), *is_appendable)
+            }
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                FullTextIndex::new_mmap(text_dir(dir, field), config)?
+            }
+        })
+    }
+
+    fn text_builder(&self, field: &JsonPath, config: TextIndexParams) -> FieldIndexBuilder {
+        match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: _,
+            }) => FieldIndexBuilder::FullTextIndex(FullTextIndex::builder(
+                Arc::clone(db),
+                config,
+                &field.to_string(),
+            )),
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
+                    text_dir(dir, field),
+                    config,
+                ))
+            }
+        }
+    }
+
     fn as_rocksdb(&self) -> OperationResult<&IndexSelectorRocksDb> {
         match self {
             IndexSelector::RocksDb(mode) => Ok(mode),
@@ -238,4 +266,8 @@ fn map_dir(dir: &Path, field: &JsonPath) -> PathBuf {
 
 fn numeric_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-numeric", &field.filename()))
+}
+
+fn text_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+    dir.join(format!("{}-text", &field.filename()))
 }

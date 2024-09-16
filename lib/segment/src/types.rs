@@ -1210,8 +1210,8 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
+            PayloadSchemaParams::Text(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Geo(_) => false,
-            PayloadSchemaParams::Text(_) => false,
             PayloadSchemaParams::Bool(_) => false,
         }
     }

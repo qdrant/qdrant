@@ -422,7 +422,7 @@ where
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
             MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(_) => unreachable!(),
+            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
             MapIndex::Mmap(_) => unreachable!(),
         }
     }
