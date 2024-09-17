@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
-use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use bincode;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use itertools::Itertools;
 use parking_lot::RwLock;
-use rand::distributions::Distribution;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -18,6 +15,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
@@ -90,13 +88,10 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 
 #[derive(Debug)]
 pub struct SimpleIdTracker {
-    deleted: BitVec,
-    internal_to_external: Vec<PointIdType>,
     internal_to_version: Vec<SeqNumberType>,
-    external_to_internal_num: BTreeMap<u64, PointOffsetType>,
-    external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     mapping_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
     versions_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
+    mappings: PointMappings,
 }
 
 impl SimpleIdTracker {
@@ -175,7 +170,6 @@ impl SimpleIdTracker {
                 );
             }
         }
-
         #[cfg(debug_assertions)]
         {
             for (idx, id) in external_to_internal_num.iter() {
@@ -187,15 +181,18 @@ impl SimpleIdTracker {
                 );
             }
         }
-
-        Ok(SimpleIdTracker {
+        let mappings = PointMappings::new(
             deleted,
             internal_to_external,
-            internal_to_version,
             external_to_internal_num,
             external_to_internal_uuid,
+        );
+
+        Ok(SimpleIdTracker {
+            internal_to_version,
             mapping_db_wrapper,
             versions_db_wrapper,
+            mappings,
         })
     }
 
@@ -248,19 +245,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        match external_id {
-            PointIdType::NumId(idx) => self.external_to_internal_num.get(&idx).copied(),
-            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.get(&uuid).copied(),
-        }
+        self.mappings.internal_id(&external_id)
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
-        if let Some(deleted) = self.deleted.get(internal_id as usize) {
-            if !deleted {
-                return self.internal_to_external.get(internal_id as usize).copied();
-            }
-        }
-        None
+        self.mappings.external_id(internal_id)
     }
 
     fn set_link(
@@ -268,144 +257,42 @@ impl IdTracker for SimpleIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        match external_id {
-            PointIdType::NumId(idx) => {
-                self.external_to_internal_num.insert(idx, internal_id);
-            }
-            PointIdType::Uuid(uuid) => {
-                self.external_to_internal_uuid.insert(uuid, internal_id);
-            }
-        }
-
-        let internal_id = internal_id as usize;
-        if internal_id >= self.internal_to_external.len() {
-            self.internal_to_external
-                .resize(internal_id + 1, PointIdType::NumId(u64::MAX));
-        }
-        if internal_id >= self.deleted.len() {
-            self.deleted.resize(internal_id + 1, true);
-        }
-        self.internal_to_external[internal_id] = external_id;
-        self.deleted.set(internal_id, false);
-
-        self.persist_key(&external_id, internal_id)?;
+        self.mappings.set_link(external_id, internal_id);
+        self.persist_key(&external_id, internal_id as _)?;
         Ok(())
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        let internal_id = match &external_id {
-            PointIdType::NumId(idx) => self.external_to_internal_num.remove(idx),
-            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(uuid),
-        };
-        if let Some(internal_id) = internal_id {
-            self.deleted.set(internal_id as usize, true);
-            self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
-        }
+        self.mappings.drop(external_id);
         self.delete_key(&external_id)?;
         Ok(())
     }
 
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        let iter_num = self
-            .external_to_internal_num
-            .keys()
-            .copied()
-            .map(PointIdType::NumId);
-        let iter_uuid = self
-            .external_to_internal_uuid
-            .keys()
-            .copied()
-            .map(PointIdType::Uuid);
-        // order is important here, we want to iterate over the u64 ids first
-        Box::new(iter_num.chain(iter_uuid))
+        self.mappings.iter_external()
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            (0..self.internal_to_external.len() as PointOffsetType)
-                .filter(move |i| !self.deleted[*i as usize]),
-        )
+        self.mappings.iter_internal()
     }
 
     fn iter_from(
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let full_num_iter = || {
-            self.external_to_internal_num
-                .iter()
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let offset_num_iter = |offset: u64| {
-            self.external_to_internal_num
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let full_uuid_iter = || {
-            self.external_to_internal_uuid
-                .iter()
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-        let offset_uuid_iter = |offset: Uuid| {
-            self.external_to_internal_uuid
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-
-        match external_id {
-            None => {
-                let iter_num = full_num_iter();
-                let iter_uuid = full_uuid_iter();
-                // order is important here, we want to iterate over the u64 ids first
-                Box::new(iter_num.chain(iter_uuid))
-            }
-            Some(offset) => match offset {
-                PointIdType::NumId(idx) => {
-                    // Because u64 keys are less that uuid key, we can just use the full iterator for uuid
-                    let iter_num = offset_num_iter(idx);
-                    let iter_uuid = full_uuid_iter();
-                    // order is important here, we want to iterate over the u64 ids first
-                    Box::new(iter_num.chain(iter_uuid))
-                }
-                PointIdType::Uuid(uuid) => {
-                    // if offset is a uuid, we can only iterate over uuids
-                    Box::new(offset_uuid_iter(uuid))
-                }
-            },
-        }
+        self.mappings.iter_from(external_id)
     }
 
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let rng = rand::thread_rng();
-        let max_internal = self.internal_to_external.len();
-        if max_internal == 0 {
-            return Box::new(iter::empty());
-        }
-        let uniform = rand::distributions::Uniform::new(0, max_internal);
-        let iter = Distribution::sample_iter(uniform, rng)
-            // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
-            // but it's good enough for low limits.
-            //
-            // We could improve it by using a variable-period PRNG to adjust depending on the number of available points.
-            .unique()
-            .take(max_internal)
-            .filter_map(move |i| {
-                if self.deleted[i] {
-                    None
-                } else {
-                    Some((self.internal_to_external[i], i as PointOffsetType))
-                }
-            });
-
-        Box::new(iter)
+        self.mappings.iter_random()
     }
 
     fn total_point_count(&self) -> usize {
-        self.internal_to_external.len()
+        self.mappings.total_point_count()
     }
 
     fn available_point_count(&self) -> usize {
-        self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
+        self.mappings.available_point_count()
     }
 
     fn deleted_point_count(&self) -> usize {
@@ -431,15 +318,11 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn is_deleted_point(&self, key: PointOffsetType) -> bool {
-        let key = key as usize;
-        if key >= self.deleted.len() {
-            return true;
-        }
-        self.deleted[key]
+        self.mappings.is_deleted_point(key)
     }
 
     fn deleted_point_bitslice(&self) -> &BitSlice {
-        &self.deleted
+        self.mappings.deleted()
     }
 
     fn cleanup_versions(&mut self) -> OperationResult<()> {
