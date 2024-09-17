@@ -84,9 +84,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
         let storage = storage_builder.build();
 
-        #[cfg(feature = "dump_image")]
-        Self::dump_to_image(data, &storage, &centroids, &vector_division);
-
         if !stop_condition() {
             Ok(Self {
                 encoded_vectors: storage,
@@ -334,67 +331,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
 
         Ok(result)
-    }
-
-    #[cfg(feature = "dump_image")]
-    fn dump_to_image<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        storage: &TStorage,
-        centroids: &[Vec<f32>],
-        vector_division: &[Range<usize>],
-    ) {
-        let (min, max) = crate::quantile::find_min_max_from_iter(data.clone());
-
-        let colors_r: Vec<_> = (0..256).map(|_| rand::random()).collect();
-        let colors_g: Vec<_> = (0..256).map(|_| rand::random()).collect();
-        let colors_b: Vec<_> = (0..256).map(|_| rand::random()).collect();
-        for (range_i, range) in vector_division
-            .iter()
-            .enumerate()
-            .filter(|(_, range)| range.len() >= 2)
-        {
-            let mut centroids_counter = std::iter::repeat(0)
-                .take(centroids.len())
-                .collect::<Vec<usize>>();
-
-            let imgx = 1000;
-            let imgy = 1000;
-            let mut imgbuf = image::ImageBuffer::new(imgx, imgy);
-            for (_x, _y, pixel) in imgbuf.enumerate_pixels_mut() {
-                *pixel = image::Rgb([255u8, 255u8, 255u8]);
-            }
-
-            for (i, vector_data) in data.clone().enumerate() {
-                let vector_data = vector_data.as_ref();
-                let subvector_data = &vector_data[range.clone()];
-                let centroid_index =
-                    storage.get_vector_data(i, vector_division.len())[range_i] as usize;
-                centroids_counter[centroid_index] += 1;
-                let x = (((subvector_data[0] - min) / (max - min)) * imgx as f32)
-                    .clamp(0., imgx as f32 - 1.0) as u32;
-                let y = (((subvector_data[1] - min) / (max - min)) * imgy as f32)
-                    .clamp(0., imgy as f32 - 1.0) as u32;
-                *imgbuf.get_pixel_mut(x, y) = image::Rgb([
-                    colors_r[centroid_index],
-                    colors_g[centroid_index],
-                    colors_b[centroid_index],
-                ]);
-            }
-
-            for centroid in centroids {
-                let subvector_data = &centroid[range.clone()];
-                let x = (((subvector_data[0] - min) / (max - min)) * imgx as f32)
-                    .clamp(0., imgx as f32 - 2.0) as u32;
-                let y = (((subvector_data[1] - min) / (max - min)) * imgy as f32)
-                    .clamp(0., imgy as f32 - 2.0) as u32;
-                *imgbuf.get_pixel_mut(x, y) = image::Rgb([255u8, 0u8, 0u8]);
-                *imgbuf.get_pixel_mut(x + 1, y) = image::Rgb([255u8, 0u8, 0u8]);
-                *imgbuf.get_pixel_mut(x + 1, y + 1) = image::Rgb([255u8, 0u8, 0u8]);
-                *imgbuf.get_pixel_mut(x, y + 1) = image::Rgb([255u8, 0u8, 0u8]);
-            }
-
-            imgbuf.save(&format!("kmeans-{range_i}.png")).unwrap();
-        }
     }
 
     #[cfg(target_arch = "x86_64")]
