@@ -25,7 +25,7 @@ pub struct EncodedVectorsPQ<TStorage: EncodedStorage> {
 }
 
 /// PQ lookup table
-/// Lookup table is a distance from each query chunck to
+/// Lookup table is a distance from each query chunk to
 /// each centroid related to this chunk
 pub struct EncodedQueryPQ {
     lut: Vec<f32>,
@@ -44,7 +44,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// # Arguments
     /// * `data` - iterator over original vector data
     /// * `storage_builder` - encoding result storage builder
-    /// * `vector_parameters` - parameters of original vector data (dimension, distance, ect)
+    /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
     /// * `max_threads` - Max allowed threads for kmeans and encodind process
     /// * `stop_condition` - Function that returns `true` if encoding should be stopped
@@ -266,7 +266,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// # Arguments
     /// * `data` - Original vector data
     /// * `vector_division` - Division of original vector into chunks
-    /// * `vector_parameters` - parameters of original vector data (dimension, distance, ect)
+    /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `centroids_count` - Count of centroids for each chunk
     /// * `max_kmeans_threads` - Max allowed threads for kmeans process
     /// * `stop_condition` - Function that returns `true` if encoding should be stopped

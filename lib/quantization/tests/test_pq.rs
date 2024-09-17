@@ -288,7 +288,7 @@ mod tests {
             let vector_data = vector_data.clone();
             let result = std::thread::spawn(move || {
                 EncodedVectorsPQ::encode(
-                    vector_data.iter().map(|v| {
+                    vector_data.iter().inspect(|_| {
                         let cnt = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         if cnt == panic_index {
                             panic!("test panic")
@@ -297,7 +297,6 @@ mod tests {
                             // after panic add start sleeping to simulate large amount of data
                             std::thread::sleep(Duration::from_micros(100));
                         }
-                        v
                     }),
                     vec![],
                     &VectorParameters {
