@@ -40,6 +40,7 @@ pub mod mmap_map_index;
 pub mod mutable_map_index;
 
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
+pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
 pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
@@ -198,7 +199,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdRefIter<'_>)> + '_> {
+    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdIter<'_>)> + '_> {
         match self {
             MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Immutable(index) => Box::new(index.iter_values_map()),

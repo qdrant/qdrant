@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::{IdRefIter, MapIndex, MapIndexKey};
+use super::{IdIter, IdRefIter, MapIndex, MapIndexKey};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -160,11 +160,11 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         self.map.iter().map(|(k, v)| (k.borrow(), v.len()))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
         self.map.iter().map(|(k, v)| {
             (
                 k.borrow(),
-                Box::new(v.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>,
+                Box::new(v.iter().copied()) as IdIter,
             )
         })
     }
