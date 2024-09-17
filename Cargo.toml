@@ -49,6 +49,7 @@ rusty-hook = "^0.11.2"
 [dependencies]
 parking_lot = { workspace = true, optional = true }
 
+bytes = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colored = "2"
@@ -70,6 +71,7 @@ wal = { workspace = true }
 config = "~0.14.0"
 
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.6"
@@ -152,6 +154,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [workspace.dependencies]
 atomicwrites = "0.4.4"
+bytes = "1.7.2"
 chrono = { version = "0.4.38", features = ["serde"] }
 data-encoding = "2.6.0"
 delegate = "0.13.0"
@@ -189,7 +192,7 @@ tap = "1.0.1"
 tar = "0.4.41"
 tempfile = "3.13.0"
 tokio = { version = "1.40.0", features = ["full"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
