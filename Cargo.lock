@@ -5608,6 +5608,7 @@ dependencies = [
  "data-encoding",
  "dataset",
  "delegate",
+ "env_logger",
  "fnv",
  "fs_extra",
  "generic-tests",

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{fmt, fs};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -42,6 +42,7 @@ fn move_all_impl(base: &Path, dir: &Path, dest_dir: &Path) -> OperationResult<()
 
         if path.is_dir() && dest_path.exists() {
             move_all_impl(base, &path, &dest_path)?;
+            std::fs::remove_dir(path)?;
         } else {
             if let Some(dir) = dest_path.parent() {
                 if !dir.exists() {
@@ -83,27 +84,4 @@ fn failed_to_read_dir_error(dir: &Path, err: impl fmt::Display) -> OperationErro
 
 fn failed_to_move_error(path: &Path, dest: &Path, err: impl fmt::Display) -> OperationError {
     OperationError::service_error(format!("failed to move {path:?} to {dest:?}: {err}"))
-}
-
-/// Finds the first symlink in the directory tree and returns its path.
-pub fn find_symlink(directory: &Path) -> Option<PathBuf> {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return None;
-    };
-
-    for entry in entries {
-        let Ok(entry) = entry else { continue };
-
-        let path = entry.path();
-
-        if path.is_dir() {
-            if let Some(path) = find_symlink(&path) {
-                return Some(path);
-            }
-        } else if path.is_symlink() {
-            return Some(path);
-        }
-    }
-
-    None
 }
