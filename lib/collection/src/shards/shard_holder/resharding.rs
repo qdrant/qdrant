@@ -525,7 +525,7 @@ impl ShardHolder {
         }
 
         let filter = self.hash_ring_filter(shard_id).expect("hash ring filter");
-        let filter = Filter::new_must(Condition::CustomIdChecker(Arc::new(filter)));
+        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
         shard.delete_local_points(filter).await
     }
 
