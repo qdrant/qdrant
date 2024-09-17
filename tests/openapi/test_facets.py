@@ -18,18 +18,82 @@ def setup(on_disk_vectors):
         query_params={"wait": "true"},
         body={
             "points": [
-                {"id": 100, "vector": {}, "payload": {"integer": 3, "boolean": True}},
-                {"id": 101, "vector": {}, "payload": {"integer": 3, "boolean": True}},
-                {"id": 102, "vector": {}, "payload": {"integer": 3, "boolean": False}},
-                {"id": 103, "vector": {}, "payload": {"integer": 0, "boolean": True}},
-                {"id": 104, "vector": {}, "payload": {"integer": 3, "boolean": True}},
-                {"id": 105, "vector": {}, "payload": {"integer": 1, "boolean": False}},
-                {"id": 106, "vector": {}, "payload": {"integer": 2, "boolean": False}},
-                {"id": 107, "vector": {}, "payload": {"integer": 0, "boolean": True}},
+                {
+                    "id": 100,
+                    "vector": {},
+                    "payload": {
+                        "integer": 3,
+                        "uuid": "a64a8051-3ee7-4881-8bc6-691d25c70d54",
+                        "boolean": True,
+                    },
+                },
+                {
+                    "id": 101,
+                    "vector": {},
+                    "payload": {
+                        "integer": 3,
+                        "uuid": "a64a8051-3ee7-4881-8bc6-691d25c70d54",
+                        "boolean": True,
+                    },
+                },
+                {
+                    "id": 102,
+                    "vector": {},
+                    "payload": {
+                        "integer": 3,
+                        "uuid": "7cb46fb3-e348-4762-93ad-7fb983d2b85e",
+                        "boolean": False,
+                    },
+                },
+                {
+                    "id": 103,
+                    "vector": {},
+                    "payload": {
+                        "integer": 0,
+                        "uuid": "2b016c50-282c-4d80-b784-cefead291180",
+                        "boolean": True,
+                    },
+                },
+                {
+                    "id": 104,
+                    "vector": {},
+                    "payload": {
+                        "integer": 3,
+                        "uuid": "a64a8051-3ee7-4881-8bc6-691d25c70d54",
+                        "boolean": True,
+                    },
+                },
+                {
+                    "id": 105,
+                    "vector": {},
+                    "payload": {
+                        "integer": 1,
+                        "uuid": "a64a8051-3ee7-4881-8bc6-691d25c70d54",
+                        "boolean": False,
+                    },
+                },
+                {
+                    "id": 106,
+                    "vector": {},
+                    "payload": {
+                        "integer": 2,
+                        "uuid": "7cb46fb3-e348-4762-93ad-7fb983d2b85e",
+                        "boolean": False,
+                    },
+                },
+                {
+                    "id": 107,
+                    "vector": {},
+                    "payload": {
+                        "integer": 0,
+                        "uuid": "a64a8051-3ee7-4881-8bc6-691d25c70d54",
+                        "boolean": True,
+                    },
+                },
             ]
-        }
+        },
     ).raise_for_status()
-    
+
     request_with_validation(
         api="/collections/{collection_name}/index",
         method="PUT",
@@ -38,9 +102,9 @@ def setup(on_disk_vectors):
         body={
             "field_name": "city",
             "field_schema": "keyword",
-        }
+        },
     ).raise_for_status()
-    
+
     request_with_validation(
         api="/collections/{collection_name}/index",
         method="PUT",
@@ -49,9 +113,20 @@ def setup(on_disk_vectors):
         body={
             "field_name": "integer",
             "field_schema": "integer",
-        }
+        },
     ).raise_for_status()
-    
+
+    request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "field_name": "uuid",
+            "field_schema": "uuid",
+        },
+    ).raise_for_status()
+
     request_with_validation(
         api="/collections/{collection_name}/index",
         method="PUT",
@@ -60,7 +135,7 @@ def setup(on_disk_vectors):
         body={
             "field_name": "boolean",
             "field_schema": "bool",
-        }
+        },
     ).raise_for_status()
 
     yield
@@ -75,7 +150,7 @@ def test_basic_facet():
         body={
             "key": "city",
             # limit is optional
-        }
+        },
     )
 
     assert response.ok, response.json()
@@ -84,11 +159,12 @@ def test_basic_facet():
     assert city_facet == {
         "hits": [
             # Sorted by count, then by value
-            {"value": "Berlin", "count": 3 },
-            {"value": "London", "count": 2 },
-            {"value": "Moscow", "count": 2 },
+            {"value": "Berlin", "count": 3},
+            {"value": "London", "count": 2},
+            {"value": "Moscow", "count": 2},
         ]
     }
+
 
 def test_integer_facet():
     response = request_with_validation(
@@ -97,7 +173,7 @@ def test_integer_facet():
         path_params={"collection_name": collection_name},
         body={
             "key": "integer",
-        }
+        },
     )
 
     assert response.ok, response.json()
@@ -106,13 +182,36 @@ def test_integer_facet():
     assert city_facet == {
         "hits": [
             # Sorted by count, then by value
-            {"value": 3, "count": 4 },
-            {"value": 0, "count": 2 },
-            {"value": 1, "count": 1 },
-            {"value": 2, "count": 1 },
+            {"value": 3, "count": 4},
+            {"value": 0, "count": 2},
+            {"value": 1, "count": 1},
+            {"value": 2, "count": 1},
         ]
     }
-    
+
+
+def test_uuid_facet():
+    response = request_with_validation(
+        api="/collections/{collection_name}/facet",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "key": "uuid",
+        },
+    )
+
+    assert response.ok, response.json()
+
+    city_facet = response.json()["result"]
+    assert city_facet == {
+        "hits": [
+            {"value": "a64a8051-3ee7-4881-8bc6-691d25c70d54", "count": 5},
+            {"value": "7cb46fb3-e348-4762-93ad-7fb983d2b85e", "count": 2},
+            {"value": "2b016c50-282c-4d80-b784-cefead291180", "count": 1},
+        ]
+    }
+
+
 def test_boolean_facet():
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
@@ -120,7 +219,7 @@ def test_boolean_facet():
         path_params={"collection_name": collection_name},
         body={
             "key": "boolean",
-        }
+        },
     )
 
     assert response.ok, response.json()
@@ -129,7 +228,7 @@ def test_boolean_facet():
     assert city_facet == {
         "hits": [
             # Sorted by count, then by value
-            {"value": True, "count": 5 },
-            {"value": False, "count": 3 },
+            {"value": True, "count": 5},
+            {"value": False, "count": 3},
         ]
     }
