@@ -1,0 +1,40 @@
+[package]
+name = "quantization"
+version = "0.1.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+permutation_iterator = "0.1.2"
+rand = { workspace = true }
+rayon = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+num_threads = "0.1.6"
+tempfile = "3.5.0"
+
+[[bench]]
+name = "encode"
+harness = false
+
+[[bench]]
+name = "pq"
+harness = false
+
+[[bench]]
+name = "binary"
+harness = false
