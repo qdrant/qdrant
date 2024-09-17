@@ -322,7 +322,7 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn deleted_point_bitslice(&self) -> &BitSlice {
-        &self.mappings.deleted()
+        self.mappings.deleted()
     }
 
     fn cleanup_versions(&mut self) -> OperationResult<()> {
