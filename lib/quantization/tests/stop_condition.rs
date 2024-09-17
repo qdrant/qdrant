@@ -3,16 +3,12 @@ mod metrics;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
-    use quantization::{
-        encoded_vectors::{DistanceType, VectorParameters},
-        encoded_vectors_u8::EncodedVectorsU8,
-        EncodedVectorsPQ, EncodingError,
-    };
+    use quantization::encoded_vectors::{DistanceType, VectorParameters};
+    use quantization::encoded_vectors_u8::EncodedVectorsU8;
+    use quantization::{EncodedVectorsPQ, EncodingError};
 
     #[test]
     fn stop_condition_u8() {

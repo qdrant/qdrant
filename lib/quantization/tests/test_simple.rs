@@ -3,10 +3,8 @@ mod metrics;
 
 #[cfg(test)]
 mod tests {
-    use quantization::{
-        encoded_vectors::{DistanceType, EncodedVectors, VectorParameters},
-        encoded_vectors_u8::EncodedVectorsU8,
-    };
+    use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};

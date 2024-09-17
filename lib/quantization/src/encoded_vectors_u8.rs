@@ -1,13 +1,13 @@
-use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::encoded_vectors::validate_vector_parameters;
-use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
-use crate::{
-    encoded_storage::{EncodedStorage, EncodedStorageBuilder},
-    encoded_vectors::{DistanceType, EncodedVectors, VectorParameters},
-    EncodingError,
+use serde::{Deserialize, Serialize};
+
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_vectors::{
+    validate_vector_parameters, DistanceType, EncodedVectors, VectorParameters,
 };
+use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
+use crate::EncodingError;
 
 pub const ALIGNMENT: usize = 16;
 

@@ -1,8 +1,6 @@
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::Path,
-};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::Path;
 
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];

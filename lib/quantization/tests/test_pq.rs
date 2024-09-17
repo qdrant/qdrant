@@ -3,12 +3,11 @@ mod metrics;
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::atomic::AtomicUsize, time::Duration};
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
 
-    use quantization::{
-        encoded_vectors::{DistanceType, EncodedVectors, VectorParameters},
-        encoded_vectors_pq::EncodedVectorsPQ,
-    };
+    use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors_pq::EncodedVectorsPQ;
     use rand::{Rng, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};

@@ -1,23 +1,18 @@
-use serde::{Deserialize, Serialize};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+use std::arch::aarch64::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 use std::iter::repeat_with;
 use std::ops::Range;
 use std::path::Path;
-
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use std::arch::aarch64::*;
 use std::sync::{Arc, Mutex};
 
-use crate::encoded_vectors::validate_vector_parameters;
+use serde::{Deserialize, Serialize};
+
+use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
+use crate::encoded_vectors::{validate_vector_parameters, EncodedVectors, VectorParameters};
 use crate::kmeans::kmeans;
-use crate::ConditionalVariable;
-use crate::{
-    encoded_storage::{EncodedStorage, EncodedStorageBuilder},
-    encoded_vectors::{EncodedVectors, VectorParameters},
-    EncodingError,
-};
+use crate::{ConditionalVariable, EncodingError};
 
 pub const KMEANS_SAMPLE_SIZE: usize = 10_000;
 pub const KMEANS_MAX_ITERATIONS: usize = 100;

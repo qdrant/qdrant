@@ -1,12 +1,14 @@
+use std::marker::PhantomData;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
 use crate::encoded_vectors::validate_vector_parameters;
 use crate::utils::{transmute_from_u8_to_slice, transmute_to_u8_slice};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedVectors, EncodingError,
     VectorParameters,
 };
-use serde::{Deserialize, Serialize};
-use std::marker::PhantomData;
-use std::path::Path;
 
 pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
