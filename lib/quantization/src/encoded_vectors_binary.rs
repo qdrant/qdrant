@@ -126,8 +126,8 @@ impl BitsStoreType for u128 {
         if is_x86_feature_detected!("sse4.2") {
             unsafe {
                 return impl_xor_popcnt_sse_uint128(
-                    v1.as_ptr() as *const u8,
-                    v2.as_ptr() as *const u8,
+                    v1.as_ptr().cast::<u8>(),
+                    v2.as_ptr().cast::<u8>(),
                     v1.len() as u32,
                 ) as usize;
             }
@@ -137,8 +137,8 @@ impl BitsStoreType for u128 {
         if std::arch::is_aarch64_feature_detected!("neon") {
             unsafe {
                 return impl_xor_popcnt_neon_uint128(
-                    v1.as_ptr() as *const u8,
-                    v2.as_ptr() as *const u8,
+                    v1.as_ptr().cast::<u8>(),
+                    v2.as_ptr().cast::<u8>(),
                     v1.len() as u32,
                 ) as usize;
             }

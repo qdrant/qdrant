@@ -88,7 +88,7 @@ fn update_centroids(
                     let centroid_data =
                         &mut counter.acc[dim * centroid_index..dim * (centroid_index + 1)];
                     for (c, v) in centroid_data.iter_mut().zip(vector_data.iter()) {
-                        *c += *v as f64;
+                        *c += f64::from(*v);
                     }
                 }
             })
@@ -115,7 +115,7 @@ fn update_centroids(
             centroid_data
                 .iter_mut()
                 .zip(vector.iter())
-                .for_each(|(c, v)| *c = *v as f64);
+                .for_each(|(c, v)| *c = f64::from(*v));
         } else {
             let count = counter.counter[centroid_index] as f64;
             centroid_data.iter_mut().for_each(|c| *c /= count);

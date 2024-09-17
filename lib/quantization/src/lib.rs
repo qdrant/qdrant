@@ -26,12 +26,12 @@ pub enum EncodingError {
 impl Display for EncodingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EncodingError::IOError(description) => write!(f, "IOError: {}", description),
+            EncodingError::IOError(description) => write!(f, "IOError: {description}"),
             EncodingError::EncodingError(description) => {
-                write!(f, "EncodingError: {}", description)
+                write!(f, "EncodingError: {description}")
             }
             EncodingError::ArgumentsError(description) => {
-                write!(f, "ArgumentsError: {}", description)
+                write!(f, "ArgumentsError: {description}")
             }
             EncodingError::Stopped => write!(f, "Stopped"),
         }

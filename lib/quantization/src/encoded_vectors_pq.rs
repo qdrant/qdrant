@@ -152,7 +152,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                     max_threads,
                     &stop_condition,
                 )
-            })
+            });
+        Ok(())
     }
 
     /// Encode whole storage inside rayon context
@@ -165,7 +166,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         centroids: &'b [Vec<f32>],
         max_threads: usize,
         stop_condition: &'b (impl Fn() -> bool + Sync),
-    ) -> Result<(), EncodingError> {
+    ) {
         let storage_builder = Arc::new(Mutex::new(storage_builder));
 
         // Synchronization between threads. Use conditional variable for
@@ -214,7 +215,6 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         }
         // free condvars to allow threads to exit when panicking
         condvars.clear();
-        Ok(())
     }
 
     /// Encode single vector from `&[f32]` into `&[u8]`.
@@ -447,8 +447,8 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         let encoded_vectors =
             TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
         let result = Self {
-            metadata,
             encoded_vectors,
+            metadata,
         };
         Ok(result)
     }

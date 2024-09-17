@@ -94,14 +94,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             let vector_offset = match vector_parameters.distance_type {
                 DistanceType::Dot => {
                     actual_dim as f32 * offset * offset
-                        + encoded_vector.iter().map(|&x| x as f32).sum::<f32>() * alpha * offset
+                        + encoded_vector.iter().map(|&x| f32::from(x)).sum::<f32>() * alpha * offset
                 }
                 DistanceType::L1 => 0.0,
                 DistanceType::L2 => {
                     actual_dim as f32 * offset * offset
                         + encoded_vector
                             .iter()
-                            .map(|&x| x as f32 * x as f32)
+                            .map(|&x| f32::from(x) * f32::from(x))
                             .sum::<f32>()
                             * alpha
                             * alpha
@@ -244,7 +244,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 .encoded_vectors
                 .get_vector_data(i as usize, vector_data_size)
                 .as_ptr();
-            let vector_offset = *(v_ptr as *const f32);
+            let vector_offset = *v_ptr.cast::<f32>();
             (vector_offset, v_ptr.add(std::mem::size_of::<f32>()))
         }
     }
@@ -281,8 +281,8 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         let encoded_vectors =
             TStorage::from_file(data_path, quantized_vector_size, vector_parameters.count)?;
         let result = Self {
-            metadata,
             encoded_vectors,
+            metadata,
         };
         Ok(result)
     }
@@ -306,13 +306,16 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         }
         let offset = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot => {
-                query.iter().map(|&x| x as f32).sum::<f32>()
+                query.iter().map(|&x| f32::from(x)).sum::<f32>()
                     * self.metadata.alpha
                     * self.metadata.offset
             }
             DistanceType::L1 => 0.0,
             DistanceType::L2 => {
-                query.iter().map(|&x| x as f32 * x as f32).sum::<f32>()
+                query
+                    .iter()
+                    .map(|&x| f32::from(x) * f32::from(x))
+                    .sum::<f32>()
                     * self.metadata.alpha
                     * self.metadata.alpha
             }
@@ -457,7 +460,7 @@ fn impl_score_dot(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 
     unsafe {
         let mut score = 0i32;
         for i in 0..actual_dim {
-            score += (*q_ptr.add(i)) as i32 * (*v_ptr.add(i)) as i32;
+            score += i32::from(*q_ptr.add(i)) * i32::from(*v_ptr.add(i));
         }
         score
     }
@@ -467,7 +470,7 @@ fn impl_score_l1(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
     unsafe {
         let mut score = 0i32;
         for i in 0..actual_dim {
-            score += (*q_ptr.add(i) as i32).abs_diff(*v_ptr.add(i) as i32) as i32;
+            score += i32::from(*q_ptr.add(i)).abs_diff(i32::from(*v_ptr.add(i))) as i32;
         }
         score
     }
