@@ -163,7 +163,7 @@ indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
 itertools = "0.13.0"
 log = "0.4.22"
-memmap2 = "0.9.4"
+memmap2 = "0.9.5"
 nix = { version = "0.29", features = ["fs"]}
 num-traits = "0.2.19"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
@@ -257,5 +257,3 @@ opt-level = 3
 [patch.crates-io]
 # Temporary patch until our PRs are merged.
 tar = { git = "https://github.com/qdrant/tar-rs", branch="main" }
-# Temporary patch until memmap2 0.9.5 is released.
-memmap2 = { git = "https://github.com/RazrFalcon/memmap2-rs" }

@@ -1236,7 +1236,7 @@ dependencies = [
  "criterion",
  "lazy_static",
  "log",
- "memmap2 0.9.4",
+ "memmap2 0.9.5",
  "num_cpus",
  "ordered-float 4.2.2",
  "ph",
@@ -3512,8 +3512,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.9.4"
-source = "git+https://github.com/RazrFalcon/memmap2-rs#34776c1f83b0ef17ecbc838a580c66e3d703b51d"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
 dependencies = [
  "libc",
 ]
@@ -3533,7 +3534,7 @@ version = "0.0.0"
 dependencies = [
  "bitvec",
  "log",
- "memmap2 0.9.4",
+ "memmap2 0.9.5",
  "parking_lot",
  "rand 0.8.5",
  "serde",
@@ -5596,7 +5597,7 @@ dependencies = [
  "itertools 0.13.0",
  "log",
  "macro_rules_attribute",
- "memmap2 0.9.4",
+ "memmap2 0.9.5",
  "memory",
  "nom",
  "num-cmp",
@@ -5989,7 +5990,7 @@ dependencies = [
  "indicatif",
  "io",
  "itertools 0.13.0",
- "memmap2 0.9.4",
+ "memmap2 0.9.5",
  "memory",
  "ordered-float 4.2.2",
  "parking_lot",
@@ -7033,7 +7034,7 @@ dependencies = [
  "env_logger",
  "fs4",
  "log",
- "memmap2 0.9.4",
+ "memmap2 0.9.5",
  "rand 0.8.5",
  "rand_distr",
  "rustix 0.38.31",
