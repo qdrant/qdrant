@@ -373,12 +373,12 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => Some(FacetIndex::Keyword(index)),
             FieldIndex::IntMapIndex(index) => Some(FacetIndex::Int(index)),
             FieldIndex::UuidMapIndex(index) => Some(FacetIndex::Uuid(index)),
+            FieldIndex::BinaryIndex(index) => Some(FacetIndex::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)
             | FieldIndex::GeoIndex(_)
-            | FieldIndex::BinaryIndex(_)
             | FieldIndex::FullTextIndex(_) => None,
         }
     }

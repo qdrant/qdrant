@@ -50,11 +50,11 @@ impl<'a> FacetIndex<'a> {
             }
             FacetIndex::Bool(index) => {
                 let iter = vec![
-                    index.values_has_true(point_id).then(|| true),
-                    index.values_has_false(point_id).then(|| false),
+                    index.values_has_true(point_id).then_some(true),
+                    index.values_has_false(point_id).then_some(false),
                 ]
                 .into_iter()
-                .filter_map(|x| x)
+                .flatten()
                 .map(FacetValueRef::Bool);
 
                 Box::new(iter)

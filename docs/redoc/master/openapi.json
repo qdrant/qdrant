@@ -13234,6 +13234,9 @@
           {
             "type": "integer",
             "format": "int64"
+          },
+          {
+            "type": "boolean"
           }
         ]
       }

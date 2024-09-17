@@ -227,9 +227,13 @@ impl BinaryIndex {
         ]
         .into_iter()
     }
-    
+
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (bool, usize)> + '_ {
-        vec![(false, self.memory.falses_count()), (true, self.memory.trues_count())].into_iter()
+        vec![
+            (false, self.memory.falses_count()),
+            (true, self.memory.trues_count()),
+        ]
+        .into_iter()
     }
 }
 

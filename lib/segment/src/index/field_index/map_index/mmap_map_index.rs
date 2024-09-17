@@ -247,11 +247,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        self.value_to_points.iter().map(|(k, v)| {
-            (
-                k,
-                Box::new(v.iter().copied()) as IdIter,
-            )
-        })
+        self.value_to_points
+            .iter()
+            .map(|(k, v)| (k, Box::new(v.iter().copied()) as IdIter))
     }
 }

@@ -10,6 +10,26 @@ collection_name = "test_facets"
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
 
+    # add extra fields with other datatypes
+    request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {"id": 100, "vector": {}, "payload": {"integer": 3, "boolean": True}},
+                {"id": 101, "vector": {}, "payload": {"integer": 3, "boolean": True}},
+                {"id": 102, "vector": {}, "payload": {"integer": 3, "boolean": False}},
+                {"id": 103, "vector": {}, "payload": {"integer": 0, "boolean": True}},
+                {"id": 104, "vector": {}, "payload": {"integer": 3, "boolean": True}},
+                {"id": 105, "vector": {}, "payload": {"integer": 1, "boolean": False}},
+                {"id": 106, "vector": {}, "payload": {"integer": 2, "boolean": False}},
+                {"id": 107, "vector": {}, "payload": {"integer": 0, "boolean": True}},
+            ]
+        }
+    ).raise_for_status()
+    
     request_with_validation(
         api="/collections/{collection_name}/index",
         method="PUT",
@@ -18,6 +38,28 @@ def setup(on_disk_vectors):
         body={
             "field_name": "city",
             "field_schema": "keyword",
+        }
+    ).raise_for_status()
+    
+    request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "field_name": "integer",
+            "field_schema": "integer",
+        }
+    ).raise_for_status()
+    
+    request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "field_name": "boolean",
+            "field_schema": "bool",
         }
     ).raise_for_status()
 
@@ -45,5 +87,49 @@ def test_basic_facet():
             {"value": "Berlin", "count": 3 },
             {"value": "London", "count": 2 },
             {"value": "Moscow", "count": 2 },
+        ]
+    }
+
+def test_integer_facet():
+    response = request_with_validation(
+        api="/collections/{collection_name}/facet",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "key": "integer",
+        }
+    )
+
+    assert response.ok, response.json()
+
+    city_facet = response.json()["result"]
+    assert city_facet == {
+        "hits": [
+            # Sorted by count, then by value
+            {"value": 3, "count": 4 },
+            {"value": 0, "count": 2 },
+            {"value": 1, "count": 1 },
+            {"value": 2, "count": 1 },
+        ]
+    }
+    
+def test_boolean_facet():
+    response = request_with_validation(
+        api="/collections/{collection_name}/facet",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "key": "boolean",
+        }
+    )
+
+    assert response.ok, response.json()
+
+    city_facet = response.json()["result"]
+    assert city_facet == {
+        "hits": [
+            # Sorted by count, then by value
+            {"value": True, "count": 5 },
+            {"value": False, "count": 3 },
         ]
     }

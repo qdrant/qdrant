@@ -161,12 +161,9 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        self.map.iter().map(|(k, v)| {
-            (
-                k.borrow(),
-                Box::new(v.iter().copied()) as IdIter,
-            )
-        })
+        self.map
+            .iter()
+            .map(|(k, v)| (k.borrow(), Box::new(v.iter().copied()) as IdIter))
     }
 
     pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
