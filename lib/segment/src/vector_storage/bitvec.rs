@@ -1,4 +1,4 @@
-use bitvec::vec::BitVec;
+use bitvec::{store::BitStore, vec::BitVec};
 use common::types::PointOffsetType;
 
 /// Set deleted state in given bitvec.
@@ -7,7 +7,11 @@ use common::types::PointOffsetType;
 ///
 /// Returns previous deleted state of the given point.
 #[inline]
-pub fn bitvec_set_deleted(bitvec: &mut BitVec, point_id: PointOffsetType, deleted: bool) -> bool {
+pub fn bitvec_set_deleted<T: BitStore>(
+    bitvec: &mut BitVec<T>,
+    point_id: PointOffsetType,
+    deleted: bool,
+) -> bool {
     // Set deleted flag if bitvec is large enough, no need to check bounds
     if (point_id as usize) < bitvec.len() {
         return unsafe { bitvec.replace_unchecked(point_id as usize, deleted) };

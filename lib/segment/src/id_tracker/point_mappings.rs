@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::iter;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
 use common::types::PointOffsetType;
 use itertools::Itertools;
+use memory::mmap_type::{BitSlice, BitVec};
 use rand::distributions::Distribution;
 use uuid::Uuid;
 

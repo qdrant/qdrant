@@ -3,12 +3,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use bitvec::vec::BitVec;
 use common::mmap_hashmap::MmapHashMap;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
-use memory::mmap_type::{MmapBitSlice, MmapSlice};
+use memory::mmap_type::{BitVec, MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
 
 use super::inverted_index::{InvertedIndex, ParsedQuery};

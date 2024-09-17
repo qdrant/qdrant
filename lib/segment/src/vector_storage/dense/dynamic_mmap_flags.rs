@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 
-use bitvec::prelude::BitSlice;
 use memmap2::MmapMut;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
+use memory::mmap_type::BitSlice;
+use memory::mmap_type::{BitSliceElement, MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -68,9 +68,14 @@ impl fmt::Debug for DynamicMmapFlags {
 
 /// Based on the number of flags determines the size of the mmap file.
 fn mmap_capacity_bytes(num_flags: usize) -> usize {
-    let number_of_bytes = num_flags.div_ceil(u8::BITS as usize);
+    let mut number_of_bytes = num_flags.div_ceil(u8::BITS as usize);
 
-    max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two())
+    // Exponentially grow file
+    number_of_bytes = max(MINIMAL_MMAP_SIZE, number_of_bytes.next_power_of_two());
+
+    // Bit slice uses multi-byte type as backing storage, so we must use a multiple of it
+    let align_bytes = BitSliceElement::BITS / u8::BITS;
+    number_of_bytes.next_multiple_of(align_bytes as usize)
 }
 
 /// Based on the current length determines how many flags can fit into the mmap file without resizing it.

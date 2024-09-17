@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
+use memory::mmap_type::BitSlice;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;

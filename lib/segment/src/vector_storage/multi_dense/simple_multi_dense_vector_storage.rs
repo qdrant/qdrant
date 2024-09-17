@@ -3,8 +3,8 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use memory::mmap_type::{BitSlice, BitVec};
 use parking_lot::RwLock;
 use rocksdb::DB;
 

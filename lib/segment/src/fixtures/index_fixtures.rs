@@ -3,8 +3,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use memory::mmap_type::{BitSlice, BitVec};
 use rand::Rng;
 
 use crate::common::operation_error::OperationResult;

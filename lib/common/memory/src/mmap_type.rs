@@ -27,7 +27,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
-use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
 use crate::madvise::{Advice, AdviceSetting};
@@ -37,6 +36,10 @@ use crate::mmap_ops;
 type Result<T> = std::result::Result<T, Error>;
 
 pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
+
+pub type BitSliceElement = u64;
+pub type BitSlice = bitvec::slice::BitSlice<BitSliceElement, bitvec::order::Lsb0>;
+pub type BitVec = bitvec::vec::BitVec<BitSliceElement, bitvec::order::Lsb0>;
 
 /// Type `T` on a memory mapped file
 ///

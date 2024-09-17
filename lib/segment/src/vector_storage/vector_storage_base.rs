@@ -2,8 +2,8 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
+use memory::mmap_type::BitSlice;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
