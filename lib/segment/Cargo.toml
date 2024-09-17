@@ -70,7 +70,6 @@ semver = { workspace = true }
 tar = { workspace = true }
 fs_extra = "1.3.0"
 tinyvec = { version = "1.8.0", features = ["alloc"] }
-quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { workspace = true }
 chrono = { workspace = true }
 smol_str = { version = "0.3.1", features = ["serde"] }
@@ -92,6 +91,7 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
+quantization = { path = "../quantization" }
 sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
