@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
-use bitvec::macros::internal::funty::Integral;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -142,7 +141,7 @@ impl SegmentBuilder {
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
     fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
-        let mut ordering = 0;
+        let mut ordering = 0u64;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {

@@ -42,7 +42,6 @@ wal = { workspace = true }
 ordered-float = "4.3"
 hashring = "0.3.6"
 tinyvec = { version = "1.8.0", features = ["alloc"] }
-bitvec = { workspace = true }
 lazy_static = "1.5.0"
 smallvec = "1.13.2"
 

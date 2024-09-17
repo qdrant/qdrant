@@ -21,7 +21,7 @@ pub mod events;
 #[cfg(test)]
 mod tests;
 
-// TODO: move this somewhere else?
-pub type BitSliceElement = u64;
-pub type BitSlice = bitvec::slice::BitSlice<BitSliceElement, bitvec::order::Lsb0>;
-pub type BitVec = bitvec::vec::BitVec<BitSliceElement, bitvec::order::Lsb0>;
+// TODO: remove this!
+pub type BitSliceElement = ::common::bitvec::BitSliceElement;
+pub type BitSlice = ::common::bitvec::BitSlice;
+pub type BitVec = ::common::bitvec::BitVec;

@@ -1,4 +1,4 @@
-use bitvec::{store::BitStore, vec::BitVec};
+use common::bitvec::{BitStore, RawBitVec};
 use common::types::PointOffsetType;
 
 /// Set deleted state in given bitvec.
@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 /// Returns previous deleted state of the given point.
 #[inline]
 pub fn bitvec_set_deleted<T: BitStore>(
-    bitvec: &mut BitVec<T>,
+    bitvec: &mut RawBitVec<T>,
     point_id: PointOffsetType,
     deleted: bool,
 ) -> bool {

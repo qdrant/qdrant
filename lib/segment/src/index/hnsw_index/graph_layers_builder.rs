@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use bitvec::prelude::BitVec;
+use common::bitvec::MemoryBitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -40,7 +40,7 @@ pub struct GraphLayersBuilder {
     visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    ready_list: RwLock<BitVec>,
+    ready_list: RwLock<MemoryBitVec>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -120,7 +120,7 @@ impl GraphLayersBuilder {
         .take(num_vectors)
         .collect();
 
-        let ready_list = RwLock::new(BitVec::repeat(false, num_vectors));
+        let ready_list = RwLock::new(MemoryBitVec::repeat(false, num_vectors));
 
         Self {
             max_level: AtomicUsize::new(0),

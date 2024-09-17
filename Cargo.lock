@@ -1157,7 +1157,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
- "bitvec",
  "bytes",
  "cancel",
  "chrono",
@@ -1232,6 +1231,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "bitvec",
  "common",
  "criterion",
  "lazy_static",
@@ -3534,7 +3534,7 @@ dependencies = [
 name = "memory"
 version = "0.0.0"
 dependencies = [
- "bitvec",
+ "common",
  "log",
  "memmap2 0.9.5",
  "parking_lot",
@@ -5595,7 +5595,6 @@ dependencies = [
  "atomicwrites",
  "bincode",
  "bitpacking",
- "bitvec",
  "byteorder",
  "cc",
  "cgroups-rs",

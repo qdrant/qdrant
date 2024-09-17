@@ -201,7 +201,6 @@ zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
 thiserror = "1.0.64"
-bitvec = "1.0.1"
 merge = "0.1.0"
 
 [[bin]]

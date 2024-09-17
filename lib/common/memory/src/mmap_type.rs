@@ -37,9 +37,10 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
-pub type BitSliceElement = u64;
-pub type BitSlice = bitvec::slice::BitSlice<BitSliceElement, bitvec::order::Lsb0>;
-pub type BitVec = bitvec::vec::BitVec<BitSliceElement, bitvec::order::Lsb0>;
+// TODO: remove this!
+pub type BitSliceElement = common::bitvec::BitSliceElement;
+pub type BitSlice = common::bitvec::BitSlice;
+pub type BitVec = common::bitvec::BitVec;
 
 /// Type `T` on a memory mapped file
 ///
