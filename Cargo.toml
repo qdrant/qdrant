@@ -99,6 +99,7 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
+quantization = { path = "lib/quantization" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
@@ -166,6 +167,7 @@ log = "0.4.22"
 memmap2 = "0.9.5"
 nix = { version = "0.29", features = ["fs"]}
 num-traits = "0.2.19"
+rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 ph = "0.8.3"
 pprof = { version = "0.13.0", features = ["flamegraph", "prost-codec"] }
