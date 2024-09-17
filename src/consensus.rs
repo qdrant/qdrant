@@ -799,7 +799,7 @@ impl Consensus {
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus =
             handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-                .map_err(|err| anyhow!("Failed to handle committed entries: {}", err))?;
+                .context("Failed to handle committed entries")?;
         if stop_consensus {
             return Ok((None, None));
         }
@@ -828,7 +828,7 @@ impl Consensus {
         // Apply all committed entries.
         let stop_consensus =
             handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
-                .map_err(|err| anyhow!("Failed to apply committed entries: {}", err))?;
+                .context("Failed to apply committed entries")?;
         // Advance the apply index.
         self.node.advance_apply();
         Ok(stop_consensus)
