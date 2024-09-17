@@ -10,7 +10,8 @@ use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -125,11 +126,12 @@ impl QueueProxyShard {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.inner_unchecked()
             .wrapped_shard
-            .create_snapshot(temp_path, tar, save_wal)
+            .create_snapshot(temp_path, tar, format, save_wal)
             .await
     }
 

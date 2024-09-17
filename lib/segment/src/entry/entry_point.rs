@@ -16,8 +16,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
-    WithVector,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    SnapshotFormat, WithPayload, WithVector,
 };
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
@@ -274,6 +274,7 @@ pub trait SegmentEntry {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()>;
 

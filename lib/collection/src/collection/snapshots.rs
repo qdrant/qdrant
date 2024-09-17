@@ -6,6 +6,7 @@ use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use segment::types::SnapshotFormat;
 
 use super::Collection;
 use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
@@ -102,6 +103,7 @@ impl Collection {
                     .create_snapshot(
                         snapshot_temp_temp_dir.path(),
                         &tar.descend(&shard_snapshot_path)?,
+                        SnapshotFormat::Regular,
                         save_wal,
                     )
                     .await
