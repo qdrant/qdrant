@@ -8,16 +8,19 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [build-dependencies]
 cc = "1.0"
 
 [dependencies]
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = "~1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 permutation_iterator = "0.1.2"
-rand = "0.8.5"
-rayon = "1.7.0"
-num-traits = "0.2.19"
+rand = { workspace = true }
+rayon = { workspace = true }
+num-traits = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
