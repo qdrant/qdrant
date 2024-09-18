@@ -317,7 +317,7 @@ impl ShardHolder {
 
                 // Remove any points that might have been transferred from target shard
                 let filter = self.hash_ring_filter(id).expect("hash ring filter");
-                let filter = Filter::new_must(Condition::CustomIdChecker(Arc::new(filter)));
+                let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
                 shard.cleanup_local_shard(filter).await?;
             }
         }
