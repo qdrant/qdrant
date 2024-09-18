@@ -784,7 +784,7 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn cleanup_local_shard(&self, filter: Filter) -> CollectionResult<UpdateResult> {
+    pub async fn delete_local_points(&self, filter: Filter) -> CollectionResult<UpdateResult> {
         let local_shard_guard = self.local.read().await;
 
         let Some(local_shard) = local_shard_guard.deref() else {
