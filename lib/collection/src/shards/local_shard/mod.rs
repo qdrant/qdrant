@@ -998,8 +998,9 @@ impl LocalShard {
                 let optimizer_status = segments
                     .optimizer_errors
                     .as_ref()
-                    .map(|err| OptimizersStatus::Error(err.to_string()))
-                    .unwrap_or_default();
+                    .map_or(OptimizersStatus::Ok, |err| {
+                        OptimizersStatus::Error(err.to_string())
+                    });
                 return (ShardStatus::Red, optimizer_status);
             }
 
