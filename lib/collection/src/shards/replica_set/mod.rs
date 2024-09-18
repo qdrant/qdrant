@@ -15,6 +15,7 @@ use std::time::Duration;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
+use segment::types::{ExtendedPointId, Filter};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
@@ -27,8 +28,10 @@ use super::CollectionId;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfig;
+use crate::operations::point_ops::{self};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
+use crate::operations::CollectionUpdateOperations;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -784,6 +787,70 @@ impl ShardReplicaSet {
         remote.health_check().await?;
 
         Ok(())
+    }
+
+    pub async fn delete_local_points(&self, filter: Filter) -> CollectionResult<UpdateResult> {
+        let local_shard_guard = self.local.read().await;
+
+        let Some(local_shard) = local_shard_guard.deref() else {
+            return Err(CollectionError::NotFound {
+                what: format!("local shard {}:{}", self.collection_id, self.shard_id),
+            });
+        };
+
+        let mut next_offset = Some(ExtendedPointId::NumId(0));
+        let mut ids = Vec::new();
+
+        while let Some(current_offset) = next_offset {
+            const BATCH_SIZE: usize = 1000;
+
+            let mut points = local_shard
+                .get()
+                .scroll_by(
+                    Some(current_offset),
+                    BATCH_SIZE + 1,
+                    &false.into(),
+                    &false.into(),
+                    Some(&filter),
+                    &self.search_runtime,
+                    None,
+                    None,
+                )
+                .await?;
+
+            if points.len() > BATCH_SIZE {
+                next_offset = points.pop().map(|points| points.id);
+            } else {
+                next_offset = None;
+            }
+
+            ids.extend(points.into_iter().map(|points| points.id));
+        }
+
+        if ids.is_empty() {
+            return Ok(UpdateResult {
+                operation_id: None,
+                status: UpdateStatus::Completed,
+                clock_tag: None,
+            });
+        }
+
+        drop(local_shard_guard);
+
+        let op =
+            CollectionUpdateOperations::PointOperation(point_ops::PointOperations::DeletePoints {
+                ids,
+            });
+
+        // TODO(resharding): Assign clock tag to the operation!? 🤔
+        let result = self.update_local(op.into(), false).await?.ok_or_else(|| {
+            CollectionError::bad_request(format!(
+                "local shard {}:{} does not exist or is unavailable",
+                self.collection_id, self.shard_id,
+            ))
+        })?;
+
+        Ok(result)
     }
 
     fn init_remote_shards(
