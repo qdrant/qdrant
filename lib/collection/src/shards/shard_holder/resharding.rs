@@ -8,7 +8,7 @@ use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey}
 use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::cluster_ops::ReshardingDirection;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
 use crate::operations::{point_ops, CollectionUpdateOperations};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
@@ -511,6 +511,22 @@ impl ShardHolder {
 
             OperationsByMode::from(update_all).with_update_only_existing(update_only_existing)
         }
+    }
+
+    pub async fn cleanup_local_shard(&self, shard_id: ShardId) -> CollectionResult<UpdateResult> {
+        let shard = self.get_shard(&shard_id).ok_or_else(|| {
+            CollectionError::not_found(format!("shard {shard_id} does not exist"))
+        })?;
+
+        if !shard.is_local().await {
+            return Err(CollectionError::bad_shard_selection(format!(
+                "shard {shard_id} is not a local shard"
+            )))?;
+        }
+
+        let filter = self.hash_ring_filter(shard_id).expect("hash ring filter");
+        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
+        shard.delete_local_points(filter).await
     }
 
     pub fn resharding_filter(&self) -> Option<hash_ring::HashRingFilter> {
