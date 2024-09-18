@@ -20,8 +20,3 @@ pub mod wal_delta;
 pub mod events;
 #[cfg(test)]
 mod tests;
-
-// TODO: remove this!
-pub type BitSliceElement = ::common::bitvec::BitSliceElement;
-pub type BitSlice = ::common::bitvec::BitSlice;
-pub type BitVec = ::common::bitvec::BitVec;

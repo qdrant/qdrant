@@ -19,7 +19,8 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
 mod memory {
-    use common::{bitvec::MemoryBitVec, types::PointOffsetType};
+    use common::bitvec::MemoryBitVec;
+    use common::types::PointOffsetType;
 
     pub struct BinaryItem {
         value: u8,

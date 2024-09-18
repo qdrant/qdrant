@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use memory::mmap_type::{BitSlice, BitVec};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 

@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use memory::mmap_type::BitSlice;
+use common::bitvec::BitSlice;
 use quantization::EncodedVectors;
 
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;

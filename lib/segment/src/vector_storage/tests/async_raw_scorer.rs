@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use memory::mmap_type::BitSlice;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
 

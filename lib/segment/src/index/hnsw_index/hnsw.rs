@@ -6,13 +6,13 @@ use std::sync::Arc;
 use std::thread;
 
 use atomic_refcell::AtomicRefCell;
+use common::bitvec::BitSlice;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::{get_num_cpus, CpuPermit};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
-use memory::mmap_type::BitSlice;
 use parking_lot::Mutex;
 use rand::thread_rng;
 use rayon::prelude::*;

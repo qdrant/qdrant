@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use memory::mmap_type::BitSlice;
+use common::bitvec::BitSlice;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;

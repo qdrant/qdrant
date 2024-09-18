@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bincode;
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
-use memory::mmap_type::{BitSlice, BitVec};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};

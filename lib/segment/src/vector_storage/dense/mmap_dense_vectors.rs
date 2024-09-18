@@ -4,11 +4,11 @@ use std::mem::{self, size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
-use memory::mmap_type::BitSlice;
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
 

@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 
+use common::bitvec::{BitSlice, BitSliceElement};
 use memmap2::MmapMut;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::BitSlice;
-use memory::mmap_type::{BitSliceElement, MmapBitSlice, MmapFlusher, MmapType};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
 use crate::common::operation_error::{OperationError, OperationResult};

@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::bitvec::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use memory::mmap_type::BitSlice;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};

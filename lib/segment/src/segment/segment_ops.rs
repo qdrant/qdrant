@@ -4,10 +4,10 @@ use std::fs::{self};
 use std::path::Path;
 use std::thread::{self, JoinHandle};
 
+use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
-use memory::mmap_type::BitVec;
 
 use super::{
     Segment, DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH,

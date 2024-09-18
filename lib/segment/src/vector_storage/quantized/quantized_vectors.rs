@@ -2,9 +2,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use memory::mmap_type::BitSlice;
 use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
 use quantization::{
     EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,

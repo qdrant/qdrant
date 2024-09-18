@@ -3,9 +3,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
-use memory::mmap_type::BitSlice;
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;

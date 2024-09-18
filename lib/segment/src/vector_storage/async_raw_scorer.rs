@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::bitvec::BitSlice;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use memory::mmap_type::BitSlice;
 
 use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
