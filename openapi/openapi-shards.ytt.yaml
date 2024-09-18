@@ -4,8 +4,7 @@ paths:
   /collections/{collection_name}/shards:
     put:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Create shard key
       operationId: create_shard_key
       requestBody:
@@ -32,8 +31,7 @@ paths:
   /collections/{collection_name}/shards/delete:
     post:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Delete shard key
       operationId: delete_shard_key
       requestBody:

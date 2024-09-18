@@ -250,7 +250,7 @@ paths:
   /collections/{collection_name}/points/scroll:
     post:
       tags:
-        - points
+        - Points
       summary: Scroll points
       description: Scroll request - paginate over all points which matches given filtering condition
       operationId: scroll_points
@@ -286,7 +286,7 @@ paths:
   /collections/{collection_name}/points/search:
     post:
       tags:
-        - points
+        - Search
       summary: Search points
       description: Retrieve closest points based on vector similarity and given filtering conditions
       operationId: search_points
@@ -322,7 +322,7 @@ paths:
   /collections/{collection_name}/points/search/batch:
     post:
       tags:
-        - points
+        - Search
       summary: Search batch points
       description: Retrieve by batch the closest points based on vector similarity and given filtering conditions
       operationId: search_batch_points
@@ -358,7 +358,7 @@ paths:
   /collections/{collection_name}/points/search/groups:
     post:
       tags:
-        - points
+        - Search
       summary: Search point groups
       description: Retrieve closest points based on vector similarity and given filtering conditions, grouped by a given payload field
       operationId: search_point_groups
@@ -394,7 +394,7 @@ paths:
   /collections/{collection_name}/points/recommend:
     post:
       tags:
-        - points
+        - Search
       summary: Recommend points
       description: Look for the points which are closer to stored positive examples and at the same time further to negative examples.
       operationId: recommend_points
@@ -430,7 +430,7 @@ paths:
   /collections/{collection_name}/points/recommend/batch:
     post:
       tags:
-        - points
+        - Search
       summary: Recommend batch points
       description: Look for the points which are closer to stored positive examples and at the same time further to negative examples.
       operationId: recommend_batch_points
@@ -466,7 +466,7 @@ paths:
   /collections/{collection_name}/points/recommend/groups:
     post:
       tags:
-        - points
+        - Search
       summary: Recommend point groups
       description: Look for the points which are closer to stored positive examples and at the same time further to negative examples, grouped by a given payload field.
       operationId: recommend_point_groups
@@ -502,7 +502,7 @@ paths:
   /collections/{collection_name}/points/discover:
     post:
       tags:
-        - points
+        - Search
       summary: Discover points
       description: >
         Use context and a target to find the most similar points to the target, constrained by the context.
@@ -553,7 +553,7 @@ paths:
   /collections/{collection_name}/points/discover/batch:
     post:
       tags:
-        - points
+        - Search
       summary: Discover batch points
       description: Look for points based on target and/or positive and negative example pairs, in batch.
       operationId: discover_batch_points
@@ -589,7 +589,7 @@ paths:
   /collections/{collection_name}/points/count:
     post:
       tags:
-        - points
+        - Points
       summary: Count points
       description: Count points which matches given filtering condition
       operationId: count_points
@@ -655,7 +655,7 @@ paths:
   /collections/{collection_name}/points/query:
     post:
       tags:
-        - points
+        - Search
       summary: Query points
       description: Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
       operationId: query_points
@@ -689,21 +689,20 @@ paths:
             minimum: 1
 
       responses: #@ response(reference("QueryResponse"))
-  
+
   /collections/{collection_name}/points/query/batch:
     post:
       tags:
-        - points
+        - Search
       summary: Query points in batch
       description: Universally query points in batch. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.
       operationId: query_batch_points
-      requestBody: 
+      requestBody:
         description: Describes the queries to make to the collection
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/QueryRequestBatch"
-              
 
       parameters:
         - name: collection_name
@@ -731,7 +730,7 @@ paths:
   /collections/{collection_name}/points/query/groups:
     post:
       tags:
-        - points
+        - Search
       summary: Query points, grouped by a given payload field
       description: Universally query points, grouped by a given payload field
       operationId: query_points_groups
