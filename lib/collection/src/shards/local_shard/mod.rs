@@ -990,53 +990,50 @@ impl LocalShard {
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
-        let mut status = ShardStatus::Green;
-        let mut optimizer_status = OptimizersStatus::Ok;
-
         {
             let segments = self.segments().read();
 
+            // Red status on failed operation or optimizer error
             if !segments.failed_operation.is_empty() || segments.optimizer_errors.is_some() {
-                status = ShardStatus::Red;
+                let optimizer_status = segments
+                    .optimizer_errors
+                    .as_ref()
+                    .map_or(OptimizersStatus::Ok, |err| {
+                        OptimizersStatus::Error(err.to_string())
+                    });
+                return (ShardStatus::Red, optimizer_status);
+            }
 
-                if let Some(error) = &segments.optimizer_errors {
-                    optimizer_status = OptimizersStatus::Error(error.to_string());
-                }
+            // Yellow status if we have a special segment, indicates a proxy segment used during optimization
+            // TODO: snapshotting also creates temp proxy segments. should differentiate.
+            let has_special_segment = segments
+                .iter()
+                .map(|(_, segment)| segment.get().read().info().segment_type)
+                .any(|segment_type| segment_type == SegmentType::Special);
+            if has_special_segment {
+                return (ShardStatus::Yellow, OptimizersStatus::Ok);
+            }
+        }
+
+        // Yellow or grey status if there are pending optimizations
+        // Grey if optimizers were not triggered yet after restart,
+        // we don't automatically trigger them to prevent a crash loop
+        let (has_triggered_any_optimizers, has_suboptimal_optimizers) = self
+            .update_handler
+            .lock()
+            .await
+            .check_optimizer_conditions();
+        if has_suboptimal_optimizers {
+            let status = if has_triggered_any_optimizers {
+                ShardStatus::Yellow
             } else {
-                let has_special_segments = segments
-                    .iter()
-                    .map(|(_, segment)| segment.get().read().info().segment_type)
-                    .any(|segment_type| segment_type == SegmentType::Special);
-
-                // Special segment means it's a proxy segment and is being optimized, mark as yellow
-                // ToDo: snapshotting also creates temp proxy segments. should differentiate.
-                if has_special_segments {
-                    status = ShardStatus::Yellow;
-                }
-            }
+                ShardStatus::Grey
+            };
+            return (status, OptimizersStatus::Ok);
         }
 
-        // If status looks green/ok but some optimizations are suboptimal
-        if status == ShardStatus::Green && optimizer_status == OptimizersStatus::Ok {
-            let (has_triggered_any_optimizers, has_suboptimal_optimizers) = self
-                .update_handler
-                .lock()
-                .await
-                .check_optimizer_conditions();
-
-            if has_suboptimal_optimizers {
-                // Check if any optimizations were triggered after starting the node
-                if has_triggered_any_optimizers {
-                    status = ShardStatus::Yellow;
-                } else {
-                    // This can happen when a node is restarted (crashed), because we don't
-                    // automatically trigger optimizations on restart to avoid a crash loop
-                    status = ShardStatus::Grey;
-                }
-            }
-        }
-
-        (status, optimizer_status)
+        // Green status because everything is fine
+        (ShardStatus::Green, OptimizersStatus::Ok)
     }
 
     pub async fn local_shard_info(&self) -> ShardInfoInternal {
