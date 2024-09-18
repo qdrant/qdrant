@@ -1,23 +1,19 @@
 use std::sync::Arc;
 
 use actix_web::{post, web, Responder};
-use collection::operations::point_ops::{PointIdsList, PointsSelector};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CountRequestInternal, PointRequestInternal, ScrollRequestInternal, UpdateResult, UpdateStatus,
+    CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
 };
 use collection::shards::shard::ShardId;
-use segment::types::{Condition, ExtendedPointId, Filter};
-use storage::content_manager::collection_verification::check_strict_mode;
+use segment::types::{Condition, Filter};
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
-use tokio::time::Instant;
 
-use super::update_api::UpdateParam;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers;
 use crate::common::points;
 
 // Configure services
@@ -25,7 +21,7 @@ pub fn config_local_shard_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_points)
         .service(scroll_points)
         .service(count_points)
-        .service(delete_points);
+        .service(cleanup_shard);
 }
 
 #[post("/collections/{collection}/shards/{shard}/points")]
@@ -62,17 +58,12 @@ async fn scroll_points(
     request: web::Json<WithFilter<ScrollRequestInternal>>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
-    let WithFilter {
-        mut request,
-        hash_ring_filter,
-    } = request.into_inner();
-
-    let pass = match check_strict_mode(&request, &path.collection, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
-
     helpers::time(async move {
+        let WithFilter {
+            mut request,
+            hash_ring_filter,
+        } = request.into_inner();
+
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
@@ -90,7 +81,7 @@ async fn scroll_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access)
             .scroll(
                 &path.collection,
                 request,
@@ -112,17 +103,12 @@ async fn count_points(
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
-    let WithFilter {
-        mut request,
-        hash_ring_filter,
-    } = request.into_inner();
-
-    let pass = match check_strict_mode(&request, &path.collection, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
-
     helpers::time(async move {
+        let WithFilter {
+            mut request,
+            hash_ring_filter,
+        } = request.into_inner();
+
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
@@ -140,7 +126,7 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         points::do_count_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access),
             &path.collection,
             request,
             params.consistency,
@@ -153,78 +139,18 @@ async fn count_points(
     .await
 }
 
-#[post("/collections/{collection}/shards/{shard}/points/delete")]
-async fn delete_points(
+#[post("/collections/{collection}/shards/{shard}/cleanup")]
+async fn cleanup_shard(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
-    selector: web::Json<Selector>,
-    params: web::Query<UpdateParam>,
 ) -> impl Responder {
     helpers::time(async move {
         let path = path.into_inner();
-        let selector = selector.into_inner();
-
-        let filter = get_hash_ring_filter(
-            &dispatcher,
-            &access,
-            &path.collection,
-            AccessRequirements::new().write().whole(),
-            selector.hash_ring_filter.expected_shard_id,
-        )
-        .await?;
-
-        let mut points = Vec::new();
-        let mut next_offset = Some(ExtendedPointId::NumId(0));
-
-        while let Some(current_offset) = next_offset {
-            let scroll = ScrollRequestInternal {
-                limit: Some(1000),
-                offset: Some(current_offset),
-                filter: Some(filter.clone()),
-                ..Default::default()
-            };
-
-            let resp = dispatcher
-                .toc(&access)
-                .scroll(
-                    &path.collection,
-                    scroll,
-                    None,
-                    None,
-                    ShardSelectorInternal::ShardId(path.shard),
-                    access.clone(),
-                )
-                .await?;
-
-            points.extend(resp.points.into_iter().map(|record| record.id));
-            next_offset = resp.next_page_offset;
-        }
-
-        if points.is_empty() {
-            return Ok(UpdateResult {
-                operation_id: None,
-                status: UpdateStatus::Completed,
-                clock_tag: None,
-            });
-        }
-
-        let delete = PointsSelector::PointIdsSelector(PointIdsList {
-            points,
-            shard_key: None,
-        });
-
-        points::do_delete_points(
-            dispatcher.toc(&access).clone(),
-            path.collection,
-            delete,
-            None,
-            Some(path.shard),
-            params.wait.unwrap_or(false),
-            Default::default(),
-            access,
-        )
-        .await
+        dispatcher
+            .toc(&access)
+            .cleanup_local_shard(&path.collection, path.shard, access)
+            .await
     })
     .await
 }
@@ -242,11 +168,6 @@ struct WithFilter<T> {
     request: T,
     #[serde(default)]
     hash_ring_filter: Option<SerdeHelper>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-struct Selector {
-    hash_ring_filter: SerdeHelper,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
