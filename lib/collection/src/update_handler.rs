@@ -548,10 +548,22 @@ impl UpdateHandler {
 
         loop {
             let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
-            let result = receiver.await;
+            let mut result = receiver.await;
 
             // Always clean up on any signal
-            Self::cleanup_optimization_handles(optimization_handles.clone()).await;
+            let cleaned_any =
+                Self::cleanup_optimization_handles(optimization_handles.clone()).await;
+
+            // If we cleaned any optimization handles, always trigger Nop
+            // TODO(timvisee): implement this in a better way
+            if let Err(Elapsed { .. }) = &result {
+                if cleaned_any {
+                    log::warn!(
+                        "Cleaned a optimization handle after timeout, explicitly triggering optimizers with Nop signal"
+                    );
+                    result = Ok(Some(OptimizerSignal::Nop));
+                }
+            }
 
             match result {
                 // Channel closed or stop signal
