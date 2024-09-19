@@ -89,7 +89,13 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
     } else {
         vec![]
     };
-    let db = DB::open_cf(&db_options(), path, existing_column_families)?;
+    let options = db_options();
+    // Make sure that all column families have the same options
+    let column_with_options = existing_column_families
+        .into_iter()
+        .map(|cf| (cf, options.clone()))
+        .collect::<Vec<_>>();
+    let db = DB::open_cf_with_opts(&db_options(), path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
