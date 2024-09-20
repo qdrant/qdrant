@@ -553,6 +553,10 @@ impl UpdateHandler {
                 Self::cleanup_optimization_handles(optimization_handles.clone()).await;
 
             // Either continue below here with the worker, or reloop/break
+            // Decision logic doing one of three things:
+            // 1. run optimizers
+            // 2. reloop and wait for next signal
+            // 3. break here and stop the optimization worker
             let force = match result {
                 // Optimizer signal to force optimizers: do 1
                 Ok(Some(OptimizerSignal::Nop)) => true,
@@ -560,6 +564,12 @@ impl UpdateHandler {
                 Ok(Some(OptimizerSignal::Operation(_))) => false,
                 // Hit optimizer cleanup interval, did clean up a task: do 1
                 Err(Elapsed { .. }) if cleaned_any => {
+                    // This branch prevents a race condition where optimizers would get stuck
+                    // If the optimizer cleanup interval was triggered and we did clean any task we
+                    // must run optimizers now. If we don't there may not be any other ongoing
+                    // tasks that'll trigger this for us. If we don't run optimizers here we might
+                    // get stuck into yellow state until a new update operation is received.
+                    // See: <https://github.com/qdrant/qdrant/pull/5111>
                     log::warn!("Cleaned a optimization handle after timeout, explicitly triggering optimizers");
                     true
                 }
