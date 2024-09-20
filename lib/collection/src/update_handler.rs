@@ -547,107 +547,100 @@ impl UpdateHandler {
         let mut cpu_available_trigger: Option<JoinHandle<()>> = None;
 
         loop {
-            let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
-            let mut result = receiver.await;
+            let result = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv()).await;
 
-            // Always clean up on any signal
             let cleaned_any =
                 Self::cleanup_optimization_handles(optimization_handles.clone()).await;
 
-            // If we cleaned any optimization handles, always trigger Nop
-            // TODO(timvisee): implement this in a better way
-            if let Err(Elapsed { .. }) = &result {
-                if cleaned_any {
-                    log::warn!(
-                        "Cleaned a optimization handle after timeout, explicitly triggering optimizers with Nop signal"
-                    );
-                    result = Ok(Some(OptimizerSignal::Nop));
+            // Either continue below here with the worker, or reloop/break
+            let force = match result {
+                // Optimizer signal to force optimizers: do 1
+                Ok(Some(OptimizerSignal::Nop)) => true,
+                // Regular optimizer signal: run optimizers: do 1
+                Ok(Some(OptimizerSignal::Operation(_))) => false,
+                // Hit optimizer cleanup interval, did clean up a task: do 1
+                Err(Elapsed { .. }) if cleaned_any => {
+                    log::warn!("Cleaned a optimization handle after timeout, explicitly triggering optimizers");
+                    true
                 }
-            }
-
-            match result {
-                // Channel closed or stop signal
-                Ok(None | Some(OptimizerSignal::Stop)) => break,
-                // Clean up interval
+                // Hit optimizer cleanup interval, did not clean up a task: do 2
                 Err(Elapsed { .. }) => continue,
-                // Optimizer signal
-                Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
-                    has_triggered_optimizers.store(true, Ordering::Relaxed);
+                // Channel closed or received stop signal: do 3
+                Ok(None | Some(OptimizerSignal::Stop)) => break,
+            };
 
-                    // Ensure we have at least one appendable segment with enough capacity
-                    // Source required parameters from first optimizer
-                    if let Some(optimizer) = optimizers.first() {
-                        let result = Self::ensure_appendable_segment_with_capacity(
-                            &segments,
-                            optimizer.segments_path(),
-                            &optimizer.collection_params(),
-                            optimizer.threshold_config(),
-                            &payload_index_schema.read(),
-                        );
-                        if let Err(err) = result {
-                            log::error!("Failed to ensure there are appendable segments with capacity: {err}");
-                            panic!("Failed to ensure there are appendable segments with capacity: {err}");
-                        }
-                    }
+            has_triggered_optimizers.store(true, Ordering::Relaxed);
 
-                    // If not forcing with Nop, wait on next signal if we have too many handles
-                    if signal != OptimizerSignal::Nop
-                        && optimization_handles.lock().await.len() >= max_handles
-                    {
-                        continue;
-                    }
-
-                    if Self::try_recover(segments.clone(), wal.clone())
-                        .await
-                        .is_err()
-                    {
-                        continue;
-                    }
-
-                    // Continue if we have enough CPU budget available to start an optimization
-                    // Otherwise skip now and start a task to trigger the optimizer again once CPU
-                    // budget becomes available
-                    let desired_cpus = num_rayon_threads(max_indexing_threads);
-                    if !optimizer_cpu_budget.has_budget(desired_cpus) {
-                        let trigger_active = cpu_available_trigger
-                            .as_ref()
-                            .map_or(false, |t| !t.is_finished());
-                        if !trigger_active {
-                            cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
-                                optimizer_cpu_budget.clone(),
-                                desired_cpus,
-                                sender.clone(),
-                            ));
-                        }
-                        continue;
-                    }
-
-                    // Determine optimization handle limit based on max handles we allow
-                    // Not related to the CPU budget, but a different limit for the maximum number
-                    // of concurrent concrete optimizations per shard as configured by the user in
-                    // the Qdrant configuration.
-                    // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
-                    let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
-                    if limit == 0 {
-                        log::trace!(
-                            "Skipping optimization check, we reached optimization thread limit"
-                        );
-                        continue;
-                    }
-
-                    Self::process_optimization(
-                        optimizers.clone(),
-                        segments.clone(),
-                        optimization_handles.clone(),
-                        optimizers_log.clone(),
-                        total_optimized_points.clone(),
-                        &optimizer_cpu_budget,
-                        sender.clone(),
-                        limit,
-                    )
-                    .await;
+            // Ensure we have at least one appendable segment with enough capacity
+            // Source required parameters from first optimizer
+            if let Some(optimizer) = optimizers.first() {
+                let result = Self::ensure_appendable_segment_with_capacity(
+                    &segments,
+                    optimizer.segments_path(),
+                    &optimizer.collection_params(),
+                    optimizer.threshold_config(),
+                    &payload_index_schema.read(),
+                );
+                if let Err(err) = result {
+                    log::error!(
+                        "Failed to ensure there are appendable segments with capacity: {err}"
+                    );
+                    panic!("Failed to ensure there are appendable segments with capacity: {err}");
                 }
             }
+
+            // If not forcing, wait on next signal if we have too many handles
+            if !force && optimization_handles.lock().await.len() >= max_handles {
+                continue;
+            }
+
+            if Self::try_recover(segments.clone(), wal.clone())
+                .await
+                .is_err()
+            {
+                continue;
+            }
+
+            // Continue if we have enough CPU budget available to start an optimization
+            // Otherwise skip now and start a task to trigger the optimizer again once CPU
+            // budget becomes available
+            let desired_cpus = num_rayon_threads(max_indexing_threads);
+            if !optimizer_cpu_budget.has_budget(desired_cpus) {
+                let trigger_active = cpu_available_trigger
+                    .as_ref()
+                    .map_or(false, |t| !t.is_finished());
+                if !trigger_active {
+                    cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
+                        optimizer_cpu_budget.clone(),
+                        desired_cpus,
+                        sender.clone(),
+                    ));
+                }
+                continue;
+            }
+
+            // Determine optimization handle limit based on max handles we allow
+            // Not related to the CPU budget, but a different limit for the maximum number
+            // of concurrent concrete optimizations per shard as configured by the user in
+            // the Qdrant configuration.
+            // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
+            let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
+            if limit == 0 {
+                log::trace!("Skipping optimization check, we reached optimization thread limit");
+                continue;
+            }
+
+            Self::process_optimization(
+                optimizers.clone(),
+                segments.clone(),
+                optimization_handles.clone(),
+                optimizers_log.clone(),
+                total_optimized_points.clone(),
+                &optimizer_cpu_budget,
+                sender.clone(),
+                limit,
+            )
+            .await;
         }
     }
 
