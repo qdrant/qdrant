@@ -557,11 +557,11 @@ impl UpdateHandler {
             // 1. run optimizers
             // 2. reloop and wait for next signal
             // 3. break here and stop the optimization worker
-            let force = match result {
-                // Optimizer signal to force optimizers: do 1
-                Ok(Some(OptimizerSignal::Nop)) => true,
+            let ignore_max_handles = match result {
                 // Regular optimizer signal: run optimizers: do 1
                 Ok(Some(OptimizerSignal::Operation(_))) => false,
+                // Optimizer signal ignoring max handles: do 1
+                Ok(Some(OptimizerSignal::Nop)) => true,
                 // Hit optimizer cleanup interval, did clean up a task: do 1
                 Err(Elapsed { .. }) if cleaned_any => {
                     // This branch prevents a race condition where optimizers would get stuck
@@ -600,7 +600,7 @@ impl UpdateHandler {
             }
 
             // If not forcing, wait on next signal if we have too many handles
-            if !force && optimization_handles.lock().await.len() >= max_handles {
+            if !ignore_max_handles && optimization_handles.lock().await.len() >= max_handles {
                 continue;
             }
 
