@@ -96,12 +96,12 @@ impl PayloadStorage for OnDiskPayloadStorage {
         let stored_payload = self.read_payload(point_id)?;
         match stored_payload {
             Some(mut point_payload) => {
-                point_payload.merge_by_key(payload, key)?;
+                point_payload.merge_by_key(payload, key);
                 self.update_storage(point_id, &point_payload)
             }
             None => {
                 let mut dest_payload = Payload::default();
-                dest_payload.merge_by_key(payload, key)?;
+                dest_payload.merge_by_key(payload, key);
                 self.update_storage(point_id, &dest_payload)
             }
         }
