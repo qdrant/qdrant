@@ -40,11 +40,11 @@ impl PayloadStorage for SimplePayloadStorage {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
             None => {
                 let mut dest_payload = Payload::default();
-                dest_payload.merge_by_key(payload, key)?;
+                dest_payload.merge_by_key(payload, key);
                 self.payload.insert(point_id, dest_payload);
-                Ok(())
             }
         }
+        Ok(())
     }
 
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {

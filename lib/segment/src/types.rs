@@ -986,9 +986,8 @@ impl Payload {
         utils::merge_map(&mut self.0, &value.0)
     }
 
-    pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) -> OperationResult<()> {
+    pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) {
         JsonPath::value_set(Some(key), &mut self.0, &value.0);
-        Ok(())
     }
 
     pub fn remove(&mut self, path: &JsonPath) -> Vec<Value> {
