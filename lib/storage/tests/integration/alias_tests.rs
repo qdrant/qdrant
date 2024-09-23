@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use collection::operations::vector_params_builder::VectorParamsBuilder;
+use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::cpu::CpuBudget;
@@ -165,7 +166,7 @@ fn test_alias_operation() {
 
     let _ = handle
         .block_on(
-            dispatcher.toc_new(&FULL_ACCESS, &pass).get_collection(
+            dispatcher.toc(&FULL_ACCESS, &pass).get_collection(
                 &FULL_ACCESS
                     .check_collection_access("test_alias3", AccessRequirements::new())
                     .unwrap(),

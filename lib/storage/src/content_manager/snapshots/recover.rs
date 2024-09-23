@@ -85,7 +85,7 @@ async fn _do_recover_from_snapshot(
     // All checks should've been done at this point.
     let pass = new_unchecked_verification_pass();
 
-    let toc = dispatcher.toc_new(&access, &pass);
+    let toc = dispatcher.toc(&access, &pass);
 
     let this_peer_id = toc.this_peer_id;
 

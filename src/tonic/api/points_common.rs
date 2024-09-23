@@ -553,7 +553,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 // We don't need strict mode checks for upsert!
-                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
+                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 upsert(
                     toc.clone(),
                     UpsertPoints {
@@ -685,7 +685,7 @@ pub async fn update_batch(
                 },
             ) => {
                 // We don't need strict mode checks for vector updates!
-                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
+                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 update_vectors(
                     toc.clone(),
                     UpdatePointVectors {

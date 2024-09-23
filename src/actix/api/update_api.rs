@@ -50,7 +50,7 @@ async fn upsert_points(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_upsert_points(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -81,7 +81,7 @@ async fn delete_points(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_delete_points(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -109,7 +109,7 @@ async fn update_vectors(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_update_vectors(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -142,7 +142,7 @@ async fn delete_vectors(
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_delete_vectors(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -175,7 +175,7 @@ async fn set_payload(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_set_payload(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -205,7 +205,7 @@ async fn overwrite_payload(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_overwrite_payload(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -235,7 +235,7 @@ async fn delete_payload(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_delete_payload(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -266,7 +266,7 @@ async fn clear_payload(
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_clear_payload(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -309,7 +309,7 @@ async fn update_batch(
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_batch_update_points(
-        dispatcher.toc_new(&access, &pass).clone(),
+        dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operations.operations,
         None,

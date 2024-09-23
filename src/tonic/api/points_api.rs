@@ -57,7 +57,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc_new(&access, &pass).clone(),
+            self.dispatcher.toc(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,
@@ -112,7 +112,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc_new(&access, &pass).clone(),
+            self.dispatcher.toc(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,

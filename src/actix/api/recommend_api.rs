@@ -57,7 +57,7 @@ async fn recommend_points(
 
     helpers::time(
         dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .recommend(
                 &collection.name,
                 recommend_request,
@@ -124,7 +124,7 @@ async fn recommend_batch_points(
 
     helpers::time(
         do_recommend_batch_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             request.into_inner(),
             params.consistency,
@@ -178,7 +178,7 @@ async fn recommend_point_groups(
     };
 
     helpers::time(crate::common::points::do_recommend_point_groups(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         recommend_group_request,
         params.consistency,

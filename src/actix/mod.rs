@@ -67,11 +67,11 @@ pub fn init(
         let auth_keys = AuthKeys::try_create(
             &settings.service,
             dispatcher
-                .toc_new(&Access::full("For JWT validation"), &pass)
+                .toc(&Access::full("For JWT validation"), &pass)
                 .clone(),
         );
         let upload_dir = dispatcher
-            .toc_new(&Access::full("For upload dir"), &pass)
+            .toc(&Access::full("For upload dir"), &pass)
             .upload_dir()
             .unwrap();
         let dispatcher_data = web::Data::from(dispatcher);

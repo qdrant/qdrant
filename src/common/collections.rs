@@ -240,7 +240,7 @@ pub async fn do_update_collection_cluster(
     let pass = new_unchecked_verification_pass();
 
     let collection = dispatcher
-        .toc_new(&access, &pass)
+        .toc(&access, &pass)
         .get_collection(&collection_pass)
         .await?;
 

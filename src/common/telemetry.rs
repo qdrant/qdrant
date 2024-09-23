@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use collection::operations::verification::new_unchecked_verification_pass;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
@@ -75,8 +76,13 @@ impl TelemetryCollector {
     pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
         TelemetryData {
             id: self.process_id.to_string(),
-            collections: CollectionsTelemetry::collect(detail, access, self.dispatcher.toc(access))
-                .await,
+            collections: CollectionsTelemetry::collect(
+                detail,
+                access,
+                self.dispatcher
+                    .toc(access, &new_unchecked_verification_pass()),
+            )
+            .await,
             app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(

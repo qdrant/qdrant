@@ -200,7 +200,7 @@ pub fn init(
                 AuthKeys::try_create(
                     &settings.service,
                     dispatcher
-                        .toc_new(
+                        .toc(
                             &Access::full("For tonic auth middleware"),
                             &new_unchecked_verification_pass(),
                         )
