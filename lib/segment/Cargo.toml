@@ -54,7 +54,7 @@ serde-untagged = "0.1.6"
 ordered-float = "4.2"
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
-atomicwrites = "0.4.3"
+atomicwrites = "0.4.4"
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
