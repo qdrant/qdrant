@@ -37,10 +37,7 @@ pub struct UncheckedTocProvider<'a> {
 }
 
 impl<'a> UncheckedTocProvider<'a> {
-    #[deprecated(
-        note = "You should NOT use UncheckedTocProvider, unless you know what you're doing. In that case supress this with #[allow(deprecated)]"
-    )]
-    pub fn new(toc: &'a Arc<TableOfContent>) -> Self {
+    pub fn new_unchecked(toc: &'a Arc<TableOfContent>) -> Self {
         Self { toc }
     }
 }
