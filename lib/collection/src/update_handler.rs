@@ -508,7 +508,7 @@ impl UpdateHandler {
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
-                .map(|i| handles.remove(i))
+                .map(|i| handles.swap_remove(i))
                 .collect()
         };
 
