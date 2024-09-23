@@ -4612,7 +4612,6 @@ dependencies = [
  "prost 0.11.9",
  "pyroscope",
  "pyroscope_pprofrs",
- "quantization",
  "raft",
  "raft-proto",
  "rand 0.8.5",
