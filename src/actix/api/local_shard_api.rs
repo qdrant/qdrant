@@ -71,7 +71,7 @@ async fn scroll_points(
 
     let pass = match check_strict_mode(
         &request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
         &access,
@@ -130,7 +130,7 @@ async fn count_points(
 
     let pass = match check_strict_mode(
         &request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &path.collection,
         &dispatcher,
         &access,

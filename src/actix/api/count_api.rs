@@ -27,7 +27,7 @@ async fn count_points(
 
     let pass = match check_strict_mode(
         &count_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,

@@ -31,7 +31,7 @@ async fn discover_points(
 
     let pass = match check_strict_mode(
         &discover_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -80,7 +80,7 @@ async fn discover_batch_points(
 
     let pass = match check_strict_mode_batch(
         request.searches.iter().map(|i| &i.discover_request),
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,

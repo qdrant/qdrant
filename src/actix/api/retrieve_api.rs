@@ -69,7 +69,7 @@ async fn get_point(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -114,7 +114,7 @@ async fn get_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -170,7 +170,7 @@ async fn scroll_points(
 
     let pass = match check_strict_mode(
         &scroll_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,

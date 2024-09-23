@@ -20,7 +20,7 @@ impl ReadParams {
         self.timeout.map(|num| Duration::from_secs(num.get()))
     }
 
-    pub(crate) fn timeout_usize(&self) -> Option<usize> {
+    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
         self.timeout.map(|i| i.get() as usize)
     }
 }

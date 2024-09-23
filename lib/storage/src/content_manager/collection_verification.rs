@@ -40,7 +40,7 @@ where
         }
     }
 
-    // I'ts checked now
+    // It's checked now
     Ok(new_unchecked_verification_pass())
 }
 
@@ -86,7 +86,7 @@ pub async fn check_strict_mode_timeout(
         }
     }
 
-    // I'ts checked now
+    // It's checked now
     Ok(new_unchecked_verification_pass())
 }
 

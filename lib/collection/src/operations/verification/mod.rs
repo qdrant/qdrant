@@ -19,12 +19,6 @@ use crate::collection::Collection;
 // Creates a new `VerificationPass` for successful verifications.
 // Don't use this, unless you know what you're doing!
 pub fn new_unchecked_verification_pass() -> VerificationPass {
-    new_pass()
-}
-
-// Creates a new `VerificationPass` for successful verifications.
-// Don't use this, unless you know what you're doing!
-fn new_pass() -> VerificationPass {
     VerificationPass { inner: () }
 }
 

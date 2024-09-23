@@ -37,7 +37,7 @@ async fn search_points(
 
     let pass = match check_strict_mode(
         &search_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -102,7 +102,7 @@ async fn batch_search_points(
 
     let pass = match check_strict_mode_batch(
         requests.iter().map(|i| &i.0),
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -152,7 +152,7 @@ async fn search_point_groups(
 
     let pass = match check_strict_mode(
         &search_group_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -197,7 +197,7 @@ async fn search_points_matrix_pairs(
 
     let pass = match check_strict_mode(
         &search_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -245,7 +245,7 @@ async fn search_points_matrix_offsets(
 
     let pass = match check_strict_mode(
         &search_request,
-        params.timeout_usize(),
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
