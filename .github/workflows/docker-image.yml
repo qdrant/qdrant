@@ -1,7 +1,6 @@
 name: Build and deploy docker image
 
 on:
-  workflow_dispatch:
   push:
     # Pattern matched against refs/tags
     tags:
