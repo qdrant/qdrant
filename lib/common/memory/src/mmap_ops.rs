@@ -62,7 +62,7 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
     // Populate before advising
     // Because we want to read data with normal advice
     if populate {
-        mmap.populate()?;
+        mmap.populate();
     }
 
     madvise::madvise(&mmap, advice.resolve())?;
@@ -82,7 +82,7 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
     // Populate before advising
     // Because we want to read data with normal advice
     if populate {
-        mmap.populate()?;
+        mmap.populate();
     }
 
     madvise::madvise(&mmap, advice.resolve())?;
@@ -120,14 +120,7 @@ where
 
     let instant = time::Instant::now();
 
-    if let Err(err) = mmap.populate() {
-        log::warn!(
-            "Failed to populate mmap{separator}{path:?} to cache: {err}",
-            separator = separator,
-            path = path,
-            err = err
-        );
-    }
+    mmap.populate();
 
     log::trace!(
         "Reading mmap{separator}{path:?} to populate cache took {:?}",

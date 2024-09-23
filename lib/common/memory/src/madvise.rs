@@ -100,7 +100,7 @@ pub trait Madviseable {
     /// Advise OS how given memory map will be accessed. On non-Unix platforms this is a no-op.
     fn madvise(&self, advice: Advice) -> io::Result<()>;
 
-    fn populate(&self) -> io::Result<()>;
+    fn populate(&self);
 }
 
 impl Madviseable for memmap2::Mmap {
@@ -112,13 +112,18 @@ impl Madviseable for memmap2::Mmap {
         Ok(())
     }
 
-    fn populate(&self) -> io::Result<()> {
+    fn populate(&self) {
         #[cfg(target_os = "linux")]
         if *POPULATE_READ_IS_SUPPORTED {
-            return self.advise(memmap2::Advice::PopulateRead);
+            match self.advise(memmap2::Advice::PopulateRead) {
+                Ok(()) => return,
+                Err(err) => log::warn!(
+                    "Failed to populate with MADV_POPULATE_READ: {err}. \
+                     Falling back to naive approach."
+                ),
+            }
         }
         populate_simple(self);
-        Ok(())
     }
 }
 
@@ -131,13 +136,18 @@ impl Madviseable for memmap2::MmapMut {
         Ok(())
     }
 
-    fn populate(&self) -> io::Result<()> {
+    fn populate(&self) {
         #[cfg(target_os = "linux")]
         if *POPULATE_READ_IS_SUPPORTED {
-            return self.advise(memmap2::Advice::PopulateRead);
+            match self.advise(memmap2::Advice::PopulateRead) {
+                Ok(()) => return,
+                Err(err) => log::warn!(
+                    "Failed to populate with MADV_POPULATE_READ: {err}. \
+                     Falling back to naive approach."
+                ),
+            }
         }
         populate_simple(self);
-        Ok(())
     }
 }
 
