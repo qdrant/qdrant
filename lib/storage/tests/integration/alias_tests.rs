@@ -160,9 +160,12 @@ fn test_alias_operation() {
         ))
         .unwrap();
 
+    // Nothing to verify here.
+    let pass = new_unchecked_verification_pass();
+
     let _ = handle
         .block_on(
-            dispatcher.toc(&FULL_ACCESS).get_collection(
+            dispatcher.toc_new(&FULL_ACCESS, &pass).get_collection(
                 &FULL_ACCESS
                     .check_collection_access("test_alias3", AccessRequirements::new())
                     .unwrap(),

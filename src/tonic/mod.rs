@@ -29,6 +29,7 @@ use ::api::grpc::qdrant::{
     WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -199,7 +200,10 @@ pub fn init(
                 AuthKeys::try_create(
                     &settings.service,
                     dispatcher
-                        .toc(&Access::full("For tonic auth middleware"))
+                        .toc_new(
+                            &Access::full("For tonic auth middleware"),
+                            &new_unchecked_verification_pass(),
+                        )
                         .clone(),
                 )
                 .map(auth::AuthLayer::new)

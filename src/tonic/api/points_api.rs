@@ -16,6 +16,7 @@ use api::grpc::qdrant::{
     UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -50,10 +51,13 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc(&access).clone(),
+            self.dispatcher.toc_new(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,
@@ -88,7 +92,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         get(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -102,10 +106,13 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc(&access).clone(),
+            self.dispatcher.toc_new(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,
