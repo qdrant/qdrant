@@ -85,7 +85,7 @@ byteorder = { workspace = true }
 zerocopy = { workspace = true }
 
 sysinfo = "0.31"
-charabia = { version = "0.9.0", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }
 io = { path = "../common/io" }
