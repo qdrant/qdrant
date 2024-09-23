@@ -190,7 +190,10 @@ pub(crate) fn set_payload(
             op_num,
             chunk,
             |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
-            |_, _, old_payload| old_payload.merge(payload),
+            |_, _, old_payload| match key {
+                Some(key) => old_payload.merge_by_key(payload, key),
+                None => old_payload.merge(payload),
+            },
             |segment| {
                 segment.get_indexed_fields().keys().all(|indexed_path| {
                     !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
