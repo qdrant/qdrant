@@ -727,9 +727,17 @@ impl LocalShard {
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
+
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 
         Ok(())
+    }
+
+    pub fn trigger_optimizers(&self) {
+        // Send a trigger signal and ignore errors because all error cases are acceptable:
+        // - If receiver is already dead - we do not care
+        // - If channel is full - optimization will be triggered by some other signal
+        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
     /// Finishes ongoing update tasks

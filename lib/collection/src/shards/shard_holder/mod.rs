@@ -63,6 +63,12 @@ pub struct ShardHolder {
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
+    pub async fn trigger_optimizers(&self) {
+        for shard in self.shards.values() {
+            shard.trigger_optimizers().await;
+        }
+    }
+
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {
         let shard_transfers =
             SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;

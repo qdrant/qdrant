@@ -316,6 +316,11 @@ async fn _do_recover_from_snapshot(
         }
     }
 
+    // Explicitly trigger optimizers for the collection we have recovered. This prevents them from
+    // remaining in grey state if the snapshot is not optimized.
+    // See: <ttps://github.com/qdrant/qdrant/issues/5139>
+    collection.trigger_optimizers().await;
+
     // Remove tmp collection dir
     tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
 
