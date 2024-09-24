@@ -734,6 +734,9 @@ impl LocalShard {
     }
 
     pub fn trigger_optimizers(&self) {
+        // Send a trigger signal and ignore errors because all error cases are acceptable:
+        // - If receiver is already dead - we do not care
+        // - If channel is full - optimization will be triggered by some other signal
         let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
