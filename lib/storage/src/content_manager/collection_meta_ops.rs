@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use collection::config::{CollectionConfig, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
-    StrictModeConfigDiff, WalConfigDiff,
+    WalConfigDiff,
 };
 use collection::operations::types::{
     SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
@@ -14,7 +14,9 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
-use segment::types::{PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey};
+use segment::types::{
+    PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
+};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -169,7 +171,7 @@ pub struct CreateCollection {
     /// Strict-mode config.
     #[validate(nested)]
     #[schemars(skip)]
-    pub strict_mode_config: Option<StrictModeConfigDiff>,
+    pub strict_mode_config: Option<StrictModeConfig>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -402,7 +404,7 @@ impl From<CollectionConfig> for CreateCollection {
             init_from: None,
             quantization_config: value.quantization_config,
             sparse_vectors: value.params.sparse_vectors,
-            strict_mode_config: value.strict_mode_config.map(StrictModeConfigDiff::from),
+            strict_mode_config: value.strict_mode_config,
         }
     }
 }
