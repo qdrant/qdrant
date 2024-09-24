@@ -986,6 +986,15 @@ impl ShardReplicaSet {
     pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
         SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
+
+    pub(crate) async fn trigger_optimizers(&self) -> bool {
+        let shard = self.local.read().await;
+        let Some(shard) = shard.as_ref() else {
+            return false;
+        };
+        shard.trigger_optimizers().await;
+        true
+    }
 }
 
 /// Represents a replica set state

@@ -83,6 +83,11 @@ impl ProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
+    pub fn trigger_optimizers(&self) {
+        // TODO: we might want to defer this trigger until we unproxy
+        self.wrapped_shard.trigger_optimizers();
+    }
+
     pub async fn reinit_changelog(&self) -> CollectionResult<()> {
         // Blocks updates in the wrapped shard.
         let mut changed_points_guard = self.changed_points.write().await;
