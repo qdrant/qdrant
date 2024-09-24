@@ -316,6 +316,8 @@ async fn _do_recover_from_snapshot(
         }
     }
 
+    collection.trigger_optimizers().await?;
+
     // Remove tmp collection dir
     tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
 

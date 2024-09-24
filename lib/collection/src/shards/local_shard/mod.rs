@@ -732,6 +732,11 @@ impl LocalShard {
         Ok(())
     }
 
+    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
+        self.update_sender.load().send(UpdateSignal::Nop).await?;
+        Ok(())
+    }
+
     /// Finishes ongoing update tasks
     pub async fn stop_gracefully(&self) {
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {

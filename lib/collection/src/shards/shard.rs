@@ -117,6 +117,19 @@ impl Shard {
         }
     }
 
+    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
+        match self {
+            Shard::Local(local_shard) => local_shard.trigger_optimizers().await?,
+            Shard::Proxy(proxy_shard) => proxy_shard.trigger_optimizers().await?,
+            Shard::ForwardProxy(forward_proxy_shard) => {
+                forward_proxy_shard.trigger_optimizers().await?
+            }
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.trigger_optimizers().await?,
+            Shard::Dummy(dummy_shard) => dummy_shard.trigger_optimizers().await?,
+        };
+        Ok(())
+    }
+
     pub fn is_update_in_progress(&self) -> bool {
         self.update_tracker()
             .map_or(false, UpdateTracker::is_update_in_progress)

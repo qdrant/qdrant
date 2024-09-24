@@ -203,6 +203,10 @@ impl ForwardProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
+    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
+        self.wrapped_shard.trigger_optimizers().await
+    }
+
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data(detail)
     }
