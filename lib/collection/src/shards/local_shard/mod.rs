@@ -728,12 +728,13 @@ impl LocalShard {
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
 
-        self.trigger_optimizers().await
+        self.update_sender.load().send(UpdateSignal::Nop).await?;
+
+        Ok(())
     }
 
-    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
-        self.update_sender.load().send(UpdateSignal::Nop).await?;
-        Ok(())
+    pub fn trigger_optimizers(&self) {
+        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
     /// Finishes ongoing update tasks

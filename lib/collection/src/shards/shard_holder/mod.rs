@@ -63,12 +63,10 @@ pub struct ShardHolder {
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
-    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
+    pub async fn trigger_optimizers(&self) {
         for shard in self.shards.values() {
-            shard.trigger_optimizers().await?;
+            shard.trigger_optimizers().await;
         }
-
-        Ok(())
     }
 
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {

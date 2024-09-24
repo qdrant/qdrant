@@ -45,10 +45,6 @@ impl DummyShard {
         self.dummy()
     }
 
-    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
-        self.dummy()
-    }
-
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: Some("dummy shard".into()),

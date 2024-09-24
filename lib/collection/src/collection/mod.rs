@@ -785,8 +785,8 @@ impl Collection {
         self.shards_holder.clone()
     }
 
-    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
-        self.shards_holder.write().await.trigger_optimizers().await
+    pub async fn trigger_optimizers(&self) {
+        self.shards_holder.read().await.trigger_optimizers().await;
     }
 }
 

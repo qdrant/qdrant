@@ -155,11 +155,8 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn trigger_optimizers(&self) -> CollectionResult<()> {
-        self.inner_unchecked()
-            .wrapped_shard
-            .trigger_optimizers()
-            .await
+    pub fn trigger_optimizers(&self) {
+        self.inner_unchecked().wrapped_shard.trigger_optimizers();
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {

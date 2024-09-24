@@ -987,13 +987,13 @@ impl ShardReplicaSet {
         SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 
-    pub(crate) async fn trigger_optimizers(&self) -> CollectionResult<bool> {
-        let mut shard = self.local.write().await;
-        let Some(shard) = shard.as_mut() else {
-            return Ok(false);
+    pub(crate) async fn trigger_optimizers(&self) -> bool {
+        let shard = self.local.read().await;
+        let Some(shard) = shard.as_ref() else {
+            return false;
         };
-        shard.trigger_optimizers().await?;
-        Ok(true)
+        shard.trigger_optimizers().await;
+        true
     }
 }
 
