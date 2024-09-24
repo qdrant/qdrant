@@ -49,7 +49,7 @@ smallvec = "1.13.2"
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-atomicwrites = "0.4.4"
+atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = "0.11"
 merge = "0.1.0"
