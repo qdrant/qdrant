@@ -49,7 +49,7 @@ async fn discover_points(
 
     helpers::time(
         dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .discover(
                 &collection.name,
                 discover_request,
@@ -93,7 +93,7 @@ async fn discover_batch_points(
 
     helpers::time(
         do_discover_batch_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             request,
             params.consistency,

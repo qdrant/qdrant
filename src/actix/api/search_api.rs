@@ -55,7 +55,7 @@ async fn search_points(
 
     helpers::time(
         do_core_search_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             search_request.into(),
             params.consistency,
@@ -115,7 +115,7 @@ async fn batch_search_points(
 
     helpers::time(
         do_search_batch_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             requests,
             params.consistency,
@@ -169,7 +169,7 @@ async fn search_point_groups(
     };
 
     helpers::time(do_search_point_groups(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         search_group_request,
         params.consistency,
@@ -214,7 +214,7 @@ async fn search_points_matrix_pairs(
     };
 
     let response = do_search_points_matrix(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
@@ -262,7 +262,7 @@ async fn search_points_matrix_offsets(
     };
 
     let response = do_search_points_matrix(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,

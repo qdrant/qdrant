@@ -106,7 +106,7 @@ fn put_locks(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(async move {
-        let toc = dispatcher.toc_new(&access, &pass);
+        let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().manage())?;
         let result = LocksOption {
             write: toc.is_write_locked(),
@@ -127,7 +127,7 @@ fn get_locks(
 
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new())?;
-        let toc = dispatcher.toc_new(&access, &pass);
+        let toc = dispatcher.toc(&access, &pass);
         let result = LocksOption {
             write: toc.is_write_locked(),
             error_message: toc.get_lock_error_message(),

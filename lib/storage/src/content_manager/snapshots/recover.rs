@@ -2,6 +2,7 @@ use collection::collection::Collection;
 use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfig;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
@@ -80,7 +81,11 @@ async fn _do_recover_from_snapshot(
         checksum,
         api_key: _,
     } = source;
-    let toc = dispatcher.toc(&access);
+
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+
+    let toc = dispatcher.toc(&access, &pass);
 
     let this_peer_id = toc.this_peer_id;
 

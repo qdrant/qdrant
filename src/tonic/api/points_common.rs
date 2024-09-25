@@ -553,7 +553,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 // We don't need strict mode checks for upsert!
-                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
+                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 upsert(
                     toc.clone(),
                     UpsertPoints {
@@ -685,7 +685,7 @@ pub async fn update_batch(
                 },
             ) => {
                 // We don't need strict mode checks for vector updates!
-                let toc = dispatcher.toc_new(&access, &new_unchecked_verification_pass());
+                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 update_vectors(
                     toc.clone(),
                     UpdatePointVectors {
@@ -1652,7 +1652,7 @@ pub async fn count(
 }
 
 pub async fn get(
-    toc: &TableOfContent,
+    toc_provider: impl CheckedTocProvider,
     get_points: GetPoints,
     shard_selection: Option<ShardId>,
     access: Access,
@@ -1677,12 +1677,22 @@ pub async fn get(
             .map(|selector| selector.into())
             .unwrap_or_default(),
     };
-    let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
+
+    let toc = toc_provider
+        .check_strict_mode(
+            &point_request,
+            &collection_name,
+            timeout.map(|i| i as usize),
+            &access,
+        )
+        .await?;
+
+    let timeout = timeout.map(Duration::from_secs);
 
     let records = do_get_points(
         toc,

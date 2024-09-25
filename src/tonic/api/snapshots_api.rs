@@ -10,6 +10,7 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
     do_list_full_snapshots,
@@ -46,8 +47,11 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
         let dispatcher = self.dispatcher.clone();
 
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let response = do_create_snapshot(
-            Arc::clone(dispatcher.toc(&access)),
+            Arc::clone(dispatcher.toc(&access, &pass)),
             access,
             &collection_name,
         )
@@ -69,8 +73,15 @@ impl Snapshots for SnapshotsService {
         let access = extract_access(&mut request);
         let ListSnapshotsRequest { collection_name } = request.into_inner();
 
-        let snapshots =
-            do_list_snapshots(self.dispatcher.toc(&access), access, &collection_name).await?;
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let snapshots = do_list_snapshots(
+            self.dispatcher.toc(&access, &pass),
+            access,
+            &collection_name,
+        )
+        .await?;
 
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
@@ -128,7 +139,11 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let snapshots = do_list_full_snapshots(self.dispatcher.toc(&access), access).await?;
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let snapshots = do_list_full_snapshots(self.dispatcher.toc(&access, &pass), access).await?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
