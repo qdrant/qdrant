@@ -10,7 +10,9 @@ use collection::operations::types::{
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
-use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_batch,
+};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -20,7 +22,7 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::helpers::{self, process_response_error};
 
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
@@ -35,11 +37,18 @@ async fn recommend_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&recommend_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &recommend_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -100,24 +109,17 @@ async fn recommend_batch_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let mut vpass = None;
-    for operation in request.searches.iter() {
-        let pass = match check_strict_mode(
-            &operation.recommend_request,
-            &collection.name,
-            &dispatcher,
-            &access,
-        )
-        .await
-        {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
-        vpass = Some(pass);
-    }
-    // vpass == None => No search available
-    let Some(pass) = vpass else {
-        return process_response::<Vec<api::rest::ScoredPoint>>(Ok(vec![]), Instant::now());
+    let pass = match check_strict_mode_batch(
+        request.searches.iter().map(|i| &i.recommend_request),
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
     };
 
     helpers::time(
@@ -152,11 +154,23 @@ async fn recommend_point_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO: Check strict mode
     let RecommendGroupsRequest {
         recommend_group_request,
         shard_key,
     } = request.into_inner();
+
+    let pass = match check_strict_mode(
+        &recommend_group_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -164,7 +178,7 @@ async fn recommend_point_groups(
     };
 
     helpers::time(crate::common::points::do_recommend_point_groups(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         &collection.name,
         recommend_group_request,
         params.consistency,

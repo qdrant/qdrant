@@ -4,7 +4,7 @@ use segment::types::{Filter, SearchParams};
 use super::StrictModeVerification;
 use crate::collection::Collection;
 use crate::operations::config_diff::StrictModeConfig;
-use crate::operations::types::{CollectionError, SearchRequestBatch};
+use crate::operations::types::{CollectionError, CoreSearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequestInternal {
     fn indexed_filter_read(&self) -> Option<&Filter> {
@@ -29,6 +29,32 @@ impl StrictModeVerification for SearchRequestInternal {
 
     fn request_exact(&self) -> Option<bool> {
         None
+    }
+}
+
+impl StrictModeVerification for CoreSearchRequest {
+    fn query_limit(&self) -> Option<usize> {
+        Some(self.limit)
+    }
+
+    fn timeout(&self) -> Option<usize> {
+        None
+    }
+
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        self.filter.as_ref()
+    }
+
+    fn indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        self.params.as_ref()
     }
 }
 

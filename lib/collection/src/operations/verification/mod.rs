@@ -2,6 +2,8 @@ mod count;
 mod discovery;
 mod facet;
 mod local_shard;
+mod matrix;
+mod query;
 mod recommend;
 mod search;
 mod update;
@@ -16,7 +18,7 @@ use crate::collection::Collection;
 
 // Creates a new `VerificationPass` for successful verifications.
 // Don't use this, unless you know what you're doing!
-pub fn new_pass() -> VerificationPass {
+pub fn new_unchecked_verification_pass() -> VerificationPass {
     VerificationPass { inner: () }
 }
 
@@ -101,7 +103,11 @@ pub trait StrictModeVerification {
         &self,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_limit_opt(self.timeout(), strict_mode_config.max_timeout, "timeout")
+        if let Some(timeout) = self.timeout() {
+            check_timeout(timeout, strict_mode_config)?;
+        }
+
+        Ok(())
     }
 
     // Checks all filters use indexed fields only.
@@ -159,6 +165,13 @@ pub trait StrictModeVerification {
         self.check_search_params(collection, strict_mode_config)?;
         Ok(())
     }
+}
+
+pub fn check_timeout(
+    timeout: usize,
+    strict_mode_config: &StrictModeConfig,
+) -> Result<(), CollectionError> {
+    check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
 }
 
 pub(crate) fn check_bool_opt(

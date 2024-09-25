@@ -6,13 +6,17 @@ use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
 use itertools::Itertools;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_batch,
+};
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
+use tokio::time::Instant;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_query_point_groups;
 
 #[post("/collections/{name}/points/query")]
@@ -23,20 +27,32 @@ async fn query_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO add strict mode checking!
-    helpers::time(async move {
-        let QueryRequest {
-            internal: query_request,
-            shard_key,
-        } = request.into_inner();
+    let QueryRequest {
+        internal: query_request,
+        shard_key,
+    } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &query_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let shard_selection = match shard_key {
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
 
         let points = dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .query_batch(
                 &collection.name,
                 vec![(query_request.into(), shard_selection)],
@@ -66,10 +82,22 @@ async fn query_points_batch(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO add strict mode checking!
-    helpers::time(async move {
-        let QueryRequestBatch { searches } = request.into_inner();
+    let QueryRequestBatch { searches } = request.into_inner();
 
+    let pass = match check_strict_mode_batch(
+        searches.iter().map(|i| &i.internal),
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let batch = searches
             .into_iter()
             .map(|request| {
@@ -86,10 +114,10 @@ async fn query_points_batch(
 
                 (request, shard_selection)
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let res = dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .query_batch(
                 &collection.name,
                 batch,
@@ -120,13 +148,25 @@ async fn query_points_groups(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO add strict mode checking!
-    helpers::time(async move {
-        let QueryGroupsRequest {
-            search_group_request,
-            shard_key,
-        } = request.into_inner();
+    let QueryGroupsRequest {
+        search_group_request,
+        shard_key,
+    } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &search_group_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let shard_selection = match shard_key {
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
@@ -135,7 +175,7 @@ async fn query_points_groups(
         let query_group_request = CollectionQueryGroupsRequest::from(search_group_request);
 
         do_query_point_groups(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &collection.name,
             query_group_request,
             params.consistency,

@@ -9,16 +9,20 @@ use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_timeout,
+};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use tokio::time::Instant;
 use validator::Validate;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_get_points;
 
 #[derive(Deserialize, Validate)]
@@ -64,14 +68,25 @@ async fn get_point(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO: Check strict mode
+    let pass = match check_strict_mode_timeout(
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     helpers::time(async move {
         let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
             description: format!("Can not recognize \"{}\" as point id", point.id),
         })?;
 
         let Some(record) = do_get_point(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &collection.name,
             point_id,
             params.consistency,
@@ -98,7 +113,18 @@ async fn get_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO: Check strict mode
+    let pass = match check_strict_mode_timeout(
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let PointRequest {
         point_request,
         shard_key,
@@ -111,7 +137,7 @@ async fn get_points(
 
     helpers::time(
         do_get_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &collection.name,
             point_request,
             params.consistency,
@@ -137,18 +163,30 @@ async fn scroll_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TODO: Check strict mode
     let ScrollRequest {
         scroll_request,
         shard_key,
     } = request.into_inner();
+
+    let pass = match check_strict_mode(
+        &scroll_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    helpers::time(dispatcher.toc(&access).scroll(
+    helpers::time(dispatcher.toc_new(&access, &pass).scroll(
         &collection.name,
         scroll_request,
         params.consistency,
