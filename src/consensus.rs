@@ -207,7 +207,7 @@ impl Consensus {
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
-                uri,
+                uri.clone(),
                 p2p_port,
                 &config,
                 tls_config.clone(),
@@ -499,6 +499,13 @@ impl Consensus {
         }
 
         if self
+            .try_add_origin()
+            .context("failed to propose origin peer URI to consensus")?
+        {
+            return Ok(Some(1));
+        }
+
+        if self
             .try_promote_learner()
             .context("failed to promote learner")?
         {
@@ -658,6 +665,53 @@ impl Consensus {
             }
         }
         Ok(())
+    }
+
+    fn try_add_origin(&mut self) -> anyhow::Result<bool> {
+        // If there are more than 1 peer in consensus, we are definitely *not* the origin peer.
+        if self.node.store().peer_count() > 1 {
+            return Ok(false);
+        }
+
+        debug_assert_ne!(
+            self.node.store().peer_count(),
+            0,
+            "cluster should always have at least one peer"
+        );
+
+        let status = self.node.status();
+
+        if status.hs.commit > 1 {
+            return Ok(false);
+        }
+
+        if status.ss.raft_state != StateRole::Leader {
+            return Ok(true);
+        }
+
+        let mut change = ConfChangeV2::default();
+
+        change.set_changes(vec![raft_proto::new_conf_change_single(
+            status.id,
+            ConfChangeType::AddNode,
+        )]);
+
+        let peer_uri = self
+            .node
+            .store()
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .get(&status.id)
+            .context("can't find current peer URI")?
+            .to_string();
+
+        self.node
+            .propose_conf_change(peer_uri.into(), change)
+            .context("failed to propose origin peer URI")?;
+
+        Ok(true)
     }
 
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
