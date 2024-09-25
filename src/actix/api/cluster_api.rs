@@ -43,7 +43,7 @@ fn recover_current_peer(
 
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-        dispatcher.toc_new(&access, &pass).request_snapshot()?;
+        dispatcher.toc(&access, &pass).request_snapshot()?;
         Ok(true)
     })
 }
@@ -62,7 +62,7 @@ fn remove_peer(
         access.check_global_access(AccessRequirements::new().manage())?;
 
         let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc_new(&access, &pass);
+        let toc = dispatcher.toc(&access, &pass);
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;
@@ -139,7 +139,7 @@ async fn update_cluster_metadata_key(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc_new(&access, &pass);
+        let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
         toc.update_cluster_metadata(key.into_inner(), value.into_inner())?;
@@ -157,7 +157,7 @@ async fn delete_cluster_metadata_key(
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc_new(&access, &pass);
+        let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
         toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null)?;

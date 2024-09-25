@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::verification::new_unchecked_verification_pass;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
@@ -31,7 +32,11 @@ pub async fn do_delete_full_snapshot(
 ) -> Result<bool, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
 
-    let toc = dispatcher.toc(&access);
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+
+    let toc = dispatcher.toc(&access, &pass);
+
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir = snapshot_manager
         .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
@@ -55,7 +60,11 @@ pub async fn do_delete_collection_snapshot(
     let collection_pass = access
         .check_collection_access(collection_name, AccessRequirements::new().write().whole())?;
 
-    let toc = dispatcher.toc(&access);
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+
+    let toc = dispatcher.toc(&access, &pass);
+
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
     let snapshot_manager = toc.get_snapshots_storage_manager()?;
@@ -87,7 +96,11 @@ pub async fn do_create_full_snapshot(
     access: Access,
 ) -> Result<SnapshotDescription, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
-    let toc = dispatcher.toc(&access).clone();
+
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&access, &pass).clone();
+
     let res = tokio::spawn(async move { _do_create_full_snapshot(&toc, access).await }).await??;
     Ok(res)
 }

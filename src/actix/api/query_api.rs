@@ -52,7 +52,7 @@ async fn query_points(
         };
 
         let points = dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .query_batch(
                 &collection.name,
                 vec![(query_request.into(), shard_selection)],
@@ -117,7 +117,7 @@ async fn query_points_batch(
             .collect::<Vec<_>>();
 
         let res = dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .query_batch(
                 &collection.name,
                 batch,
@@ -175,7 +175,7 @@ async fn query_points_groups(
         let query_group_request = CollectionQueryGroupsRequest::from(search_group_request);
 
         do_query_point_groups(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             query_group_request,
             params.consistency,

@@ -37,17 +37,9 @@ impl Dispatcher {
     }
 
     /// Get the table of content.
-    /// The `_access` parameter is not used, but it's required to verify caller's possession
-    /// of the [Access] object.
-    /// TODO: replace with `toc_new`
-    pub fn toc(&self, _access: &Access) -> &Arc<TableOfContent> {
-        &self.toc
-    }
-
-    /// Get the table of content.
     /// The `_access` and `_verification_pass` parameter are not used, but it's required to verify caller's possession
     /// of both objects.
-    pub fn toc_new(
+    pub fn toc(
         &self,
         _access: &Access,
         _verification_pass: &VerificationPass,

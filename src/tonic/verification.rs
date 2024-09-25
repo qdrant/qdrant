@@ -91,7 +91,7 @@ impl<'a> CheckedTocProvider for StrictModeCheckedTocProvider<'a> {
     ) -> Result<&Arc<TableOfContent>, Status> {
         let pass =
             check_strict_mode(request, timeout, collection_name, self.dispatcher, access).await?;
-        Ok(self.dispatcher.toc_new(access, &pass))
+        Ok(self.dispatcher.toc(access, &pass))
     }
 
     async fn check_strict_mode_batch<'b, I, R>(
@@ -113,6 +113,6 @@ impl<'a> CheckedTocProvider for StrictModeCheckedTocProvider<'a> {
             access,
         )
         .await?;
-        Ok(self.dispatcher.toc_new(access, &pass))
+        Ok(self.dispatcher.toc(access, &pass))
     }
 }

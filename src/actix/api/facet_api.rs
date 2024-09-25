@@ -47,7 +47,7 @@ async fn facet(
     };
 
     let response = dispatcher
-        .toc_new(&access, &pass)
+        .toc(&access, &pass)
         .facet(
             &collection.name,
             facet_params,

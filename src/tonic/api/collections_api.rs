@@ -15,6 +15,7 @@ use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKeyOperation, DropShardingKeyOperation,
 };
 use collection::operations::types::CollectionsAliasesResponse;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -65,8 +66,12 @@ impl Collections for CollectionsService {
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         get(
-            self.dispatcher.toc(&access),
+            self.dispatcher.toc(&access, &pass),
             request.into_inner(),
             access,
             None,
@@ -81,7 +86,11 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let result = do_list_collections(self.dispatcher.toc(&access), access).await?;
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
+        let result = do_list_collections(self.dispatcher.toc(&access, &pass), access).await?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -126,10 +135,17 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
-        let CollectionsAliasesResponse { aliases } =
-            do_list_collection_aliases(self.dispatcher.toc(&access), access, &collection_name)
-                .await?;
+        let CollectionsAliasesResponse { aliases } = do_list_collection_aliases(
+            self.dispatcher.toc(&access, &pass),
+            access,
+            &collection_name,
+        )
+        .await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -144,8 +160,12 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let CollectionsAliasesResponse { aliases } =
-            do_list_aliases(self.dispatcher.toc(&access), access).await?;
+            do_list_aliases(self.dispatcher.toc(&access, &pass), access).await?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -160,9 +180,17 @@ impl Collections for CollectionsService {
         let timing = Instant::now();
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result =
-            do_collection_exists(self.dispatcher.toc(&access), access, &collection_name).await?;
+        let result = do_collection_exists(
+            self.dispatcher.toc(&access, &pass),
+            access,
+            &collection_name,
+        )
+        .await?;
         let response = CollectionExistsResponse {
             result: Some(result),
             time: timing.elapsed().as_secs_f64(),
@@ -177,8 +205,12 @@ impl Collections for CollectionsService {
     ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let response = do_get_collection_cluster(
-            self.dispatcher.toc(&access),
+            self.dispatcher.toc(&access, &pass),
             access,
             request.into_inner().collection_name.as_str(),
         )

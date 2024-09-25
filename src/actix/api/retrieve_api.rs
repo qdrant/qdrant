@@ -86,7 +86,7 @@ async fn get_point(
         })?;
 
         let Some(record) = do_get_point(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             point_id,
             params.consistency,
@@ -137,7 +137,7 @@ async fn get_points(
 
     helpers::time(
         do_get_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &collection.name,
             point_request,
             params.consistency,
@@ -186,7 +186,7 @@ async fn scroll_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    helpers::time(dispatcher.toc_new(&access, &pass).scroll(
+    helpers::time(dispatcher.toc(&access, &pass).scroll(
         &collection.name,
         scroll_request,
         params.consistency,

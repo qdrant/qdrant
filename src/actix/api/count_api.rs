@@ -44,7 +44,7 @@ async fn count_points(
     };
 
     helpers::time(do_count_points(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         count_request,
         params.consistency,

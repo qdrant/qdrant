@@ -39,11 +39,7 @@ async fn get_collections(
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_collections(
-        dispatcher.toc_new(&access, &pass),
-        access,
-    ))
-    .await
+    helpers::time(do_list_collections(dispatcher.toc(&access, &pass), access)).await
 }
 
 #[get("/aliases")]
@@ -54,7 +50,7 @@ async fn get_aliases(
     // No request to verify
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(do_list_aliases(dispatcher.toc_new(&access, &pass), access)).await
+    helpers::time(do_list_aliases(dispatcher.toc(&access, &pass), access)).await
 }
 
 #[get("/collections/{name}")]
@@ -67,7 +63,7 @@ async fn get_collection(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_get_collection(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         access,
         &collection.name,
         None,
@@ -85,7 +81,7 @@ async fn get_collection_existence(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_collection_exists(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         access,
         &collection.name,
     ))
@@ -102,7 +98,7 @@ async fn get_collection_aliases(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_list_collection_aliases(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         access,
         &collection.name,
     ))
@@ -199,7 +195,7 @@ async fn get_cluster_info(
     let pass = new_unchecked_verification_pass();
 
     helpers::time(do_get_collection_cluster(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         access,
         &collection.name,
     ))

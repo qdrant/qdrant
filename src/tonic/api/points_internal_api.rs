@@ -486,7 +486,13 @@ impl PointsInternal for PointsInternalService {
 
         get_points.read_consistency = None; // *Have* to be `None`!
 
-        get(self.toc.as_ref(), get_points, shard_id, FULL_ACCESS.clone()).await
+        get(
+            UncheckedTocProvider::new_unchecked(&self.toc),
+            get_points,
+            shard_id,
+            FULL_ACCESS.clone(),
+        )
+        .await
     }
 
     async fn count(

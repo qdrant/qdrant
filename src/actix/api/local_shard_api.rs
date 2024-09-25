@@ -40,7 +40,7 @@ async fn get_points(
 
     helpers::time(async move {
         let records = points::do_get_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &path.collection,
             request.into_inner(),
             params.consistency,
@@ -101,7 +101,7 @@ async fn scroll_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .scroll(
                 &path.collection,
                 request,
@@ -160,7 +160,7 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         points::do_count_points(
-            dispatcher.toc_new(&access, &pass),
+            dispatcher.toc(&access, &pass),
             &path.collection,
             request,
             params.consistency,
@@ -185,7 +185,7 @@ async fn cleanup_shard(
     helpers::time(async move {
         let path = path.into_inner();
         dispatcher
-            .toc_new(&access, &pass)
+            .toc(&access, &pass)
             .cleanup_local_shard(&path.collection, path.shard, access)
             .await
     })
@@ -223,7 +223,7 @@ async fn get_hash_ring_filter(
     let pass = access.check_collection_access(collection, reqs)?;
 
     let shard_holder = dispatcher
-        .toc_new(access, verification_pass)
+        .toc(access, verification_pass)
         .get_collection(&pass)
         .await?
         .shards_holder();
