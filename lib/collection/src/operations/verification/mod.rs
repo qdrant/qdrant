@@ -258,7 +258,8 @@ mod test {
 
     use common::cpu::CpuBudget;
     use segment::types::{
-        Condition, FieldCondition, Filter, Match, SearchParams, StrictModeConfig,
+        Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
+        SearchParams, StrictModeConfig, ValueVariants,
     };
     use tempfile::Builder;
 
@@ -275,6 +276,9 @@ mod test {
     use crate::shards::collection_shard_distribution::CollectionShardDistribution;
     use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
 
+    const UNINDEXED_KEY: &str = "key";
+    const INDEXED_KEY: &str = "num";
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_strict_mode_verification_trait() {
         let collection = fixture().await;
@@ -288,25 +292,45 @@ mod test {
 
     async fn test_query_limit(collection: &Collection) {
         assert_strict_mode_error(discovery_fixture(Some(10), None, None), collection).await;
+        assert_strict_mode_success(discovery_fixture(Some(4), None, None), collection).await;
     }
 
     async fn test_filter_read(collection: &Collection) {
-        let filter = filter_fixture();
+        let filter = filter_fixture(UNINDEXED_KEY);
         assert_strict_mode_error(discovery_fixture(None, Some(filter), None), collection).await;
+
+        let filter = filter_fixture(INDEXED_KEY);
+        assert_strict_mode_success(discovery_fixture(None, Some(filter), None), collection).await;
     }
 
     async fn test_search_params(collection: &Collection) {
-        let params = search_params_fixture();
-        assert_strict_mode_error(discovery_fixture(None, None, Some(params)), collection).await;
+        let restricted_params = search_params_fixture(true);
+        assert_strict_mode_error(
+            discovery_fixture(None, None, Some(restricted_params)),
+            collection,
+        )
+        .await;
+
+        let allowed_params = search_params_fixture(false);
+        assert_strict_mode_success(
+            discovery_fixture(None, None, Some(allowed_params)),
+            collection,
+        )
+        .await;
     }
 
     async fn test_filter_write(collection: &Collection) {
-        let filter = filter_fixture();
-        let request = PointsSelector::FilterSelector(FilterSelector {
-            filter,
+        let restricted_request = PointsSelector::FilterSelector(FilterSelector {
+            filter: filter_fixture(UNINDEXED_KEY),
             shard_key: None,
         });
-        assert_strict_mode_error(request, collection).await;
+        assert_strict_mode_error(restricted_request, collection).await;
+
+        let allowed_request = PointsSelector::FilterSelector(FilterSelector {
+            filter: filter_fixture(INDEXED_KEY),
+            shard_key: None,
+        });
+        assert_strict_mode_success(allowed_request, collection).await;
     }
 
     async fn test_request_exact(collection: &Collection) {
@@ -330,16 +354,29 @@ mod test {
         }
     }
 
-    fn filter_fixture() -> Filter {
+    async fn assert_strict_mode_success<R: StrictModeVerification>(
+        request: R,
+        collection: &Collection,
+    ) {
+        let strict_mode_config = collection.strict_mode_config().await.unwrap();
+        let res = request.check_strict_mode(collection, &strict_mode_config);
+        if let Err(CollectionError::StrictMode { description }) = res {
+            panic!("Strict mode check should've passed but failed with error: {description:?}");
+        } else if res.is_err() {
+            panic!("Unexpected error");
+        }
+    }
+
+    fn filter_fixture(key: &str) -> Filter {
         Filter::new_must(Condition::Field(FieldCondition::new_match(
-            "key".try_into().unwrap(),
-            Match::new_text("text"),
+            key.try_into().unwrap(),
+            Match::new_value(ValueVariants::Integer(123)),
         )))
     }
 
-    fn search_params_fixture() -> SearchParams {
+    fn search_params_fixture(exact: bool) -> SearchParams {
         SearchParams {
-            exact: true,
+            exact,
             ..SearchParams::default()
         }
     }
@@ -399,7 +436,7 @@ mod test {
         let storage_config: SharedStorageConfig = SharedStorageConfig::default();
         let storage_config = Arc::new(storage_config);
 
-        Collection::new(
+        let collection = Collection::new(
             collection_name.clone(),
             0,
             collection_dir.path(),
@@ -417,7 +454,17 @@ mod test {
             None,
         )
         .await
-        .unwrap()
+        .expect("Failed to create new fixture collection");
+
+        collection
+            .create_payload_index(
+                INDEXED_KEY.parse().unwrap(),
+                PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            )
+            .await
+            .expect("failed to create payload index");
+
+        collection
     }
 
     pub fn dummy_on_replica_failure() -> ChangePeerState {
