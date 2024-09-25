@@ -42,9 +42,10 @@ use crate::grpc::qdrant::{
     PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
     PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector, Struct,
-    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount, Vector,
-    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
+    StrictModeConfigDiff, Struct, TextIndexParams, TokenizerType, UpdateResult,
+    UpdateResultInternal, Value, ValuesCount, Vector, Vectors, VectorsSelector,
+    WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
 
@@ -1753,6 +1754,36 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
             max_indexing_threads: hnsw_config.max_indexing_threads.unwrap_or_default() as usize,
             on_disk: hnsw_config.on_disk,
             payload_m: hnsw_config.payload_m.map(|x| x as usize),
+        }
+    }
+}
+
+impl From<StrictModeConfigDiff> for segment::types::StrictModeConfig {
+    fn from(value: StrictModeConfigDiff) -> Self {
+        Self {
+            enabled: value.enabled,
+            max_query_limit: value.max_query_limit.map(|i| i as usize),
+            max_timeout: value.max_timeout.map(|i| i as usize),
+            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
+            unindexed_filtering_update: value.unindexed_filtering_update,
+            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
+            search_allow_exact: value.search_allow_exact,
+            search_max_oversampling: value.search_max_oversampling.map(f64::from),
+        }
+    }
+}
+
+impl From<segment::types::StrictModeConfig> for StrictModeConfigDiff {
+    fn from(value: segment::types::StrictModeConfig) -> Self {
+        Self {
+            enabled: value.enabled,
+            max_query_limit: value.max_query_limit.map(|i| i as u32),
+            max_timeout: value.max_timeout.map(|i| i as u32),
+            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
+            unindexed_filtering_update: value.unindexed_filtering_update,
+            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as u32),
+            search_allow_exact: value.search_allow_exact,
+            search_max_oversampling: value.search_max_oversampling.map(|i| i as f32),
         }
     }
 }

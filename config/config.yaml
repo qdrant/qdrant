@@ -91,7 +91,7 @@ storage:
     # Only supported on Linux, must be enabled in your kernel.
     # See: <https://qdrant.tech/articles/io_uring/#and-what-about-qdrant>
     #async_scorer: false
-    
+
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     deleted_threshold: 0.2
@@ -206,6 +206,32 @@ storage:
     # More info: https://qdrant.tech/documentation/guides/quantization
     quantization: null
 
+    # Default strict mode parameters for newly created collections.
+    strict_mode:
+      # Whether strict mode is enabled for a collection or not.
+      enabled: false
+
+      # Max allowed `limit` parameter for all APIs that don't have their own max limit.
+      max_query_limit: null
+
+      # Max allowed `timeout` parameter.
+      max_timeout: null
+
+      # Allow usage of unindexed fields in retrieval based (eg. search) filters.
+      unindexed_filtering_retrieve: null
+
+      # Allow usage of unindexed fields in filtered updates (eg. delete by payload).
+      unindexed_filtering_update: null
+
+      # Max HNSW value allowed in search parameters.
+      search_max_hnsw_ef: null
+
+      # Whether exact search is allowed or not.
+      search_allow_exact: null
+
+      # Max oversampling value allowed in search.
+      search_max_oversampling: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
@@ -286,11 +312,9 @@ cluster:
     # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
 
-
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/guides/telemetry
 telemetry_disabled: false
-
 
 # TLS configuration.
 # Required if either service.enable_tls or cluster.p2p.enable_tls is true.
@@ -315,4 +339,3 @@ tls:
   # Only works for HTTPS endpoints. Does not support gRPC (and intra-cluster communication).
   # If `null` - TTL is disabled.
   cert_ttl: 3600
-

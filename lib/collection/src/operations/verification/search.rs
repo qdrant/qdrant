@@ -1,9 +1,8 @@
 use api::rest::{SearchGroupsRequestInternal, SearchRequestInternal};
-use segment::types::{Filter, SearchParams};
+use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::config_diff::StrictModeConfig;
 use crate::operations::types::{CollectionError, CoreSearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequestInternal {

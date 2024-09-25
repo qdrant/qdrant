@@ -10,9 +10,8 @@ mod update;
 
 use std::fmt::Display;
 
-use segment::types::{Filter, SearchParams};
+use segment::types::{Filter, SearchParams, StrictModeConfig};
 
-use super::config_diff::StrictModeConfig;
 use super::types::CollectionError;
 use crate::collection::Collection;
 
