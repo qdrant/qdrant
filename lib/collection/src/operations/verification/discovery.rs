@@ -10,16 +10,12 @@ impl StrictModeVerification for DiscoverRequestInternal {
         Some(self.limit)
     }
 
-    fn indexed_filter_read(&self) -> Option<&Filter> {
-        self.filter.as_ref()
-    }
-
-    fn request_search_params(&self) -> Option<&SearchParams> {
-        self.params.as_ref()
-    }
-
     fn timeout(&self) -> Option<usize> {
         None
+    }
+
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        self.filter.as_ref()
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
@@ -28,6 +24,10 @@ impl StrictModeVerification for DiscoverRequestInternal {
 
     fn request_exact(&self) -> Option<bool> {
         None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        self.params.as_ref()
     }
 }
 

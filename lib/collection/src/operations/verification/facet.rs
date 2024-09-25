@@ -1,4 +1,6 @@
 use api::rest::FacetRequestInternal;
+use segment::data_types::facets::FacetParams;
+use segment::types::{Filter, SearchParams};
 
 use super::StrictModeVerification;
 
@@ -15,7 +17,7 @@ impl StrictModeVerification for FacetRequestInternal {
         self.filter.as_ref()
     }
 
-    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 
@@ -23,7 +25,33 @@ impl StrictModeVerification for FacetRequestInternal {
         self.exact
     }
 
-    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        None
+    }
+}
+
+impl StrictModeVerification for FacetParams {
+    fn query_limit(&self) -> Option<usize> {
+        Some(self.limit)
+    }
+
+    fn timeout(&self) -> Option<usize> {
+        None
+    }
+
+    fn indexed_filter_read(&self) -> Option<&Filter> {
+        self.filter.as_ref()
+    }
+
+    fn indexed_filter_write(&self) -> Option<&Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
         None
     }
 }

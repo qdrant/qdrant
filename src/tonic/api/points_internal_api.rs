@@ -24,13 +24,14 @@ use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
 
-use super::points_common::core_search_list;
+use super::points_common::{core_search_list, scroll};
 use super::validate_and_log;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
-    delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, set_payload, sync,
+    delete_payload, delete_vectors, get, overwrite_payload, recommend, set_payload, sync,
     update_vectors, upsert,
 };
+use crate::tonic::verification::UncheckedTocProvider;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -179,7 +180,7 @@ impl PointsInternal for PointsInternalService {
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
         delete(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -229,7 +230,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
 
         delete_vectors(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             delete_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
@@ -254,7 +255,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         set_payload(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -279,7 +280,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         overwrite_payload(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -304,7 +305,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
 
         delete_payload(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             delete_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -329,7 +330,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
 
         clear_payload(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             clear_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -436,7 +437,12 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        recommend(self.toc.as_ref(), recommend_points, FULL_ACCESS.clone()).await
+        recommend(
+            UncheckedTocProvider::new_unchecked(&self.toc),
+            recommend_points,
+            FULL_ACCESS.clone(),
+        )
+        .await
     }
 
     async fn scroll(
@@ -456,7 +462,7 @@ impl PointsInternal for PointsInternalService {
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
         scroll(
-            self.toc.as_ref(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             scroll_points,
             shard_id,
             FULL_ACCESS.clone(),
@@ -497,10 +503,10 @@ impl PointsInternal for PointsInternalService {
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
         count(
-            self.toc.as_ref(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
-            FULL_ACCESS.clone(),
+            &FULL_ACCESS,
         )
         .await
     }
