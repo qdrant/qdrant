@@ -1,3 +1,5 @@
+use segment::types::Filter;
+
 use super::StrictModeVerification;
 use crate::operations::types::{RecommendGroupsRequestInternal, RecommendRequestInternal};
 
@@ -10,11 +12,11 @@ impl StrictModeVerification for RecommendRequestInternal {
         None
     }
 
-    fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
 
-    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 
@@ -23,7 +25,7 @@ impl StrictModeVerification for RecommendRequestInternal {
     }
 
     fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
-        None
+        self.params.as_ref()
     }
 }
 
@@ -36,11 +38,11 @@ impl StrictModeVerification for RecommendGroupsRequestInternal {
         None
     }
 
-    fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
+    fn indexed_filter_read(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
 
-    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
+    fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 
