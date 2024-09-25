@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
 use lazy_static::lazy_static;
-use segment::types::QuantizationConfig;
+use segment::types::{QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
 use super::Collection;

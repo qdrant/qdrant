@@ -1,8 +1,7 @@
-use segment::types::{Filter, SearchParams};
+use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::config_diff::StrictModeConfig;
 use crate::operations::types::{CollectionError, DiscoverRequestBatch, DiscoverRequestInternal};
 
 impl StrictModeVerification for DiscoverRequestInternal {

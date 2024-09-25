@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use collection::config::ShardingMethod;
+use collection::operations::config_diff::StrictModeConfigDiff;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
@@ -62,7 +63,10 @@ pub async fn handle_existing_collections(
                 optimizers_config: Some(collection_state.config.optimizer_config.into()),
                 init_from: None,
                 quantization_config: collection_state.config.quantization_config,
-                strict_mode_config: collection_state.config.strict_mode_config,
+                strict_mode_config: collection_state
+                    .config
+                    .strict_mode_config
+                    .map(StrictModeConfigDiff::from),
             },
         );
 

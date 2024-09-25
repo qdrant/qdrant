@@ -416,6 +416,9 @@ pub struct CollectionConfigDefaults {
     #[serde(default = "default_write_consistency_factor_const")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: u32,
+
+    #[validate(nested)]
+    pub strict_mode: Option<StrictModeConfig>,
 }
 
 /// Configuration for vectors.
@@ -660,6 +663,47 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
         QuantizationConfig::Binary(BinaryQuantization { binary: config })
     }
 }
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+pub struct StrictModeConfig {
+    // Global
+    /// Whether strict mode is enabled for a collection or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+
+    /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_query_limit: Option<usize>,
+
+    /// Max allowed `timeout` parameter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_timeout: Option<usize>,
+
+    /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_retrieve: Option<bool>,
+
+    /// Allow usage of unindexed fields in filtered updates (eg. delete by payload).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_update: Option<bool>,
+
+    // Search
+    /// Max HNSW value allowed in search parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_hnsw_ef: Option<usize>,
+
+    /// Whether exact search is allowed or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_allow_exact: Option<bool>,
+
+    /// Max oversampling value allowed in search.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_oversampling: Option<f64>,
+}
+
+impl Eq for StrictModeConfig {}
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 

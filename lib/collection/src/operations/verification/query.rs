@@ -1,8 +1,8 @@
 use api::rest::{Prefetch, QueryGroupsRequestInternal, QueryRequestInternal};
+use segment::types::StrictModeConfig;
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::config_diff::StrictModeConfig;
 use crate::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };

@@ -69,7 +69,7 @@
     - [SparseVectorConfig](#qdrant-SparseVectorConfig)
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
     - [SparseVectorParams](#qdrant-SparseVectorParams)
-    - [StrictModeConfig](#qdrant-StrictModeConfig)
+    - [StrictModeConfigDiff](#qdrant-StrictModeConfigDiff)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
@@ -439,7 +439,7 @@
 | optimizer_config | [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff) |  | Configuration of the optimizers |
 | wal_config | [WalConfigDiff](#qdrant-WalConfigDiff) |  | Configuration of the Write-Ahead-Log |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of the vector quantization |
-| strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration of strict mode. |
+| strict_mode_config | [StrictModeConfigDiff](#qdrant-StrictModeConfigDiff) | optional | Configuration of strict mode. |
 
 
 
@@ -639,7 +639,7 @@
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
-| strict_mode_config | [StrictModeConfig](#qdrant-StrictModeConfig) | optional | Configuration for strict mode |
+| strict_mode_config | [StrictModeConfigDiff](#qdrant-StrictModeConfigDiff) | optional | Configuration for strict mode |
 
 
 
@@ -1397,9 +1397,9 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
-<a name="qdrant-StrictModeConfig"></a>
+<a name="qdrant-StrictModeConfigDiff"></a>
 
-### StrictModeConfig
+### StrictModeConfigDiff
 
 
 
