@@ -2,6 +2,7 @@ use std::future::Future;
 
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use actix_web_validator::Query;
+use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
@@ -37,9 +38,12 @@ fn recover_current_peer(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-        dispatcher.toc(&access).request_snapshot()?;
+        dispatcher.toc_new(&access, &pass).request_snapshot()?;
         Ok(true)
     })
 }
@@ -51,11 +55,14 @@ fn remove_peer(
     Query(params): Query<QueryParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
 
         let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc(&access);
+        let toc = dispatcher.toc_new(&access, &pass);
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;
@@ -129,8 +136,10 @@ async fn update_cluster_metadata_key(
     key: web::Path<String>,
     value: web::Json<serde_json::Value>,
 ) -> HttpResponse {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(&access);
+        let toc = dispatcher.toc_new(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
         toc.update_cluster_metadata(key.into_inner(), value.into_inner())?;
@@ -145,8 +154,10 @@ async fn delete_cluster_metadata_key(
     ActixAccess(access): ActixAccess,
     key: web::Path<String>,
 ) -> HttpResponse {
+    // Not a collection level request.
+    let pass = new_unchecked_verification_pass();
     helpers::time(async move {
-        let toc = dispatcher.toc(&access);
+        let toc = dispatcher.toc_new(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
         toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null)?;

@@ -5,15 +5,18 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
 };
+use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
 use segment::types::{Condition, Filter};
+use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
+use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points;
 
 // Configure services
@@ -32,9 +35,12 @@ async fn get_points(
     request: web::Json<PointRequestInternal>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
+    // No strict mode verification needed
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         let records = points::do_get_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &path.collection,
             request.into_inner(),
             params.consistency,
@@ -58,12 +64,25 @@ async fn scroll_points(
     request: web::Json<WithFilter<ScrollRequestInternal>>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
-    helpers::time(async move {
-        let WithFilter {
-            mut request,
-            hash_ring_filter,
-        } = request.into_inner();
+    let WithFilter {
+        mut request,
+        hash_ring_filter,
+    } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &request,
+        params.timeout_as_secs(),
+        &path.collection,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
@@ -71,6 +90,7 @@ async fn scroll_points(
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
+                &pass,
             )
             .await?
             .into(),
@@ -81,7 +101,7 @@ async fn scroll_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .scroll(
                 &path.collection,
                 request,
@@ -103,12 +123,25 @@ async fn count_points(
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
 ) -> impl Responder {
-    helpers::time(async move {
-        let WithFilter {
-            mut request,
-            hash_ring_filter,
-        } = request.into_inner();
+    let WithFilter {
+        mut request,
+        hash_ring_filter,
+    } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &request,
+        params.timeout_as_secs(),
+        &path.collection,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
+    helpers::time(async move {
         let hash_ring_filter = match hash_ring_filter {
             Some(filter) => get_hash_ring_filter(
                 &dispatcher,
@@ -116,6 +149,7 @@ async fn count_points(
                 &path.collection,
                 AccessRequirements::new(),
                 filter.expected_shard_id,
+                &pass,
             )
             .await?
             .into(),
@@ -126,7 +160,7 @@ async fn count_points(
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         points::do_count_points(
-            dispatcher.toc(&access),
+            dispatcher.toc_new(&access, &pass),
             &path.collection,
             request,
             params.consistency,
@@ -145,10 +179,13 @@ async fn cleanup_shard(
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
 ) -> impl Responder {
+    // Nothing to verify here.
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(async move {
         let path = path.into_inner();
         dispatcher
-            .toc(&access)
+            .toc_new(&access, &pass)
             .cleanup_local_shard(&path.collection, path.shard, access)
             .await
     })
@@ -181,11 +218,12 @@ async fn get_hash_ring_filter(
     collection: &str,
     reqs: AccessRequirements,
     expected_shard_id: ShardId,
+    verification_pass: &VerificationPass,
 ) -> StorageResult<Filter> {
     let pass = access.check_collection_access(collection, reqs)?;
 
     let shard_holder = dispatcher
-        .toc(access)
+        .toc_new(access, verification_pass)
         .get_collection(&pass)
         .await?
         .shards_holder();

@@ -4,6 +4,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
+use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -35,7 +36,14 @@ async fn get_collections(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    helpers::time(do_list_collections(dispatcher.toc(&access), access)).await
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
+    helpers::time(do_list_collections(
+        dispatcher.toc_new(&access, &pass),
+        access,
+    ))
+    .await
 }
 
 #[get("/aliases")]
@@ -43,7 +51,10 @@ async fn get_aliases(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    helpers::time(do_list_aliases(dispatcher.toc(&access), access)).await
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
+    helpers::time(do_list_aliases(dispatcher.toc_new(&access, &pass), access)).await
 }
 
 #[get("/collections/{name}")]
@@ -52,8 +63,11 @@ async fn get_collection(
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(do_get_collection(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         access,
         &collection.name,
         None,
@@ -67,8 +81,11 @@ async fn get_collection_existence(
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(do_collection_exists(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         access,
         &collection.name,
     ))
@@ -81,8 +98,11 @@ async fn get_collection_aliases(
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(do_list_collection_aliases(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         access,
         &collection.name,
     ))
@@ -175,8 +195,11 @@ async fn get_cluster_info(
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // No request to verify
+    let pass = new_unchecked_verification_pass();
+
     helpers::time(do_get_collection_cluster(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         access,
         &collection.name,
     ))

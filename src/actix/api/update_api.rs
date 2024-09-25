@@ -5,6 +5,7 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
+use collection::operations::verification::new_unchecked_verification_pass;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
@@ -41,12 +42,15 @@ async fn upsert_points(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // nothing to verify.
+    let pass = new_unchecked_verification_pass();
+
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_upsert_points(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -67,10 +71,11 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -96,12 +101,15 @@ async fn update_vectors(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
+    // Nothing to verify here.
+    let pass = new_unchecked_verification_pass();
+
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     helpers::time(do_update_vectors(
-        dispatcher.toc(&access).clone(),
+        dispatcher.toc_new(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
         None,
@@ -124,10 +132,11 @@ async fn delete_vectors(
     let timing = Instant::now();
 
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, timing),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, timing),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -156,10 +165,11 @@ async fn set_payload(
 ) -> impl Responder {
     let operation = operation.into_inner();
 
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -186,10 +196,11 @@ async fn overwrite_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
@@ -215,10 +226,11 @@ async fn delete_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
@@ -244,10 +256,11 @@ async fn clear_payload(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let pass = match check_strict_mode(&operation, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now()),
+        };
 
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -278,7 +291,8 @@ async fn update_batch(
 
     let mut vpass = None;
     for operation in operations.operations.iter() {
-        let pass = match check_strict_mode(operation, &collection.name, &dispatcher, &access).await
+        let pass = match check_strict_mode(operation, None, &collection.name, &dispatcher, &access)
+            .await
         {
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now()),

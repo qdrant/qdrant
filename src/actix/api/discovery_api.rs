@@ -4,7 +4,9 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use futures::TryFutureExt;
 use itertools::Itertools;
-use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_batch,
+};
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -27,11 +29,18 @@ async fn discover_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&discover_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &discover_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -69,7 +78,15 @@ async fn discover_batch_points(
 ) -> impl Responder {
     let request = request.into_inner();
 
-    let pass = match check_strict_mode(&request, &collection.name, &dispatcher, &access).await {
+    let pass = match check_strict_mode_batch(
+        request.searches.iter().map(|i| &i.discover_request),
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
     };

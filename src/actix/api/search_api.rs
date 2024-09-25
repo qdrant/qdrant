@@ -8,7 +8,9 @@ use collection::operations::types::{
 };
 use futures::TryFutureExt;
 use itertools::Itertools;
-use storage::content_manager::collection_verification::check_strict_mode;
+use storage::content_manager::collection_verification::{
+    check_strict_mode, check_strict_mode_batch,
+};
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -33,11 +35,18 @@ async fn search_points(
         shard_key,
     } = request.into_inner();
 
-    let pass =
-        match check_strict_mode(&search_request, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
-        };
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
@@ -72,14 +81,8 @@ async fn batch_search_points(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    let request = request.into_inner();
-
-    let pass = match check_strict_mode(&request, &collection.name, &dispatcher, &access).await {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
-    };
-
     let requests = request
+        .into_inner()
         .searches
         .into_iter()
         .map(|req| {
@@ -95,7 +98,20 @@ async fn batch_search_points(
 
             (core_request, shard_selection)
         })
-        .collect();
+        .collect::<Vec<_>>();
+
+    let pass = match check_strict_mode_batch(
+        requests.iter().map(|i| &i.0),
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
 
     helpers::time(
         do_search_batch_points(
@@ -136,6 +152,7 @@ async fn search_point_groups(
 
     let pass = match check_strict_mode(
         &search_group_request,
+        params.timeout_as_secs(),
         &collection.name,
         &dispatcher,
         &access,
@@ -171,7 +188,6 @@ async fn search_points_matrix_pairs(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TDOO check for strict mode!
     let timing = Instant::now();
 
     let SearchMatrixRequest {
@@ -179,13 +195,26 @@ async fn search_points_matrix_pairs(
         shard_key,
     } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => shard_keys.into(),
     };
 
     let response = do_search_points_matrix(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,
@@ -207,7 +236,6 @@ async fn search_points_matrix_offsets(
     params: Query<ReadParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // TDOO check for strict mode!
     let timing = Instant::now();
 
     let SearchMatrixRequest {
@@ -215,13 +243,26 @@ async fn search_points_matrix_offsets(
         shard_key,
     } = request.into_inner();
 
+    let pass = match check_strict_mode(
+        &search_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response_error(err, Instant::now()),
+    };
+
     let shard_selection = match shard_key {
         None => ShardSelectorInternal::All,
         Some(shard_keys) => shard_keys.into(),
     };
 
     let response = do_search_points_matrix(
-        dispatcher.toc(&access),
+        dispatcher.toc_new(&access, &pass),
         &collection.name,
         CollectionSearchMatrixRequest::from(search_request),
         params.consistency,

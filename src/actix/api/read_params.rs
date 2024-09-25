@@ -19,6 +19,10 @@ impl ReadParams {
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout.map(|num| Duration::from_secs(num.get()))
     }
+
+    pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
+        self.timeout.map(|i| i.get() as usize)
+    }
 }
 
 fn deserialize_read_consistency<'de, D>(
