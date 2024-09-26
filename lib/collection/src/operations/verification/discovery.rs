@@ -9,10 +9,6 @@ impl StrictModeVerification for DiscoverRequestInternal {
         Some(self.limit)
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
@@ -45,10 +41,6 @@ impl StrictModeVerification for DiscoverRequestBatch {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 

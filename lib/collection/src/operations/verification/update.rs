@@ -17,10 +17,6 @@ impl StrictModeVerification for PointsSelector {
         None
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
@@ -36,10 +32,6 @@ impl StrictModeVerification for PointsSelector {
 
 impl StrictModeVerification for DeleteVectors {
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 
@@ -69,10 +61,6 @@ impl StrictModeVerification for SetPayload {
         None
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
@@ -92,10 +80,6 @@ impl StrictModeVerification for DeletePayload {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 

@@ -9,10 +9,6 @@ impl StrictModeVerification for FacetRequestInternal {
         self.limit
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -33,10 +29,6 @@ impl StrictModeVerification for FacetRequestInternal {
 impl StrictModeVerification for FacetParams {
     fn query_limit(&self) -> Option<usize> {
         Some(self.limit)
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {

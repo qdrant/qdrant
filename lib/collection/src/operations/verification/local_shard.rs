@@ -6,10 +6,6 @@ impl StrictModeVerification for ScrollRequestInternal {
         self.limit
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -29,10 +25,6 @@ impl StrictModeVerification for ScrollRequestInternal {
 
 impl StrictModeVerification for PointRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 
