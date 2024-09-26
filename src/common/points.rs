@@ -142,10 +142,6 @@ impl StrictModeVerification for UpdateOperation {
         None
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         None
     }

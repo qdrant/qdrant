@@ -43,9 +43,6 @@ pub trait StrictModeVerification {
     /// Implement this to check the limit of a request.
     fn query_limit(&self) -> Option<usize>;
 
-    /// Implement this to check the timeout of a request.
-    fn timeout(&self) -> Option<usize>;
-
     /// Verifies that all keys in the given filter have an index available. Only implement this
     /// if the filter operates on a READ-operation, like search.
     /// For filtered updates implement `request_indexed_filter_write`!
@@ -94,18 +91,6 @@ pub trait StrictModeVerification {
         if let Some(search_params) = self.request_search_params() {
             search_params.check_strict_mode(collection, strict_mode_config)?;
         }
-        Ok(())
-    }
-
-    /// Checks the request timeout.
-    fn check_request_timeout(
-        &self,
-        strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
-        if let Some(timeout) = self.timeout() {
-            check_timeout(timeout, strict_mode_config)?;
-        }
-
         Ok(())
     }
 
@@ -232,10 +217,6 @@ impl StrictModeVerification for SearchParams {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 

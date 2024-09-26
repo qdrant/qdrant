@@ -26,10 +26,6 @@ impl StrictModeVerification for QueryRequestInternal {
         self.limit
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -67,10 +63,6 @@ impl StrictModeVerification for Prefetch {
         self.limit
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -91,10 +83,6 @@ impl StrictModeVerification for Prefetch {
 impl StrictModeVerification for QueryGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
         self.group_request.limit
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
@@ -119,10 +107,6 @@ impl StrictModeVerification for CollectionQueryRequest {
         Some(self.limit)
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -143,10 +127,6 @@ impl StrictModeVerification for CollectionQueryRequest {
 impl StrictModeVerification for CollectionQueryGroupsRequest {
     fn query_limit(&self) -> Option<usize> {
         Some(self.limit)
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {

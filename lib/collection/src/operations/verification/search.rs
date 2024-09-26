@@ -14,10 +14,6 @@ impl StrictModeVerification for SearchRequestInternal {
         Some(self.limit)
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
@@ -34,10 +30,6 @@ impl StrictModeVerification for SearchRequestInternal {
 impl StrictModeVerification for CoreSearchRequest {
     fn query_limit(&self) -> Option<usize> {
         Some(self.limit)
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
@@ -75,10 +67,6 @@ impl StrictModeVerification for SearchRequestBatch {
         None
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         None
     }
@@ -112,10 +100,6 @@ impl StrictModeVerification for SearchGroupsRequestInternal {
 
     fn request_search_params(&self) -> Option<&SearchParams> {
         self.params.as_ref()
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
