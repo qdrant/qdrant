@@ -339,6 +339,12 @@ mod test {
             exact: true,
         };
         assert_strict_mode_error(request, collection).await;
+
+        let request = CountRequestInternal {
+            filter: None,
+            exact: false,
+        };
+        assert_strict_mode_success(request, collection).await;
     }
 
     async fn assert_strict_mode_error<R: StrictModeVerification>(
