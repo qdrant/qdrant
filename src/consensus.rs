@@ -693,7 +693,7 @@ impl Consensus {
     fn try_add_origin(&mut self) -> Result<bool, TryAddOriginError> {
         // We can determine origin peer from consensus state:
         // - it should be the only peer in the cluster
-        // - and it's commit index should be at 0 or 1
+        // - and its commit index should be at 0 or 1
         //
         // When we add a new node to existing cluster, we have to bootstrap it from existing cluster
         // node, and during bootstrap we explicitly add all current peers to consensus state. So,
