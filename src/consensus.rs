@@ -498,11 +498,33 @@ impl Consensus {
             return Ok(None);
         }
 
-        if self
-            .try_add_origin()
-            .context("failed to propose origin peer URI to consensus")?
-        {
-            return Ok(Some(1));
+        match self.try_add_origin() {
+            // `try_add_origin` is not applicable:
+            // - either current peer is not an origin peer
+            // - or cluster is already established
+            Ok(false) => (),
+
+            // Successfully proposed origin peer to consensus, return to consensus loop to handle `on_ready`
+            Ok(true) => return Ok(Some(1)),
+
+            // Origin peer is not a leader yet, wait for the next tick and return to consensus loop
+            // to tick Raft node
+            Err(err @ TryAddOriginError::NotLeader) => {
+                log::debug!("{err}");
+
+                let timeout_at = previous_tick + tick_period;
+
+                self.runtime
+                    .block_on(async { tokio::time::sleep_until(timeout_at.into()).await });
+
+                return Ok(None);
+            }
+
+            // Failed to propose origin peer ID to consensus (which should never happen!),
+            // log error and continue regular consensus loop
+            Err(err) => {
+                log::error!("{err}");
+            }
         }
 
         if self
@@ -667,28 +689,42 @@ impl Consensus {
         Ok(())
     }
 
-    fn try_add_origin(&mut self) -> anyhow::Result<bool> {
-        // If there are more than 1 peer in consensus, we are definitely *not* the origin peer.
+    /// Tries to propose "origin peer" (the very first peer, that starts new cluster) to consensus
+    fn try_add_origin(&mut self) -> Result<bool, TryAddOriginError> {
+        // We can determine origin peer from consensus state:
+        // - it should be the only peer in the cluster
+        // - and it's commit index should be at 0 or 1
+        //
+        // When we add a new node to existing cluster, we have to bootstrap it from existing cluster
+        // node, and during bootstrap we explicitly add all current peers to consensus state. So,
+        // *all* peers added to the cluster after the origin will always have at least two peers.
+        //
+        // When origin peer starts new cluster, it self-elects itself as a leader and commits empty
+        // operation with index 1. It is impossible to commit anything to consensus before this
+        // operation is committed. And to add another (second/third/etc) peer to the cluster, we
+        // have to commit a conf-change operation. Which means that only origin peer can ever be at
+        // commit index 0 or 1.
+
+        // Check that we are the only peer in the cluster
         if self.node.store().peer_count() > 1 {
             return Ok(false);
         }
 
-        debug_assert_ne!(
-            self.node.store().peer_count(),
-            0,
-            "cluster should always have at least one peer"
-        );
-
         let status = self.node.status();
 
+        // Check that we are at index 0 or 1
         if status.hs.commit > 1 {
             return Ok(false);
         }
 
+        // If we reached this point, we are the origin peer, but it's impossible to propose anything
+        // to consensus, before leader is elected (`propose_conf_change` will return an error),
+        // so we have to wait for a few ticks for self-election
         if status.ss.raft_state != StateRole::Leader {
-            return Ok(true);
+            return Err(TryAddOriginError::NotLeader);
         }
 
+        // Propose origin peer to consensus
         let mut change = ConfChangeV2::default();
 
         change.set_changes(vec![raft_proto::new_conf_change_single(
@@ -704,12 +740,10 @@ impl Consensus {
             .peer_address_by_id
             .read()
             .get(&status.id)
-            .context("can't find current peer URI")?
+            .ok_or_else(|| TryAddOriginError::UriNotFound)?
             .to_string();
 
-        self.node
-            .propose_conf_change(peer_uri.into(), change)
-            .context("failed to propose origin peer URI")?;
+        self.node.propose_conf_change(peer_uri.into(), change)?;
 
         Ok(true)
     }
@@ -916,6 +950,18 @@ enum TryRecvUpdateError {
 
     #[error("channel closed")]
     Closed,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum TryAddOriginError {
+    #[error("origin peer is not a leader")]
+    NotLeader,
+
+    #[error("origin peer URI not found")]
+    UriNotFound,
+
+    #[error("failed to propose origin peer URI to consensus: {0}")]
+    RaftError(#[from] raft::Error),
 }
 
 /// This function actually applies the committed entries to the state machine.
