@@ -8,10 +8,6 @@ impl StrictModeVerification for CountRequestInternal {
         None
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }

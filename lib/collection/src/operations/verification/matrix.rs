@@ -8,10 +8,6 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
         self.limit
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
         self.filter.as_ref()
     }
@@ -32,10 +28,6 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
 impl StrictModeVerification for CollectionSearchMatrixRequest {
     fn query_limit(&self) -> Option<usize> {
         Some(self.limit_per_sample)
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {

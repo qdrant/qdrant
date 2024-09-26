@@ -8,10 +8,6 @@ impl StrictModeVerification for RecommendRequestInternal {
         Some(self.limit)
     }
 
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_read(&self) -> Option<&Filter> {
         self.filter.as_ref()
     }
@@ -32,10 +28,6 @@ impl StrictModeVerification for RecommendRequestInternal {
 impl StrictModeVerification for RecommendGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
         Some(self.group_request.limit as usize)
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
