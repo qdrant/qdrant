@@ -52,7 +52,7 @@ futures = { workspace = true }
 atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = "0.11"
-merge = "0.1.0"
+merge = { workspace = true }
 async-trait = "0.1.82"
 arc-swap = "1.7.1"
 tonic = { workspace = true }

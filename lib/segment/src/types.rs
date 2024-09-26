@@ -716,17 +716,19 @@ impl Hash for StrictModeConfig {
             unindexed_filtering_update,
             search_max_hnsw_ef,
             search_allow_exact,
-            search_max_oversampling,
+            // We skip hashing this field because we cannot reliably hash a float
+            search_max_oversampling: _,
         } = self;
-
-        enabled.hash(state);
-        max_query_limit.hash(state);
-        max_timeout.hash(state);
-        unindexed_filtering_retrieve.hash(state);
-        unindexed_filtering_update.hash(state);
-        search_max_hnsw_ef.hash(state);
-        search_allow_exact.hash(state);
-        search_max_oversampling.map(|i| i.to_le_bytes()).hash(state);
+        (
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+        )
+            .hash(state);
     }
 }
 
