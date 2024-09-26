@@ -18,7 +18,7 @@ use segment::types::{
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, SingleOrList};
 use crate::operations::vector_ops::{PointVectors, VectorOperations};
 use crate::operations::FieldIndexOperations;
 
@@ -333,19 +333,22 @@ pub(crate) fn clear_payload_by_filter(
 pub(crate) fn create_field_index(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    field_name: PayloadKeyTypeRef,
+    field_name: SingleOrList<PayloadKeyTypeRef>,
     field_schema: Option<&PayloadFieldSchema>,
 ) -> CollectionResult<usize> {
+    // TODO: allow multi-key here too
+    let single = field_name.unwrap_value();
+
     segments
         .apply_segments(|write_segment| {
             let Some((schema, index)) =
-                write_segment.build_field_index(op_num, field_name, field_schema)?
+                write_segment.build_field_index(op_num, single, field_schema)?
             else {
                 return Ok(false);
             };
 
             write_segment.with_upgraded(|segment| {
-                segment.apply_field_index(op_num, field_name.to_owned(), schema, index)
+                segment.apply_field_index(op_num, single.to_owned(), schema, index)
             })
         })
         .map_err(Into::into)
@@ -665,7 +668,7 @@ pub(crate) fn process_field_index_operation(
         FieldIndexOperations::CreateIndex(index_data) => create_field_index(
             &segments.read(),
             op_num,
-            &index_data.field_name,
+            index_data.field_name.as_ref(),
             index_data.field_schema.as_ref(),
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {

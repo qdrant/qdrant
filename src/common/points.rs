@@ -20,7 +20,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CollectionError, CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
     DiscoverRequestBatch, GroupsResult, PointRequestInternal, RecommendGroupsRequestInternal,
-    Record, ScrollRequestInternal, ScrollResult, UpdateResult,
+    Record, ScrollRequestInternal, ScrollResult, SingleOrList, UpdateResult,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
@@ -50,7 +50,9 @@ use validator::Validate;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CreateFieldIndex {
-    pub field_name: PayloadKeyType,
+    #[serde(alias = "field_names")]
+    #[validate(nested)]
+    pub field_name: SingleOrList<PayloadKeyType>,
     #[serde(alias = "field_type")]
     pub field_schema: Option<PayloadFieldSchema>,
 }
@@ -658,7 +660,7 @@ pub async fn do_batch_update_points(
 pub async fn do_create_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
-    field_name: PayloadKeyType,
+    field_name: SingleOrList<PayloadKeyType>,
     field_schema: Option<PayloadFieldSchema>,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,

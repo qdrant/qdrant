@@ -358,7 +358,8 @@ pub fn internal_create_index(
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name,
             wait: Some(wait),
-            field_name: create_index.field_name.to_string(),
+            // TODO: allow multiple keys!
+            field_name: create_index.field_name.unwrap_value().to_string(),
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),

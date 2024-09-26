@@ -304,7 +304,7 @@ mod tests {
         process_field_index_operation, process_point_operation,
     };
     use crate::operations::point_ops::{Batch, PointOperations};
-    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::operations::types::{SingleOrList, VectorParams, VectorsConfig};
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
@@ -509,7 +509,7 @@ mod tests {
             locked_holder.deref(),
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
-                field_name: payload_field.clone(),
+                field_name: SingleOrList::Single(payload_field.clone()),
                 field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
         )

@@ -19,7 +19,7 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
+    CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, SingleOrList, VectorsConfig,
 };
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
@@ -92,7 +92,7 @@ async fn fixture() -> Collection {
     // Create payload index to allow order by
     collection
         .create_payload_index(
-            "num".parse().unwrap(),
+            SingleOrList::Single("num".parse().unwrap()),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
         )
         .await

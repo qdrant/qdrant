@@ -12,6 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::operations::types::SingleOrList;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
@@ -157,7 +158,7 @@ async fn create_index(
         .unwrap();
     let create_index = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
-            field_name: name.parse().unwrap(),
+            field_name: SingleOrList::Single(name.parse().unwrap()),
             field_schema: Some(PayloadFieldSchema::FieldType(field_type)),
         }),
     );

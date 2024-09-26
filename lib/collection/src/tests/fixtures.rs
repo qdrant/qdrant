@@ -7,7 +7,7 @@ use segment::types::{
 
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointOperations, PointStruct};
-use crate::operations::types::VectorsConfig;
+use crate::operations::types::{SingleOrList, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::optimizers_builder::OptimizersConfig;
@@ -96,7 +96,7 @@ pub fn upsert_operation() -> CollectionUpdateOperations {
 pub fn create_payload_index_operation() -> CollectionUpdateOperations {
     CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
         CreateIndex {
-            field_name: "location".parse().unwrap(),
+            field_name: SingleOrList::Single("location".parse().unwrap()),
             field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
         },
     ))

@@ -7,7 +7,7 @@ use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
-use crate::operations::types::{CollectionResult, UpdateResult};
+use crate::operations::types::{CollectionResult, SingleOrList, UpdateResult};
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::save_on_disk::SaveOnDisk;
 
@@ -34,7 +34,7 @@ impl Collection {
 
     pub async fn create_payload_index(
         &self,
-        field_name: JsonPath,
+        field_name: SingleOrList<JsonPath>,
         field_schema: PayloadFieldSchema,
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`, because we can't afford
@@ -45,14 +45,14 @@ impl Collection {
 
     pub async fn create_payload_index_with_wait(
         &self,
-        field_name: JsonPath,
+        field_name: SingleOrList<JsonPath>,
         field_schema: PayloadFieldSchema,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
+        let single = field_name.clone().unwrap_value();
+
         self.payload_index_schema.write(|schema| {
-            schema
-                .schema
-                .insert(field_name.clone(), field_schema.clone());
+            schema.schema.insert(single.clone(), field_schema.clone());
         })?;
 
         // This operation might be redundant, if we also create index as a regular collection op,

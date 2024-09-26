@@ -6,7 +6,9 @@ use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{CollectionError, CollectionResult, ScrollRequestInternal};
+use collection::operations::types::{
+    CollectionError, CollectionResult, ScrollRequestInternal, SingleOrList,
+};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
@@ -222,7 +224,7 @@ pub async fn transfer_indexes(
     for (payload_name, schema) in collection_info.payload_schema {
         let request = CollectionUpdateOperations::FieldIndexOperation(
             FieldIndexOperations::CreateIndex(CreateIndex {
-                field_name: payload_name,
+                field_name: SingleOrList::Single(payload_name),
                 field_schema: Some(schema.try_into()?),
             }),
         );

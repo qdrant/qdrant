@@ -25,6 +25,7 @@ use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
+use segment::json_path::JsonPath;
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
@@ -1930,5 +1931,93 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum SingleOrList<T> {
+    Single(T),
+    List(Vec<T>),
+}
+
+impl Validate for SingleOrList<JsonPath> {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            SingleOrList::Single(_) => Ok(()),
+            SingleOrList::List(_vec) => {
+                // Disable multiple values for now.
+                let err = ValidationError::new("Not supported yet")
+                    .with_message("Multiple values aren't supported yet!".into());
+                let mut errors = ValidationErrors::default();
+                errors.add("list", err);
+                Err(errors)
+
+                /*
+                if vec.len() < 2 {
+                    let err = ValidationError::new("Invalid item count")
+                        .with_message("Multiple value input requires at least two items".into());
+                    let mut errors = ValidationErrors::default();
+                    errors.add("list", err);
+                    return Err(errors);
+                }
+                Ok(())
+                */
+            }
+        }
+    }
+}
+
+impl<T> SingleOrList<T> {
+    pub fn unwrap_list(self) -> Vec<T> {
+        match self {
+            SingleOrList::Single(_) => panic!("SingleOrList<T> unwrapped on value but is list!"),
+            SingleOrList::List(list) => list,
+        }
+    }
+
+    pub fn unwrap_value(self) -> T {
+        match self {
+            SingleOrList::Single(value) => value,
+            SingleOrList::List(_) => {
+                panic!("SingleOrList<T> unwrapped on list but is a value!")
+            }
+        }
+    }
+
+    pub fn as_value(&self) -> Option<&T> {
+        match self {
+            SingleOrList::Single(value) => Some(value),
+            SingleOrList::List(_) => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&[T]> {
+        match self {
+            SingleOrList::Single(_) => None,
+            SingleOrList::List(list) => Some(list),
+        }
+    }
+
+    pub fn is_value(&self) -> bool {
+        matches!(self, SingleOrList::Single(..))
+    }
+
+    pub fn is_list(&self) -> bool {
+        matches!(self, SingleOrList::List(..))
+    }
+
+    pub fn value_or_first_list_entry(&self) -> &T {
+        match &self {
+            SingleOrList::Single(value) => value,
+            SingleOrList::List(vec) => &vec[0],
+        }
+    }
+
+    pub fn as_ref(&self) -> SingleOrList<&T> {
+        match self {
+            SingleOrList::Single(value) => SingleOrList::Single(value),
+            SingleOrList::List(vec) => SingleOrList::List(vec.iter().collect()),
+        }
     }
 }

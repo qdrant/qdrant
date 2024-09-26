@@ -269,7 +269,7 @@ mod test {
     use crate::operations::point_ops::{FilterSelector, PointsSelector};
     use crate::operations::shared_storage_config::SharedStorageConfig;
     use crate::operations::types::{
-        CollectionError, CountRequestInternal, DiscoverRequestInternal,
+        CollectionError, CountRequestInternal, DiscoverRequestInternal, SingleOrList,
     };
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
@@ -464,7 +464,7 @@ mod test {
 
         collection
             .create_payload_index(
-                INDEXED_KEY.parse().unwrap(),
+                SingleOrList::Single(INDEXED_KEY.parse().unwrap()),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             )
             .await

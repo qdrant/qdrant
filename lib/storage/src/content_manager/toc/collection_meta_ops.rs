@@ -699,7 +699,7 @@ impl TableOfContent {
         // We can solve issues related to this missing index
         issues::publish(IndexCreatedEvent {
             collection_id: operation.collection_name,
-            field_name: operation.field_name,
+            field_name: operation.field_name.unwrap_value(),
         });
 
         Ok(())

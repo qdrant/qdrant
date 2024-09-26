@@ -24,6 +24,7 @@ use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
+use types::SingleOrList;
 use validator::Validate;
 
 use crate::hash_ring::{HashRingRouter, ShardIds};
@@ -34,7 +35,8 @@ pub type ClockToken = u64;
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
-    pub field_name: JsonPath,
+    pub field_name: SingleOrList<JsonPath>,
+    // pub field_name: JsonPath,
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
@@ -522,7 +524,7 @@ mod tests {
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             let create = Self::CreateIndex(CreateIndex {
-                field_name: "field_name".parse().unwrap(),
+                field_name: SingleOrList::Single("field_name".parse().unwrap()),
                 field_schema: None,
             });
 

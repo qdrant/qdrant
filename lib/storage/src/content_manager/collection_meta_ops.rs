@@ -6,7 +6,7 @@ use collection::operations::config_diff::{
     StrictModeConfigDiff, WalConfigDiff,
 };
 use collection::operations::types::{
-    SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
+    SingleOrList, SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::resharding::ReshardKey;
@@ -357,7 +357,7 @@ pub struct DropShardKey {
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub struct CreatePayloadIndex {
     pub collection_name: String,
-    pub field_name: PayloadKeyType,
+    pub field_name: SingleOrList<PayloadKeyType>,
     pub field_schema: PayloadFieldSchema,
 }
 

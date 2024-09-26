@@ -4,7 +4,7 @@ use segment::types::ShardKey;
 
 use crate::collection::Collection;
 use crate::config::ShardingMethod;
-use crate::operations::types::CollectionError;
+use crate::operations::types::{CollectionError, SingleOrList};
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
@@ -108,7 +108,7 @@ impl Collection {
             for (field_name, field_schema) in payload_schema.iter() {
                 let create_index_op = CollectionUpdateOperations::FieldIndexOperation(
                     FieldIndexOperations::CreateIndex(CreateIndex {
-                        field_name: field_name.clone(),
+                        field_name: SingleOrList::Single(field_name.clone()),
                         field_schema: Some(field_schema.clone()),
                     }),
                 );

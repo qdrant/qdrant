@@ -4,7 +4,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionResult, SingleOrList};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
@@ -122,6 +122,7 @@ impl Collection {
         &self,
         payload_index_schema: PayloadIndexSchema,
     ) -> CollectionResult<()> {
+        // TODO: Allow multi-key
         let state = self.state().await;
 
         for field_name in state.payload_index_schema.schema.keys() {
@@ -131,7 +132,8 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            self.create_payload_index(field_name, field_schema).await?;
+            self.create_payload_index(SingleOrList::Single(field_name), field_schema)
+                .await?;
         }
         Ok(())
     }

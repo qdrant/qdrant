@@ -7,7 +7,7 @@ use collection::operations::point_ops::{Batch, PointOperations, PointStruct, Wri
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
-    UpdateStatus,
+    SingleOrList, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
@@ -15,6 +15,7 @@ use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
+use segment::json_path::JsonPath;
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
@@ -510,7 +511,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            PRICE_FLOAT_KEY.parse().unwrap(),
+            SingleOrList::Single(PRICE_FLOAT_KEY.parse::<JsonPath>().unwrap()),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )
@@ -519,7 +520,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            PRICE_INT_KEY.parse().unwrap(),
+            SingleOrList::Single(PRICE_INT_KEY.parse::<JsonPath>().unwrap()),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
         )
@@ -528,7 +529,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            MULTI_VALUE_KEY.parse().unwrap(),
+            SingleOrList::Single(MULTI_VALUE_KEY.parse::<JsonPath>().unwrap()),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )

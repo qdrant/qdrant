@@ -22,7 +22,8 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, SingleOrList, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
@@ -96,7 +97,7 @@ impl ForwardProxyShard {
                     // TODO: Assign clock tag!? 🤔
                     OperationWithClockTag::from(CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
-                            field_name: index_key,
+                            field_name: SingleOrList::Single(index_key),
                             field_schema: Some(index_type.try_into()?),
                         }),
                     )),

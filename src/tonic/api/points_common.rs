@@ -32,7 +32,7 @@ use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
-    RecommendExample, Record, ScrollRequestInternal,
+    RecommendExample, Record, ScrollRequestInternal, SingleOrList,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
@@ -879,7 +879,7 @@ pub async fn create_field_index(
     let field_schema = convert_field_type(field_type, field_index_params)?;
 
     let operation = CreateFieldIndex {
-        field_name,
+        field_name: SingleOrList::Single(field_name),
         field_schema,
     };
 
@@ -922,7 +922,7 @@ pub async fn create_field_index_internal(
     let result = do_create_index_internal(
         toc,
         collection_name,
-        field_name,
+        SingleOrList::Single(field_name),
         field_schema,
         clock_tag,
         shard_selection,

@@ -663,7 +663,7 @@ mod tests_ops {
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
     use collection::operations::query_enum::QueryEnum;
-    use collection::operations::types::UsingVector;
+    use collection::operations::types::{SingleOrList, UsingVector};
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
     };
@@ -1339,7 +1339,7 @@ mod tests_ops {
             let inner = match discr {
                 FieldIndexOperationsDiscriminants::CreateIndex => {
                     FieldIndexOperations::CreateIndex(CreateIndex {
-                        field_name: "path".parse().unwrap(),
+                        field_name: SingleOrList::Single("path".parse().unwrap()),
                         field_schema: None,
                     })
                 }
