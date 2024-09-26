@@ -14,6 +14,7 @@ use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -664,7 +665,7 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge)]
 pub struct StrictModeConfig {
     // Global
     /// Whether strict mode is enabled for a collection or not.
@@ -704,6 +705,32 @@ pub struct StrictModeConfig {
 }
 
 impl Eq for StrictModeConfig {}
+
+impl Hash for StrictModeConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            // We skip hashing this field because we cannot reliably hash a float
+            search_max_oversampling: _,
+        } = self;
+        (
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+        )
+            .hash(state);
+    }
+}
 
 pub const DEFAULT_HNSW_EF_CONSTRUCT: usize = 100;
 

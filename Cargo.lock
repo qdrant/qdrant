@@ -5610,6 +5610,7 @@ dependencies = [
  "macro_rules_attribute",
  "memmap2 0.9.5",
  "memory",
+ "merge",
  "nom",
  "num-cmp",
  "num-derive",

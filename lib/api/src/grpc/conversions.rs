@@ -43,9 +43,8 @@ use crate::grpc::qdrant::{
     PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
-    StrictModeConfigDiff, Struct, TextIndexParams, TokenizerType, UpdateResult,
-    UpdateResultInternal, Value, ValuesCount, Vector, Vectors, VectorsSelector,
-    WithPayloadSelector, WithVectorsSelector,
+    StrictModeConfig, Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
 
@@ -1758,8 +1757,8 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
     }
 }
 
-impl From<StrictModeConfigDiff> for segment::types::StrictModeConfig {
-    fn from(value: StrictModeConfigDiff) -> Self {
+impl From<StrictModeConfig> for segment::types::StrictModeConfig {
+    fn from(value: StrictModeConfig) -> Self {
         Self {
             enabled: value.enabled,
             max_query_limit: value.max_query_limit.map(|i| i as usize),
@@ -1773,7 +1772,7 @@ impl From<StrictModeConfigDiff> for segment::types::StrictModeConfig {
     }
 }
 
-impl From<segment::types::StrictModeConfig> for StrictModeConfigDiff {
+impl From<segment::types::StrictModeConfig> for StrictModeConfig {
     fn from(value: segment::types::StrictModeConfig) -> Self {
         Self {
             enabled: value.enabled,
