@@ -25,7 +25,6 @@ use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, 
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
-use super::config_diff::StrictModeConfigDiff;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
@@ -435,7 +434,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 quantization_config: config.quantization_config.map(|x| x.into()),
                 strict_mode_config: config
                     .strict_mode_config
-                    .map(api::grpc::qdrant::StrictModeConfigDiff::from),
+                    .map(api::grpc::qdrant::StrictModeConfig::from),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -822,21 +821,6 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                     .try_collect()?,
             }),
-        }
-    }
-}
-
-impl From<api::grpc::qdrant::StrictModeConfigDiff> for StrictModeConfigDiff {
-    fn from(value: api::grpc::qdrant::StrictModeConfigDiff) -> Self {
-        Self {
-            enabled: value.enabled,
-            max_query_limit: value.max_query_limit.map(|i| i as usize),
-            max_timeout: value.max_timeout.map(|i| i as usize),
-            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
-            unindexed_filtering_update: value.unindexed_filtering_update,
-            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
-            search_allow_exact: value.search_allow_exact,
-            search_max_oversampling: value.search_max_oversampling.map(f64::from),
         }
     }
 }
