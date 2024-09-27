@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use common::service_error::Context as _;
+
+use crate::common::operation_error::OperationResult;
 
 pub fn strip_prefix<'a>(path: &'a Path, prefix: &Path) -> OperationResult<&'a Path> {
-    path.strip_prefix(prefix).map_err(|err| {
-        OperationError::service_error(format!(
-            "failed to strip {prefix:?} prefix from {path:?}: {err}"
-        ))
-    })
+    Ok(path
+        .strip_prefix(prefix)
+        .with_context(|| format!("failed to strip {prefix:?} prefix from {path:?}"))?)
 }

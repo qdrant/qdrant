@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
+use common::service_error::Context as _;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 
 /// Defines how often the disk usage should be checked if the disk is far from being full
 const DEFAULT_FREQUENCY: usize = 128;
@@ -105,9 +106,7 @@ impl DiskUsageWatcher {
         let path = self.disk_path.clone();
         let result = tokio::task::spawn_blocking(move || fs4::available_space(path.as_path()))
             .await
-            .map_err(|e| {
-                CollectionError::service_error(format!("Failed to join async task: {e}"))
-            })?;
+            .context("Failed to join async task")?;
 
         let result = match result {
             Ok(result) => Some(result),

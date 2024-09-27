@@ -1,6 +1,7 @@
 use std::ops::Deref as _;
 use std::sync::Arc;
 
+use common::service_error::{ServiceError, ServiceResult};
 use parking_lot::Mutex;
 use segment::types::PointIdType;
 
@@ -487,10 +488,10 @@ impl ShardReplicaSet {
         local_shard.resolve_wal_delta(recovery_point).await
     }
 
-    pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {
+    pub async fn wal_version(&self) -> ServiceResult<Option<u64>> {
         let local_shard_read = self.local.read().await;
         let Some(local_shard) = local_shard_read.deref() else {
-            return Err(CollectionError::service_error(
+            return Err(ServiceError::new(
                 "Cannot get WAL version, shard replica set does not have local shard",
             ));
         };

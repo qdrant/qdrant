@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::service_error::{Context as _, ServiceResult};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use parking_lot::Mutex;
@@ -43,12 +44,12 @@ impl PrefetchResults {
         }
     }
 
-    fn get(&self, element: FetchedSource) -> CollectionResult<Vec<ScoredPoint>> {
+    fn get(&self, element: FetchedSource) -> ServiceResult<Vec<ScoredPoint>> {
         match element {
             FetchedSource::Search(idx) => self.search_results.lock().get_mut(idx).map(mem::take),
             FetchedSource::Scroll(idx) => self.scroll_results.lock().get_mut(idx).map(mem::take),
         }
-        .ok_or_else(|| CollectionError::service_error("Expected a prefetched source to exist"))
+        .context("Expected a prefetched source to exist")
     }
 }
 
@@ -247,18 +248,17 @@ impl LocalShard {
                     scroll_order: ScrollOrder::ByField(order_by),
                 };
 
-                self.query_scroll_batch(
-                    Arc::new(vec![scroll_request]),
-                    search_runtime_handle,
-                    timeout,
-                )
-                .await?
-                .pop()
-                .ok_or_else(|| {
-                    CollectionError::service_error(
-                        "Rescoring with order-by query didn't return expected batch of results",
+                Ok(self
+                    .query_scroll_batch(
+                        Arc::new(vec![scroll_request]),
+                        search_runtime_handle,
+                        timeout,
                     )
-                })
+                    .await?
+                    .pop()
+                    .context(
+                        "Rescoring with order-by query didn't return expected batch of results",
+                    )?)
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
@@ -279,19 +279,18 @@ impl LocalShard {
                     searches: vec![search_request],
                 };
 
-                self.do_search(
-                    Arc::new(rescoring_core_search_request),
-                    search_runtime_handle,
-                    Some(timeout),
-                )
-                .await?
-                // One search request is sent. We expect only one result
-                .pop()
-                .ok_or_else(|| {
-                    CollectionError::service_error(
-                        "Rescoring with vector(s) query didn't return expected batch of results",
+                Ok(self
+                    .do_search(
+                        Arc::new(rescoring_core_search_request),
+                        search_runtime_handle,
+                        Some(timeout),
                     )
-                })
+                    .await?
+                    // One search request is sent. We expect only one result
+                    .pop()
+                    .context(
+                        "Rescoring with vector(s) query didn't return expected batch of results",
+                    )?)
             }
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {
@@ -307,18 +306,17 @@ impl LocalShard {
                         scroll_order: ScrollOrder::Random,
                     };
 
-                    self.query_scroll_batch(
-                        Arc::new(vec![scroll_request]),
-                        search_runtime_handle,
-                        timeout,
-                    )
-                    .await?
-                    .pop()
-                    .ok_or_else(|| {
-                        CollectionError::service_error(
-                            "Rescoring with order-by query didn't return expected batch of results",
+                    Ok(self
+                        .query_scroll_batch(
+                            Arc::new(vec![scroll_request]),
+                            search_runtime_handle,
+                            timeout,
                         )
-                    })
+                        .await?
+                        .pop()
+                        .context(
+                            "Rescoring with order-by query didn't return expected batch of results",
+                        )?)
                 }
             },
         }

@@ -1,12 +1,12 @@
 use std::ops::{Index, Range};
 
+use common::service_error::{Context as _, ServiceError, ServiceResult};
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::{Coord, Intersects, LineString, Point, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 use smol_str::SmolStr;
 
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 
 /// Packed representation of a geohash string.
@@ -378,22 +378,20 @@ fn check_polygon_intersection(geohash: &str, polygon: &Polygon) -> bool {
 
 fn create_hashes(
     mapping_fn: impl Fn(usize) -> Option<Vec<GeoHash>>,
-) -> OperationResult<Vec<GeoHash>> {
+) -> ServiceResult<Vec<GeoHash>> {
     (0..=GEOHASH_MAX_LENGTH)
         .map(mapping_fn)
         .take_while(|hashes| hashes.is_some())
         .last()
-        .ok_or_else(|| OperationError::service_error("no hash coverage for any precision"))?
-        .ok_or_else(|| OperationError::service_error("geo-hash coverage is empty"))
+        .context("no hash coverage for any precision")?
+        .context("geo-hash coverage is empty")
 }
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole circle.
-pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
+pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> ServiceResult<Vec<GeoHash>> {
     if max_regions == 0 {
-        return Err(OperationError::service_error(
-            "max_regions cannot be equal to zero",
-        ));
+        return Err(ServiceError::new("max_regions cannot be equal to zero"));
     }
 
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
@@ -402,7 +400,7 @@ pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<
         || geo_bounding_box.bottom_right.lat.is_nan()
         || geo_bounding_box.bottom_right.lat.is_nan()
     {
-        return Err(OperationError::service_error("Invalid circle"));
+        return Err(ServiceError::new("Invalid circle"));
     }
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
@@ -424,11 +422,9 @@ pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<
 pub fn rectangle_hashes(
     rectangle: &GeoBoundingBox,
     max_regions: usize,
-) -> OperationResult<Vec<GeoHash>> {
+) -> ServiceResult<Vec<GeoHash>> {
     if max_regions == 0 {
-        return Err(OperationError::service_error(
-            "max_regions cannot be equal to zero",
-        ));
+        return Err(ServiceError::new("max_regions cannot be equal to zero"));
     }
     let full_geohash_bounding_box: GeohashBoundingBox = rectangle.clone().into();
 
@@ -438,7 +434,7 @@ pub fn rectangle_hashes(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain a boundary defined by closed LineString.
-fn boundary_hashes(boundary: &LineString, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
+fn boundary_hashes(boundary: &LineString, max_regions: usize) -> ServiceResult<Vec<GeoHash>> {
     let geo_bounding_box = minimum_bounding_rectangle_for_boundary(boundary);
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
     let polygon = Polygon::new(boundary.clone(), vec![]);
@@ -482,11 +478,9 @@ pub fn polygon_hashes_estimation(
 
 /// Return as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the whole polygon.
-pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResult<Vec<GeoHash>> {
+pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> ServiceResult<Vec<GeoHash>> {
     if max_regions == 0 {
-        return Err(OperationError::service_error(
-            "max_regions cannot be equal to zero",
-        ));
+        return Err(ServiceError::new("max_regions cannot be equal to zero"));
     }
     let polygon_wrapper = polygon.convert().polygon;
     let geo_bounding_box = minimum_bounding_rectangle_for_boundary(polygon_wrapper.exterior());

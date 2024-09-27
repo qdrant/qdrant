@@ -1,7 +1,8 @@
+use common::service_error::Context as _;
 use common::types::ScoredPointOffset;
 
 use super::Segment;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::NamedVectors;
 #[cfg(feature = "testing")]
 use crate::data_types::query_context::QueryContext;
@@ -40,11 +41,10 @@ impl Segment {
             })
             .map(|(point_id, scored_point_offset)| {
                 let point_offset = scored_point_offset.idx;
-                let point_version = id_tracker.internal_version(point_offset).ok_or_else(|| {
-                    OperationError::service_error(format!(
-                        "Corrupter id_tracker, no version for point {point_id}"
-                    ))
-                })?;
+                let point_version =
+                    id_tracker.internal_version(point_offset).with_context(|| {
+                        format!("Corrupter id_tracker, no version for point {point_id}")
+                    })?;
                 let payload = if with_payload.enable {
                     let initial_payload = self.payload_by_offset(point_offset)?;
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {

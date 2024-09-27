@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
+use common::service_error::Context as _;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -315,8 +316,7 @@ pub(crate) fn open_segment_db(
                 .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
         )
         .collect();
-    open_db(segment_path, &vector_db_names)
-        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))
+    Ok(open_db(segment_path, &vector_db_names).context("RocksDB open error")?)
 }
 
 pub(crate) fn create_payload_storage(
@@ -744,7 +744,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
     let mut file = File::open(&path)?;
     file.read_to_string(&mut contents)?;
 
-    serde_json::from_str::<SegmentStateV3>(&contents)
+    Ok(serde_json::from_str::<SegmentStateV3>(&contents)
         .map(|state| {
             // Construct V5 version, then convert into current
             let vector_data = VectorDataConfigV5 {
@@ -767,13 +767,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
                 config: segment_config.into(),
             }
         })
-        .map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to read segment {}. Error: {}",
-                path.to_str().unwrap(),
-                err
-            ))
-        })
+        .with_context(|| format!("Failed to read segment {path:?}"))?)
 }
 
 /// Load v0.5.0 segment data and migrate to current version
@@ -788,13 +782,7 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
     let mut file = File::open(&path)?;
     file.read_to_string(&mut contents)?;
 
-    serde_json::from_str::<SegmentStateV5>(&contents)
+    Ok(serde_json::from_str::<SegmentStateV5>(&contents)
         .map(Into::into)
-        .map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to read segment {}. Error: {}",
-                path.to_str().unwrap(),
-                err
-            ))
-        })
+        .with_context(|| format!("Failed to read segment {path:?}"))?)
 }

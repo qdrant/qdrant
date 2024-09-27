@@ -1,9 +1,9 @@
-use std::backtrace::Backtrace;
 use std::collections::TryReserveError;
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::Error as AtomicIoError;
+use common::service_error::ServiceError;
 use io::file_operations::FileStorageError;
 use memory::mmap_type::Error as MmapError;
 use rayon::ThreadPoolBuildError;
@@ -37,11 +37,8 @@ pub enum OperationError {
     TypeInferenceError { field_name: PayloadKeyType },
     /// Service Error prevents further update of the collection until it is fixed.
     /// Should only be used for hardware, data corruption, IO, or other unexpected internal errors.
-    #[error("Service runtime error: {description}")]
-    ServiceError {
-        description: String,
-        backtrace: Option<String>,
-    },
+    #[error("{0}")]
+    ServiceError(#[from] ServiceError),
     #[error("Inconsistent storage: {description}")]
     InconsistentStorage { description: String },
     #[error("Out of memory, free: {free}, {description}")]
@@ -64,10 +61,7 @@ impl OperationError {
     /// Create a new service error with a description and a backtrace
     /// Warning: capturing a backtrace can be an expensive operation on some platforms, so this should be used with caution in performance-sensitive parts of code.
     pub fn service_error(description: impl Into<String>) -> OperationError {
-        OperationError::ServiceError {
-            description: description.into(),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+        ServiceError::new(description).into()
     }
 }
 
@@ -89,11 +83,8 @@ pub struct SegmentFailedState {
 }
 
 impl From<ThreadPoolBuildError> for OperationError {
-    fn from(error: ThreadPoolBuildError) -> Self {
-        OperationError::ServiceError {
-            description: format!("{error}"),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
+    fn from(err: ThreadPoolBuildError) -> Self {
+        Self::service_error(err.to_string())
     }
 }
 

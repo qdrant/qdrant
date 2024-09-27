@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
 
+use common::service_error::Context as _;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
@@ -583,29 +584,19 @@ impl SegmentEntry for Segment {
 
         let flush_op = move || {
             // Flush mapping first to prevent having orphan internal ids.
-            id_tracker_mapping_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker mapping: {err}"))
-            })?;
+            id_tracker_mapping_flusher().context("Failed to flush id_tracker mapping")?;
             for vector_storage_flusher in vector_storage_flushers {
-                vector_storage_flusher().map_err(|err| {
-                    OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
-                })?;
+                vector_storage_flusher().context("Failed to flush vector_storage")?;
             }
-            payload_index_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush payload_index: {err}"))
-            })?;
+            payload_index_flusher().context("Failed to flush payload_index")?;
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
             // This is because vector_storage and payload_index flush are not atomic.
             // If payload or vector flush fails, we will be able to recover data from WAL.
             // If Id Tracker flush fails, we are also able to recover data from WAL
             //  by simply overriding data in vector and payload storages.
             // Once versions are saved - points are considered persisted.
-            id_tracker_versions_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush id_tracker versions: {err}"))
-            })?;
-            Self::save_state(&state, &current_path).map_err(|err| {
-                OperationError::service_error(format!("Failed to flush segment state: {err}"))
-            })?;
+            id_tracker_versions_flusher().context("Failed to flush id_tracker versions")?;
+            Self::save_state(&state, &current_path).context("Failed to flush segment state")?;
             *persisted_version.lock() = state.version;
 
             debug_assert!(state.version.is_some());
@@ -631,13 +622,13 @@ impl SegmentEntry for Segment {
         let mut deleted_path = current_path.clone();
         deleted_path.set_extension("deleted");
         fs::rename(&current_path, &deleted_path)?;
-        fs::remove_dir_all(&deleted_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Can't remove segment data at {}, error: {}",
+        fs::remove_dir_all(&deleted_path).with_context(|| {
+            format!(
+                "Can't remove segment data at {}",
                 deleted_path.to_str().unwrap_or_default(),
-                err
-            ))
-        })
+            )
+        })?;
+        Ok(())
     }
 
     fn data_path(&self) -> PathBuf {

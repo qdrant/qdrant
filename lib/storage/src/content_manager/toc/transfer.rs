@@ -5,6 +5,7 @@ use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
+use common::service_error::Context as _;
 
 use super::dispatcher::TocDispatcher;
 use crate::content_manager::collection_meta_ops::{
@@ -49,9 +50,9 @@ impl ShardTransferConsensus for TocDispatcher {
                 collection_id,
                 ShardTransferOperations::RecoveryToPartial(transfer_config.key()),
             )));
-        proposal_sender.send(operation).map_err(|err| {
-            CollectionError::service_error(format!("Failed to submit consensus proposal: {err}"))
-        })?;
+        proposal_sender
+            .send(operation)
+            .context("Failed to submit consensus proposal")?;
 
         Ok(())
     }
@@ -66,14 +67,14 @@ impl ShardTransferConsensus for TocDispatcher {
                 collection_id,
                 ShardTransferOperations::Start(transfer_config),
             )));
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm shard transfer start operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm shard transfer start operation through consensus",
+            )?;
+        Ok(())
     }
 
     async fn restart_shard_transfer(
@@ -86,14 +87,14 @@ impl ShardTransferConsensus for TocDispatcher {
                 collection_id,
                 ShardTransferOperations::Restart(transfer_config.into()),
             )));
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm shard transfer restart operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm shard transfer restart operation through consensus",
+            )?;
+        Ok(())
     }
 
     async fn abort_shard_transfer(
@@ -110,14 +111,14 @@ impl ShardTransferConsensus for TocDispatcher {
                     reason: reason.into(),
                 },
             )));
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm shard transfer abort operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm shard transfer abort operation through consensus",
+            )?;
+        Ok(())
     }
 
     async fn set_shard_replica_set_state(
@@ -134,14 +135,14 @@ impl ShardTransferConsensus for TocDispatcher {
             state,
             from_state,
         );
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation.clone(), None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm set replica set state operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm set replica set state operation through consensus",
+            )?;
+        Ok(())
     }
 
     async fn commit_read_hashring(
@@ -154,14 +155,14 @@ impl ShardTransferConsensus for TocDispatcher {
                 collection_id,
                 ReshardingOperation::CommitRead(reshard_key),
             )));
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm commit read hashring operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm commit read hashring operation through consensus",
+            )?;
+        Ok(())
     }
 
     async fn commit_write_hashring(
@@ -174,13 +175,13 @@ impl ShardTransferConsensus for TocDispatcher {
                 collection_id,
                 ReshardingOperation::CommitWrite(reshard_key),
             )));
-        self
-            .consensus_state
+        self.consensus_state
             .propose_consensus_op_with_await(operation, None)
             .await
             .map(|_| ())
-            .map_err(|err| {
-                CollectionError::service_error(format!("Failed to propose and confirm commit write hasrhing operation through consensus: {err}"))
-            })
+            .context(
+                "Failed to propose and confirm commit write hasrhing operation through consensus",
+            )?;
+        Ok(())
     }
 }

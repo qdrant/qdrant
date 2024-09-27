@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
+use common::service_error::Context as _;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -506,9 +507,9 @@ where
     let new_point_ids = ids.iter().cloned().filter(|x| !updated_points.contains(x));
 
     {
-        let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
-            CollectionError::service_error("No appendable segments exists, expected at least one")
-        })?;
+        let default_write_segment = segments
+            .smallest_appendable_segment()
+            .context("No appendable segments exists, expected at least one")?;
 
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();

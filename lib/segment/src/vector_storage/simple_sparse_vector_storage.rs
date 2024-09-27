@@ -3,13 +3,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::SparseVectorStorage;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -48,10 +49,10 @@ pub fn open_simple_sparse_vector_storage(
     let mut total_sparse_size = 0;
     db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
-        let point_id: PointOffsetType = bincode::deserialize(&key)
-            .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredSparseVector = bincode::deserialize(&value)
-            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+        let point_id: PointOffsetType =
+            bincode::deserialize(&key).context("cannot deserialize point id from db")?;
+        let stored_record: StoredSparseVector =
+            bincode::deserialize(&value).context("cannot deserialize record from db")?;
 
         // Propagate deleted flag
         if stored_record.deleted {
@@ -122,22 +123,18 @@ impl SimpleSparseVectorStorage {
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
     fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
-        let bin_key = bincode::serialize(&key)
-            .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
+        let bin_key = bincode::serialize(&key).context("Cannot serialize sparse vector key")?;
         let data = self.db_wrapper.get(bin_key)?;
-        let record: StoredSparseVector = bincode::deserialize(&data).map_err(|_| {
-            OperationError::service_error("Cannot deserialize sparse vector from db")
-        })?;
+        let record: StoredSparseVector =
+            bincode::deserialize(&data).context("Cannot deserialize sparse vector from db")?;
         Ok(record.vector)
     }
 
     fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
-        let bin_key = bincode::serialize(&key)
-            .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
+        let bin_key = bincode::serialize(&key).context("Cannot serialize sparse vector key")?;
         if let Some(data) = self.db_wrapper.get_opt(bin_key)? {
-            let record: StoredSparseVector = bincode::deserialize(&data).map_err(|_| {
-                OperationError::service_error("Cannot deserialize sparse vector from db")
-            })?;
+            let record: StoredSparseVector =
+                bincode::deserialize(&data).context("Cannot deserialize sparse vector from db")?;
             Ok(Some(record.vector))
         } else {
             Ok(None)

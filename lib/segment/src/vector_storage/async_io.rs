@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs::File;
 use std::os::fd::AsRawFd;
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use io_uring::{opcode, types, IoUring};
 use memory::mmap_ops::transmute_from_u8_to_slice;
@@ -136,9 +137,10 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
 
             unsafe {
                 // self.io_uring.submission().push(&read_e).unwrap();
-                io_uring.submission().push(&read_e).map_err(|err| {
-                    OperationError::service_error(format!("Failed using io-uring: {err}"))
-                })?;
+                io_uring
+                    .submission()
+                    .push(&read_e)
+                    .context("Failed using io-uring")?;
             }
         }
 

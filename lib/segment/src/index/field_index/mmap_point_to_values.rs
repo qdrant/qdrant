@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::AdviceSetting;
@@ -221,7 +222,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         };
         header
             .write_to_prefix(mmap.as_mut())
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            .context(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)?;
 
         // counter for values offset
         let mut point_values_offset = header.ranges_start as usize + ranges_size;
@@ -230,12 +231,10 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
             let mut values_count = 0;
             for value in values {
                 values_count += 1;
-                let bytes = mmap.get_mut(point_values_offset..).ok_or_else(|| {
-                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
-                })?;
-                T::write_to_mmap(value.clone(), bytes).ok_or_else(|| {
-                    OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
-                })?;
+                let bytes = mmap
+                    .get_mut(point_values_offset..)
+                    .context(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)?;
+                T::write_to_mmap(value.clone(), bytes).context(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)?;
                 point_values_offset += T::mmaped_size(value);
             }
 
@@ -248,7 +247,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                     + point_id as usize * std::mem::size_of::<MmapRange>()..,
             )
             .and_then(|bytes| range.write_to_prefix(bytes))
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            .context(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)?;
         }
 
         mmap.flush()?;

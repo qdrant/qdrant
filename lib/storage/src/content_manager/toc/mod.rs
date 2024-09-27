@@ -1,4 +1,5 @@
 mod collection_container;
+use common::service_error::Context as _;
 mod collection_meta_ops;
 mod create_collection;
 pub mod dispatcher;
@@ -409,9 +410,11 @@ impl TableOfContent {
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
 
         if wait {
-            let dispatcher = self.toc_dispatcher.lock().clone().ok_or_else(|| {
-                StorageError::service_error("Qdrant is running in standalone mode")
-            })?;
+            let dispatcher = self
+                .toc_dispatcher
+                .lock()
+                .clone()
+                .context("Qdrant is running in standalone mode")?;
             dispatcher
                 .consensus_state()
                 .propose_consensus_op_with_await(operation, None)
@@ -597,19 +600,15 @@ impl TableOfContent {
                     "Removing invalid collection path {path} from storage",
                     path = path.display(),
                 );
-                tokio::fs::remove_dir_all(&path).await.map_err(|err| {
-                    StorageError::service_error(format!(
-                        "Can't clear directory for collection {collection_name}. Error: {err}"
-                    ))
+                tokio::fs::remove_dir_all(&path).await.with_context(|| {
+                    format!("Can't clear directory for collection {collection_name}")
                 })?;
             }
         }
 
-        tokio::fs::create_dir_all(&path).await.map_err(|err| {
-            StorageError::service_error(format!(
-                "Can't create directory for collection {collection_name}. Error: {err}"
-            ))
-        })?;
+        tokio::fs::create_dir_all(&path)
+            .await
+            .with_context(|| format!("Can't create directory for collection {collection_name}"))?;
 
         Ok(path)
     }
@@ -621,9 +620,10 @@ impl TableOfContent {
     }
 
     fn get_consensus_proposal_sender(&self) -> Result<&OperationSender, StorageError> {
-        self.consensus_proposal_sender
+        Ok(self
+            .consensus_proposal_sender
             .as_ref()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))
+            .context("Qdrant is running in standalone mode")?)
     }
 
     /// Insert dispatcher for access to table of contents and consensus.

@@ -716,9 +716,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             is_leader_established.await_ready_for_timeout(wait_timeout)
         });
 
-        let is_leader_established = await_ready_for_timeout_future
-            .await
-            .map_err(|err| StorageError::service_error(err.to_string()))?;
+        let is_leader_established = await_ready_for_timeout_future.await?;
 
         if !is_leader_established {
             return Err(StorageError::service_error(format!(

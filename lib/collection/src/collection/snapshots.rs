@@ -3,6 +3,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
@@ -74,12 +75,11 @@ impl Collection {
         let snapshot_temp_arc_file = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-arc-"))
             .tempfile_in(global_temp_dir)
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to create temporary snapshot directory {}/{snapshot_name}-arc-XXXX: \
-                     {err}",
+            .with_context(|| {
+                format!(
+                    "failed to create temporary snapshot directory {}/{snapshot_name}-arc-XXXX",
                     global_temp_dir.display(),
-                ))
+                )
             })?;
 
         let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
@@ -89,12 +89,11 @@ impl Collection {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
                 .prefix(&format!("{snapshot_name}-temp-"))
                 .tempdir_in(global_temp_dir)
-                .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "failed to create temporary snapshot directory {}/{snapshot_name}-temp-XXXX: \
-                         {err}",
+                .with_context(|| {
+                    format!(
+                        "failed to create temporary snapshot directory {}/{snapshot_name}-temp-XXXX",
                         global_temp_dir.display(),
-                    ))
+                    )
                 })?;
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
@@ -112,9 +111,7 @@ impl Collection {
                         save_wal,
                     )
                     .await
-                    .map_err(|err| {
-                        CollectionError::service_error(format!("failed to create snapshot: {err}"))
-                    })?;
+                    .context("failed to create snapshot")?;
             }
         }
 
@@ -141,20 +138,20 @@ impl Collection {
             .save_to_tar(&tar, Path::new(PAYLOAD_INDEX_CONFIG_FILE))
             .await?;
 
-        tar.finish().await.map_err(|err| {
-            CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
-        })?;
+        tar.finish()
+            .await
+            .context("failed to create snapshot archive")?;
 
         let snapshot_manager = self.get_snapshots_storage_manager()?;
-        snapshot_manager
+        Ok(snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to store snapshot archive to {}: {err}",
-                    snapshot_temp_arc_file.path().display()
-                ))
-            })
+            .with_context(|| {
+                format!(
+                    "failed to store snapshot archive to {}",
+                    snapshot_temp_arc_file.path().display(),
+                )
+            })?)
     }
 
     /// Restore collection from snapshot

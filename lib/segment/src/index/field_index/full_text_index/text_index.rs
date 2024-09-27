@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::service_error::{Context as _, ServiceResult};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -167,26 +168,22 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> ServiceResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
         }
         let doc = StoredDocument { tokens };
-        serde_cbor::to_vec(&doc).map_err(|e| {
-            OperationError::service_error(format!("Failed to serialize document: {e}"))
-        })
+        serde_cbor::to_vec(&doc).context("Failed to serialize document")
     }
 
-    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+    pub(super) fn deserialize_document(data: &[u8]) -> ServiceResult<BTreeSet<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
         }
         serde_cbor::from_slice::<StoredDocument>(data)
-            .map_err(|e| {
-                OperationError::service_error(format!("Failed to deserialize document: {e}"))
-            })
+            .context("Failed to deserialize document")
             .map(|doc| doc.tokens)
     }
 

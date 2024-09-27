@@ -1,17 +1,15 @@
 use std::fs::File;
 use std::path::Path;
 
+use common::service_error::Context as _;
 use tar::Archive;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 
 pub fn open_snapshot_archive_with_validation(path: &Path) -> OperationResult<Archive<File>> {
     {
-        let archive_file = File::open(path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to open segment snapshot archive {path:?}: {err}"
-            ))
-        })?;
+        let archive_file = File::open(path)
+            .with_context(|| format!("failed to open segment snapshot archive {path:?}"))?;
         let mut ar = Archive::new(archive_file);
 
         for entry in ar.entries_with_seek()? {
@@ -39,11 +37,8 @@ pub fn open_snapshot_archive_with_validation(path: &Path) -> OperationResult<Arc
         }
     }
 
-    let archive_file = File::open(path).map_err(|err| {
-        OperationError::service_error(format!(
-            "failed to open segment snapshot archive {path:?}: {err}"
-        ))
-    })?;
+    let archive_file = File::open(path)
+        .with_context(|| format!("failed to open segment snapshot archive {path:?}"))?;
 
     let mut ar = Archive::new(archive_file);
     ar.set_overwrite(false);

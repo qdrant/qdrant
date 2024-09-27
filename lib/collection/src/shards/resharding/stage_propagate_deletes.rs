@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 use tokio::task::block_in_place;
 
@@ -7,7 +8,7 @@ use super::driver::{PersistedState, Stage};
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::operations::point_ops::{PointOperations, WriteOrdering};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::ShardTransferConsensus;
@@ -41,12 +42,17 @@ pub(super) async fn drive(
             .get_shard_id_to_key_mapping()
             .get(&reshard_key.shard_id)
             .cloned();
-        shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Cannot delete migrated points while resharding shard {}, failed to get shard hash ring",
-                reshard_key.shard_id,
-            ))
-        })?
+        shard_holder
+            .rings
+            .get(&shard_key)
+            .cloned()
+            .with_context(|| {
+                format!(
+                    "Cannot delete migrated points while resharding shard {}, \
+                     failed to get shard hash ring",
+                    reshard_key.shard_id
+                )
+            })?
     };
 
     while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_delete().next()) {
@@ -55,10 +61,8 @@ pub(super) async fn drive(
         loop {
             let shard_holder = shard_holder.read().await;
 
-            let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Shard {source_shard_id} not found in the shard holder for resharding",
-                ))
+            let replica_set = shard_holder.get_shard(&source_shard_id).with_context(|| {
+                format!("Shard {source_shard_id} not found in the shard holder for resharding")
             })?;
 
             // Take batch of points, if full, pop the last entry as next batch offset

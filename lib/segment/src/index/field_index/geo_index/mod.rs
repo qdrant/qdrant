@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
@@ -132,16 +133,13 @@ impl GeoMapIndex {
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
         const DECODE_ERR: &str = "Index db parsing error: wrong data format";
-        let separator_pos = s
-            .rfind('/')
-            .ok_or_else(|| OperationError::service_error(DECODE_ERR))?;
+        let separator_pos = s.rfind('/').context(DECODE_ERR)?;
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }
         let geohash_str = &s[..separator_pos];
         let idx_str = &s[separator_pos + 1..];
-        let idx = PointOffsetType::from_str(idx_str)
-            .map_err(|_| OperationError::service_error(DECODE_ERR))?;
+        let idx = PointOffsetType::from_str(idx_str).context(DECODE_ERR)?;
         Ok((
             GeoHash::new(geohash_str).map_err(OperationError::from)?,
             idx,
@@ -151,11 +149,11 @@ impl GeoMapIndex {
     fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {
         let lat_bytes = value.as_ref()[0..8]
             .try_into()
-            .map_err(|_| OperationError::service_error("invalid lat encoding"))?;
+            .context("invalid lat encoding")?;
 
         let lon_bytes = value.as_ref()[8..16]
             .try_into()
-            .map_err(|_| OperationError::service_error("invalid lat encoding"))?;
+            .context("invalid lat encoding")?;
 
         let lat = f64::from_be_bytes(lat_bytes);
         let lon = f64::from_be_bytes(lon_bytes);

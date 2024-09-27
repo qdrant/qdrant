@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::defaults::{self, CONSENSUS_CONFIRM_RETRIES};
+use common::service_error::Context as _;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -221,13 +222,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to confirm snapshot recovered operation on consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: \
-                 {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Propose to start a shard transfer
@@ -277,12 +277,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to start shard transfer through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Propose to restart a shard transfer with a different given configuration
@@ -332,12 +332,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to restart shard transfer through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Propose to abort a shard transfer
@@ -389,12 +389,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to abort shard transfer through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Set the shard replica state on this peer through consensus
@@ -448,12 +448,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to set shard replica set state through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Propose to commit the read hash ring.
@@ -503,12 +503,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to commit read hashring through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Propose to commit the write hash ring.
@@ -558,12 +558,12 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
         }
 
-        result.map_err(|err| {
-            CollectionError::service_error(format!(
+        Ok(result.with_context(|| {
+            format!(
                 "Failed to commit write hashring through consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
-            ))
-        })
+                 after {CONSENSUS_CONFIRM_RETRIES} retries",
+            )
+        })?)
     }
 
     /// Wait for all other peers to reach the current consensus

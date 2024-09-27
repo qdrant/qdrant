@@ -34,6 +34,7 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
+use common::service_error::Context as _;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint, StrictModeConfig};
@@ -852,10 +853,10 @@ pub async fn do_core_search_points(
         timeout,
     )
     .await?;
-    batch_res
+    Ok(batch_res
         .into_iter()
         .next()
-        .ok_or_else(|| StorageError::service_error("Empty search result"))
+        .context("Empty search result")?)
 }
 
 pub async fn do_search_batch_points(
@@ -1063,10 +1064,7 @@ pub async fn do_query_points(
     let batch_res = toc
         .query_batch(collection_name, requests, read_consistency, access, timeout)
         .await?;
-    batch_res
-        .into_iter()
-        .next()
-        .ok_or_else(|| StorageError::service_error("Empty query result"))
+    Ok(batch_res.into_iter().next().context("Empty query result")?)
 }
 
 pub async fn do_query_batch_points(

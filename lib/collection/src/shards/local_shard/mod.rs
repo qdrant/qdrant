@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
+use common::service_error::Context as _;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -240,15 +241,10 @@ impl LocalShard {
             wal_path.to_str().unwrap(),
             (&collection_config_read.wal_config).into(),
         )
-        .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
+        .context("Wal error")?;
 
-        let segment_dirs = std::fs::read_dir(&segments_path).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't read segments directory due to {}\nat {}",
-                err,
-                segments_path.to_str().unwrap()
-            ))
-        })?;
+        let segment_dirs = std::fs::read_dir(&segments_path)
+            .with_context(|| format!("Can't read segments directory {segments_path:?}"))?;
 
         let mut load_handlers = vec![];
 
@@ -272,11 +268,11 @@ impl LocalShard {
                                 &payload_index_schema.read().schema.clone(),
                             )?;
                         } else {
-                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
-                                CollectionError::service_error(format!(
-                                    "Can't remove leftover segment {}, due to {err}",
+                            std::fs::remove_dir_all(&segments_path).with_context(|| {
+                                format!(
+                                    "Can't remove leftover segment {}",
                                     segments_path.to_str().unwrap(),
-                                ))
+                                )
                             })?;
                         }
                         Ok::<_, CollectionError>(res)
@@ -457,19 +453,15 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
 
-        create_dir_all(&wal_path).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't create shard wal directory. Error: {err}"
-            ))
-        })?;
+        create_dir_all(&wal_path)
+            .await
+            .context("Can't create shard wal directory. Error")?;
 
         let segments_path = Self::segments_path(shard_path);
 
-        create_dir_all(&segments_path).await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't create shard segments directory. Error: {err}"
-            ))
-        })?;
+        create_dir_all(&segments_path)
+            .await
+            .context("Can't create shard segments directory. Error")?;
 
         let mut segment_holder = SegmentHolder::default();
         let mut build_handlers = vec![];
@@ -599,21 +591,21 @@ impl LocalShard {
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update.operation) {
-                Err(err @ CollectionError::ServiceError { error, backtrace }) => {
+                Err(CollectionError::ServiceError(err)) => {
                     let path = self.path.display();
 
                     log::error!(
-                        "Can't apply WAL operation: {error}, \
+                        "Can't apply WAL operation: {err}, \
                          collection: {collection_id}, \
                          shard: {path}, \
-                         op_num: {op_num}"
+                         op_num: {op_num}",
                     );
 
-                    if let Some(backtrace) = &backtrace {
+                    if let Some(backtrace) = &err.backtrace {
                         log::error!("Backtrace: {}", backtrace);
                     }
 
-                    return Err(err.clone());
+                    return Err(CollectionError::ServiceError(err.clone()));
                 }
                 Err(err @ CollectionError::OutOfMemory { .. }) => {
                     log::error!("{err}");
@@ -829,11 +821,8 @@ impl LocalShard {
             (wal_guard.segment_capacity(), wal_guard.last_index())
         };
 
-        let temp_dir = tempfile::tempdir_in(temp_path).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can not create temporary directory for WAL: {err}",
-            ))
-        })?;
+        let temp_dir = tempfile::tempdir_in(temp_path)
+            .context("Can not create temporary directory for WAL")?;
 
         Wal::generate_empty_wal_starting_at_index(
             temp_dir.path(),
@@ -843,14 +832,12 @@ impl LocalShard {
             },
             latest_op_num,
         )
-        .map_err(|err| {
-            CollectionError::service_error(format!("Error while create empty WAL: {err}"))
-        })?;
+        .context("Error while create empty WAL")?;
 
         tar.blocking_append_dir_all(temp_dir.path(), Path::new(WAL_PATH))
-            .map_err(|err| {
-                CollectionError::service_error(format!("Error while archiving WAL: {err}"))
-            })
+            .context("Error while archiving WAL")?;
+
+        Ok(())
     }
 
     /// snapshot WAL
@@ -861,12 +848,8 @@ impl LocalShard {
         let source_wal_path = wal_guard.path();
 
         let tar = tar.descend(Path::new(WAL_PATH))?;
-        for entry in std::fs::read_dir(source_wal_path).map_err(|err| {
-            CollectionError::service_error(format!("Can't read WAL directory: {err}",))
-        })? {
-            let entry = entry.map_err(|err| {
-                CollectionError::service_error(format!("Can't read WAL directory: {err}",))
-            })?;
+        for entry in std::fs::read_dir(source_wal_path).context("Can't read WAL directory")? {
+            let entry = entry.context("Can't read WAL directory")?;
 
             if entry.file_name() == ".wal" {
                 // This sentinel file is used for WAL locking. Trying to archive
@@ -878,9 +861,7 @@ impl LocalShard {
             }
 
             tar.blocking_append_file(&entry.path(), Path::new(&entry.file_name()))
-                .map_err(|err| {
-                    CollectionError::service_error(format!("Error while archiving WAL: {err}"))
-                })?;
+                .context("Error while archiving WAL")?;
         }
         Ok(())
     }

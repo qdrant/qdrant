@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -52,11 +53,16 @@ pub(crate) async fn transfer_resharding_stream_records(
             .get(&shard_id)
             .cloned();
 
-        hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash ring"
-            ))
-        })?;
+        hashring = shard_holder
+            .rings
+            .get(&shard_key)
+            .cloned()
+            .with_context(|| {
+                format!(
+                    "Shard {shard_id} cannot be transferred for resharding, \
+                     failed to get shard hash ring",
+                )
+            })?;
 
         replica_set
             .proxify_local(remote_shard.clone(), Some(hashring.clone()))

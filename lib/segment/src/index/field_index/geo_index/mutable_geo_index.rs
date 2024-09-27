@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use parking_lot::RwLock;
@@ -10,10 +11,11 @@ use rocksdb::DB;
 use smol_str::SmolStr;
 
 use super::GeoMapIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_index::OperationError;
 use crate::types::GeoPoint;
 
 pub struct MutableGeoMapIndex {
@@ -122,9 +124,8 @@ impl MutableGeoMapIndex {
         if let Some(geo_points_to_remove) = self.in_memory_index.point_to_values.get(idx as usize) {
             for removed_geo_point in geo_points_to_remove {
                 let geo_hash_to_remove: GeoHash =
-                    encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
-                        |e| OperationError::service_error(format!("Malformed geo points: {e}")),
-                    )?;
+                    encode_max_precision(removed_geo_point.lon, removed_geo_point.lat)
+                        .context("Malformed geo points")?;
                 let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
                 self.db_wrapper.remove(key)?;
             }
@@ -141,7 +142,7 @@ impl MutableGeoMapIndex {
     ) -> OperationResult<()> {
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+                .context("Malformed geo points")?;
 
             let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
             let value = GeoMapIndex::encode_db_value(added_point);
@@ -250,9 +251,8 @@ impl InMemoryGeoMapIndex {
 
         for removed_geo_point in removed_geo_points {
             let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
-                    |e| OperationError::service_error(format!("Malformed geo points: {e}")),
-                )?;
+                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat)
+                    .context("Malformed geo points")?;
             removed_geo_hashes.push(removed_geo_hash);
 
             let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
@@ -297,7 +297,7 @@ impl InMemoryGeoMapIndex {
 
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+                .context("Malformed geo points")?;
             geo_hashes.push(added_geo_hash);
         }
 

@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::service_error::Context as _;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::distributions::WeightedIndex;
@@ -362,11 +363,8 @@ impl LocalShard {
             return Ok(Vec::new());
         }
         // Select points in a weighted fashion from each segment, depending on how many points each segment has.
-        let distribution = WeightedIndex::new(availability).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to create weighted index for random scroll: {err:?}"
-            ))
-        })?;
+        let distribution = WeightedIndex::new(availability)
+            .context("Failed to create weighted index for random scroll")?;
 
         let mut rng = StdRng::from_entropy();
         let mut random_points = HashSet::with_capacity(limit);

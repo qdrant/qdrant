@@ -2,6 +2,7 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use common::service_error::{Context as _, ServiceError, ServiceResult};
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::types::SnapshotFormat;
@@ -234,21 +235,16 @@ impl Shard {
         }
     }
 
-    pub fn wal_version(&self) -> CollectionResult<Option<u64>> {
+    pub fn wal_version(&self) -> ServiceResult<Option<u64>> {
         match self {
-            Self::Local(local_shard) => local_shard.wal.wal_version().map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Cannot get WAL version on {}: {err}",
-                    self.variant_name(),
-                ))
-            }),
+            Self::Local(local_shard) => local_shard
+                .wal
+                .wal_version()
+                .with_context(|| format!("Cannot get WAL version on {}", self.variant_name())),
 
-            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
-                Err(CollectionError::service_error(format!(
-                    "Cannot get WAL version on {}",
-                    self.variant_name(),
-                )))
-            }
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => Err(
+                ServiceError::new(format!("Cannot get WAL version on {}", self.variant_name(),)),
+            ),
         }
     }
 }

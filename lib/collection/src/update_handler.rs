@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use common::cpu::CpuBudget;
 use common::panic;
+use common::service_error::Context as _;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
@@ -669,11 +670,10 @@ impl UpdateHandler {
                     wait,
                 }) => {
                     let flush_res = if wait {
-                        wal.lock().flush().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "Can't flush WAL before operation {op_num} - {err}"
-                            ))
-                        })
+                        wal.lock()
+                            .flush()
+                            .with_context(|| format!("Can't flush WAL before operation {op_num}"))
+                            .map_err(Into::into)
                     } else {
                         Ok(())
                     };

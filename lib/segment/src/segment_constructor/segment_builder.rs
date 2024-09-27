@@ -9,6 +9,7 @@ use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::cpu::CpuPermit;
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use tempfile::TempDir;
@@ -293,10 +294,11 @@ impl SegmentBuilder {
             let other_vector_storages = vector_storages
                 .iter()
                 .map(|i| {
-                    let other_vector_storage = i.get(vector_name).ok_or_else(|| {
-                        OperationError::service_error(format!(
-                    "Cannot update from other segment because if missing vector name {vector_name}"
-                        ))
+                    let other_vector_storage = i.get(vector_name).with_context(|| {
+                        format!(
+                            "Cannot update from other segment because of missing \
+                             vector name {vector_name}",
+                        )
                     })?;
 
                     Ok(other_vector_storage.vector_storage.borrow())
@@ -533,12 +535,8 @@ impl SegmentBuilder {
         std::fs::rename(temp_dir.into_path(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
-        let loaded_segment = load_segment(&destination_path, stopped)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Segment loading error: {}",
-                destination_path.display()
-            ))
-        })?;
+        let loaded_segment = load_segment(&destination_path, stopped)?
+            .with_context(|| format!("Segment loading error: {destination_path:?}"))?;
         Ok(loaded_segment)
     }
 
@@ -614,15 +612,9 @@ where
 
 fn create_temp_dir(parent_path: &Path) -> Result<TempDir, OperationError> {
     // Ensure parent path exists
-    std::fs::create_dir_all(parent_path)
+    Ok(std::fs::create_dir_all(parent_path)
         .and_then(|_| TempDir::with_prefix_in("segment_builder_", parent_path))
-        .map_err(|err| {
-            OperationError::service_error(format!(
-                "Could not create temp directory in `{}`: {}",
-                parent_path.display(),
-                err
-            ))
-        })
+        .with_context(|| format!("Could not create temp directory in {parent_path:?}"))?)
 }
 
 /// Internal point ID and metadata of a point.

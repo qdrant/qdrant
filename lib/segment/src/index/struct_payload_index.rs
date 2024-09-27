@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::service_error::{Context as _, ServiceResult};
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -153,8 +154,7 @@ impl StructPayloadIndex {
             PayloadConfig::default()
         };
 
-        let db = open_db_with_existing_cf(path)
-            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
+        let db = open_db_with_existing_cf(path).context("RocksDB open error")?;
 
         let mut index = StructPayloadIndex {
             payload,
@@ -335,7 +335,7 @@ impl StructPayloadIndex {
     pub fn restore_database_snapshot(
         snapshot_path: &Path,
         segment_path: &Path,
-    ) -> OperationResult<()> {
+    ) -> ServiceResult<()> {
         crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
     }
 
@@ -635,7 +635,7 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
-        crate::rocksdb_backup::create(&self.db.read(), path)
+        Ok(crate::rocksdb_backup::create(&self.db.read(), path)?)
     }
 
     fn files(&self) -> Vec<PathBuf> {

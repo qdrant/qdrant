@@ -5,6 +5,7 @@ use std::path::Path;
 use std::thread::{self, JoinHandle};
 
 use bitvec::prelude::BitVec;
+use common::service_error::{Context as _, ServiceResult};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
@@ -334,13 +335,8 @@ impl Segment {
 
     pub fn load_state(current_path: &Path) -> OperationResult<SegmentState> {
         let state_path = current_path.join(SEGMENT_STATE_FILE);
-        read_json(&state_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to read segment state {} error: {}",
-                current_path.display(),
-                err
-            ))
-        })
+        Ok(read_json(&state_path)
+            .with_context(|| format!("Failed to read segment state {current_path:?}"))?)
     }
 
     /// Retrieve vector by internal ID
@@ -431,12 +427,9 @@ impl Segment {
     ///
     /// - `segment.restore_snapshot("foo/bar/segment-id.tar")`  (tar archive)
     /// - `segment.restore_snapshot("foo/bar/segment-id")`      (directory)
-    pub fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
-        restore_snapshot_in_place(snapshot_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to restore snapshot from {snapshot_path:?}: {err}",
-            ))
-        })
+    pub fn restore_snapshot_in_place(snapshot_path: &Path) -> ServiceResult<()> {
+        restore_snapshot_in_place(snapshot_path)
+            .with_context(|| format!("Failed to restore snapshot from {snapshot_path:?}"))
     }
 
     // Joins flush thread if exists
@@ -660,14 +653,12 @@ impl Segment {
 fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
     let segments_dir = snapshot_path
         .parent()
-        .ok_or_else(|| OperationError::service_error("Cannot extract parent path"))?;
+        .context("Cannot extract parent path")?;
 
     let file_name = snapshot_path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            OperationError::service_error("Cannot extract segment ID from snapshot path")
-        })?;
+        .context("Cannot extract segment ID from snapshot path")?;
 
     let meta = fs::metadata(snapshot_path)?;
     let (segment_id, is_tar) = match file_name.split_once('.') {

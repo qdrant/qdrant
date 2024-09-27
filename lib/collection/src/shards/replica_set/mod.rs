@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::service_error::Context as _;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
 use segment::types::{ExtendedPointId, Filter};
@@ -461,11 +462,7 @@ impl ShardReplicaSet {
         let timed_out =
             !tokio::task::spawn_blocking(move || replica_state.wait_for(check, timeout))
                 .await
-                .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Failed to wait for replica set state: {err}"
-                    ))
-                })?;
+                .context("Failed to wait for replica set state")?;
 
         if timed_out {
             return Err(CollectionError::service_error(

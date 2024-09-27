@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::service_error::Context as _;
 use common::tempfile_ext::MaybeTempPath;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
@@ -80,9 +81,7 @@ impl SnapshotStorageManager {
                     }
                 }
                 let client: Box<dyn object_store::ObjectStore> =
-                    Box::new(builder.build().map_err(|e| {
-                        CollectionError::service_error(format!("Failed to create S3 client: {e}"))
-                    })?);
+                    Box::new(builder.build().context("Failed to create S3 client")?);
 
                 Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
             }

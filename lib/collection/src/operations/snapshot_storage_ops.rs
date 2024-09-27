@@ -3,6 +3,7 @@ use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use common::cpu::CpuBudget;
+use common::service_error::Context as _;
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
@@ -42,7 +43,7 @@ pub async fn get_snapshot_description(
     let file_meta: object_store::ObjectMeta = client
         .head(&trim_dot_slash(path)?)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get head: {e}")))?;
+        .context("Failed to get head")?;
 
     let name = get_filename(path.to_str().ok_or_else(|| {
         CollectionError::object_storage_error(format!(
@@ -106,7 +107,7 @@ pub async fn multipart_upload(
     let upload = client
         .put_multipart(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to put multipart: {e}")))?;
+        .context("Failed to put multipart")?;
 
     let chunk_size: usize = get_appropriate_chunk_size(source_path).await?;
     let mut write = WriteMultipart::new_with_chunk_size(upload, chunk_size);
@@ -131,16 +132,14 @@ pub async fn multipart_upload(
         write
             .wait_for_capacity(max_concurrency)
             .await
-            .map_err(|e| {
-                CollectionError::service_error(format!("Failed to wait for capacity: {e}"))
-            })?;
+            .context("Failed to wait for capacity")?;
 
         write.write(buffer);
     }
     write
         .finish() //  2. write.finish() will wait for all the worker threads to finish.
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to finish upload: {e}")))?;
+        .context("Failed to finish upload")?;
 
     Ok(())
 }
@@ -157,7 +156,7 @@ pub async fn list_snapshot_descriptions(
         .next()
         .await
         .transpose()
-        .map_err(|e| CollectionError::service_error(format!("Failed to list snapshots: {e}")))?
+        .context("Failed to list snapshots")?
     {
         snapshots.push(SnapshotDescription {
             name: get_filename(meta.location.as_ref())?,
@@ -185,7 +184,7 @@ pub async fn delete_snapshot(
     client
         .delete(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to delete snapshot: {e}")))?;
+        .context("Failed to delete snapshot")?;
     Ok(true)
 }
 
@@ -213,22 +212,18 @@ pub async fn download_snapshot(
 
     let mut file = tokio::fs::File::create(target_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to create file: {e}")))?;
+        .context("Failed to create file")?;
 
     let mut total_size = 0;
     while let Some(data) = stream.next().await {
-        let data = data.map_err(|e| {
-            CollectionError::service_error(format!("Failed to get data from stream: {e}"))
-        })?;
+        let data = data.context("Failed to get data from stream")?;
         file.write_all(&data)
             .await
-            .map_err(|e| CollectionError::service_error(format!("Failed to write to file: {e}")))?;
+            .context("Failed to write to file")?;
         total_size += data.len();
     }
     // ensure flush
-    file.flush()
-        .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {e}")))?;
+    file.flush().await.context("Failed to flush file")?;
 
     // check len to file len
     let file_meta = tokio::fs::metadata(target_path).await?;

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use tokio::task::block_in_place;
@@ -133,10 +134,11 @@ async fn drive_up(
                 let source_peer_ids = {
                     let shard_holder = shard_holder.read().await;
                     let replica_set =
-                        shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
-                            CollectionError::service_error(format!(
-                                "Shard {source_shard_id} not found in the shard holder for resharding",
-                            ))
+                        shard_holder.get_shard(&source_shard_id).with_context(|| {
+                            format!(
+                                "Shard {source_shard_id} not found \
+                                 in the shard holder for resharding",
+                            )
                         })?;
 
                     let active_peer_ids = replica_set.active_shards().await;
@@ -215,11 +217,11 @@ async fn drive_up(
                     await_transfer_end,
                 )
                 .await
-                .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Failed to migrate points from shard {source_shard_id} to {} for resharding: {err}",
+                .with_context(|| {
+                    format!(
+                        "Failed to migrate points from shard {source_shard_id} to {} for resharding",
                         reshard_key.shard_id,
-                    ))
+                    )
                 })?;
             }
             // Transfer locally, within this peer
@@ -283,12 +285,17 @@ async fn drive_down(
             .get_shard_id_to_key_mapping()
             .get(&reshard_key.shard_id)
             .cloned();
-        shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Cannot delete migrated points while resharding shard {}, failed to get shard hash ring",
-                reshard_key.shard_id,
-            ))
-        })?
+        shard_holder
+            .rings
+            .get(&shard_key)
+            .cloned()
+            .with_context(|| {
+                format!(
+                    "Cannot delete migrated points while resharding shard {}, \
+                     failed to get shard hash ring",
+                    reshard_key.shard_id,
+                )
+            })?
     };
 
     while let Some(target_shard_id) = block_in_place(|| state.read().shards_to_migrate().next()) {
@@ -300,17 +307,16 @@ async fn drive_down(
             let source_replica_set =
                 shard_holder
                     .get_shard(&reshard_key.shard_id)
-                    .ok_or_else(|| {
-                        CollectionError::service_error(format!(
+                    .with_context(|| {
+                        format!(
                             "Shard {} not found in the shard holder for resharding",
                             reshard_key.shard_id,
-                        ))
+                        )
                     })?;
-            let target_replica_set = shard_holder.get_shard(&target_shard_id).ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Shard {target_shard_id} not found in the shard holder for resharding",
-                ))
-            })?;
+            let target_replica_set =
+                shard_holder.get_shard(&target_shard_id).with_context(|| {
+                    format!("Shard {target_shard_id} not found in the shard holder for resharding")
+                })?;
 
             // Take batch of points, if full, pop the last entry as next batch offset
             let mut points = source_replica_set
@@ -415,10 +421,8 @@ async fn migrate_local(
     // Normally consensus takes care of this, but we don't use consensus here
     {
         let shard_holder = shard_holder.read().await;
-        let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                "Shard {source_shard_id} not found in the shard holder for resharding",
-            ))
+        let replica_set = shard_holder.get_shard(&source_shard_id).with_context(|| {
+            format!("Shard {source_shard_id} not found in the shard holder for resharding")
         })?;
         replica_set.un_proxify_local().await?;
     }

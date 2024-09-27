@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
+use common::service_error::{Context as _, ServiceError, ServiceResult};
 use fs_extra::dir::CopyOptions;
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 
 /// Move directory from one location to another.
 /// Handles the case when the source and destination are on different filesystems.
@@ -16,13 +17,8 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
         // It is possible that the source and destination are on different filesystems.
         let task = tokio::task::spawn_blocking(move || {
             let options = CopyOptions::new().copy_inside(true);
-            fs_extra::dir::move_dir(&from, &to, &options).map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Can't move dir from {} to {} due to {}",
-                    from.display(),
-                    to.display(),
-                    err
-                ))
+            fs_extra::dir::move_dir(&from, &to, &options).with_context(|| {
+                format!("Can't move dir from {} to {}", from.display(), to.display())
             })
         });
         task.await??;
@@ -32,7 +28,7 @@ pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> Colle
 
 /// Move file from one location to another.
 /// Handles the case when the source and destination are on different filesystems.
-pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> CollectionResult<()> {
+pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> ServiceResult<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
@@ -45,7 +41,7 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
     // It is possible that the source and destination are on different filesystems.
     if let Err(err) = tokio::fs::copy(from, to).await {
         cleanup_file(to).await;
-        return Err(CollectionError::service_error(format!(
+        return Err(ServiceError::new(format!(
             "Can't move file from {} to {} due to {}",
             from.display(),
             to.display(),
@@ -55,7 +51,7 @@ pub async fn move_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Collecti
 
     if let Err(err) = tokio::fs::remove_file(from).await {
         cleanup_file(to).await;
-        return Err(CollectionError::service_error(format!(
+        return Err(ServiceError::new(format!(
             "Can't remove file {} due to {}",
             from.display(),
             err

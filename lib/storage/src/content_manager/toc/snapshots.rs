@@ -5,6 +5,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use common::service_error::Context as _;
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -14,11 +15,10 @@ use crate::rbac::CollectionPass;
 
 impl TableOfContent {
     pub fn get_snapshots_storage_manager(&self) -> Result<SnapshotStorageManager, StorageError> {
-        SnapshotStorageManager::new(self.storage_config.snapshots_config.clone()).map_err(|err| {
-            StorageError::service_error(format!(
-                "Can't create snapshot storage manager. Error: {err}"
-            ))
-        })
+        Ok(
+            SnapshotStorageManager::new(self.storage_config.snapshots_config.clone())
+                .context("Can't create snapshot storage manager")?,
+        )
     }
 
     pub fn snapshots_path(&self) -> &str {
@@ -43,11 +43,7 @@ impl TableOfContent {
         let snapshots_path = self.snapshots_path_for_collection(collection_name);
         tokio::fs::create_dir_all(&snapshots_path)
             .await
-            .map_err(|err| {
-                StorageError::service_error(format!(
-                    "Can't create directory for snapshots {collection_name}. Error: {err}"
-                ))
-            })?;
+            .with_context(|| format!("Can't create directory for snapshots {collection_name}"))?;
 
         Ok(snapshots_path)
     }
