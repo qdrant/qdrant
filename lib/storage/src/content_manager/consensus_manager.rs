@@ -92,9 +92,6 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Sends messages to the consensus thread, which is defined externally, outside of the state.
     /// (e.g. in the `src/consensus.rs`)
     propose_sender: OperationSender,
-    /// Defines if this peer is a first peer of the consensus,
-    /// which might affect the init logic
-    first_voter: RwLock<Option<PeerId>>,
     /// Status of the consensus thread, changed by the consensus thread
     consensus_thread_status: RwLock<ConsensusThreadStatus>,
     /// Consensus thread errors, changed by the consensus thread
@@ -118,7 +115,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             toc,
             on_consensus_op_apply: Default::default(),
             propose_sender,
-            first_voter: Default::default(),
             consensus_thread_status: RwLock::new(ConsensusThreadStatus::Working {
                 last_update: Utc::now(),
             }),
@@ -195,14 +191,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn first_voter(&self) -> PeerId {
-        match self.first_voter.read().as_ref() {
-            Some(id) => *id,
-            None => self.this_peer_id(),
-        }
+        self.persistent.read().first_voter()
     }
 
-    pub fn set_first_voter(&self, id: PeerId) {
-        *self.first_voter.write() = Some(id);
+    pub fn set_first_voter(&self, id: PeerId) -> Result<(), StorageError> {
+        self.persistent.write().set_first_voter(id)
     }
 
     /// Report aggregated information about the cluster.
