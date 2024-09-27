@@ -389,12 +389,11 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        let mut flatten_values: Vec<_> = vec![];
-        for value in payload.iter() {
-            let payload_values = <GeoMapIndex as ValueIndexer>::get_values(value);
-            flatten_values.extend(payload_values);
-        }
-        self.dynamic_index.add_many_geo_points(id, &flatten_values)
+        let values = payload
+            .iter()
+            .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
+            .collect::<Vec<_>>();
+        self.dynamic_index.add_many_geo_points(id, &values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
