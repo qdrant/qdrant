@@ -512,10 +512,9 @@ impl Consensus {
             Err(err @ TryAddOriginError::NotLeader) => {
                 log::debug!("{err}");
 
-                let timeout_at = previous_tick + tick_period;
-
-                self.runtime
-                    .block_on(async { tokio::time::sleep_until(timeout_at.into()).await });
+                let next_tick = previous_tick + tick_period;
+                let duration_until_next_tick = next_tick.saturating_duration_since(Instant::now());
+                thread::sleep(duration_until_next_tick);
 
                 return Ok(None);
             }
