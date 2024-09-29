@@ -40,10 +40,7 @@ pub fn merge_map(
     source: &serde_json::Map<String, Value>,
 ) {
     for (key, value) in source {
-        match value {
-            Value::Null => dest.remove(key),
-            _ => dest.insert(key.to_owned(), value.to_owned()),
-        };
+        dest.insert(key.to_owned(), value.to_owned());
     }
 }
 

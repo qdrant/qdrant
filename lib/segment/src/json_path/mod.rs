@@ -1098,6 +1098,50 @@ mod tests {
     }
 
     #[test]
+    fn test_set_value_to_json_with_null_value() {
+        let mut map = json(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        );
+
+        JsonPath::value_set(
+            Some(&JsonPath::new("a.b[0]")),
+            &mut map,
+            &json(r#"{"c":null}"#),
+        );
+
+        assert_eq!(
+            map,
+            json(
+                r#"
+                {
+                    "a": {
+                    "b": [
+                        { "c": null },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            ),
+        );
+    }
+
+    #[test]
     fn test_set_value_to_json_with_array_index() {
         let mut map = json(
             r#"
