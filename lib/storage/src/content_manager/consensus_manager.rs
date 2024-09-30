@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
@@ -17,7 +17,7 @@ use collection::shards::CollectionId;
 use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
-use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
+use raft::eraftpb::{ConfChange, ConfChangeType, ConfChangeV2, Entry as RaftEntry, EntryType};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -196,6 +196,70 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn set_first_voter(&self, id: PeerId) -> Result<(), StorageError> {
         self.persistent.write().set_first_voter(id)
+    }
+
+    pub fn recover_first_voter(&self) -> Result<Option<PeerId>, StorageError> {
+        let wal = self.wal.lock();
+
+        let Some(first_entry) = wal.first_entry()? else {
+            log::warn!("TODO: empty WAL");
+            return Ok(None);
+        };
+
+        let Some(last_entry) = wal.last_entry()? else {
+            log::warn!("TODO: invalid WAL (no last entry)");
+            return Ok(None);
+        };
+
+        if first_entry.index != 1 {
+            log::warn!("TODO: compacted WAL");
+            return Ok(Some(PeerId::MAX));
+        }
+
+        let mut peers: HashSet<_> = self.peers().into_iter().collect();
+
+        for index in first_entry.index..last_entry.index + 1 {
+            let entry = wal.entry(index)?;
+
+            match entry.get_entry_type() {
+                EntryType::EntryConfChangeV2 => {
+                    let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
+
+                    for change in change.changes {
+                        match change.get_change_type() {
+                            ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
+                                peers.remove(&change.get_node_id());
+                            }
+
+                            ConfChangeType::RemoveNode => (),
+                        }
+                    }
+                }
+
+                EntryType::EntryConfChange => {
+                    log::warn!("TODO: outdated ConfChange message type");
+
+                    let change: ConfChange = prost_for_raft::Message::decode(entry.get_data())?;
+
+                    match change.get_change_type() {
+                        ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
+                            peers.remove(&change.get_node_id());
+                        }
+
+                        ConfChangeType::RemoveNode => (),
+                    }
+                }
+
+                EntryType::EntryNormal => continue,
+            }
+        }
+
+        if peers.len() > 1 {
+            log::warn!("TODO: multiple peers without ConfChange: {peers:?}");
+            return Ok(Some(PeerId::MAX));
+        }
+
+        Ok(peers.into_iter().next())
     }
 
     /// Report aggregated information about the cluster.
