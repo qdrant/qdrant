@@ -145,15 +145,15 @@ impl MutableGeoMapIndex {
         self.dynamic_index.add_many_geo_points(idx, values)
     }
 
-    pub fn get_points_count(&self) -> usize {
+    pub fn points_count(&self) -> usize {
         self.dynamic_index.points_count
     }
 
-    pub fn get_points_values_count(&self) -> usize {
+    pub fn points_values_count(&self) -> usize {
         self.dynamic_index.points_values_count
     }
 
-    pub fn get_max_values_per_point(&self) -> usize {
+    pub fn max_values_per_point(&self) -> usize {
         self.dynamic_index.max_values_per_point
     }
 
@@ -165,10 +165,10 @@ impl MutableGeoMapIndex {
         to self.dynamic_index {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
-            pub fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
-            pub fn get_points_of_hash(&self, hash: &GeoHash) -> usize;
-            pub fn get_values_of_hash(&self, hash: &GeoHash) -> usize;
-            pub fn get_stored_sub_regions(
+            pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
+            pub fn points_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn values_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn stored_sub_regions(
                 &self,
                 geo: &GeoHash,
             ) -> impl Iterator<Item = PointOffsetType> + '_;
@@ -213,17 +213,17 @@ impl DynamicGeoMapIndex {
             .unwrap_or_default()
     }
 
-    pub fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
         self.points_per_hash
             .iter()
             .map(|(hash, count)| (hash, *count))
     }
 
-    pub fn get_points_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
         self.points_per_hash.get(hash).cloned().unwrap_or(0)
     }
 
-    pub fn get_values_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
         self.values_per_hash.get(hash).cloned().unwrap_or(0)
     }
 
@@ -314,7 +314,7 @@ impl DynamicGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn get_stored_sub_regions(
+    pub fn stored_sub_regions(
         &self,
         geo: &GeoHash,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {

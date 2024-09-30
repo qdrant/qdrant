@@ -67,14 +67,7 @@ impl MmapGeoMapIndex {
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        atomic_save_json(
-            &config_path,
-            &MmapGeoMapIndexConfig {
-                points_values_count: dynamic_index.points_values_count,
-                max_values_per_point: dynamic_index.max_values_per_point,
-            },
-        )?;
-
+        // Create the point-to-value mapping and persist in the mmap file 
         MmapPointToValues::<GeoPoint>::from_iter(
             path,
             dynamic_index
@@ -161,6 +154,14 @@ impl MmapGeoMapIndex {
             }
         }
 
+        atomic_save_json(
+            &config_path,
+            &MmapGeoMapIndexConfig {
+                points_values_count: dynamic_index.points_values_count,
+                max_values_per_point: dynamic_index.max_values_per_point,
+            },
+        )?;
+
         Self::load(path)
     }
 
@@ -232,13 +233,13 @@ impl MmapGeoMapIndex {
             .unwrap_or(0)
     }
 
-    pub fn get_points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
+    pub fn points_per_hash(&self) -> impl Iterator<Item = (GeoHash, usize)> + '_ {
         self.counts_per_hash
             .iter()
             .map(|counts| (counts.hash, counts.points as usize))
     }
 
-    pub fn get_points_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
         if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
             self.counts_per_hash[index].points as usize
         } else {
@@ -246,7 +247,7 @@ impl MmapGeoMapIndex {
         }
     }
 
-    pub fn get_values_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
         if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
             self.counts_per_hash[index].values as usize
         } else {
@@ -292,7 +293,7 @@ impl MmapGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn get_stored_sub_regions(
+    pub fn stored_sub_regions(
         &self,
         geohash: GeoHash,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
@@ -315,17 +316,17 @@ impl MmapGeoMapIndex {
             .flatten()
     }
 
-    pub fn get_indexed_points(&self) -> usize {
+    pub fn points_count(&self) -> usize {
         self.point_to_values
             .len()
             .saturating_sub(self.deleted_count)
     }
 
-    pub fn get_points_values_count(&self) -> usize {
+    pub fn points_values_count(&self) -> usize {
         self.points_values_count
     }
 
-    pub fn get_max_values_per_point(&self) -> usize {
+    pub fn max_values_per_point(&self) -> usize {
         self.max_values_per_point
     }
 }

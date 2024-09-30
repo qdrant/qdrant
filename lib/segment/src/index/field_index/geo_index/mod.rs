@@ -78,17 +78,17 @@ impl GeoMapIndex {
 
     fn points_count(&self) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_points_count(),
-            GeoMapIndex::Immutable(index) => index.get_points_count(),
-            GeoMapIndex::Mmap(index) => index.get_indexed_points(),
+            GeoMapIndex::Mutable(index) => index.points_count(),
+            GeoMapIndex::Immutable(index) => index.points_count(),
+            GeoMapIndex::Mmap(index) => index.points_count(),
         }
     }
 
     fn points_values_count(&self) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_points_values_count(),
-            GeoMapIndex::Immutable(index) => index.get_points_values_count(),
-            GeoMapIndex::Mmap(index) => index.get_points_values_count(),
+            GeoMapIndex::Mutable(index) => index.points_values_count(),
+            GeoMapIndex::Immutable(index) => index.points_values_count(),
+            GeoMapIndex::Mmap(index) => index.points_values_count(),
         }
     }
 
@@ -99,25 +99,25 @@ impl GeoMapIndex {
     /// Zero if the index is empty.
     fn max_values_per_point(&self) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_max_values_per_point(),
-            GeoMapIndex::Immutable(index) => index.get_max_values_per_point(),
-            GeoMapIndex::Mmap(index) => index.get_max_values_per_point(),
+            GeoMapIndex::Mutable(index) => index.max_values_per_point(),
+            GeoMapIndex::Immutable(index) => index.max_values_per_point(),
+            GeoMapIndex::Mmap(index) => index.max_values_per_point(),
         }
     }
 
-    fn get_points_of_hash(&self, hash: &GeoHash) -> usize {
+    fn points_of_hash(&self, hash: &GeoHash) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_points_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.get_points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.get_points_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
+            GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
+            GeoMapIndex::Mmap(index) => index.points_of_hash(hash),
         }
     }
 
-    fn get_values_of_hash(&self, hash: &GeoHash) -> usize {
+    fn values_of_hash(&self, hash: &GeoHash) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.get_values_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.get_values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.get_values_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
+            GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
+            GeoMapIndex::Mmap(index) => index.values_of_hash(hash),
         }
     }
 
@@ -206,12 +206,12 @@ impl GeoMapIndex {
 
         let common_hash = common_hash_prefix(values);
 
-        let total_points = self.get_points_of_hash(&common_hash);
-        let total_values = self.get_values_of_hash(&common_hash);
+        let total_points = self.points_of_hash(&common_hash);
+        let total_values = self.values_of_hash(&common_hash);
 
         let (sum, maximum_per_hash) = values
             .iter()
-            .map(|region| self.get_points_of_hash(region))
+            .map(|region| self.points_of_hash(region))
             .fold((0, 0), |(sum, maximum), count| {
                 (sum + count, max(maximum, count))
             });
@@ -254,31 +254,31 @@ impl GeoMapIndex {
         }
     }
 
-    fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match self {
             GeoMapIndex::Mutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Immutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Mmap(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.get_stored_sub_regions(top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
         }
     }
 
     /// Get iterator over smallest geo-hash regions larger than `threshold` points
-    fn get_large_hashes(
+    fn large_hashes(
         &self,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = (GeoHash, usize)> + '_> {
@@ -286,17 +286,17 @@ impl GeoMapIndex {
             |(hash, size): &(GeoHash, usize)| *size > threshold && !hash.is_empty();
         let mut large_regions = match self {
             GeoMapIndex::Mutable(index) => index
-                .get_points_per_hash()
+                .points_per_hash()
                 .map(|(&hash, size)| (hash, size))
                 .filter(filter_condition)
                 .collect_vec(),
             GeoMapIndex::Immutable(index) => index
-                .get_points_per_hash()
+                .points_per_hash()
                 .map(|(&hash, size)| (hash, size))
                 .filter(filter_condition)
                 .collect_vec(),
             GeoMapIndex::Mmap(index) => index
-                .get_points_per_hash()
+                .points_per_hash()
                 .filter(filter_condition)
                 .collect_vec(),
         };
@@ -483,7 +483,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_bounding_box.clone();
-            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -495,7 +495,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_radius.clone();
-            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -507,7 +507,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_polygon) = &condition.geo_polygon {
             let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.convert();
-            return Some(Box::new(self.get_iterator(geo_hashes).filter(
+            return Some(Box::new(self.iterator(geo_hashes).filter(
                 move |point| {
                     self.check_values_any(*point, |geo_point| {
                         geo_condition_copy.check_point(geo_point)
@@ -573,7 +573,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
-            self.get_large_hashes(threshold)
+            self.large_hashes(threshold)
                 .map(move |(geo_hash, size)| PayloadBlockCondition {
                     condition: FieldCondition::new_geo_bounding_box(
                         key.clone(),
@@ -767,7 +767,7 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
+            let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let card = field_index.estimate_cardinality(&field_condition);
@@ -907,7 +907,7 @@ mod tests {
             index_type: IndexType,
         ) {
             let (field_index, _, _) = build_random_index(500, 20, index_type);
-            let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
+            let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
             let card = field_index.estimate_cardinality(&field_condition);
@@ -1012,9 +1012,9 @@ mod tests {
     #[case(IndexType::Mmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
-        let top_level_points = field_index.get_points_of_hash(&Default::default());
+        let top_level_points = field_index.points_of_hash(&Default::default());
         assert_eq!(top_level_points, 1_000);
-        let block_hashes = field_index.get_large_hashes(100).collect_vec();
+        let block_hashes = field_index.large_hashes(100).collect_vec();
         assert!(!block_hashes.is_empty());
         for (geohash, size) in block_hashes {
             assert_eq!(geohash.len(), 1);
