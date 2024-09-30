@@ -331,8 +331,12 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
     fn init(&mut self) -> OperationResult<()> {
         match &self.0 {
             GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
-            GeoMapIndex::Immutable(_) => unreachable!(),
-            GeoMapIndex::Mmap(_) => unreachable!(),
+            GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Cannot use immutable index as a builder type",
+            )),
+            GeoMapIndex::Mmap(_) => Err(OperationError::service_error(
+                "Cannot use mmap index as a builder type",
+            )),
         }
     }
 
@@ -359,8 +363,12 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
     fn init(&mut self) -> OperationResult<()> {
         match &self.index {
             GeoMapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
-            GeoMapIndex::Immutable(_) => unreachable!(),
-            GeoMapIndex::Mmap(_) => unreachable!(),
+            GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Cannot use immutable index as a builder type",
+            )),
+            GeoMapIndex::Mmap(_) => Err(OperationError::service_error(
+                "Cannot use mmap index as a builder type",
+            )),
         }
     }
 
