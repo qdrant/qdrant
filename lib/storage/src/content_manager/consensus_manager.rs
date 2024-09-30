@@ -191,14 +191,29 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn first_voter(&self) -> PeerId {
-        self.persistent.read().first_voter()
+        let state = self.persistent.read();
+
+        match state.first_voter() {
+            Some(peer_id) if peer_id != PeerId::MAX => peer_id,
+            _ => state.this_peer_id(),
+        }
     }
 
     pub fn set_first_voter(&self, id: PeerId) -> Result<(), StorageError> {
         self.persistent.write().set_first_voter(id)
     }
 
-    pub fn recover_first_voter(&self) -> Result<Option<PeerId>, StorageError> {
+    pub fn recover_first_voter(&self) -> Result<(), StorageError> {
+        if self.persistent.read().first_voter().is_none() {
+            if let Some(peer_id) = self.recover_first_voter_impl()? {
+                self.set_first_voter(peer_id)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn recover_first_voter_impl(&self) -> Result<Option<PeerId>, StorageError> {
         let wal = self.wal.lock();
 
         let Some(first_entry) = wal.first_entry()? else {

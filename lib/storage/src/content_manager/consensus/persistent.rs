@@ -202,11 +202,8 @@ impl Persistent {
         self.apply_progress_queue.get_last_applied()
     }
 
-    pub fn first_voter(&self) -> PeerId {
-        match self.first_voter {
-            Some(id) => id,
-            None => self.this_peer_id(),
-        }
+    pub fn first_voter(&self) -> Option<PeerId> {
+        self.first_voter
     }
 
     pub fn set_first_voter(&mut self, id: PeerId) -> Result<(), StorageError> {

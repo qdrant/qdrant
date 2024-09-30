@@ -261,6 +261,10 @@ impl Consensus {
             broker,
         };
 
+        if !state_ref.is_new_deployment() {
+            state_ref.recover_first_voter()?;
+        }
+
         Ok((consensus, sender))
     }
 
