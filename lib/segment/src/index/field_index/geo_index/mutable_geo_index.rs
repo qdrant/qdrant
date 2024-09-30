@@ -109,7 +109,8 @@ impl MutableGeoMapIndex {
         for (_idx, geo_hashes) in points_to_hashes {
             self.in_memory_index.max_values_per_point =
                 max(self.in_memory_index.max_values_per_point, geo_hashes.len());
-            self.in_memory_index.increment_hash_point_counts(&geo_hashes);
+            self.in_memory_index
+                .increment_hash_point_counts(&geo_hashes);
             for geo_hash in geo_hashes {
                 self.in_memory_index.increment_hash_value_counts(&geo_hash);
             }
@@ -319,10 +320,7 @@ impl InMemoryGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions(
-        &self,
-        geo: &GeoHash,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+    pub fn stored_sub_regions(&self, geo: &GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
         let geo_clone = *geo;
         self.points_map
             .range(*geo..)

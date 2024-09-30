@@ -67,7 +67,7 @@ impl MmapGeoMapIndex {
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        // Create the point-to-value mapping and persist in the mmap file 
+        // Create the point-to-value mapping and persist in the mmap file
         MmapPointToValues::<GeoPoint>::from_iter(
             path,
             dynamic_index
