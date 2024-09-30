@@ -6832,6 +6832,11 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/GeoIndexType"
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

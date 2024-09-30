@@ -258,9 +258,11 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
 }
 
 impl From<segment::data_types::index::GeoIndexParams> for PayloadIndexParams {
-    fn from(_params: segment::data_types::index::GeoIndexParams) -> Self {
+    fn from(params: segment::data_types::index::GeoIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {})),
+            index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {
+                on_disk: params.on_disk,
+            })),
         }
     }
 }
@@ -417,9 +419,10 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
 
 impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
     type Error = Status;
-    fn try_from(_params: GeoIndexParams) -> Result<Self, Self::Error> {
+    fn try_from(params: GeoIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::index::GeoIndexParams {
             r#type: GeoIndexType::Geo,
+            on_disk: params.on_disk,
         })
     }
 }
