@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use smol_str::SmolStr;
 
-use super::mutable_geo_index::{DynamicGeoMapIndex, MutableGeoMapIndex};
+use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
 use super::GeoMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
@@ -113,7 +113,7 @@ impl ImmutableGeoMapIndex {
         );
         let result = mutable_geo_index.load()?;
 
-        let DynamicGeoMapIndex {
+        let InMemoryGeoMapIndex {
             points_per_hash,
             values_per_hash,
             points_map,
@@ -122,7 +122,7 @@ impl ImmutableGeoMapIndex {
             points_values_count,
             max_values_per_point,
             ..
-        } = mutable_geo_index.into_dynamic();
+        } = mutable_geo_index.into_in_memory_index();
 
         let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
         for (hash, points) in points_per_hash {

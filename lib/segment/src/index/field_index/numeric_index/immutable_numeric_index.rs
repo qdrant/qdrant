@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::mutable_numeric_index::{DynamicNumericIndex, MutableNumericIndex};
+use super::mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use super::{
     numeric_index_storage_cf_name, Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION,
 };
@@ -233,14 +233,14 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         let mut mutable = MutableNumericIndex::<T>::new_from_db_wrapper(self.db_wrapper.clone());
         mutable.load()?;
-        let DynamicNumericIndex {
+        let InMemoryNumericIndex {
             map,
             histogram,
             points_count,
             max_values_per_point,
             point_to_values,
             ..
-        } = mutable.into_dynamic_index();
+        } = mutable.into_in_memory_index();
 
         self.map = NumericKeySortedVec::from_btree_set(map);
         self.histogram = histogram;

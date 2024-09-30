@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use mutable_geo_index::DynamicGeoMapIndex;
+use mutable_geo_index::InMemoryGeoMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
@@ -72,7 +72,7 @@ impl GeoMapIndex {
     pub fn mmap_builder(path: &Path) -> GeoMapIndexMmapBuilder {
         GeoMapIndexMmapBuilder {
             path: path.to_owned(),
-            dynamic_index: DynamicGeoMapIndex::new(),
+            in_memory_index: InMemoryGeoMapIndex::new(),
         }
     }
 
@@ -386,7 +386,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 
 pub struct GeoMapIndexMmapBuilder {
     path: PathBuf,
-    dynamic_index: DynamicGeoMapIndex,
+    in_memory_index: InMemoryGeoMapIndex,
 }
 
 impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
@@ -401,12 +401,12 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
             .iter()
             .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.dynamic_index.add_many_geo_points(id, &values)
+        self.in_memory_index.add_many_geo_points(id, &values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::new(
-            self.dynamic_index,
+            self.in_memory_index,
             &self.path,
         )?)))
     }

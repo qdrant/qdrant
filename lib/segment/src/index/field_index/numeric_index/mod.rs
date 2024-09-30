@@ -17,7 +17,7 @@ use chrono::DateTime;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use mmap_numeric_index::MmapNumericIndex;
-use mutable_numeric_index::{DynamicNumericIndex, MutableNumericIndex};
+use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::de::DeserializeOwned;
@@ -455,7 +455,7 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
     {
         NumericIndexMmapBuilder {
             path: path.to_owned(),
-            dynamic_index: DynamicNumericIndex::default(),
+            in_memory_index: InMemoryNumericIndex::default(),
             _phantom: PhantomData,
         }
     }
@@ -560,7 +560,7 @@ where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
 {
     path: PathBuf,
-    dynamic_index: DynamicNumericIndex<T>,
+    in_memory_index: InMemoryNumericIndex<T>,
     _phantom: PhantomData<P>,
 }
 
@@ -576,7 +576,7 @@ where
     }
 
     fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.dynamic_index.remove_point(id);
+        self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
         for value in payload.iter() {
             let payload_values = <NumericIndex<T, P> as ValueIndexer>::get_values(value);
@@ -586,12 +586,12 @@ where
             .into_iter()
             .map(NumericIndex::into_inner_value)
             .collect();
-        self.dynamic_index.add_many_to_list(id, flatten_values);
+        self.in_memory_index.add_many_to_list(id, flatten_values);
         Ok(())
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = MmapNumericIndex::build(self.dynamic_index, &self.path)?;
+        let inner = MmapNumericIndex::build(self.in_memory_index, &self.path)?;
         Ok(NumericIndex {
             inner: NumericIndexInner::Mmap(inner),
             _phantom: PhantomData,

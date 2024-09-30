@@ -17,11 +17,11 @@ use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
 use crate::types::GeoPoint;
 
 pub struct MutableGeoMapIndex {
-    dynamic_index: DynamicGeoMapIndex,
+    in_memory_index: InMemoryGeoMapIndex,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
-pub struct DynamicGeoMapIndex {
+pub struct InMemoryGeoMapIndex {
     /*
     {
         "d": 10,
@@ -56,7 +56,7 @@ impl MutableGeoMapIndex {
             store_cf_name,
         ));
         Self {
-            dynamic_index: DynamicGeoMapIndex::new(),
+            in_memory_index: InMemoryGeoMapIndex::new(),
             db_wrapper,
         }
     }
@@ -84,41 +84,41 @@ impl MutableGeoMapIndex {
             let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
             let geo_point = GeoMapIndex::decode_db_value(value)?;
 
-            if self.dynamic_index.point_to_values.len() <= idx as usize {
-                self.dynamic_index
+            if self.in_memory_index.point_to_values.len() <= idx as usize {
+                self.in_memory_index
                     .point_to_values
                     .resize_with(idx as usize + 1, Vec::new);
             }
 
-            if self.dynamic_index.point_to_values[idx as usize].is_empty() {
-                self.dynamic_index.points_count += 1;
+            if self.in_memory_index.point_to_values[idx as usize].is_empty() {
+                self.in_memory_index.points_count += 1;
             }
 
             points_to_hashes.entry(idx).or_default().push(geo_hash);
 
-            self.dynamic_index.point_to_values[idx as usize].push(geo_point);
-            self.dynamic_index
+            self.in_memory_index.point_to_values[idx as usize].push(geo_point);
+            self.in_memory_index
                 .points_map
                 .entry(geo_hash)
                 .or_default()
                 .insert(idx);
 
-            self.dynamic_index.points_values_count += 1;
+            self.in_memory_index.points_values_count += 1;
         }
 
         for (_idx, geo_hashes) in points_to_hashes {
-            self.dynamic_index.max_values_per_point =
-                max(self.dynamic_index.max_values_per_point, geo_hashes.len());
-            self.dynamic_index.increment_hash_point_counts(&geo_hashes);
+            self.in_memory_index.max_values_per_point =
+                max(self.in_memory_index.max_values_per_point, geo_hashes.len());
+            self.in_memory_index.increment_hash_point_counts(&geo_hashes);
             for geo_hash in geo_hashes {
-                self.dynamic_index.increment_hash_value_counts(&geo_hash);
+                self.in_memory_index.increment_hash_value_counts(&geo_hash);
             }
         }
         Ok(true)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if let Some(removed_geo_points) = self.dynamic_index.point_to_values.get(idx as usize) {
+        if let Some(removed_geo_points) = self.in_memory_index.point_to_values.get(idx as usize) {
             for removed_geo_point in removed_geo_points {
                 let removed_geo_hash: GeoHash =
                     encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
@@ -127,7 +127,7 @@ impl MutableGeoMapIndex {
                 let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
                 self.db_wrapper.remove(key)?;
             }
-            self.dynamic_index.remove_point(idx)
+            self.in_memory_index.remove_point(idx)
         } else {
             Ok(())
         }
@@ -147,27 +147,27 @@ impl MutableGeoMapIndex {
 
             self.db_wrapper.put(key, value)?;
         }
-        self.dynamic_index.add_many_geo_points(idx, values)
+        self.in_memory_index.add_many_geo_points(idx, values)
     }
 
     pub fn points_count(&self) -> usize {
-        self.dynamic_index.points_count
+        self.in_memory_index.points_count
     }
 
     pub fn points_values_count(&self) -> usize {
-        self.dynamic_index.points_values_count
+        self.in_memory_index.points_values_count
     }
 
     pub fn max_values_per_point(&self) -> usize {
-        self.dynamic_index.max_values_per_point
+        self.in_memory_index.max_values_per_point
     }
 
-    pub fn into_dynamic(self) -> DynamicGeoMapIndex {
-        self.dynamic_index
+    pub fn into_in_memory_index(self) -> InMemoryGeoMapIndex {
+        self.in_memory_index
     }
 
     delegate! {
-        to self.dynamic_index {
+        to self.in_memory_index {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
@@ -181,13 +181,13 @@ impl MutableGeoMapIndex {
     }
 }
 
-impl Default for DynamicGeoMapIndex {
+impl Default for InMemoryGeoMapIndex {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DynamicGeoMapIndex {
+impl InMemoryGeoMapIndex {
     pub fn new() -> Self {
         Self {
             points_per_hash: Default::default(),

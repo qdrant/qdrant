@@ -9,7 +9,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
-use super::mutable_geo_index::DynamicGeoMapIndex;
+use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -58,7 +58,7 @@ struct MmapGeoMapIndexConfig {
 }
 
 impl MmapGeoMapIndex {
-    pub fn new(dynamic_index: DynamicGeoMapIndex, path: &Path) -> OperationResult<Self> {
+    pub fn new(dynamic_index: InMemoryGeoMapIndex, path: &Path) -> OperationResult<Self> {
         create_dir_all(path)?;
 
         let deleted_path = path.join(DELETED_PATH);
