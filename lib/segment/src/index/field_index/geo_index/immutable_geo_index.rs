@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -51,6 +52,10 @@ impl ImmutableGeoMapIndex {
 
     pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        Default::default()
     }
 
     pub fn points_count(&self) -> usize {
