@@ -104,7 +104,7 @@ merge = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.16", default-features = false }
-io-uring = "0.6.4"
+io-uring = "0.7.0"
 
 [[bench]]
 name = "vector_search"
