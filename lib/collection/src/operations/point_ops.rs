@@ -266,6 +266,12 @@ impl PointInsertOperationsInternal {
                     BatchVectorStruct::Document(documents) => {
                         retain_with_index(documents, |index, _| retain_indices.contains(&index));
                     }
+                    BatchVectorStruct::Image(images) => {
+                        retain_with_index(images, |index, _| retain_indices.contains(&index));
+                    }
+                    BatchVectorStruct::Object(objects) => {
+                        retain_with_index(objects, |index, _| retain_indices.contains(&index));
+                    }
                 }
 
                 if let Some(payload) = &mut batch.payloads {
@@ -336,6 +342,24 @@ impl PointInsertOperationsInternal {
 
                         update_vectors.points = ids
                             .zip(documents)
+                            .map(|(id, vector)| PointVectors { id, vector })
+                            .collect();
+                    }
+                    BatchVectorStruct::Image(images) => {
+                        let ids = batch.ids.iter().copied();
+                        let images = images.into_iter().map(VectorStruct::Image);
+
+                        update_vectors.points = ids
+                            .zip(images)
+                            .map(|(id, vector)| PointVectors { id, vector })
+                            .collect();
+                    }
+                    BatchVectorStruct::Object(objects) => {
+                        let ids = batch.ids.iter().copied();
+                        let objects = objects.into_iter().map(VectorStruct::Object);
+
+                        update_vectors.points = ids
+                            .zip(objects)
                             .map(|(id, vector)| PointVectors { id, vector })
                             .collect();
                     }
@@ -474,6 +498,16 @@ impl Validate for Batch {
             BatchVectorStruct::Document(_) => {
                 return Err(create_error(
                     "Document inference is not implemented, please use vectors instead".to_string(),
+                ));
+            }
+            BatchVectorStruct::Image(_) => {
+                return Err(create_error(
+                    "Image inference is not implemented, please use vectors instead".to_string(),
+                ));
+            }
+            BatchVectorStruct::Object(_) => {
+                return Err(create_error(
+                    "Object inference is not implemented, please use vectors instead".to_string(),
                 ));
             }
         }
@@ -667,11 +701,11 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Document(_) => {
+                BatchVectorStruct::Document(_)
+                | BatchVectorStruct::Image(_)
+                | BatchVectorStruct::Object(_) => {
                     // If this is reached, it means validation failed
-                    unreachable!(
-                        "Document inference is not implemented, please use vectors instead"
-                    )
+                    unreachable!("Inference is not implemented, please use vectors instead")
                 }
             }
         } else {
@@ -738,7 +772,9 @@ impl SplitByShard for Batch {
                         }
                     }
                 }
-                BatchVectorStruct::Document(_) => {
+                BatchVectorStruct::Document(_)
+                | BatchVectorStruct::Image(_)
+                | BatchVectorStruct::Object(_) => {
                     // If this is reached, it means validation failed
                     unreachable!(
                         "Document inference is not implemented, please use vectors instead"
@@ -807,10 +843,10 @@ impl PointStruct {
                     named_vectors.insert(name.clone(), Vector::from(vector.clone()));
                 }
             }
-            VectorStruct::Document(_) => {
+            VectorStruct::Document(_) | VectorStruct::Image(_) | VectorStruct::Object(_) => {
                 debug_assert!(
                     false,
-                    "Document inference is not implemented, please use vectors instead"
+                    "Inference is not implemented, please use vectors instead"
                 );
             }
         }

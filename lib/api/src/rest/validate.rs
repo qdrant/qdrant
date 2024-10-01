@@ -26,6 +26,26 @@ impl Validate for VectorStruct {
                 errors.add("text", err);
                 Err(errors)
             }
+            VectorStruct::Image(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("image", err);
+                Err(errors)
+            }
+            VectorStruct::Object(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("object", err);
+                Err(errors)
+            }
         }
     }
 }
@@ -53,6 +73,26 @@ impl Validate for BatchVectorStruct {
                 errors.add("text", err);
                 Err(errors)
             }
+            BatchVectorStruct::Image(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("image", err);
+                Err(errors)
+            }
+            BatchVectorStruct::Object(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("object", err);
+                Err(errors)
+            }
         }
     }
 }
@@ -71,6 +111,26 @@ impl Validate for Vector {
                     &"Document inference is not implemented, please use vectors instead",
                 );
                 errors.add("text", err);
+                Err(errors)
+            }
+            Vector::Image(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("image", err);
+                Err(errors)
+            }
+            Vector::Object(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Document inference is not implemented, please use vectors instead",
+                );
+                errors.add("object", err);
                 Err(errors)
             }
         }

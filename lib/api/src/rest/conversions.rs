@@ -33,9 +33,9 @@ impl From<Vector> for segment::data_types::vectors::Vector {
                     segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
                 )
             }
-            Vector::Document(_) => {
+            Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                 // If this is reached, it means validation failed
-                unimplemented!("Document inference is not implemented, please use vectors instead")
+                unimplemented!("Inference is not implemented, please use vectors instead")
             }
         }
     }
@@ -73,9 +73,9 @@ impl From<VectorStruct> for segment::data_types::vectors::VectorStructInternal {
                     vectors.into_iter().map(|(k, v)| (k, v.into())).collect(),
                 )
             }
-            VectorStruct::Document(_) => {
+            VectorStruct::Document(_) | VectorStruct::Image(_) | VectorStruct::Object(_) => {
                 // If this is reached, it means validation failed
-                unimplemented!("Document inference is not implemented, please use vectors instead")
+                unimplemented!("Inference is not implemented, please use vectors instead")
             }
         }
     }
@@ -108,9 +108,9 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
                 }
                 named_vector
             }
-            VectorStruct::Document(_) => {
+            VectorStruct::Document(_) | VectorStruct::Image(_) | VectorStruct::Object(_) => {
                 // If this is reached, it means validation failed
-                unimplemented!("Document inference is not implemented, please use vectors instead")
+                unimplemented!("Inference is not implemented, please use vectors instead")
             }
         }
     }
@@ -166,9 +166,11 @@ impl From<BatchVectorStruct> for segment::data_types::vectors::BatchVectorStruct
                         .collect(),
                 )
             }
-            BatchVectorStruct::Document(_) => {
+            BatchVectorStruct::Document(_)
+            | BatchVectorStruct::Image(_)
+            | BatchVectorStruct::Object(_) => {
                 // If this is reached, it means validation failed
-                unimplemented!("Document inference is not implemented, please use vectors instead")
+                unimplemented!("Inference is not implemented, please use vectors instead")
             }
         }
     }

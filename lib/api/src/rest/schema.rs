@@ -9,6 +9,7 @@ use segment::types::{
     Filter, IntPayloadType, PointIdType, SearchParams, ShardKey, WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
@@ -25,6 +26,8 @@ pub enum Vector {
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
 }
 
 fn vector_example() -> DenseVector {
@@ -47,6 +50,7 @@ fn named_vector_example() -> HashMap<String, Vector> {
     );
     map
 }
+
 /// Full vector data per point separator with single and multiple vector modes
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
@@ -58,6 +62,8 @@ pub enum VectorStruct {
     #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
 }
 
 /// WARN: Work-in-progress, unimplemented
@@ -71,6 +77,40 @@ pub struct Document {
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
     pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub parameters: Option<Value>,
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Image object for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Image {
+    /// Image data: base64 encoded image or an URL
+    pub image: String,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub parameters: Option<Value>,
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Custom object for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct InferenceObject {
+    /// Arbitrary data, used as input for the embedding model
+    /// Used if the model requires more than one input or a custom input
+    pub object: Value,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub parameters: Option<Value>,
 }
 
 impl VectorStruct {
@@ -84,8 +124,12 @@ impl VectorStruct {
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
                 Vector::Document(_) => false,
+                Vector::Image(_) => false,
+                Vector::Object(_) => false,
             }),
             VectorStruct::Document(_) => false,
+            VectorStruct::Image(_) => false,
+            VectorStruct::Object(_) => false,
         }
     }
 }
@@ -97,6 +141,8 @@ pub enum BatchVectorStruct {
     MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<String, Vec<Vector>>),
     Document(Vec<Document>),
+    Image(Vec<Image>),
+    Object(Vec<InferenceObject>),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
