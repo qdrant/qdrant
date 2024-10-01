@@ -5099,7 +5099,7 @@ pub struct FacetCounts {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetValue {
-    #[prost(oneof = "facet_value::Variant", tags = "1, 2")]
+    #[prost(oneof = "facet_value::Variant", tags = "1, 2, 3")]
     pub variant: ::core::option::Option<facet_value::Variant>,
 }
 /// Nested message and enum types in `FacetValue`.
@@ -5114,6 +5114,9 @@ pub mod facet_value {
         /// Integer value from the facet
         #[prost(int64, tag = "2")]
         IntegerValue(i64),
+        /// Boolean value from the facet
+        #[prost(bool, tag = "3")]
+        BoolValue(bool),
     }
 }
 #[derive(serde::Serialize)]
@@ -9263,7 +9266,7 @@ pub struct FacetCountsInternal {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetValueInternal {
-    #[prost(oneof = "facet_value_internal::Variant", tags = "1, 2, 3")]
+    #[prost(oneof = "facet_value_internal::Variant", tags = "1, 2, 3, 4")]
     pub variant: ::core::option::Option<facet_value_internal::Variant>,
 }
 /// Nested message and enum types in `FacetValueInternal`.
@@ -9278,6 +9281,8 @@ pub mod facet_value_internal {
         IntegerValue(i64),
         #[prost(bytes, tag = "3")]
         UuidValue(::prost::alloc::vec::Vec<u8>),
+        #[prost(bool, tag = "4")]
+        BoolValue(bool),
     }
 }
 #[derive(serde::Serialize)]

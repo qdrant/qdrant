@@ -2321,6 +2321,7 @@ impl TryFrom<FacetValueInternal> for segment_facets::FacetValue {
                 })?;
                 segment_facets::FacetValue::Uuid(Uuid::from_bytes(uuid_bytes).as_u128())
             }
+            Variant::BoolValue(value) => segment_facets::FacetValue::Bool(value),
         })
     }
 }
@@ -2337,6 +2338,7 @@ impl From<segment_facets::FacetValue> for FacetValueInternal {
                     let uuid = Uuid::from_u128(value);
                     Variant::UuidValue(uuid.as_bytes().to_vec())
                 }
+                segment_facets::FacetValue::Bool(value) => Variant::BoolValue(value),
             }),
         }
     }
@@ -2353,6 +2355,7 @@ impl From<segment_facets::FacetValue> for FacetValue {
                 segment_facets::FacetValue::Uuid(value) => {
                     Variant::StringValue(Uuid::from_u128(value).to_string())
                 }
+                segment_facets::FacetValue::Bool(value) => Variant::BoolValue(value),
             }),
         }
     }

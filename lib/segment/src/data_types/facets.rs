@@ -31,6 +31,7 @@ pub enum FacetValueRef<'a> {
     Keyword(&'a str),
     Int(&'a IntPayloadType),
     Uuid(&'a u128),
+    Bool(bool),
 }
 
 impl<'a> FacetValueRef<'a> {
@@ -39,6 +40,7 @@ impl<'a> FacetValueRef<'a> {
             FacetValueRef::Keyword(s) => FacetValue::Keyword((*s).to_string()),
             FacetValueRef::Int(i) => FacetValue::Int(**i),
             FacetValueRef::Uuid(uuid) => FacetValue::Uuid(**uuid),
+            FacetValueRef::Bool(b) => FacetValue::Bool(*b),
         }
     }
 }
@@ -48,6 +50,7 @@ pub enum FacetValue {
     Keyword(String),
     Int(IntPayloadType),
     Uuid(UuidIntType),
+    Bool(bool),
     // other types to add?
     // Bool(bool),
     // FloatRange(FloatRange),
@@ -101,6 +104,7 @@ impl From<FacetValue> for ValueVariants {
             FacetValue::Keyword(s) => ValueVariants::String(s),
             FacetValue::Int(i) => ValueVariants::Integer(i),
             FacetValue::Uuid(uuid) => ValueVariants::String(Uuid::from_u128(uuid).to_string()),
+            FacetValue::Bool(b) => ValueVariants::Bool(b),
         }
     }
 }

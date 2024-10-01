@@ -1,6 +1,7 @@
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
+use super::binary_index::BinaryIndex;
 use super::map_index::MapIndex;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::struct_filter_context::StructFilterContext;
@@ -11,6 +12,7 @@ pub enum FacetIndex<'a> {
     Keyword(&'a MapIndex<str>),
     Int(&'a MapIndex<IntPayloadType>),
     Uuid(&'a MapIndex<UuidIntType>),
+    Bool(&'a BinaryIndex),
 }
 
 impl<'a> FacetIndex<'a> {
@@ -46,6 +48,17 @@ impl<'a> FacetIndex<'a> {
 
                 Box::new(iter)
             }
+            FacetIndex::Bool(index) => {
+                let iter = vec![
+                    index.values_has_true(point_id).then_some(true),
+                    index.values_has_false(point_id).then_some(false),
+                ]
+                .into_iter()
+                .flatten()
+                .map(FacetValueRef::Bool);
+
+                Box::new(iter)
+            }
         }
     }
 
@@ -61,6 +74,10 @@ impl<'a> FacetIndex<'a> {
             }
             FacetIndex::Uuid(index) => {
                 let iter = index.iter_values().map(FacetValueRef::Uuid);
+                Box::new(iter)
+            }
+            FacetIndex::Bool(_index) => {
+                let iter = vec![true, false].into_iter().map(FacetValueRef::Bool);
                 Box::new(iter)
             }
         }
@@ -89,13 +106,19 @@ impl<'a> FacetIndex<'a> {
                     .map(|(value, ids_iter)| (FacetValueRef::Uuid(value), ids_iter));
                 Box::new(iter)
             }
+            FacetIndex::Bool(index) => {
+                let iter = index
+                    .iter_values_map()
+                    .map(|(value, ids_iter)| (FacetValueRef::Bool(value), ids_iter));
+                Box::new(iter)
+            }
         };
 
         iter.map(|(value, internal_ids_iter)| FacetHit {
             value,
             count: internal_ids_iter
                 .unique()
-                .filter(|point_id| context.check(**point_id))
+                .filter(|&point_id| context.check(point_id))
                 .count(),
         })
     }
@@ -119,6 +142,12 @@ impl<'a> FacetIndex<'a> {
                 let iter = index
                     .iter_counts_per_value()
                     .map(|(value, count)| (FacetValueRef::Uuid(value), count));
+                Box::new(iter)
+            }
+            FacetIndex::Bool(index) => {
+                let iter = index
+                    .iter_counts_per_value()
+                    .map(|(value, count)| (FacetValueRef::Bool(value), count));
                 Box::new(iter)
             }
         };

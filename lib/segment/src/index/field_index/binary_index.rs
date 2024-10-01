@@ -7,6 +7,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use self::memory::{BinaryItem, BinaryMemory};
+use super::map_index::IdIter;
 use super::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PrimaryCondition,
     ValueIndexer,
@@ -217,6 +218,22 @@ impl BinaryIndex {
     /// Check if the point has a false value
     pub fn values_has_false(&self, point_id: PointOffsetType) -> bool {
         self.memory.get(point_id).has_false()
+    }
+
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter<'_>)> + '_ {
+        vec![
+            (false, Box::new(self.memory.iter_has_false()) as IdIter),
+            (true, Box::new(self.memory.iter_has_true()) as IdIter),
+        ]
+        .into_iter()
+    }
+
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (bool, usize)> + '_ {
+        vec![
+            (false, self.memory.falses_count()),
+            (true, self.memory.trues_count()),
+        ]
+        .into_iter()
     }
 }
 
