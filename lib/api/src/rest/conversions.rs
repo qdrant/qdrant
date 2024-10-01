@@ -260,6 +260,7 @@ impl From<segment::data_types::facets::FacetValue> for FacetValue {
             segment::data_types::facets::FacetValue::Uuid(uuid_int) => {
                 Self::String(Uuid::from_u128(uuid_int).to_string())
             }
+            segment::data_types::facets::FacetValue::Bool(b) => Self::Bool(b),
         }
     }
 }

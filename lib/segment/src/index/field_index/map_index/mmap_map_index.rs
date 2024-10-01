@@ -15,7 +15,7 @@ use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::MmapBitSlice;
 use serde::{Deserialize, Serialize};
 
-use super::{IdRefIter, MapIndexKey};
+use super::{IdIter, MapIndexKey};
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -246,12 +246,9 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
-        self.value_to_points.iter().map(|(k, v)| {
-            (
-                k,
-                Box::new(v.iter()) as Box<dyn Iterator<Item = &PointOffsetType>>,
-            )
-        })
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
+        self.value_to_points
+            .iter()
+            .map(|(k, v)| (k, Box::new(v.iter().copied()) as IdIter))
     }
 }

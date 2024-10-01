@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::mutable_map_index::MutableMapIndex;
-use super::{IdRefIter, MapIndex, MapIndexKey};
+use super::{IdIter, IdRefIter, MapIndex, MapIndexKey};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -273,12 +273,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .map(|(k, entry)| (k.borrow(), entry.count as usize))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdRefIter<'_>)> + '_ {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
         self.value_to_points.keys().map(|k| {
             (
                 k.borrow(),
-                Box::new(self.get_iterator(k.borrow()))
-                    as Box<dyn Iterator<Item = &PointOffsetType>>,
+                Box::new(self.get_iterator(k.borrow()).copied()) as IdIter,
             )
         })
     }

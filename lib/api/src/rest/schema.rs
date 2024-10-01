@@ -769,6 +769,7 @@ pub struct FacetRequest {
 pub enum FacetValue {
     String(String),
     Integer(IntPayloadType),
+    Bool(bool),
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

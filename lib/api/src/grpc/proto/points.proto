@@ -604,6 +604,7 @@ message FacetValue {
     oneof variant {
         string string_value = 1; // String value from the facet
         int64 integer_value = 2; // Integer value from the facet
+        bool bool_value = 3; // Boolean value from the facet
     }
 }
 
