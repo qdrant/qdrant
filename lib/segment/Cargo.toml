@@ -51,7 +51,7 @@ serde_cbor = { workspace = true }
 serde-value = "0.7"
 serde_variant = { workspace = true }
 serde-untagged = "0.1.6"
-ordered-float = "4.2"
+ordered-float = "4.3"
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = { workspace = true }
