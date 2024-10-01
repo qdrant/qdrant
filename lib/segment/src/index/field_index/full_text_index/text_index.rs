@@ -33,7 +33,7 @@ pub enum FullTextIndex {
 }
 
 impl FullTextIndex {
-    pub fn new(
+    pub fn new_memory(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
         field: &str,
@@ -68,7 +68,7 @@ impl FullTextIndex {
         config: TextIndexParams,
         field: &str,
     ) -> FullTextIndexBuilder {
-        FullTextIndexBuilder(Self::new(db, config, field, true))
+        FullTextIndexBuilder(Self::new_memory(db, config, field, true))
     }
 
     pub fn builder_mmap(path: PathBuf, config: TextIndexParams) -> FullTextMmapIndexBuilder {

@@ -43,7 +43,7 @@ pub enum GeoMapIndex {
 }
 
 impl GeoMapIndex {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         let store_cf_name = GeoMapIndex::storage_cf_name(field);
         if is_appendable {
             GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
@@ -57,13 +57,13 @@ impl GeoMapIndex {
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
-        GeoMapIndexBuilder(Self::new(db, field, true))
+        GeoMapIndexBuilder(Self::new_memory(db, field, true))
     }
 
     #[cfg(test)]
     pub fn builder_immutable(db: Arc<RwLock<DB>>, field: &str) -> GeoMapImmutableIndexBuilder {
         GeoMapImmutableIndexBuilder {
-            index: Self::new(db.clone(), field, true),
+            index: Self::new_memory(db.clone(), field, true),
             field: field.to_owned(),
             db,
         }
@@ -375,7 +375,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         drop(self.index);
-        let mut immutable_index = GeoMapIndex::new(self.db, &self.field, false);
+        let mut immutable_index = GeoMapIndex::new_memory(self.db, &self.field, false);
         immutable_index.load()?;
         Ok(immutable_index)
     }
@@ -1184,8 +1184,8 @@ mod tests {
 
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
-            IndexType::Mutable => GeoMapIndex::new(db, FIELD_NAME, true),
-            IndexType::Immutable => GeoMapIndex::new(db, FIELD_NAME, false),
+            IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path()).unwrap(),
         };
         new_index.load().unwrap();
@@ -1243,8 +1243,8 @@ mod tests {
 
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
         let mut new_index = match index_type {
-            IndexType::Mutable => GeoMapIndex::new(db, FIELD_NAME, true),
-            IndexType::Immutable => GeoMapIndex::new(db, FIELD_NAME, false),
+            IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
+            IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path()).unwrap(),
         };
         new_index.load().unwrap();

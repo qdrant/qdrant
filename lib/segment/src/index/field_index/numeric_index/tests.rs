@@ -310,10 +310,10 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
 
     let mut new_index = match index_type {
         IndexType::Mutable => {
-            NumericIndexInner::<FloatPayloadType>::new(db.unwrap(), COLUMN_NAME, false)
+            NumericIndexInner::<FloatPayloadType>::new_memory(db.unwrap(), COLUMN_NAME, false)
         }
         IndexType::Immutable => {
-            NumericIndexInner::<FloatPayloadType>::new(db.unwrap(), COLUMN_NAME, true)
+            NumericIndexInner::<FloatPayloadType>::new_memory(db.unwrap(), COLUMN_NAME, true)
         }
         IndexType::Mmap => {
             NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path()).unwrap()

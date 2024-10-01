@@ -165,7 +165,7 @@ pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Default> {
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
         } else {
@@ -418,7 +418,7 @@ pub trait NumericIndexIntoInnerValue<T, P> {
 impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
-            inner: NumericIndexInner::new(db, field, is_appendable),
+            inner: NumericIndexInner::new_memory(db, field, is_appendable),
             _phantom: PhantomData,
         }
     }
@@ -545,7 +545,8 @@ where
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         self.index.inner.flusher()()?;
         drop(self.index);
-        let mut inner: NumericIndexInner<T> = NumericIndexInner::new(self.db, &self.field, false);
+        let mut inner: NumericIndexInner<T> =
+            NumericIndexInner::new_memory(self.db, &self.field, false);
         inner.load()?;
         Ok(NumericIndex {
             inner,

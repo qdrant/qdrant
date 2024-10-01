@@ -62,7 +62,7 @@ impl<'a> IndexSelector<'a> {
             )
             .collect(),
             PayloadSchemaParams::Float(_) => vec![FieldIndex::FloatIndex(self.numeric_new(field)?)],
-            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
+            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(GeoMapIndex::new_memory(
                 self.as_rocksdb()?.db.clone(),
                 &field.to_string(),
                 self.as_rocksdb()?.is_appendable,
@@ -160,7 +160,7 @@ impl<'a> IndexSelector<'a> {
     fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                MapIndex::new(Arc::clone(db), &field.to_string(), *is_appendable)
+                MapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
                 MapIndex::new_mmap(&map_dir(dir, field))?
@@ -225,7 +225,12 @@ impl<'a> IndexSelector<'a> {
     ) -> OperationResult<FullTextIndex> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                FullTextIndex::new(Arc::clone(db), config, &field.to_string(), *is_appendable)
+                FullTextIndex::new_memory(
+                    Arc::clone(db),
+                    config,
+                    &field.to_string(),
+                    *is_appendable,
+                )
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config)?

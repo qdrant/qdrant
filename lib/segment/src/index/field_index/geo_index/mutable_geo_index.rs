@@ -119,13 +119,13 @@ impl MutableGeoMapIndex {
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if let Some(removed_geo_points) = self.in_memory_index.point_to_values.get(idx as usize) {
-            for removed_geo_point in removed_geo_points {
-                let removed_geo_hash: GeoHash =
+        if let Some(geo_points_to_remove) = self.in_memory_index.point_to_values.get(idx as usize) {
+            for removed_geo_point in geo_points_to_remove {
+                let geo_hash_to_remove: GeoHash =
                     encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).map_err(
                         |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                     )?;
-                let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
+                let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
                 self.db_wrapper.remove(key)?;
             }
             self.in_memory_index.remove_point(idx)

@@ -178,7 +178,7 @@ fn test_prefix_search(#[case] immutable: bool) {
     }
 
     if immutable {
-        index = FullTextIndex::new(db, config, "text", false);
+        index = FullTextIndex::new_memory(db, config, "text", false);
         index.load().unwrap();
     }
 
