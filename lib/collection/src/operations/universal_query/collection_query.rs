@@ -1039,6 +1039,16 @@ pub mod from_grpc {
                     // TODO(universal-query): Validate at API level
                     Vector::MultiDense(From::from(multi_dense)),
                 ),
+                Variant::Document(_) => {
+                    return Err(Status::invalid_argument(
+                        "Document inference is not implemented",
+                    ))
+                }
+                Variant::Image(_) => {
+                    return Err(Status::invalid_argument(
+                        "Image inference is not implemented",
+                    ))
+                }
             };
 
             Ok(vector_input)

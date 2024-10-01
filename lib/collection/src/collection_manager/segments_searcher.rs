@@ -403,8 +403,10 @@ impl SegmentsSearcher {
                                 None
                             },
                             vector: {
-                                let vector: Option<VectorStructInternal> = match with_vector {
-                                    WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
+                                match with_vector {
+                                    WithVector::Bool(true) => {
+                                        Some(VectorStructInternal::from(segment.all_vectors(id)?))
+                                    }
                                     WithVector::Bool(false) => None,
                                     WithVector::Selector(vector_names) => {
                                         let mut selected_vectors = NamedVectors::default();
@@ -413,10 +415,9 @@ impl SegmentsSearcher {
                                                 selected_vectors.insert(vector_name.into(), vector);
                                             }
                                         }
-                                        Some(selected_vectors.into())
+                                        Some(VectorStructInternal::from(selected_vectors))
                                     }
-                                };
-                                vector.map(Into::into)
+                                }
                             },
                             shard_key: None,
                             order_value: None,

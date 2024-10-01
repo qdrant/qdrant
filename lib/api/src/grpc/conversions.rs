@@ -680,6 +680,7 @@ impl From<segment_vectors::Vector> for Vector {
                 data: vector,
                 indices: None,
                 vectors_count: None,
+                vector: None,
             },
             segment_vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
@@ -687,6 +688,7 @@ impl From<segment_vectors::Vector> for Vector {
                     data: vector.indices,
                 }),
                 vectors_count: None,
+                vector: None,
             },
             segment_vectors::Vector::MultiDense(vector) => {
                 let vector_count = vector.multi_vectors().count() as u32;
@@ -694,6 +696,7 @@ impl From<segment_vectors::Vector> for Vector {
                     data: vector.flattened_vectors,
                     indices: None,
                     vectors_count: Some(vector_count),
+                    vector: None,
                 }
             }
         }
@@ -867,7 +870,38 @@ impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
                         data,
                         indices,
                         vectors_count,
+                        vector,
                     } = vector;
+
+                    if let Some(vector) = vector {
+                        return match vector {
+                            crate::grpc::qdrant::vector::Vector::Dense(dense) => {
+                                Ok(segment_vectors::VectorStructInternal::Single(
+                                    segment_vectors::DenseVector::from(dense),
+                                ))
+                            }
+                            crate::grpc::qdrant::vector::Vector::Sparse(_sparse) => {
+                                return Err(Status::invalid_argument(
+                                    "Sparse vector must be named".to_string(),
+                                ));
+                            }
+                            crate::grpc::qdrant::vector::Vector::MultiDense(multi) => {
+                                Ok(segment_vectors::VectorStructInternal::MultiDense(
+                                    segment_vectors::MultiDenseVectorInternal::from(multi),
+                                ))
+                            }
+                            crate::grpc::qdrant::vector::Vector::Document(_) => {
+                                return Err(Status::invalid_argument(
+                                    "Document inference is not implemented".to_string(),
+                                ));
+                            }
+                            crate::grpc::qdrant::vector::Vector::Image(_) => {
+                                return Err(Status::invalid_argument(
+                                    "Image inference is not implemented".to_string(),
+                                ));
+                            }
+                        };
+                    }
 
                     if indices.is_some() {
                         return Err(Status::invalid_argument(

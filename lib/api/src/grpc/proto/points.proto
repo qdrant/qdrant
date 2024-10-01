@@ -46,11 +46,30 @@ message SparseIndices {
   repeated uint32 data = 1;
 }
 
+message Document {
+  optional string text = 1; // Text of the document
+  optional string model = 3; // Model name
+  map<string, Value> options = 4; // Model options
+}
+
+message Image {
+  string data = 1; // Image data, either base64 encoded or URL
+  optional string model = 2; // Model name
+  map<string, Value> options = 3; // Model options
+}
+
 // Legacy vector format, which determines the vector type by the configuration of its fields.
 message Vector {
-  repeated float data = 1; // Vector data (flatten for multi vectors)
-  optional SparseIndices indices = 2; // Sparse indices for sparse vectors
-  optional uint32 vectors_count = 3; // Number of vectors per multi vector
+  repeated float data = 1; // Vector data (flatten for multi vectors), deprecated
+  optional SparseIndices indices = 2; // Sparse indices for sparse vectors, deprecated
+  optional uint32 vectors_count = 3; // Number of vectors per multi vector, deprecated
+  oneof vector {
+    DenseVector dense = 101; // Dense vector
+    SparseVector sparse = 102; // Sparse vector
+    MultiDenseVector multi_dense = 103; // Multi dense vector
+    Document document = 104;
+    Image image = 105;
+  }
 }
 
 message DenseVector {
@@ -73,6 +92,8 @@ message VectorInput {
     DenseVector dense = 2;
     SparseVector sparse = 3;
     MultiDenseVector multi_dense = 4;
+    Document document = 5;
+    Image image = 6;
   }
 }
 

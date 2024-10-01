@@ -260,8 +260,8 @@ pub async fn update_vectors(
             Some(id) => id.try_into()?,
             None => return Err(Status::invalid_argument("id is expected")),
         };
-        let vector: VectorStructInternal = match point.vectors {
-            Some(vectors) => vectors.try_into()?,
+        let vector = match point.vectors {
+            Some(vectors) => VectorStructInternal::try_from(vectors)?,
             None => return Err(Status::invalid_argument("vectors is expected")),
         };
         op_points.push(PointVectors {
