@@ -5371,9 +5371,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.8.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc0a2ce646f8655401bb81e7927b812614bd5d91dbc968696be50603510fcaf0"
+checksum = "0e696e35370c65c9c541198af4543ccd580cf17fc25d8e05c5a242b202488c55"
 
 [[package]]
 name = "rustls-webpki"
@@ -7062,7 +7062,7 @@ dependencies = [
  "memmap2 0.9.5",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.37",
  "serde",
 ]
 
