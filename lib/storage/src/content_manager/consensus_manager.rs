@@ -207,91 +207,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if self.persistent.read().first_voter().is_none() {
             log::debug!("Recovering first voter peer...");
 
-            if let Some(peer_id) = self.recover_first_voter_impl()? {
+            let wal = self.wal.lock();
+            let peers = self.peers();
+
+            if let Some(peer_id) = recover_first_voter(&wal, &peers)? {
                 log::debug!("Recovered first voter peer {peer_id}");
                 self.set_first_voter(peer_id)?;
             }
         }
 
         Ok(())
-    }
-
-    fn recover_first_voter_impl(&self) -> Result<Option<PeerId>, StorageError> {
-        let wal = self.wal.lock();
-
-        let Some(first_entry) = wal.first_entry()? else {
-            log::debug!("Skipped recovering first voter peer: WAL is empty");
-            return Ok(None);
-        };
-
-        let Some(last_entry) = wal.last_entry()? else {
-            log::error!(
-                "Failed to recover first voter peer: \
-                 WAL contains first entry, but no last entry"
-            );
-
-            return Ok(None);
-        };
-
-        if first_entry.index != 1 {
-            log::warn!("Failed to recover first voter peer: WAL is truncated");
-            return Ok(Some(PeerId::MAX));
-        }
-
-        // Try to recover first voter peer from WAL (if it was not removed from cluster yet!):
-        // - collect a list of current peers
-        // - scroll WAL and *remove* a peer from the list when `AddPeer`/`AddLearnerPeer` operation encountered
-        // - if there's exactly one peer left in the list at the end, this peer should be the first voter
-
-        let mut peers: HashSet<_> = self.peers().into_iter().collect();
-
-        for index in first_entry.index..last_entry.index + 1 {
-            let entry = wal.entry(index)?;
-
-            match entry.get_entry_type() {
-                EntryType::EntryConfChangeV2 => {
-                    let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
-
-                    for change in change.changes {
-                        match change.get_change_type() {
-                            ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
-                                peers.remove(&change.get_node_id());
-                            }
-
-                            ConfChangeType::RemoveNode => (),
-                        }
-                    }
-                }
-
-                EntryType::EntryConfChange => {
-                    log::warn!("Encountered deprecated ConfChange message while recovering first voter peer");
-
-                    let change: ConfChange = prost_for_raft::Message::decode(entry.get_data())?;
-
-                    match change.get_change_type() {
-                        ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
-                            peers.remove(&change.get_node_id());
-                        }
-
-                        ConfChangeType::RemoveNode => (),
-                    }
-                }
-
-                EntryType::EntryNormal => continue,
-            }
-        }
-
-        if peers.len() > 1 {
-            log::warn!(
-                "Failed to recover first voter peer: \
-                 found multiple peers without ConfChange entry in WAL: \
-                 {peers:?}"
-            );
-
-            return Ok(Some(PeerId::MAX));
-        }
-
-        Ok(peers.into_iter().next())
     }
 
     /// Report aggregated information about the cluster.
@@ -877,6 +802,87 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 }
 
+fn recover_first_voter(
+    wal: &ConsensusOpWal,
+    peers: &[PeerId],
+) -> Result<Option<PeerId>, StorageError> {
+    let Some(first_entry) = wal.first_entry()? else {
+        log::debug!("Skipped recovering first voter peer: WAL is empty");
+        return Ok(None);
+    };
+
+    let Some(last_entry) = wal.last_entry()? else {
+        log::error!(
+            "Failed to recover first voter peer: \
+             WAL contains first entry, but no last entry"
+        );
+
+        return Ok(None);
+    };
+
+    if first_entry.index != 1 {
+        log::warn!("Failed to recover first voter peer: WAL is truncated");
+        return Ok(Some(PeerId::MAX));
+    }
+
+    // Try to recover first voter peer from WAL (if it was not removed from cluster yet!):
+    // - collect a list of current peers
+    // - scroll WAL and *remove* a peer from the list when `AddPeer`/`AddLearnerPeer` operation encountered
+    // - if there's exactly one peer left in the list at the end, this peer should be the first voter
+
+    let mut peers: HashSet<_> = peers.iter().copied().collect();
+
+    for index in first_entry.index..last_entry.index + 1 {
+        let entry = wal.entry(index)?;
+
+        match entry.get_entry_type() {
+            EntryType::EntryConfChangeV2 => {
+                let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
+
+                for change in change.changes {
+                    match change.get_change_type() {
+                        ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
+                            peers.remove(&change.get_node_id());
+                        }
+
+                        ConfChangeType::RemoveNode => (),
+                    }
+                }
+            }
+
+            EntryType::EntryConfChange => {
+                log::warn!(
+                    "Encountered deprecated ConfChange message while recovering first voter peer"
+                );
+
+                let change: ConfChange = prost_for_raft::Message::decode(entry.get_data())?;
+
+                match change.get_change_type() {
+                    ConfChangeType::AddNode | ConfChangeType::AddLearnerNode => {
+                        peers.remove(&change.get_node_id());
+                    }
+
+                    ConfChangeType::RemoveNode => (),
+                }
+            }
+
+            EntryType::EntryNormal => continue,
+        }
+    }
+
+    if peers.len() > 1 {
+        log::warn!(
+            "Failed to recover first voter peer: \
+             found multiple peers without ConfChange entry in WAL: \
+             {peers:?}"
+        );
+
+        return Ok(Some(PeerId::MAX));
+    }
+
+    Ok(peers.into_iter().next())
+}
+
 /// Implementation of the methods for Raft library to get information from
 /// our implementation of the storage.
 /// Well tested magic
@@ -1022,7 +1028,9 @@ mod tests {
 
     use collection::shards::shard::PeerId;
     use proptest::prelude::*;
-    use raft::eraftpb::Entry;
+    use raft::eraftpb::{
+        ConfChange, ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType,
+    };
     use raft::storage::{MemStorage, Storage};
     use tempfile::Builder;
 
@@ -1218,6 +1226,119 @@ mod tests {
             let context_1 = raft::storage::GetEntriesContext::empty(false);
             let context_2 = raft::storage::GetEntriesContext::empty(false);
             prop_assert_eq!(mem_storage.entries(low, high, max_size, context_1), consensus_state.entries(low, high, max_size, context_2));
+        }
+    }
+
+    #[test]
+    fn recover_first_voter() {
+        let (_dir, wal) = wal(0);
+        let peers = vec![1337, 42, 69];
+        assert_eq!(
+            super::recover_first_voter(&wal, &peers).unwrap(),
+            Some(1337)
+        );
+    }
+
+    #[test]
+    fn recover_first_voter_empty() {
+        let (_dir, wal) = empty_wal();
+        let peers = vec![1337, 42, 69];
+        assert_eq!(super::recover_first_voter(&wal, &peers).unwrap(), None);
+    }
+
+    #[test]
+    fn recover_first_voter_committed() {
+        let (_dir, wal) = wal(1);
+        let peers = vec![1337, 42, 69];
+        assert_eq!(super::recover_first_voter(&wal, &peers).unwrap(), None);
+    }
+
+    #[test]
+    fn recover_first_voter_truncated() {
+        let (_dir, wal) = wal(2);
+        let peers = vec![1337, 42, 69];
+        assert_eq!(
+            super::recover_first_voter(&wal, &peers).unwrap(),
+            Some(PeerId::MAX)
+        );
+    }
+
+    #[test]
+    fn recover_first_voter_multiple_peers() {
+        let (_dir, wal) = wal(0);
+        let peers = vec![1337, 42, 69, 228];
+        assert_eq!(
+            super::recover_first_voter(&wal, &peers).unwrap(),
+            Some(PeerId::MAX)
+        );
+    }
+
+    fn wal(first_index: u64) -> (tempfile::TempDir, ConsensusOpWal) {
+        let (dir, mut wal) = empty_wal();
+        wal.append_entries(entries(first_index)).unwrap();
+        (dir, wal)
+    }
+
+    fn empty_wal() -> (tempfile::TempDir, ConsensusOpWal) {
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let wal = ConsensusOpWal::new(dir.path().to_str().unwrap());
+        (dir, wal)
+    }
+
+    fn entries(first_index: u64) -> Vec<Entry> {
+        use ConfChangeType::*;
+
+        let mut entries = vec![
+            conf_change_v2(first_index, &[(AddNode, 1337)]),
+            conf_change_v2(
+                first_index + 1,
+                &[(AddLearnerNode, 42), (AddLearnerNode, 69)],
+            ),
+            conf_change_v2(first_index + 2, &[(AddNode, 42)]),
+            conf_change(first_index + 3, RemoveNode, 228),
+            conf_change(first_index + 4, AddLearnerNode, 666),
+            conf_change_v2(first_index + 5, &[(AddNode, 69)]),
+            conf_change(first_index + 6, AddNode, 666),
+        ];
+
+        // Remove first entry if `first_index` is 0, so that second entry would line up with index 1
+        if first_index == 0 {
+            entries.remove(0);
+        }
+
+        entries
+    }
+
+    fn conf_change_v2(index: u64, changes: &[(ConfChangeType, PeerId)]) -> Entry {
+        let mut conf_change = ConfChangeV2::default();
+
+        for &(change_type, node_id) in changes {
+            conf_change.changes.push(ConfChangeSingle {
+                change_type: change_type as _,
+                node_id,
+            });
+        }
+
+        Entry {
+            index,
+            entry_type: EntryType::EntryConfChangeV2 as _,
+            data: prost_for_raft::Message::encode_to_vec(&conf_change),
+            ..Default::default()
+        }
+    }
+
+    fn conf_change(index: u64, change_type: ConfChangeType, node_id: PeerId) -> Entry {
+        let conf_change = ConfChange {
+            change_type: change_type as _,
+            node_id,
+            ..Default::default()
+        };
+
+        Entry {
+            index,
+            entry_type: EntryType::EntryConfChange as _,
+            data: prost_for_raft::Message::encode_to_vec(&conf_change),
+            ..Default::default()
         }
     }
 }
