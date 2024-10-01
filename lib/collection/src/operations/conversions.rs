@@ -844,7 +844,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
 
         let vector_struct: VectorStructInternal = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
-            Some(vectors) => vectors.try_into()?,
+            Some(vectors) => VectorStructInternal::try_from(vectors)?,
         };
 
         Ok(Self {

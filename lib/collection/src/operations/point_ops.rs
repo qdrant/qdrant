@@ -205,8 +205,14 @@ impl Validate for PointInsertOperations {
 impl PointInsertOperations {
     pub fn decompose(self) -> (Option<ShardKeySelector>, PointInsertOperationsInternal) {
         match self {
-            PointInsertOperations::PointsBatch(batch) => (batch.shard_key, batch.batch.into()),
-            PointInsertOperations::PointsList(list) => (list.shard_key, list.points.into()),
+            PointInsertOperations::PointsBatch(batch) => (
+                batch.shard_key,
+                PointInsertOperationsInternal::from(batch.batch),
+            ),
+            PointInsertOperations::PointsList(list) => (
+                list.shard_key,
+                PointInsertOperationsInternal::from(list.points),
+            ),
         }
     }
 }
