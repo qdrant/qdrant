@@ -10,7 +10,7 @@ use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
@@ -99,7 +99,11 @@ pub trait SegmentEntry {
         point_id: PointIdType,
     ) -> OperationResult<bool>;
 
-    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>>;
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Option<VectorInternal>>;
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 

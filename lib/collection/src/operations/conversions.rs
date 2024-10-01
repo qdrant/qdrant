@@ -16,7 +16,7 @@ use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    BatchVectorStructInternal, NamedQuery, Vector, VectorStructInternal,
+    BatchVectorStructInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
     Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint, StrictModeConfig,
@@ -1178,7 +1178,7 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
 
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
-) -> Result<ContextPair<Vector>, Status> {
+) -> Result<ContextPair<VectorInternal>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
             positive: positive.try_into()?,
@@ -1343,11 +1343,11 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
-        let vector: Vector = value.try_into()?;
+        let vector: VectorInternal = value.try_into()?;
         match vector {
-            Vector::Dense(vector) => Ok(Self::Dense(vector)),
-            Vector::Sparse(vector) => Ok(Self::Sparse(vector)),
-            Vector::MultiDense(_vector) => Err(Status::invalid_argument(
+            VectorInternal::Dense(vector) => Ok(Self::Dense(vector)),
+            VectorInternal::Sparse(vector) => Ok(Self::Sparse(vector)),
+            VectorInternal::MultiDense(_vector) => Err(Status::invalid_argument(
                 "MultiDense vector is not supported in search request",
             )),
         }

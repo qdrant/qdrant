@@ -5,7 +5,7 @@ use std::time::Duration;
 use api::rest::ShardKeySelector;
 use futures::future::try_join_all;
 use futures::Future;
-use segment::data_types::vectors::{Vector, VectorRef};
+use segment::data_types::vectors::{VectorInternal, VectorRef};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
 
@@ -158,7 +158,7 @@ impl ReferencedVectors {
         collection_name: Option<&'a String>,
         vector_name: &str,
         vector_input: VectorInput,
-    ) -> Option<Vector> {
+    ) -> Option<VectorInternal> {
         match vector_input {
             VectorInput::Vector(vector) => Some(vector),
             VectorInput::Id(vid) => {
@@ -279,7 +279,7 @@ pub fn convert_to_vectors_owned(
     all_vectors_records_map: &ReferencedVectors,
     vector_name: &str,
     collection_name: Option<&String>,
-) -> Vec<Vector> {
+) -> Vec<VectorInternal> {
     examples
         .into_iter()
         .filter_map(|example| match example {

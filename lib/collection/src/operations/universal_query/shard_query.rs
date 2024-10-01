@@ -2,7 +2,9 @@ use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{
+    NamedQuery, NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME,
+};
 use segment::types::{Filter, Order, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
@@ -260,15 +262,18 @@ impl QueryEnum {
 
         let query_enum = match variant {
             Variant::Nearest(nearest) => {
-                let vector = Vector::try_from(nearest)?;
+                let vector = VectorInternal::try_from(nearest)?;
                 let name = match (using, &vector) {
-                    (None, Vector::Sparse(_)) => {
+                    (None, VectorInternal::Sparse(_)) => {
                         return Err(Status::invalid_argument("Sparse vector must have a name"))
                     }
-                    (Some(name), Vector::MultiDense(_) | Vector::Sparse(_) | Vector::Dense(_)) => {
-                        name
-                    }
-                    (None, Vector::MultiDense(_) | Vector::Dense(_)) => {
+                    (
+                        Some(name),
+                        VectorInternal::MultiDense(_)
+                        | VectorInternal::Sparse(_)
+                        | VectorInternal::Dense(_),
+                    ) => name,
+                    (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
                         DEFAULT_VECTOR_NAME.to_string()
                     }
                 };

@@ -5,7 +5,8 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    MultiDenseVectorInternal, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
+    MultiDenseVectorInternal, NamedQuery, NamedVectorStruct, VectorInternal, VectorRef,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -119,7 +120,7 @@ impl Query {
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInput {
     Id(PointIdType),
-    Vector(Vector),
+    Vector(VectorInternal),
 }
 
 impl VectorInput {
@@ -154,7 +155,7 @@ impl<T> VectorQuery<T> {
 }
 
 impl VectorQuery<VectorInput> {
-    /// Turns all [VectorInput]s into [Vector]s, using the provided [ReferencedVectors] to look up the vectors.
+    /// Turns all [VectorInput]s into [VectorInternal]s, using the provided [ReferencedVectors] to look up the vectors.
     ///
     /// Will panic if the ids are not found in the [ReferencedVectors].
     fn ids_into_vectors(
@@ -162,7 +163,7 @@ impl VectorQuery<VectorInput> {
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
-    ) -> VectorQuery<Vector> {
+    ) -> VectorQuery<VectorInternal> {
         match self {
             VectorQuery::Nearest(vector_input) => {
                 let vector = ids_to_vectors
@@ -233,7 +234,7 @@ impl VectorQuery<VectorInput> {
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
-    ) -> (Vec<Vector>, Vec<Vector>) {
+    ) -> (Vec<VectorInternal>, Vec<VectorInternal>) {
         let positives = reco_query
             .positives
             .into_iter()
@@ -260,7 +261,7 @@ impl VectorQuery<VectorInput> {
     }
 }
 
-impl VectorQuery<Vector> {
+impl VectorQuery<VectorInternal> {
     fn into_query_enum(self, using: String) -> CollectionResult<QueryEnum> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
@@ -733,13 +734,17 @@ mod from_rest {
         fn from(value: rest::VectorInput) -> Self {
             match value {
                 rest::VectorInput::Id(id) => VectorInput::Id(id),
-                rest::VectorInput::DenseVector(dense) => VectorInput::Vector(Vector::Dense(dense)),
+                rest::VectorInput::DenseVector(dense) => {
+                    VectorInput::Vector(VectorInternal::Dense(dense))
+                }
                 rest::VectorInput::SparseVector(sparse) => {
-                    VectorInput::Vector(Vector::Sparse(sparse))
+                    VectorInput::Vector(VectorInternal::Sparse(sparse))
                 }
                 rest::VectorInput::MultiDenseVector(multi_dense) => VectorInput::Vector(
                     // TODO(universal-query): Validate at API level
-                    Vector::MultiDense(MultiDenseVectorInternal::new_unchecked(multi_dense)),
+                    VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(
+                        multi_dense,
+                    )),
                 ),
                 rest::VectorInput::Document(_) => {
                     // If this is reached, it means validation failed
@@ -1033,11 +1038,15 @@ pub mod from_grpc {
 
             let vector_input = match variant {
                 Variant::Id(id) => VectorInput::Id(TryFrom::try_from(id)?),
-                Variant::Dense(dense) => VectorInput::Vector(Vector::Dense(From::from(dense))),
-                Variant::Sparse(sparse) => VectorInput::Vector(Vector::Sparse(From::from(sparse))),
+                Variant::Dense(dense) => {
+                    VectorInput::Vector(VectorInternal::Dense(From::from(dense)))
+                }
+                Variant::Sparse(sparse) => {
+                    VectorInput::Vector(VectorInternal::Sparse(From::from(sparse)))
+                }
                 Variant::MultiDense(multi_dense) => VectorInput::Vector(
                     // TODO(universal-query): Validate at API level
-                    Vector::MultiDense(From::from(multi_dense)),
+                    VectorInternal::MultiDense(From::from(multi_dense)),
                 ),
                 Variant::Document(_) => {
                     return Err(Status::invalid_argument(

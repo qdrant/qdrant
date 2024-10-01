@@ -9,27 +9,27 @@ use super::{
 };
 use crate::rest::{DenseVector, NamedVectorStruct};
 
-impl From<segment::data_types::vectors::Vector> for Vector {
-    fn from(value: segment::data_types::vectors::Vector) -> Self {
+impl From<segment::data_types::vectors::VectorInternal> for Vector {
+    fn from(value: segment::data_types::vectors::VectorInternal) -> Self {
         match value {
-            segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
-            segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
-            segment::data_types::vectors::Vector::MultiDense(vector) => {
+            segment::data_types::vectors::VectorInternal::Dense(vector) => Vector::Dense(vector),
+            segment::data_types::vectors::VectorInternal::Sparse(vector) => Vector::Sparse(vector),
+            segment::data_types::vectors::VectorInternal::MultiDense(vector) => {
                 Vector::MultiDense(vector.into_multi_vectors())
             }
         }
     }
 }
 
-impl From<Vector> for segment::data_types::vectors::Vector {
+impl From<Vector> for segment::data_types::vectors::VectorInternal {
     fn from(value: Vector) -> Self {
         match value {
-            Vector::Dense(vector) => segment::data_types::vectors::Vector::Dense(vector),
-            Vector::Sparse(vector) => segment::data_types::vectors::Vector::Sparse(vector),
+            Vector::Dense(vector) => segment::data_types::vectors::VectorInternal::Dense(vector),
+            Vector::Sparse(vector) => segment::data_types::vectors::VectorInternal::Sparse(vector),
             Vector::MultiDense(vector) => {
                 // the REST vectors have been validated already
                 // we can use an internal constructor
-                segment::data_types::vectors::Vector::MultiDense(
+                segment::data_types::vectors::VectorInternal::MultiDense(
                     segment::data_types::vectors::MultiDenseVectorInternal::new_unchecked(vector),
                 )
             }
@@ -97,14 +97,17 @@ impl<'a> From<VectorStruct> for segment::data_types::named_vectors::NamedVectors
 
                 named_vector.insert(
                     DEFAULT_VECTOR_NAME.to_string(),
-                    segment::data_types::vectors::Vector::from(multivec),
+                    segment::data_types::vectors::VectorInternal::from(multivec),
                 );
                 named_vector
             }
             VectorStruct::Named(vectors) => {
                 let mut named_vector = segment::data_types::named_vectors::NamedVectors::default();
                 for (name, vector) in vectors {
-                    named_vector.insert(name, segment::data_types::vectors::Vector::from(vector));
+                    named_vector.insert(
+                        name,
+                        segment::data_types::vectors::VectorInternal::from(vector),
+                    );
                 }
                 named_vector
             }

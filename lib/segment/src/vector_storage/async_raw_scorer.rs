@@ -7,7 +7,7 @@ use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, QueryVector, Vector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -265,7 +265,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         match query {
             QueryVector::Nearest(vector) => {
                 match vector {
-                    Vector::Dense(dense_vector) => {
+                    VectorInternal::Dense(dense_vector) => {
                         let query_scorer = MetricQueryScorer::<VectorElementType, TMetric, _>::new(
                             dense_vector,
                             storage,
@@ -279,12 +279,14 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             is_stopped.unwrap_or(&DEFAULT_STOPPED),
                         )))
                     }
-                    Vector::Sparse(_sparse_vector) => Err(OperationError::service_error(
+                    VectorInternal::Sparse(_sparse_vector) => Err(OperationError::service_error(
                         "sparse vectors are not supported for async scorer",
                     )), // TODO(sparse) add support?
-                    Vector::MultiDense(_multi_dense_vector) => Err(OperationError::service_error(
-                        "multi-dense vectors are not supported for async scorer",
-                    )), // TODO(colbert) add support?
+                    VectorInternal::MultiDense(_multi_dense_vector) => {
+                        Err(OperationError::service_error(
+                            "multi-dense vectors are not supported for async scorer",
+                        ))
+                    } // TODO(colbert) add support?
                 }
             }
             QueryVector::Recommend(reco_query) => {

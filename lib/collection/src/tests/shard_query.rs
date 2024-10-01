@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
-use segment::data_types::vectors::{NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -73,7 +73,7 @@ async fn test_shard_query_rrf_rescoring() {
 
     // RRF query with single prefetch
     let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-        Vector::Dense(vec![1.0, 2.0, 3.0, 4.0]),
+        VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
     let inner_limit = 3;
@@ -237,7 +237,7 @@ async fn test_shard_query_vector_rescoring() {
     shard.update(upsert_ops.into(), true).await.unwrap();
 
     let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-        Vector::Dense(vec![1.0, 2.0, 3.0, 4.0]),
+        VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
     let inner_limit = 3;
@@ -369,7 +369,7 @@ async fn test_shard_query_payload_vector() {
     shard.update(upsert_ops.into(), true).await.unwrap();
 
     let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-        Vector::Dense(vec![1.0, 2.0, 3.0, 4.0]),
+        VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
 

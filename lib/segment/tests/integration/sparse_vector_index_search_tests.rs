@@ -10,7 +10,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, Vector};
+use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixture_for_all_indices;
 use segment::fixtures::payload_fixtures::STR_KEY;
@@ -586,7 +586,7 @@ fn sparse_vector_index_persistence_test() {
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
     for n in 0..num_vectors {
-        let vector: Vector = random_sparse_vector(&mut rnd, dim).into();
+        let vector: VectorInternal = random_sparse_vector(&mut rnd, dim).into();
         let mut named_vector = NamedVectors::default();
         named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
         let idx = n.into();
@@ -753,7 +753,7 @@ fn sparse_vector_test_large_index() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
-    let vector: Vector = SparseVector {
+    let vector: VectorInternal = SparseVector {
         indices: vec![DimId::MAX],
         values: vec![0.0],
     }
