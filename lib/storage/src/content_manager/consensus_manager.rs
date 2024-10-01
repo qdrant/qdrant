@@ -205,7 +205,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
     pub fn recover_first_voter(&self) -> Result<(), StorageError> {
         if self.persistent.read().first_voter().is_none() {
+            log::debug!("Recovering first voter peer...");
+
             if let Some(peer_id) = self.recover_first_voter_impl()? {
+                log::debug!("Recovered first voter peer {peer_id}");
                 self.set_first_voter(peer_id)?;
             }
         }
@@ -217,19 +220,28 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let wal = self.wal.lock();
 
         let Some(first_entry) = wal.first_entry()? else {
-            log::warn!("TODO: empty WAL");
+            log::debug!("Skipped recovering first voter peer: WAL is empty");
             return Ok(None);
         };
 
         let Some(last_entry) = wal.last_entry()? else {
-            log::warn!("TODO: invalid WAL (no last entry)");
+            log::error!(
+                "Failed to recover first voter peer: \
+                 WAL contains first entry, but no last entry"
+            );
+
             return Ok(None);
         };
 
         if first_entry.index != 1 {
-            log::warn!("TODO: compacted WAL");
+            log::warn!("Failed to recover first voter peer: WAL is truncated");
             return Ok(Some(PeerId::MAX));
         }
+
+        // Try to recover first voter peer from WAL (if it was not removed from cluster yet!):
+        // - collect a list of current peers
+        // - scroll WAL and *remove* a peer from the list when `AddPeer`/`AddLearnerPeer` operation encountered
+        // - if there's exactly one peer left in the list at the end, this peer should be the first voter
 
         let mut peers: HashSet<_> = self.peers().into_iter().collect();
 
@@ -252,7 +264,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
 
                 EntryType::EntryConfChange => {
-                    log::warn!("TODO: outdated ConfChange message type");
+                    log::warn!("Encountered deprecated ConfChange message while recovering first voter peer");
 
                     let change: ConfChange = prost_for_raft::Message::decode(entry.get_data())?;
 
@@ -270,7 +282,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
 
         if peers.len() > 1 {
-            log::warn!("TODO: multiple peers without ConfChange: {peers:?}");
+            log::warn!(
+                "Failed to recover first voter peer: \
+                 found multiple peers without ConfChange entry in WAL: \
+                 {peers:?}"
+            );
+
             return Ok(Some(PeerId::MAX));
         }
 
