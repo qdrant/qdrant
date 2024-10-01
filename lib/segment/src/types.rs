@@ -73,8 +73,8 @@ impl<'de> Deserialize<'de> for DateTimeWrapper {
     where
         D: Deserializer<'de>,
     {
-        let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
+        let str_datetime = <String>::deserialize(deserializer)?;
+        let parse_result = DateTimePayloadType::from_str(str_datetime.as_str()).ok();
         match parse_result {
             Some(datetime) => Ok(datetime),
             None => Err(serde::de::Error::custom(format!(
@@ -1600,11 +1600,34 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> Deserialize<'de> for RangeInterface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        if let Ok(float_range) = serde_json::from_value::<Range<FloatPayloadType>>(value.clone()) {
+            return Ok(RangeInterface::Float(float_range));
+        }
+
+        // We can assume that if a float is present, it will be deserialized correctly.
+        // However, datetime can have multiple formats, which may lead to misinterpretation.
+        // Therefore, if datetime deserialization fails, we return an error that
+        // describes the format issue encountered while deserializing the RangeInterface.
+        match serde_json::from_value::<Range<DateTimePayloadType>>(value.clone()) {
+            Ok(datetime_range) => Ok(RangeInterface::DateTime(datetime_range)),
+            Err(err) => Err(serde::de::Error::custom(format!(
+                "RangeInterface deserialization error: {err}",
+            ))),
+        }
+    }
 }
 
 /// Range filter request
@@ -2541,6 +2564,24 @@ mod tests {
         let serialized = serde_json::to_string(&datetime).unwrap();
         let deserialized: DateTimePayloadType = serde_json::from_str(&serialized).unwrap();
         assert_eq!(datetime, deserialized);
+    }
+
+    #[rstest]
+    #[case::valid_float(json!({ "gt": 10.5, "lte": 20.0 }), true)]
+    #[case::valid_rfc_3339_datetime(json!({ "gt": "2023-01-01T00:00:00Z", "lte": "2023-12-31T23:59:59Z" }), true)]
+    #[case::other_datetime_format(json!({ "gt": "2023-01-01 00:00:00", "lte": "2023-12-31 23:59:59" }), true)]
+    #[case::mixed_datetime(json!({ "gt": "2023-01-01T00:00:00Z", "lte": "2023-12-31 23:59:59" }), true)]
+    #[case::invalid_format(json!({ "gt": "2023-01-01T00", "2023-12-31T00": "data" }), false)]
+    fn test_range_interface_deserialization(
+        #[case] input_json: serde_json::Value,
+        #[case] expected_result: bool,
+    ) {
+        fn try_deserialize(json: serde_json::Value) -> Result<RangeInterface, String> {
+            serde_json::from_value(json).map_err(|e| e.to_string())
+        }
+
+        let result = try_deserialize(input_json);
+        assert_eq!(result.is_ok(), expected_result);
     }
 
     #[test]
