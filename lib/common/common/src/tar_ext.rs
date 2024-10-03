@@ -12,51 +12,56 @@ use tokio::task::JoinError;
 /// A wrapper around [`tar::Builder`] that:
 /// 1. Usable in async contexts.
 /// 2. Provides the [`BuilderExt::descend`] method.
+/// 3. Supports both seekable and streaming outputs.
 #[derive(Clone)]
 pub struct BuilderExt {
-    tar: Arc<Mutex<BuilderBox>>,
+    tar: Arc<Mutex<BlowFuseOnDrop>>,
     path: PathBuf,
 }
 
-/// A wrapper around [`tar::Builder<WriteBox>`] that disables [`WriteBox`] when
-/// it is dropped.
+/// A wrapper around [`tar::Builder<FusedOutput>`] that disables [`FusedOutput`]
+/// when it is dropped.
 ///
-/// Disabling the [`WriteBox`] is a workaround for the inconvenient
+/// Disabling the [`FusedOutput`] is a workaround for the inconvenient
 /// [`tar::Builder`] behavior: dropping a [`tar::Builder`] might cause a final
 /// write of archive footer.
 /// This behavior is problematic for [`Write`] implementations that could panic
 /// when used in an async context, such as [`SyncIoBridge`].
 ///
 /// [`SyncIoBridge`]: https://docs.rs/tokio-util/0.7.12/tokio_util/io/struct.SyncIoBridge.html#method.new
-struct BuilderBox {
-    tar: Option<tar::Builder<WriteBox>>,
+struct BlowFuseOnDrop {
+    tar: Option<tar::Builder<FusedOutput>>,
     enabled: Arc<AtomicBool>,
 }
 
-/// A wrapper around [`Write`] that could be disabled by [`BuilderBox`].
-struct WriteBox {
-    inner: Box<dyn Send + WriteSeek>,
+/// A wrapper around [`Output`] that could be disabled by [`BlowFuseOnDrop`].
+struct FusedOutput {
+    output: Output,
     enabled: Arc<AtomicBool>,
 }
 
-/// TODO: This trait will be replaced with just [`Write`] once we get rid of
-/// nested tar archives.
+enum Output {
+    Streaming(Box<dyn Send + Write>),
+    Seekable(Box<dyn Send + WriteSeek>),
+}
+
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-impl BuilderBox {
-    fn tar(&mut self) -> &mut tar::Builder<WriteBox> {
+impl BlowFuseOnDrop {
+    fn tar(&mut self) -> &mut tar::Builder<FusedOutput> {
         self.tar.as_mut().unwrap()
     }
 }
 
-impl Drop for BuilderBox {
+impl Drop for BlowFuseOnDrop {
     fn drop(&mut self) {
+        // Blow the fuse.
         self.enabled.store(false, Ordering::Release);
     }
 }
 
-impl Write for WriteBox {
+impl Write for FusedOutput {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if !self.enabled.load(Ordering::Acquire) {
             // This error shouldn't be observable. It might appear only in
@@ -66,34 +71,51 @@ impl Write for WriteBox {
                 "Using WriteBox after it is disabled",
             ));
         }
-        self.inner.write(buf)
+        match self.output {
+            Output::Streaming(ref mut w) => w.write(buf),
+            Output::Seekable(ref mut w) => w.write(buf),
+        }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         // This method is never called by `tar::Builder`.
-        self.inner.flush()
+        match self.output {
+            Output::Streaming(ref mut w) => w.flush(),
+            Output::Seekable(ref mut w) => w.flush(),
+        }
     }
 }
 
-impl Seek for WriteBox {
+impl Seek for FusedOutput {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        self.inner.seek(pos)
+        match self.output {
+            Output::Streaming(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Seeking is not supported",
+            )),
+            Output::Seekable(ref mut w) => w.seek(pos),
+        }
     }
 }
 
 impl BuilderExt {
     #[inline]
-    pub fn new(output: impl Send + Write + Seek + 'static) -> Self {
-        Self::from_box(Box::new(output))
+    pub fn new_seekable(output: impl Send + Write + Seek + 'static) -> Self {
+        Self::from_box(Output::Seekable(Box::new(output)))
     }
 
-    fn from_box(output: Box<dyn Send + WriteSeek>) -> Self {
+    #[inline]
+    pub fn new_streaming(output: impl Send + Write + 'static) -> Self {
+        Self::from_box(Output::Streaming(Box::new(output)))
+    }
+
+    fn from_box(output: Output) -> Self {
         let enabled = Arc::new(AtomicBool::new(true));
         Self {
-            tar: Arc::new(Mutex::new(BuilderBox {
+            tar: Arc::new(Mutex::new(BlowFuseOnDrop {
                 tar: Some(
-                    tar::Builder::new(WriteBox {
-                        inner: output,
+                    tar::Builder::new(FusedOutput {
+                        output,
                         enabled: Arc::clone(&enabled),
                     })
                     .tap_mut(|tar| tar.sparse(false)),
@@ -118,44 +140,27 @@ impl BuilderExt {
     }
 
     /// Write an entry to the tar archive. Takes a closure that takes an
-    /// `impl Write` and writes the entry contents into it.
+    /// `impl Write` and writes the entry contents into it. Works only on
+    /// builders created by [`BuilderExt::new_seekable()`]. Returns an error if
+    /// the builder was created by [`BuilderExt::new_streaming()`].
     ///
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    /// Use [`BuilderExt::write_fn`] instead.
-    pub fn blocking_write_fn<E>(
+    /// There are no async counterpart.
+    pub fn blocking_write_fn<T>(
         &self,
         dst: &Path,
-        f: impl FnOnce(tar::EntryWriter) -> Result<(), E>,
-    ) -> Result<(), E>
-    where
-        E: std::error::Error + From<std::io::Error>,
-    {
+        f: impl FnOnce(&mut tar::EntryWriter) -> T,
+    ) -> std::io::Result<T> {
         let dst = join_relative(&self.path, dst)?;
         let mut header = tar::Header::new_gnu();
         header.set_mode(0o644);
         let mut tar = self.tar.blocking_lock();
-        let writer = tar.tar().append_writer(&mut header, dst)?;
-        f(writer)
-    }
-
-    /// Write an entry to the tar archive. Takes a closure that takes an
-    /// `impl Write` and writes the entry contents into it.
-    pub async fn write_fn<E>(
-        &self,
-        dst: &Path,
-        f: impl FnOnce(tar::EntryWriter) -> Result<(), E>,
-    ) -> Result<(), E>
-    where
-        E: std::error::Error + From<std::io::Error>,
-    {
-        let dst = join_relative(&self.path, dst)?;
-        let mut header = tar::Header::new_gnu();
-        header.set_mode(0o644);
-        let mut tar = self.tar.lock().await;
-        let writer = tar.tar().append_writer(&mut header, dst)?;
-        f(writer)
+        let mut writer = tar.tar().append_writer(&mut header, dst)?;
+        let result = f(&mut writer);
+        writer.finish()?;
+        Ok(result)
     }
 
     /// Append a file to the tar archive.
@@ -195,6 +200,23 @@ impl BuilderExt {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
+    /// Use [`BuilderExt::append_data`] instead.
+    pub fn blocking_append_data(&self, src: &[u8], dst: &Path) -> std::io::Result<()> {
+        let dst = join_relative(&self.path, dst)?;
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o644);
+        header.set_size(src.len() as u64);
+        self.tar
+            .blocking_lock()
+            .tar()
+            .append_data(&mut header, dst, src)
+    }
+
+    /// Append a new entry to the tar archive with the given file contents.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
     pub async fn append_data(&self, src: Vec<u8>, dst: &Path) -> std::io::Result<()> {
         let dst = join_relative(&self.path, dst)?;
         let mut header = tar::Header::new_gnu();
@@ -207,7 +229,7 @@ impl BuilderExt {
     /// Finish writing the tar archive. For async counterpart, see
     /// [`BuilderExt::finish`].
     pub fn blocking_finish(self) -> std::io::Result<()> {
-        let mut bb: BuilderBox = Arc::try_unwrap(self.tar)
+        let mut bb: BlowFuseOnDrop = Arc::try_unwrap(self.tar)
             .map_err(|_| {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -217,11 +239,11 @@ impl BuilderExt {
             .into_inner();
 
         // Extract the builder out of bb.
-        let tar: tar::Builder<WriteBox> = bb.tar.take().unwrap();
+        let tar: tar::Builder<FusedOutput> = bb.tar.take().unwrap();
 
         // Finish and flush before BuilderBox is dropped.
-        let mut wb: WriteBox = tar.into_inner()?; // calls finish()
-        wb.inner.flush()?;
+        let mut wb: FusedOutput = tar.into_inner()?; // calls finish()
+        wb.flush()?;
 
         Ok(())
     }
@@ -233,7 +255,7 @@ impl BuilderExt {
 
     async fn run_async<T, E>(
         &self,
-        f: impl FnOnce(&mut tar::Builder<WriteBox>) -> Result<T, E> + Send + 'static,
+        f: impl FnOnce(&mut tar::Builder<FusedOutput>) -> Result<T, E> + Send + 'static,
     ) -> Result<T, E>
     where
         T: Send + 'static,
@@ -257,7 +279,13 @@ fn join_relative(base: &Path, rel_path: &Path) -> std::io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+
+    // -------------------------------------------------------------------------
+    // ------------------------------ Dummy tests ------------------------------
+    // -------------------------------------------------------------------------
 
     struct DummyBridgeWriter(bool, Arc<Mutex<Vec<u8>>>);
 
@@ -292,34 +320,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_finish_ok() {
+    async fn test_dummy_finish_ok() {
         let data = Arc::new(Mutex::new(Vec::new()));
-        let tar = BuilderExt::new(DummyBridgeWriter(false, Arc::clone(&data)));
+        let tar = BuilderExt::new_seekable(DummyBridgeWriter(false, Arc::clone(&data)));
         assert!(tar.finish().await.is_ok());
         assert_eq!(data.lock().await.len(), 1024);
     }
 
     #[tokio::test]
-    async fn test_finish_fail() {
+    async fn test_dummy_finish_fail() {
         let data = Arc::new(Mutex::new(Vec::new()));
-        let tar = BuilderExt::new(DummyBridgeWriter(true, Arc::clone(&data)));
+        let tar = BuilderExt::new_seekable(DummyBridgeWriter(true, Arc::clone(&data)));
         assert!(tar.finish().await.is_err());
         assert_eq!(data.lock().await.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_drop_fail() {
+    async fn test_dummy_drop_fail() {
         let data = Arc::new(Mutex::new(Vec::new()));
-        let tar = BuilderExt::new(DummyBridgeWriter(false, Arc::clone(&data)));
+        let tar = BuilderExt::new_seekable(DummyBridgeWriter(false, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
     }
 
     #[tokio::test]
-    async fn test_drop_ok() {
+    async fn test_dummy_drop_ok() {
         let data = Arc::new(Mutex::new(Vec::new()));
-        let tar = BuilderExt::new(DummyBridgeWriter(false, Arc::clone(&data)));
+        let tar = BuilderExt::new_seekable(DummyBridgeWriter(false, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // ------------------------- Write/WriteSeek tests -------------------------
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_write_ok() {
+        let tar = BuilderExt::new_streaming(Vec::new());
+        tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
+        tar.blocking_finish().unwrap();
+    }
+
+    #[test]
+    fn test_write_fail() {
+        let tar = BuilderExt::new_streaming(Vec::new());
+        tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
+        let result = tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"));
+        assert_eq!(result.unwrap_err().to_string(), "Seeking is not supported");
+    }
+
+    #[test]
+    fn test_writeseek_ok() {
+        let tar = BuilderExt::new_seekable(Cursor::new(Vec::new()));
+        tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
+        tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"))
+            .unwrap()
+            .unwrap();
+        tar.blocking_finish().unwrap();
     }
 }
