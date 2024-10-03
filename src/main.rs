@@ -290,8 +290,7 @@ fn main() -> anyhow::Result<()> {
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
 
-        let toc_dispatcher =
-            TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+        let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
         toc_arc.with_toc_dispatcher(toc_dispatcher);
 
         let dispatcher_arc = Arc::new(dispatcher);

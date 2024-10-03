@@ -6,11 +6,11 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
 
+use super::dispatcher::TocDispatcher;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, ReshardingOperation, ShardTransferOperations,
 };
 use crate::content_manager::consensus_ops::ConsensusOperations;
-use super::dispatcher::TocDispatcher;
 
 #[async_trait]
 impl ShardTransferConsensus for TocDispatcher {

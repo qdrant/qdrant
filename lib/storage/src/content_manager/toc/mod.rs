@@ -21,8 +21,8 @@ use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::replica_set;
+use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
 use common::cpu::{get_num_cpus, CpuBudget};
@@ -408,10 +408,9 @@ impl TableOfContent {
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
 
         if wait {
-            let dispatcher = self.toc_dispatcher
-                .lock()
-                .clone()
-                .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?;
+            let dispatcher = self.toc_dispatcher.lock().clone().ok_or_else(|| {
+                StorageError::service_error("Qdrant is running in standalone mode")
+            })?;
             dispatcher
                 .consensus_state()
                 .propose_consensus_op_with_await(operation, None)
@@ -420,8 +419,7 @@ impl TableOfContent {
                     StorageError::service_error(format!("Failed to propose and confirm metadata update operation through consensus: {err}"))
                 })?;
         } else {
-            self.get_consensus_proposal_sender()?
-                .send(operation)?;
+            self.get_consensus_proposal_sender()?.send(operation)?;
         }
 
         Ok(())
