@@ -398,13 +398,30 @@ impl TableOfContent {
         Ok(())
     }
 
-    pub fn update_cluster_metadata(
+    pub async fn update_cluster_metadata(
         &self,
         key: String,
         value: serde_json::Value,
     ) -> Result<(), StorageError> {
-        self.get_consensus_proposal_sender()?
-            .send(ConsensusOperations::UpdateClusterMetadata { key, value })?;
+        let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
+        let wait = false;
+
+        if wait {
+            let dispatcher = self.shard_transfer_dispatcher
+                .lock()
+                .clone()
+                .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?;
+            dispatcher
+                .consensus_state
+                .propose_consensus_op_with_await(operation, None)
+                .await
+                .map_err(|err| {
+                    StorageError::service_error(format!("Failed to propose and confirm metadata update operation through consensus: {err}"))
+                })?;
+        } else {
+            self.get_consensus_proposal_sender()?
+                .send(operation)?;
+        }
 
         Ok(())
     }

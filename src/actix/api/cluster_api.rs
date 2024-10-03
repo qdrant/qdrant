@@ -142,7 +142,7 @@ async fn update_cluster_metadata_key(
         let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
-        toc.update_cluster_metadata(key.into_inner(), value.into_inner())?;
+        toc.update_cluster_metadata(key.into_inner(), value.into_inner()).await?;
         Ok(true)
     })
     .await
@@ -160,7 +160,7 @@ async fn delete_cluster_metadata_key(
         let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
-        toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null)?;
+        toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null).await?;
         Ok(true)
     })
     .await
