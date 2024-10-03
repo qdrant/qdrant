@@ -448,15 +448,15 @@ impl Consensus {
     }
 
     pub fn start(&mut self) -> anyhow::Result<()> {
-        // When starting first peer of a new cluster, tick a few times to establish leader instantly
-        if self.node.store().is_new_deployment() && self.node.store().peer_count() == 1 {
+        // If this is the only peer in the cluster, tick Raft node a few times to instantly
+        // self-elect itself as Raft leader
+        if self.node.store().peer_count() == 1 {
             while !self.node.has_ready() {
                 self.node.tick();
             }
         }
 
         let tick_period = Duration::from_millis(self.config.tick_period_ms);
-
         let mut previous_tick = Instant::now();
 
         loop {
