@@ -402,9 +402,9 @@ impl TableOfContent {
         &self,
         key: String,
         value: serde_json::Value,
+        wait: bool,
     ) -> Result<(), StorageError> {
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
-        let wait = false;
 
         if wait {
             let dispatcher = self.shard_transfer_dispatcher
