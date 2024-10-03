@@ -1,7 +1,7 @@
 mod collection_container;
-use common::types::TelemetryDetail;
 mod collection_meta_ops;
 mod create_collection;
+pub mod dispatcher;
 mod locks;
 mod point_ops;
 mod point_ops_internal;
@@ -21,15 +21,16 @@ use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
+use collection::shards::replica_set;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
 use common::cpu::{get_num_cpus, CpuBudget};
+use common::types::TelemetryDetail;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
-use self::transfer::ShardTransferDispatcher;
+use self::dispatcher::TocDispatcher;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
@@ -61,6 +62,8 @@ pub struct TableOfContent {
     channel_service: ChannelService,
     /// Backlink to the consensus, if none - single node mode
     consensus_proposal_sender: Option<OperationSender>,
+    /// Dispatcher for access to table of contents and consensus, if none - single node mode
+    toc_dispatcher: parking_lot::Mutex<Option<TocDispatcher>>,
     is_write_locked: AtomicBool,
     lock_error_message: parking_lot::Mutex<Option<String>>,
     /// Prevent DDoS of too many concurrent updates in distributed mode.
@@ -72,8 +75,6 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
-    /// Dispatcher for shard transfer to access consensus.
-    shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
 }
 
 impl TableOfContent {
@@ -189,11 +190,11 @@ impl TableOfContent {
             this_peer_id,
             channel_service,
             consensus_proposal_sender,
+            toc_dispatcher: Default::default(),
             is_write_locked: AtomicBool::new(false),
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
-            shard_transfer_dispatcher: Default::default(),
         }
     }
 
@@ -407,12 +408,12 @@ impl TableOfContent {
         let operation = ConsensusOperations::UpdateClusterMetadata { key, value };
 
         if wait {
-            let dispatcher = self.shard_transfer_dispatcher
+            let dispatcher = self.toc_dispatcher
                 .lock()
                 .clone()
                 .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?;
             dispatcher
-                .consensus_state
+                .consensus_state()
                 .propose_consensus_op_with_await(operation, None)
                 .await
                 .map_err(|err| {
@@ -626,9 +627,9 @@ impl TableOfContent {
             .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))
     }
 
-    /// Insert dispatcher into table of contents for shard transfer.
-    pub fn with_shard_transfer_dispatcher(&self, dispatcher: ShardTransferDispatcher) {
-        self.shard_transfer_dispatcher.lock().replace(dispatcher);
+    /// Insert dispatcher for access to table of contents and consensus.
+    pub fn with_toc_dispatcher(&self, dispatcher: TocDispatcher) {
+        self.toc_dispatcher.lock().replace(dispatcher);
     }
 
     pub fn get_channel_service(&self) -> &ChannelService {
