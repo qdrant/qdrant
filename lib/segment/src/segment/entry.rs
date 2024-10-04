@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
@@ -31,7 +32,7 @@ use crate::types::{
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     SnapshotFormat, VectorDataInfo, WithPayload, WithVector,
 };
-use crate::utils;
+use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -734,13 +735,6 @@ impl SegmentEntry for Segment {
         format: SnapshotFormat,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        if format != SnapshotFormat::Regular {
-            debug_assert!(false, "Unsupported snapshot format");
-            return Err(OperationError::service_error(
-                "Unsupported snapshot format".to_string(),
-            ));
-        }
-
         let segment_id = self
             .current_path
             .file_stem()
@@ -757,106 +751,25 @@ impl SegmentEntry for Segment {
         // flush segment to capture latest state
         self.flush(true, false)?;
 
-        // use temp_path for intermediary files
-        let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
-        let db_backup_path = temp_path.join(DB_BACKUP_PATH);
-        let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
-
-        {
-            let db = self.database.read();
-            crate::rocksdb_backup::create(&db, &db_backup_path)?;
+        match format {
+            SnapshotFormat::Ancient => {
+                debug_assert!(false, "Unsupported snapshot format: {format:?}");
+                return Err(OperationError::service_error(format!(
+                    "Unsupported snapshot format: {format:?}"
+                )));
+            }
+            SnapshotFormat::Regular => {
+                tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
+                    let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
+                    let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
+                    snapshot_files(self, temp_path, &tar)
+                })??;
+            }
+            SnapshotFormat::Streamable => {
+                let tar = tar.descend(Path::new(&segment_id))?;
+                snapshot_files(self, temp_path, &tar)?;
+            }
         }
-
-        self.payload_index
-            .borrow()
-            .take_database_snapshot(&payload_index_db_backup_path)?;
-
-        tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
-            let mut builder = tar::Builder::new(writer);
-            builder.sparse(false);
-
-            builder
-                .append_dir_all(SNAPSHOT_PATH, &temp_path)
-                .map_err(|err| utils::tar::failed_to_append_error(&temp_path, err))?;
-
-            let files = Path::new(SNAPSHOT_PATH).join(SNAPSHOT_FILES_PATH);
-
-            for vector_data in self.vector_data.values() {
-                for file in vector_data.vector_index.borrow().files() {
-                    utils::tar::append_file_relative_to_base(
-                        &mut builder,
-                        &self.current_path,
-                        &file,
-                        &files,
-                    )?;
-                }
-
-                for file in vector_data.vector_storage.borrow().files() {
-                    utils::tar::append_file_relative_to_base(
-                        &mut builder,
-                        &self.current_path,
-                        &file,
-                        &files,
-                    )?;
-                }
-
-                if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
-                    for file in quantized_vectors.files() {
-                        utils::tar::append_file_relative_to_base(
-                            &mut builder,
-                            &self.current_path,
-                            &file,
-                            &files,
-                        )?;
-                    }
-                }
-            }
-
-            for file in self.payload_index.borrow().files() {
-                utils::tar::append_file_relative_to_base(
-                    &mut builder,
-                    &self.current_path,
-                    &file,
-                    &files,
-                )?;
-            }
-
-            for file in self.id_tracker.borrow().files() {
-                utils::tar::append_file_relative_to_base(
-                    &mut builder,
-                    &self.current_path,
-                    &file,
-                    &files,
-                )?;
-            }
-
-            utils::tar::append_file(
-                &mut builder,
-                &self.current_path.join(SEGMENT_STATE_FILE),
-                &files.join(SEGMENT_STATE_FILE),
-            )?;
-
-            utils::tar::append_file(
-                &mut builder,
-                &self.current_path.join(VERSION_FILE),
-                &files.join(VERSION_FILE),
-            )?;
-
-            builder.finish()?;
-
-            Result::<_, OperationError>::Ok(())
-        })??;
-
-        // remove tmp directory in background
-        let _ = thread::spawn(move || {
-            let res = fs::remove_dir_all(&temp_path);
-            if let Err(err) = res {
-                log::error!(
-                    "Failed to remove tmp directory at {}: {err:?}",
-                    temp_path.display(),
-                );
-            }
-        });
 
         Ok(())
     }
@@ -889,4 +802,75 @@ impl SegmentEntry for Segment {
             }
         }
     }
+}
+
+fn snapshot_files(
+    segment: &Segment,
+    temp_path: &Path,
+    tar: &tar_ext::BuilderExt<impl Write + Seek>,
+) -> OperationResult<()> {
+    // use temp_path for intermediary files
+    let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
+    let db_backup_path = temp_path.join(DB_BACKUP_PATH);
+    let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
+
+    {
+        let db = segment.database.read();
+        crate::rocksdb_backup::create(&db, &db_backup_path)?;
+    }
+
+    segment
+        .payload_index
+        .borrow()
+        .take_database_snapshot(&payload_index_db_backup_path)?;
+
+    tar.blocking_append_dir_all(&temp_path, Path::new(""))?;
+
+    // remove tmp directory in background
+    let _ = thread::spawn(move || {
+        let res = fs::remove_dir_all(&temp_path);
+        if let Err(err) = res {
+            log::error!(
+                "Failed to remove tmp directory at {}: {err:?}",
+                temp_path.display(),
+            );
+        }
+    });
+
+    let tar = tar.descend(Path::new(SNAPSHOT_FILES_PATH))?;
+    for vector_data in segment.vector_data.values() {
+        for file in vector_data.vector_index.borrow().files() {
+            tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+        }
+
+        for file in vector_data.vector_storage.borrow().files() {
+            tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+        }
+
+        if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
+            for file in quantized_vectors.files() {
+                tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+            }
+        }
+    }
+
+    for file in segment.payload_index.borrow().files() {
+        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+    }
+
+    for file in segment.id_tracker.borrow().files() {
+        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+    }
+
+    tar.blocking_append_file(
+        &segment.current_path.join(SEGMENT_STATE_FILE),
+        Path::new(SEGMENT_STATE_FILE),
+    )?;
+
+    tar.blocking_append_file(
+        &segment.current_path.join(VERSION_FILE),
+        Path::new(VERSION_FILE),
+    )?;
+
+    Ok(())
 }

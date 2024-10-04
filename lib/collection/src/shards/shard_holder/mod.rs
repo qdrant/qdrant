@@ -7,14 +7,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use common::cpu::CpuBudget;
 use common::tar_ext::BuilderExt;
-use futures::Future;
+use futures::{Future, Stream, TryStreamExt as _};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
+use tokio_util::codec::{BytesCodec, FramedRead};
+use tokio_util::io::SyncIoBridge;
 
 use super::replica_set::AbortShardTransfer;
 use super::resharding::tasks_pool::ReshardTasksPool;
@@ -912,6 +915,63 @@ impl ShardHolder {
             let _ = temp_file.keep();
         }
         snapshot_description
+    }
+
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn stream_shard_snapshot(
+        shard: OwnedRwLockReadGuard<ShardHolder, ShardReplicaSet>,
+        collection_name: &str,
+        shard_id: ShardId,
+        temp_dir: &Path,
+    ) -> CollectionResult<impl Stream<Item = std::io::Result<Bytes>>> {
+        // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
+        //   and would be deleted, if future is cancelled
+
+        if !shard.is_local().await && !shard.is_queue_proxy().await {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {shard_id} is not a local or queue proxy shard"
+            )));
+        }
+
+        let snapshot_file_name = format!(
+            "{collection_name}-shard-{shard_id}-{}.snapshot",
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+        );
+
+        let snapshot_temp_dir = tempfile::Builder::new()
+            .prefix(&format!("{snapshot_file_name}-temp-"))
+            .tempdir_in(temp_dir)?;
+
+        let (read_half, write_half) = tokio::io::duplex(4096);
+
+        tokio::spawn(async move {
+            let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
+
+            shard
+                .create_snapshot(
+                    snapshot_temp_dir.path(),
+                    &tar,
+                    SnapshotFormat::Streamable,
+                    false,
+                )
+                .await?;
+
+            let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();
+            if let Err(err) = snapshot_temp_dir.close() {
+                log::error!(
+                    "Failed to remove temporary directory {}: {err}",
+                    snapshot_temp_dir_path.display(),
+                );
+            }
+
+            tar.finish().await?;
+
+            CollectionResult::Ok(())
+        });
+
+        Ok(FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()))
     }
 
     /// # Cancel safety
