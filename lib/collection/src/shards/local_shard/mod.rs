@@ -754,25 +754,14 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        // recover segments
-        let segments_path = LocalShard::segments_path(snapshot_path);
-        // iterate over segments directory and recover each segment
-        for entry in std::fs::read_dir(segments_path)? {
-            let entry_path = entry?.path();
-            if entry_path.extension().map(|s| s == "tar").unwrap_or(false) {
-                let segment_id_opt = entry_path
-                    .file_stem()
-                    .map(|s| s.to_str().unwrap().to_owned());
-                if segment_id_opt.is_none() {
-                    return Err(CollectionError::service_error(
-                        "Segment ID is empty".to_string(),
-                    ));
-                }
-                let segment_id = segment_id_opt.unwrap();
-                Segment::restore_snapshot(&entry_path, &segment_id)?;
-                std::fs::remove_file(&entry_path)?;
-            }
+        // Read dir first as the directory contents would change during restore.
+        let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for entry in entries {
+            Segment::restore_snapshot_in_place(&entry.path())?;
         }
+
         Ok(())
     }
 
