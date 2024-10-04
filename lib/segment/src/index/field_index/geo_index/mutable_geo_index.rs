@@ -226,11 +226,11 @@ impl InMemoryGeoMapIndex {
     }
 
     pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
-        self.points_per_hash.get(hash).cloned().unwrap_or(0)
+        self.points_per_hash.get(hash).copied().unwrap_or(0)
     }
 
     pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
-        self.values_per_hash.get(hash).cloned().unwrap_or(0)
+        self.values_per_hash.get(hash).copied().unwrap_or(0)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {

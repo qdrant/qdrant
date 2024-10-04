@@ -309,7 +309,7 @@ impl MmapGeoMapIndex {
                     self.points_map_ids
                         .get(point_key_value.ids_start as usize..point_key_value.ids_end as usize)?
                         .iter()
-                        .cloned()
+                        .copied()
                         .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true)),
                 )
             })
