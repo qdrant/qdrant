@@ -29,7 +29,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorDataInfo, WithPayload, WithVector,
+    SnapshotFormat, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorage;
@@ -731,8 +731,16 @@ impl SegmentEntry for Segment {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
+        if format != SnapshotFormat::Regular {
+            debug_assert!(false, "Unsupported snapshot format");
+            return Err(OperationError::service_error(
+                "Unsupported snapshot format".to_string(),
+            ));
+        }
+
         let segment_id = self
             .current_path
             .file_stem()

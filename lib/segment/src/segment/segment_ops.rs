@@ -25,7 +25,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    SegmentState, SeqNumberType,
+    SegmentState, SeqNumberType, SnapshotFormat,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -441,6 +441,8 @@ impl Segment {
         let snapshot_path = segment_path.join(SNAPSHOT_PATH);
 
         if snapshot_path.exists() {
+            log::info!("Snapshot format: {:?}", SnapshotFormat::Regular);
+
             let db_backup_path = snapshot_path.join(DB_BACKUP_PATH);
             let payload_index_db_backup = snapshot_path.join(PAYLOAD_DB_BACKUP_PATH);
 
@@ -469,7 +471,7 @@ impl Segment {
                 ))
             })?;
         } else {
-            log::info!("Attempt to restore legacy snapshot format");
+            log::info!("Snapshot format: {:?}", SnapshotFormat::Ancient);
             // Do nothing, legacy format is just plain archive
         }
 

@@ -12,7 +12,7 @@ use common::tar_ext::BuilderExt;
 use futures::Future;
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use segment::types::ShardKey;
+use segment::types::{ShardKey, SnapshotFormat};
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, RwLock};
 
@@ -883,7 +883,12 @@ impl ShardHolder {
         let tar = BuilderExt::new_seekable_owned(File::create(temp_file.path())?);
 
         shard
-            .create_snapshot(snapshot_temp_dir.path(), &tar, false)
+            .create_snapshot(
+                snapshot_temp_dir.path(),
+                &tar,
+                SnapshotFormat::Regular,
+                false,
+            )
             .await?;
 
         let snapshot_temp_dir_path = snapshot_temp_dir.path().to_path_buf();

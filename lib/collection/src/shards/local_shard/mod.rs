@@ -29,7 +29,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, SegmentType,
+    QuantizationConfig, SegmentConfig, SegmentType, SnapshotFormat,
 };
 use segment::utils::mem::Mem;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
@@ -781,6 +781,7 @@ impl LocalShard {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
@@ -811,6 +812,7 @@ impl LocalShard {
                 &payload_index_schema.read().clone(),
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
+                format,
             )?;
 
             if save_wal {

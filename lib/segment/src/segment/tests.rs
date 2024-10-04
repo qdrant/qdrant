@@ -13,8 +13,8 @@ use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use crate::entry::entry_point::SegmentEntry;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
-    Distance, Filter, Indexes, Payload, SegmentConfig, VectorDataConfig, VectorStorageType,
-    WithPayload, WithVector,
+    Distance, Filter, Indexes, Payload, SegmentConfig, SnapshotFormat, VectorDataConfig,
+    VectorStorageType, WithPayload, WithVector,
 };
 
 #[test]
@@ -221,7 +221,12 @@ fn test_snapshot() {
     // snapshotting!
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_name).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, &mut HashSet::new())
+        .take_snapshot(
+            temp_dir.path(),
+            &tar,
+            SnapshotFormat::Regular,
+            &mut HashSet::new(),
+        )
         .unwrap();
     tar.blocking_finish().unwrap();
 
