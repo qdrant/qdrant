@@ -48,10 +48,8 @@ impl ShardConfig {
     }
 
     pub async fn save_to_tar(&self, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
-        tar.write_fn(Path::new(SHARD_CONFIG_FILE), |writer| {
-            serde_json::to_writer(writer, self)?;
-            Ok(())
-        })
-        .await
+        let bytes = serde_json::to_vec(self)?;
+        tar.append_data(bytes, Path::new(SHARD_CONFIG_FILE)).await?;
+        Ok(())
     }
 }

@@ -21,6 +21,7 @@ ordered-float = "4.3"
 ph = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
+tap = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }

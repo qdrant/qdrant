@@ -219,7 +219,7 @@ fn test_snapshot() {
     let snapshot_name = snapshot_dir.path().join("snapshot.tar");
 
     // snapshotting!
-    let tar = tar_ext::BuilderExt::new(File::create(&snapshot_name).unwrap());
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_name).unwrap());
     segment
         .take_snapshot(temp_dir.path(), &tar, &mut HashSet::new())
         .unwrap();

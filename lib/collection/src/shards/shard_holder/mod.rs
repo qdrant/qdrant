@@ -880,7 +880,7 @@ impl ShardHolder {
             .suffix(".tar")
             .tempfile_in(temp_dir)?;
 
-        let tar = BuilderExt::new(File::create(temp_file.path())?);
+        let tar = BuilderExt::new_seekable_owned(File::create(temp_file.path())?);
 
         shard
             .create_snapshot(snapshot_temp_dir.path(), &tar, false)

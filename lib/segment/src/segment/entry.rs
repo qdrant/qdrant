@@ -837,7 +837,7 @@ impl SegmentEntry for Segment {
             builder.finish()?;
 
             Result::<_, OperationError>::Ok(())
-        })?;
+        })??;
 
         // remove tmp directory in background
         let _ = thread::spawn(move || {
