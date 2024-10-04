@@ -262,11 +262,15 @@ impl TryFrom<grpc::Vector> for rest::Vector {
             };
         }
 
-        if indices.is_some() {
-            return Err(Status::invalid_argument(
-                "Sparse vector must be named".to_string(),
+        if let Some(indices) = indices {
+            return Ok(rest::Vector::Sparse(
+                sparse::common::sparse_vector::SparseVector {
+                    values: data,
+                    indices: indices.data,
+                },
             ));
         }
+
         if let Some(vectors_count) = vectors_count {
             let multi =
                 convert_to_plain_multi_vector(data, vectors_count as usize).map_err(|err| {
