@@ -37,8 +37,10 @@ pub struct RunningEnvironmentTelemetry {
     ram_size: Option<usize>,
     disk_size: Option<usize>,
     cpu_flags: String,
-    cpu_endian_compiled: CpuEndian,
-    cpu_endian_runtime: CpuEndian,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cpu_endian_compiled: Option<CpuEndian>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cpu_endian_runtime: Option<CpuEndian>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -132,8 +134,8 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         ram_size: sys_info::mem_info().ok().map(|x| x.total as usize),
         disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
         cpu_flags: cpu_flags.join(","),
-        cpu_endian_compiled: CpuEndian::compiled(),
-        cpu_endian_runtime: CpuEndian::runtime(),
+        cpu_endian_compiled: Some(CpuEndian::compiled()),
+        cpu_endian_runtime: Some(CpuEndian::runtime()),
     }
 }
 
@@ -202,8 +204,8 @@ impl Anonymize for RunningEnvironmentTelemetry {
             ram_size: self.ram_size.anonymize(),
             disk_size: self.disk_size.anonymize(),
             cpu_flags: self.cpu_flags.clone(),
-            cpu_endian_compiled: self.cpu_endian_compiled,
-            cpu_endian_runtime: self.cpu_endian_runtime,
+            cpu_endian_compiled: None,
+            cpu_endian_runtime: None,
         }
     }
 }
