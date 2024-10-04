@@ -15,8 +15,11 @@ use segment::types::{Filter, SearchParams, StrictModeConfig};
 use super::types::CollectionError;
 use crate::collection::Collection;
 
-// Creates a new `VerificationPass` for successful verifications.
-// Don't use this, unless you know what you're doing!
+// Creates a new `VerificationPass` without actually verifying anything.
+// This is useful in situations where we don't need to check for strict mode, but still
+// want to be able to access `TableOfContents` using `.toc()`.
+// If you're not implementing a new point-api endpoint for which a strict mode check
+// is required, this is safe to use.
 pub fn new_unchecked_verification_pass() -> VerificationPass {
     VerificationPass { inner: () }
 }
