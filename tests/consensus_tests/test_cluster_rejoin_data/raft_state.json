@@ -1,0 +1,35 @@
+{
+    "state": {
+        "hard_state": {
+            "term": 1,
+            "vote": 3134814695916598,
+            "commit": 2
+        },
+        "conf_state": {
+            "voters": [
+                3134814695916598
+            ],
+            "learners": [],
+            "voters_outgoing": [],
+            "learners_next": [],
+            "auto_leave": false
+        }
+    },
+    "latest_snapshot_meta": {
+        "term": 0,
+        "index": 0
+    },
+    "apply_progress_queue": [
+        3,
+        2
+    ],
+    "peer_address_by_id": {
+        "3134814695916598": "http://qdrant-1:6335/"
+    },
+    "peer_metadata_by_id": {
+        "3134814695916598": {
+            "version": "1.11.6-dev"
+        }
+    },
+    "this_peer_id": 3134814695916598
+}
