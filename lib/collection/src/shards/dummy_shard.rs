@@ -7,7 +7,8 @@ use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -36,6 +37,7 @@ impl DummyShard {
         &self,
         _temp_path: &Path,
         _tar: &tar_ext::BuilderExt,
+        _format: SnapshotFormat,
         _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()

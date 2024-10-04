@@ -20,8 +20,8 @@ use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
-    WithVector,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    SnapshotFormat, WithPayload, WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -1071,22 +1071,27 @@ impl SegmentEntry for ProxySegment {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
 
         // snapshot wrapped segment data into the temporary dir
-        self.wrapped_segment
-            .get()
-            .read()
-            .take_snapshot(temp_path, tar, snapshotted_segments)?;
+        self.wrapped_segment.get().read().take_snapshot(
+            temp_path,
+            tar,
+            format,
+            snapshotted_segments,
+        )?;
 
         // snapshot write_segment
         // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
-        self.write_segment
-            .get()
-            .read()
-            .take_snapshot(temp_path, tar, snapshotted_segments)?;
+        self.write_segment.get().read().take_snapshot(
+            temp_path,
+            tar,
+            format,
+            snapshotted_segments,
+        )?;
 
         Ok(())
     }
@@ -1565,10 +1570,20 @@ mod tests {
         let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let mut snapshotted_segments = HashSet::new();
         proxy_segment
-            .take_snapshot(temp_dir.path(), &tar, &mut snapshotted_segments)
+            .take_snapshot(
+                temp_dir.path(),
+                &tar,
+                SnapshotFormat::Regular,
+                &mut snapshotted_segments,
+            )
             .unwrap();
         proxy_segment2
-            .take_snapshot(temp_dir2.path(), &tar, &mut snapshotted_segments)
+            .take_snapshot(
+                temp_dir2.path(),
+                &tar,
+                SnapshotFormat::Regular,
+                &mut snapshotted_segments,
+            )
             .unwrap();
         tar.blocking_finish().unwrap();
 

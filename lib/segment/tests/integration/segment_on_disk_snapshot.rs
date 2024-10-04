@@ -15,7 +15,7 @@ use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType,
-    SegmentConfig, VectorDataConfig, VectorStorageType,
+    SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
 };
 use tempfile::Builder;
 
@@ -139,7 +139,12 @@ fn test_on_disk_segment_snapshot() {
     // take snapshot
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_name).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, &mut HashSet::new())
+        .take_snapshot(
+            temp_dir.path(),
+            &tar,
+            SnapshotFormat::Regular,
+            &mut HashSet::new(),
+        )
         .unwrap();
     tar.blocking_finish().unwrap();
 

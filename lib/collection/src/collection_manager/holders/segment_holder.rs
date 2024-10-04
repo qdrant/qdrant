@@ -18,7 +18,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType};
+use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType, SnapshotFormat};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -1156,6 +1156,7 @@ impl<'s> SegmentHolder {
         payload_index_schema: &PayloadIndexSchema,
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
@@ -1168,7 +1169,7 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, tar, &mut snapshotted_segments)?;
+                read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
                 Ok(())
             },
         )
@@ -1654,6 +1655,7 @@ mod tests {
             &PayloadIndexSchema::default(),
             temp_dir.path(),
             &tar,
+            SnapshotFormat::Regular,
         )
         .unwrap();
 

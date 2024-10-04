@@ -2447,6 +2447,73 @@ impl Filter {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SnapshotFormat {
+    /// Created by Qdrant `<0.11.0`.
+    ///
+    /// The collection snapshot contains nested tar archives for segments.
+    /// Segment tar archives contain a plain copy of the segment directory.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10.tar
+    /// │   ├── segment.json
+    /// │   ├── CURRENT
+    /// │   ├── 000009.sst
+    /// │   ├── 000010.sst
+    /// │   └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b.tar
+    /// └── …
+    /// ```
+    Ancient,
+    /// Qdrant `>=0.11.0` `<=1.13` (and maybe even later).
+    ///
+    /// The collection snapshot contains nested tar archives for segments.
+    /// Distinguished by a single top-level directory `snapshot` in each segment
+    /// tar archive. RocksDB data stored as backups and requires unpacking
+    /// procedure.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10.tar
+    /// │   └── snapshot/                               # single top-level dir
+    /// │       ├── db_backup/                          # rockdb backup
+    /// │       │   ├── meta/
+    /// │       │   ├── private/
+    /// │       │   └── shared_checksum/
+    /// │       ├── payload_index_db_backup             # rocksdb backup
+    /// │       │   ├── meta/
+    /// │       │   ├── private/
+    /// │       │   └── shared_checksum/
+    /// │       └── files/                              # regular files
+    /// │           ├── segment.json
+    /// │           └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b.tar
+    /// └── …
+    /// ```
+    Regular,
+    /// New experimental format.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10/
+    /// │   ├── db_backup/                              # rockdb backup
+    /// │   │   ├── meta/
+    /// │   │   ├── private/
+    /// │   │   └── shared_checksum/
+    /// │   ├── payload_index_db_backup                 # rocksdb backup
+    /// │   │   ├── meta/
+    /// │   │   ├── private/
+    /// │   │   └── shared_checksum/
+    /// │   └── files/                                  # regular files
+    /// │       ├── segment.json
+    /// │       └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b/
+    /// └── …
+    /// ```
+    Streamable,
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::{GeoLineString, GeoPoint, GeoPolygon};
