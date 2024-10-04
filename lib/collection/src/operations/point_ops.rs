@@ -103,7 +103,6 @@ impl From<VectorPersisted> for VectorInternal {
     }
 }
 
-
 // General idea of having an extra layer of data structures after REST and gRPC
 // is to ensure that all vectors are inferenced and validated before they are persisted.
 //
