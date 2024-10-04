@@ -30,7 +30,7 @@ pub trait ShardOperation {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>>;
+    ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;
 
@@ -55,7 +55,7 @@ pub trait ShardOperation {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>>;
+    ) -> CollectionResult<Vec<RecordInternal>>;
 
     async fn query_batch(
         &self,

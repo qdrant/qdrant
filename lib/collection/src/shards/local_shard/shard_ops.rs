@@ -14,7 +14,8 @@ use tokio::time::error::Elapsed;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
+    UpdateStatus,
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
@@ -116,7 +117,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         match order_by {
             None => {
                 self.scroll_by_id(
@@ -203,7 +204,7 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,

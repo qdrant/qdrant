@@ -1058,6 +1058,11 @@ pub mod from_grpc {
                         "Image inference is not implemented",
                     ))
                 }
+                Variant::Object(_) => {
+                    return Err(Status::invalid_argument(
+                        "Object inference is not implemented",
+                    ))
+                }
             };
 
             Ok(vector_input)

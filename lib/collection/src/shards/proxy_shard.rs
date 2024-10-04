@@ -23,7 +23,7 @@ use crate::operations::operation_effect::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -205,7 +205,7 @@ impl ShardOperation for ProxyShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .scroll_by(
@@ -261,7 +261,7 @@ impl ShardOperation for ProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .retrieve(

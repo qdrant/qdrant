@@ -15,7 +15,7 @@ use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
+    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, RecordInternal,
 };
 use crate::operations::universal_query::collection_query;
 use crate::operations::universal_query::collection_query::{
@@ -29,7 +29,7 @@ pub async fn retrieve_points(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-) -> CollectionResult<Vec<Record>> {
+) -> CollectionResult<Vec<RecordInternal>> {
     collection
         .retrieve(
             PointRequestInternal {
@@ -56,7 +56,7 @@ pub async fn retrieve_points_with_locked_collection(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-) -> CollectionResult<Vec<Record>> {
+) -> CollectionResult<Vec<RecordInternal>> {
     match collection_holder {
         CollectionRefHolder::Ref(collection) => {
             retrieve_points(
@@ -108,15 +108,15 @@ pub type CollectionName = String;
 /// mentioned in the query.
 #[derive(Default, Debug)]
 pub struct ReferencedVectors {
-    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
-    default_mapping: HashMap<PointIdType, Record>,
+    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, RecordInternal>>,
+    default_mapping: HashMap<PointIdType, RecordInternal>,
 }
 
 impl ReferencedVectors {
     pub fn extend(
         &mut self,
         collection_name: Option<CollectionName>,
-        mapping: impl IntoIterator<Item = (PointIdType, Record)>,
+        mapping: impl IntoIterator<Item = (PointIdType, RecordInternal)>,
     ) {
         match collection_name {
             None => self.default_mapping.extend(mapping),
@@ -141,7 +141,7 @@ impl ReferencedVectors {
         &self,
         lookup_collection_name: Option<&CollectionName>,
         point_id: PointIdType,
-    ) -> Option<&Record> {
+    ) -> Option<&RecordInternal> {
         match lookup_collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
@@ -256,7 +256,8 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                 }
             }
         }
-        let all_reference_vectors: Vec<Vec<Record>> = try_join_all(vector_retrieves).await?;
+        let all_reference_vectors: Vec<Vec<RecordInternal>> =
+            try_join_all(vector_retrieves).await?;
         let mut all_vectors_records_map: ReferencedVectors = Default::default();
 
         for (collection_name, reference_vectors) in

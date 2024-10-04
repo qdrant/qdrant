@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use itertools::Itertools;
+use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
     BoolIndexType, DatetimeIndexType, FloatIndexType, GeoIndexType, IntegerIndexType,
     KeywordIndexType, TextIndexType, UuidIndexType,
@@ -19,11 +20,12 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
-    FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
-    KeywordIndexParams, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
-    OrderValue, Range, RawVector, RecommendStrategy, SearchMatrixPair, SearchPointGroups,
-    SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, WithLookup,
+    DatetimeIndexParams, DatetimeRange, Direction, Document, FacetHit, FacetHitInternal,
+    FacetValue, FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString,
+    GroupId, Image, InferenceObject, KeywordIndexParams, LookupLocation, MultiVectorComparator,
+    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
+    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -31,7 +33,6 @@ use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::value::Kind;
-use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
@@ -40,17 +41,23 @@ use crate::grpc::qdrant::{
     IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match, MinShould,
     MultiDenseVector, NamedVectors, NestedCondition, PayloadExcludeSelector,
     PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
     StrictModeConfig, Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    Value, ValuesCount, Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    Value, ValuesCount, Vector, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
     payload
         .into_iter()
+        .map(|(k, v)| (k, json_to_proto(v)))
+        .collect()
+}
+
+pub fn dict_to_proto(dict: HashMap<String, serde_json::Value>) -> HashMap<String, Value> {
+    dict.into_iter()
         .map(|(k, v)| (k, json_to_proto(v)))
         .collect()
 }
@@ -101,7 +108,17 @@ pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types
     Ok(map.into())
 }
 
-fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
+pub fn proto_dict_to_json(
+    proto: HashMap<String, Value>,
+) -> Result<HashMap<String, serde_json::Value>, Status> {
+    let mut map = HashMap::new();
+    for (k, v) in proto {
+        map.insert(k, proto_to_json(v)?);
+    }
+    Ok(map)
+}
+
+pub fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
     match proto.kind {
         None => Ok(serde_json::Value::default()),
         Some(kind) => match kind {
@@ -673,36 +690,6 @@ impl From<segment::types::PointIdType> for PointId {
     }
 }
 
-impl From<segment_vectors::VectorInternal> for Vector {
-    fn from(vector: segment_vectors::VectorInternal) -> Self {
-        match vector {
-            segment_vectors::VectorInternal::Dense(vector) => Self {
-                data: vector,
-                indices: None,
-                vectors_count: None,
-                vector: None,
-            },
-            segment_vectors::VectorInternal::Sparse(vector) => Self {
-                data: vector.values,
-                indices: Some(SparseIndices {
-                    data: vector.indices,
-                }),
-                vectors_count: None,
-                vector: None,
-            },
-            segment_vectors::VectorInternal::MultiDense(vector) => {
-                let vector_count = vector.multi_vectors().count() as u32;
-                Self {
-                    data: vector.flattened_vectors,
-                    indices: None,
-                    vectors_count: Some(vector_count),
-                    vector: None,
-                }
-            }
-        }
-    }
-}
-
 impl TryFrom<Vector> for segment_vectors::VectorInternal {
     type Error = Status;
 
@@ -736,41 +723,124 @@ impl TryFrom<Vector> for segment_vectors::VectorInternal {
     }
 }
 
-impl From<HashMap<String, segment_vectors::VectorInternal>> for NamedVectors {
-    fn from(vectors: HashMap<String, segment_vectors::VectorInternal>) -> Self {
+impl TryFrom<PointStruct> for rest::PointStruct {
+    type Error = Status;
+
+    fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
+        let PointStruct {
+            id,
+            vectors,
+            payload,
+        } = value;
+
+        // empty payload means None in PointStruct
+        let converted_payload = if payload.is_empty() {
+            None
+        } else {
+            Some(proto_to_payloads(payload)?)
+        };
+
+        let vector_struct = match vectors {
+            None => return Err(Status::invalid_argument("Expected some vectors")),
+            Some(vectors) => rest::VectorStruct::try_from(vectors)?,
+        };
+
+        Ok(Self {
+            id: id
+                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
+                .try_into()?,
+            vector: vector_struct,
+            payload: converted_payload,
+        })
+    }
+}
+
+impl From<rest::Document> for Document {
+    fn from(document: rest::Document) -> Self {
         Self {
-            vectors: vectors
-                .into_iter()
-                .map(|(name, vector)| (name, vector.into()))
-                .collect(),
+            text: document.text,
+            model: document.model,
+            options: document.options.map(dict_to_proto).unwrap_or_default(),
         }
     }
 }
 
-impl From<segment_vectors::VectorStructInternal> for Vectors {
-    fn from(vector_struct: segment_vectors::VectorStructInternal) -> Self {
-        match vector_struct {
-            segment_vectors::VectorStructInternal::Single(vector) => {
-                let vector = segment_vectors::VectorInternal::from(vector);
-                Self {
-                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
-                }
-            }
-            segment_vectors::VectorStructInternal::MultiDense(vector) => {
-                let vector = segment_vectors::VectorInternal::from(vector);
-                Self {
-                    vectors_options: Some(VectorsOptions::Vector(Vector::from(vector))),
-                }
-            }
-            segment_vectors::VectorStructInternal::Named(vectors) => Self {
-                vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
-                    vectors: vectors
-                        .into_iter()
-                        .map(|(name, vector)| (name, Vector::from(vector)))
-                        .collect(),
-                })),
-            },
+impl TryFrom<Document> for rest::Document {
+    type Error = Status;
+
+    fn try_from(document: Document) -> Result<Self, Self::Error> {
+        Ok(Self {
+            text: document.text,
+            model: document.model,
+            options: Some(proto_dict_to_json(document.options)?),
+        })
+    }
+}
+
+impl From<rest::Image> for Image {
+    fn from(image: rest::Image) -> Self {
+        Self {
+            image: image.image,
+            model: image.model,
+            options: image.options.map(dict_to_proto).unwrap_or_default(),
         }
+    }
+}
+
+impl TryFrom<Image> for rest::Image {
+    type Error = Status;
+
+    fn try_from(image: Image) -> Result<Self, Self::Error> {
+        Ok(Self {
+            image: image.image,
+            model: image.model,
+            options: Some(proto_dict_to_json(image.options)?),
+        })
+    }
+}
+
+impl From<rest::InferenceObject> for InferenceObject {
+    fn from(object: rest::InferenceObject) -> Self {
+        Self {
+            object: Some(json_to_proto(object.object)),
+            model: object.model,
+            options: object.options.map(dict_to_proto).unwrap_or_default(),
+        }
+    }
+}
+
+impl TryFrom<InferenceObject> for rest::InferenceObject {
+    type Error = Status;
+
+    fn try_from(object: InferenceObject) -> Result<Self, Self::Error> {
+        let InferenceObject {
+            object,
+            model,
+            options,
+        } = object;
+
+        let object =
+            object.ok_or_else(|| Status::invalid_argument("Empty object is not allowed"))?;
+
+        Ok(Self {
+            object: proto_to_json(object)?,
+            model,
+            options: Some(proto_dict_to_json(options)?),
+        })
+    }
+}
+
+impl TryFrom<rest::Record> for RetrievedPoint {
+    type Error = OperationError;
+    fn try_from(record: rest::Record) -> Result<Self, Self::Error> {
+        let retrieved_point = Self {
+            id: Some(PointId::from(record.id)),
+            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
+            vectors: record.vector.map(VectorsOutput::try_from).transpose()?,
+            shard_key: record.shard_key.map(convert_shard_key_to_grpc),
+            order_value: record.order_value.map(From::from),
+        };
+        Ok(retrieved_point)
     }
 }
 
@@ -815,14 +885,29 @@ impl TryFrom<OrderValue> for segment::data_types::order_by::OrderValue {
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
-            id: Some(point.id.into()),
+            id: Some(PointId::from(point.id)),
             payload: point.payload.map(payload_to_proto).unwrap_or_default(),
             score: point.score,
             version: point.version,
-            vectors: point.vector.map(|v| v.into()),
+            vectors: point.vector.map(VectorsOutput::from),
             shard_key: point.shard_key.map(convert_shard_key_to_grpc),
-            order_value: point.order_value.map(From::from),
+            order_value: point.order_value.map(OrderValue::from),
         }
+    }
+}
+
+impl TryFrom<crate::rest::ScoredPoint> for ScoredPoint {
+    type Error = OperationError;
+    fn try_from(point: crate::rest::ScoredPoint) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: Some(PointId::from(point.id)),
+            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
+            score: point.score,
+            version: point.version,
+            vectors: point.vector.map(VectorsOutput::try_from).transpose()?,
+            shard_key: point.shard_key.map(convert_shard_key_to_grpc),
+            order_value: point.order_value.map(OrderValue::from),
+        })
     }
 }
 
@@ -856,79 +941,6 @@ impl TryFrom<NamedVectors> for HashMap<String, segment_vectors::VectorInternal> 
                 },
             )
             .collect::<Result<_, _>>()
-    }
-}
-
-impl TryFrom<Vectors> for segment_vectors::VectorStructInternal {
-    type Error = Status;
-
-    fn try_from(vectors: Vectors) -> Result<Self, Self::Error> {
-        match vectors.vectors_options {
-            Some(vectors_options) => Ok(match vectors_options {
-                VectorsOptions::Vector(vector) => {
-                    let Vector {
-                        data,
-                        indices,
-                        vectors_count,
-                        vector,
-                    } = vector;
-
-                    if let Some(vector) = vector {
-                        return match vector {
-                            crate::grpc::qdrant::vector::Vector::Dense(dense) => {
-                                Ok(segment_vectors::VectorStructInternal::Single(
-                                    segment_vectors::DenseVector::from(dense),
-                                ))
-                            }
-                            crate::grpc::qdrant::vector::Vector::Sparse(_sparse) => {
-                                return Err(Status::invalid_argument(
-                                    "Sparse vector must be named".to_string(),
-                                ));
-                            }
-                            crate::grpc::qdrant::vector::Vector::MultiDense(multi) => {
-                                Ok(segment_vectors::VectorStructInternal::MultiDense(
-                                    segment_vectors::MultiDenseVectorInternal::from(multi),
-                                ))
-                            }
-                            crate::grpc::qdrant::vector::Vector::Document(_) => {
-                                return Err(Status::invalid_argument(
-                                    "Document inference is not implemented".to_string(),
-                                ));
-                            }
-                            crate::grpc::qdrant::vector::Vector::Image(_) => {
-                                return Err(Status::invalid_argument(
-                                    "Image inference is not implemented".to_string(),
-                                ));
-                            }
-                        };
-                    }
-
-                    if indices.is_some() {
-                        return Err(Status::invalid_argument(
-                            "Sparse vector must be named".to_string(),
-                        ));
-                    }
-                    if let Some(vectors_count) = vectors_count {
-                        let dim = data.len() / vectors_count as usize;
-
-                        segment_vectors::VectorStructInternal::MultiDense(
-                            segment::data_types::vectors::MultiDenseVectorInternal::try_from_flatten(
-                                data,
-                                dim,
-                            ).map_err(|err| {
-                                Status::invalid_argument(format!("Unable to convert to multi-dense vector: {err}"))
-                            })?,
-                        )
-                    } else {
-                        segment_vectors::VectorStructInternal::Single(data)
-                    }
-                }
-                VectorsOptions::Vectors(vectors) => {
-                    segment_vectors::VectorStructInternal::Named(vectors.try_into()?)
-                }
-            }),
-            None => Err(Status::invalid_argument("No Provided")),
-        }
     }
 }
 

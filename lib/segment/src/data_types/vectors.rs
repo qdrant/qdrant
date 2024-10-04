@@ -216,6 +216,30 @@ impl<T> TypedMultiDenseVector<T> {
             dim,
         })
     }
+
+    pub fn try_from_matrix(matrix: Vec<Vec<T>>) -> Result<Self, OperationError> {
+        if matrix.is_empty() {
+            return Err(OperationError::ValidationError {
+                description: "MultiDenseVector cannot be empty".to_string(),
+            });
+        }
+        let dim = matrix[0].len();
+        // assert all vectors have the same dimension
+        if let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {
+            return Err(OperationError::WrongVectorDimension {
+                expected_dim: dim,
+                received_dim: bad_vec.len(),
+            });
+        }
+
+        let flattened_vectors = matrix.into_iter().flatten().collect_vec();
+        let multi_dense = TypedMultiDenseVector {
+            flattened_vectors,
+            dim,
+        };
+
+        Ok(multi_dense)
+    }
 }
 
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;

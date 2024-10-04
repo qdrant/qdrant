@@ -25,4 +25,5 @@ pub mod strings;
 
 pub mod debugger;
 
+pub mod inference;
 pub mod pyroscope_state;

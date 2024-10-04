@@ -12,7 +12,9 @@ use types::PseudoId;
 use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal, Record};
+use crate::operations::types::{
+    CollectionError, CollectionResult, PointRequestInternal, RecordInternal,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WithLookup {
@@ -33,7 +35,7 @@ pub async fn lookup_ids<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selection: &ShardSelectorInternal,
     timeout: Option<Duration>,
-) -> CollectionResult<HashMap<PseudoId, Record>>
+) -> CollectionResult<HashMap<PseudoId, RecordInternal>>
 where
     F: FnOnce(String) -> Fut,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,

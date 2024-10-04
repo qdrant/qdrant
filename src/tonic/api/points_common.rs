@@ -8,15 +8,19 @@ use api::grpc::qdrant::{
     points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
-    FacetCounts, FacetResponse, FieldType, GetPoints, GetResponse, PayloadIndexParams,
-    PointsOperationResponseInternal, PointsSelector, QueryBatchResponse, QueryGroupsResponse,
-    QueryPointGroups, QueryPoints, QueryResponse, ReadConsistency as ReadConsistencyGrpc,
-    RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups, RecommendPoints,
-    RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse,
-    SearchMatrixPoints, SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints,
-    SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    FacetCounts, FacetResponse, FieldType, GetPoints, GetResponse, GroupsResult,
+    PayloadIndexParams, PointsOperationResponseInternal, PointsSelector, QueryBatchResponse,
+    QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
+    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchResponse, SearchGroupsResponse, SearchMatrixPoints, SearchPointGroups, SearchPoints,
+    SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse,
+    UpdatePointVectors, UpsertPoints,
 };
-use api::rest::{OrderByInterface, ShardKeySelector};
+use api::rest::schema::{PointInsertOperations, PointsList};
+use api::rest::{
+    OrderByInterface, PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct,
+};
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -25,26 +29,24 @@ use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
 };
 use collection::operations::payload_ops::DeletePayload;
-use collection::operations::point_ops::{
-    self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
-};
+use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
 use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
-    RecommendExample, Record, ScrollRequestInternal,
+    RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
+use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{VectorStructInternal, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -53,6 +55,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
+use crate::common::inference::conversion::convert_point_struct;
 use crate::common::points::{
     do_clear_payload, do_core_search_points, do_count_points, do_create_index,
     do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
@@ -119,12 +122,11 @@ pub async fn upsert(
         ordering,
         shard_key_selector,
     } = upsert_points;
-    let points = points
-        .into_iter()
-        .map(|point| point.try_into())
-        .collect::<Result<_, _>>()?;
+
+    let points: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
+
     let operation = PointInsertOperations::PointsList(PointsList {
-        points,
+        points: points?,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     });
     let timing = Instant::now();
@@ -160,12 +162,13 @@ pub async fn sync(
         ordering,
     } = sync_points;
 
-    let points = points
-        .into_iter()
-        .map(|point| point.try_into())
-        .collect::<Result<_, _>>()?;
-
     let timing = Instant::now();
+
+    let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
+
+    // No actual inference should happen here, as we are just syncing existing points
+    // So this function is used for consistency only
+    let points = convert_point_struct(point_structs?).await?;
 
     let operation = PointSyncOperation {
         points,
@@ -261,13 +264,10 @@ pub async fn update_vectors(
             None => return Err(Status::invalid_argument("id is expected")),
         };
         let vector = match point.vectors {
-            Some(vectors) => VectorStructInternal::try_from(vectors)?,
+            Some(vectors) => VectorStruct::try_from(vectors)?,
             None => return Err(Status::invalid_argument("vectors is expected")),
         };
-        op_points.push(PointVectors {
-            id,
-            vector: api::rest::VectorStruct::from(vector),
-        });
+        op_points.push(PointVectors { id, vector });
     }
 
     let operation = UpdateVectors {
@@ -1216,8 +1216,11 @@ pub async fn search_groups(
     )
     .await?;
 
+    let groups_result = GroupsResult::try_from(groups_result)
+        .map_err(|e| Status::internal(format!("Failed to convert groups result: {e}")))?;
+
     let response = SearchGroupsResponse {
-        result: Some(groups_result.into()),
+        result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
     };
 
@@ -1420,8 +1423,11 @@ pub async fn recommend_groups(
     )
     .await?;
 
+    let groups_result = GroupsResult::try_from(groups_result)
+        .map_err(|e| Status::internal(format!("Failed to convert groups result: {e}")))?;
+
     let response = RecommendGroupsResponse {
-        result: Some(groups_result.into()),
+        result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
     };
 
@@ -1583,14 +1589,17 @@ pub async fn scroll(
     )
     .await?;
 
+    let points: Result<_, _> = scrolled_points
+        .points
+        .into_iter()
+        .map(api::grpc::qdrant::RetrievedPoint::try_from)
+        .collect();
+
+    let points = points.map_err(|e| Status::internal(format!("Failed to convert points: {e}")))?;
+
     let response = ScrollResponse {
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
-        result: scrolled_points
-            .points
-            .into_iter()
-            .map(Record::from)
-            .map(api::grpc::qdrant::RetrievedPoint::from)
-            .collect(),
+        result: points,
         time: timing.elapsed().as_secs_f64(),
     };
 
@@ -1854,8 +1863,11 @@ pub async fn query_groups(
     )
     .await?;
 
+    let grpc_group_result = GroupsResult::try_from(groups_result)
+        .map_err(|err| Status::internal(format!("failed to convert result: {err}")))?;
+
     let response = QueryGroupsResponse {
-        result: Some(groups_result.into()),
+        result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
     };
 

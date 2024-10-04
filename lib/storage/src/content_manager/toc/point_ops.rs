@@ -182,7 +182,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-    ) -> StorageResult<Vec<Record>> {
+    ) -> StorageResult<Vec<RecordInternal>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;

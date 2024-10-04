@@ -22,7 +22,7 @@ use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -226,7 +226,7 @@ impl ShardOperation for QueueProxyShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
             .scroll_by(
                 offset,
@@ -276,7 +276,7 @@ impl ShardOperation for QueueProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
             .retrieve(
                 request,
@@ -533,7 +533,7 @@ impl ShardOperation for Inner {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .scroll_by(
@@ -589,7 +589,7 @@ impl ShardOperation for Inner {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .retrieve(
