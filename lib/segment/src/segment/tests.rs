@@ -3,6 +3,7 @@ use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
 use common::tar_ext;
+use rstest::rstest;
 use tempfile::Builder;
 
 use super::*;
@@ -174,8 +175,12 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
-#[test]
-fn test_snapshot() {
+#[rstest]
+#[case::regular(SnapshotFormat::Regular)]
+#[case::streamable(SnapshotFormat::Streamable)]
+fn test_snapshot(#[case] format: SnapshotFormat) {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     let data = r#"
         {
             "name": "John Doe",
@@ -214,57 +219,63 @@ fn test_snapshot() {
         .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
         .unwrap();
 
-    let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_name = snapshot_dir.path().join("snapshot.tar");
-
-    // snapshotting!
-    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_name).unwrap());
-    segment
-        .take_snapshot(
-            temp_dir.path(),
-            &tar,
-            SnapshotFormat::Regular,
-            &mut HashSet::new(),
-        )
+    // The segment snapshot is a part of a parent collection/shard snapshot.
+    let parent_snapshot_tar = Builder::new()
+        .prefix("parent_snapshot")
+        .suffix(".tar")
+        .tempfile()
         .unwrap();
-    tar.blocking_finish().unwrap();
-
-    let mut tar = tar::Archive::new(File::open(&snapshot_name).unwrap());
-    let mut entries = tar.entries().unwrap();
-    let mut entry = entries.next().unwrap().unwrap();
-
-    // The archive entry should have a proper name.
     let segment_id = segment
         .current_path
         .file_stem()
         .and_then(|f| f.to_str())
         .unwrap();
-    assert_eq!(
-        entry.path().unwrap(),
-        PathBuf::from(format!("{segment_id}.tar"))
-    );
 
-    entry
-        .unpack(snapshot_dir.path().join("segment-snapshot.tar"))
+    // snapshotting!
+    let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&parent_snapshot_tar).unwrap());
+    segment
+        .take_snapshot(temp_dir.path(), &tar, format, &mut HashSet::new())
+        .unwrap();
+    tar.blocking_finish().unwrap();
+
+    let parent_snapshot_unpacked = Builder::new().prefix("parent_snapshot").tempdir().unwrap();
+    tar::Archive::new(File::open(&parent_snapshot_tar).unwrap())
+        .unpack(parent_snapshot_unpacked.path())
         .unwrap();
 
-    // Should be exactly only entry in the archive.
+    // Should be exactly one entry in the snapshot.
+    let mut entries = parent_snapshot_unpacked.path().read_dir().unwrap();
+    let entry = entries.next().unwrap().unwrap();
     assert!(entries.next().is_none());
 
-    // restore snapshot
-    Segment::restore_snapshot(
-        &snapshot_dir.path().join("segment-snapshot.tar"),
-        segment_id,
-    )
-    .unwrap();
+    match format {
+        SnapshotFormat::Ancient => unreachable!("The old days are gone"),
+        SnapshotFormat::Regular => {
+            assert_eq!(entry.file_name(), format!("{segment_id}.tar").as_str());
+            assert!(entry.path().is_file());
+        }
+        SnapshotFormat::Streamable => {
+            assert_eq!(entry.file_name(), segment_id);
+            assert!(entry.path().is_dir());
+        }
+    }
 
-    let restored_segment = load_segment(
-        &snapshot_dir.path().join(segment_id),
-        &AtomicBool::new(false),
-    )
-    .unwrap()
-    .unwrap();
+    // restore snapshot
+    Segment::restore_snapshot_in_place(&entry.path()).unwrap();
+
+    // Should be exactly one entry in the snapshot.
+    let mut entries = parent_snapshot_unpacked.path().read_dir().unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    assert!(entries.next().is_none());
+
+    // It should be unpacked entry, not tar archive.
+    assert!(entry.path().is_dir());
+    assert_eq!(entry.file_name(), segment_id);
+
+    let restored_segment = load_segment(&entry.path(), &AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
 
     // validate restored snapshot is the same as original segment
     assert_eq!(
