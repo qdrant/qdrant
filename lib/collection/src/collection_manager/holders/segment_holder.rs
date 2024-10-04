@@ -1646,7 +1646,7 @@ mod tests {
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-        let tar = tar_ext::BuilderExt::new(File::create(&snapshot_file).unwrap());
+        let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
         SegmentHolder::snapshot_all_segments(
             holder.clone(),
             segments_dir.path(),

@@ -76,7 +76,7 @@ impl Collection {
                 ))
             })?;
 
-        let tar = BuilderExt::new(File::create(snapshot_temp_arc_file.path())?);
+        let tar = BuilderExt::new_seekable_owned(File::create(snapshot_temp_arc_file.path())?);
 
         // Create snapshot of each shard
         {
