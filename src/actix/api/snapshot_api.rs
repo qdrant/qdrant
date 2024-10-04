@@ -2,7 +2,7 @@ use std::path::Path;
 
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
-use actix_web::{delete, get, post, put, web, HttpRequest, Responder, Result};
+use actix_web::{delete, get, post, put, web, HttpRequest, HttpResponse, Responder, Result};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
 use collection::common::sha_256::{hash_file, hashes_equal};
@@ -398,6 +398,27 @@ async fn create_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
+#[get("/collections/{collection}/shards/{shard}/snapshot")]
+async fn stream_shard_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, ShardId)>,
+    ActixAccess(access): ActixAccess,
+) -> Result<impl Responder, HttpError> {
+    // nothing to verify.
+    let pass = new_unchecked_verification_pass();
+
+    let (collection, shard) = path.into_inner();
+    let stream = common::snapshots::stream_shard_snapshot(
+        dispatcher.toc(&access, &pass).clone(),
+        access,
+        collection,
+        shard,
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().streaming(stream))
+}
+
 // TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
 #[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
@@ -568,6 +589,7 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(delete_collection_snapshot)
         .service(list_shard_snapshots)
         .service(create_shard_snapshot)
+        .service(stream_shard_snapshot)
         .service(recover_shard_snapshot)
         .service(upload_shard_snapshot)
         .service(download_shard_snapshot)

@@ -1,12 +1,16 @@
 use std::collections::HashSet;
 use std::fs::File;
 use std::path::Path;
+use std::sync::Arc;
 
+use bytes::Bytes;
 use common::tar_ext::BuilderExt;
+use futures::Stream;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::SnapshotFormat;
+use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
 use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
@@ -20,7 +24,9 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
-use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
+use crate::shards::shard_holder::{
+    shard_not_found_error, ShardHolder, ShardKeyMapping, SHARD_KEY_MAPPING_FILE,
+};
 use crate::shards::shard_versioning;
 
 impl Collection {
@@ -270,6 +276,20 @@ impl Collection {
             .await
             .create_shard_snapshot(&self.snapshots_path, &self.name(), shard_id, temp_dir)
             .await
+    }
+
+    pub async fn stream_shard_snapshot(
+        &self,
+        shard_id: ShardId,
+        temp_dir: &Path,
+    ) -> CollectionResult<impl Stream<Item = std::io::Result<Bytes>>> {
+        let shard = OwnedRwLockReadGuard::try_map(
+            Arc::clone(&self.shards_holder).read_owned().await,
+            |x| x.get_shard(&shard_id),
+        )
+        .map_err(|_| shard_not_found_error(shard_id))?;
+
+        ShardHolder::stream_shard_snapshot(shard, &self.name(), shard_id, temp_dir).await
     }
 
     /// # Cancel safety
