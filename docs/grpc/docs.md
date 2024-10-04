@@ -139,6 +139,8 @@
     - [DiscoverInput](#qdrant-DiscoverInput)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
     - [DiscoverResponse](#qdrant-DiscoverResponse)
+    - [Document](#qdrant-Document)
+    - [Document.OptionsEntry](#qdrant-Document-OptionsEntry)
     - [FacetCounts](#qdrant-FacetCounts)
     - [FacetHit](#qdrant-FacetHit)
     - [FacetResponse](#qdrant-FacetResponse)
@@ -155,6 +157,10 @@
     - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
+    - [Image](#qdrant-Image)
+    - [Image.OptionsEntry](#qdrant-Image-OptionsEntry)
+    - [InferenceObject](#qdrant-InferenceObject)
+    - [InferenceObject.OptionsEntry](#qdrant-InferenceObject-OptionsEntry)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
@@ -163,6 +169,8 @@
     - [MultiDenseVector](#qdrant-MultiDenseVector)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
+    - [NamedVectorsOutput](#qdrant-NamedVectorsOutput)
+    - [NamedVectorsOutput.VectorsEntry](#qdrant-NamedVectorsOutput-VectorsEntry)
     - [NestedCondition](#qdrant-NestedCondition)
     - [OrderBy](#qdrant-OrderBy)
     - [OrderValue](#qdrant-OrderValue)
@@ -242,7 +250,9 @@
     - [Vector](#qdrant-Vector)
     - [VectorExample](#qdrant-VectorExample)
     - [VectorInput](#qdrant-VectorInput)
+    - [VectorOutput](#qdrant-VectorOutput)
     - [Vectors](#qdrant-Vectors)
+    - [VectorsOutput](#qdrant-VectorsOutput)
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithLookup](#qdrant-WithLookup)
     - [WithPayloadSelector](#qdrant-WithPayloadSelector)
@@ -2445,6 +2455,39 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-Document"></a>
+
+### Document
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| text | [string](#string) |  | Text of the document |
+| model | [string](#string) | optional | Model name |
+| options | [Document.OptionsEntry](#qdrant-Document-OptionsEntry) | repeated | Model options |
+
+
+
+
+
+
+<a name="qdrant-Document-OptionsEntry"></a>
+
+### Document.OptionsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
 <a name="qdrant-FacetCounts"></a>
 
 ### FacetCounts
@@ -2719,6 +2762,72 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-Image"></a>
+
+### Image
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| image | [string](#string) |  | Image data, either base64 encoded or URL |
+| model | [string](#string) | optional | Model name |
+| options | [Image.OptionsEntry](#qdrant-Image-OptionsEntry) | repeated | Model options |
+
+
+
+
+
+
+<a name="qdrant-Image-OptionsEntry"></a>
+
+### Image.OptionsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-InferenceObject"></a>
+
+### InferenceObject
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| object | [Value](#qdrant-Value) |  | Object to infer |
+| model | [string](#string) | optional | Model name |
+| options | [InferenceObject.OptionsEntry](#qdrant-InferenceObject-OptionsEntry) | repeated | Model options |
+
+
+
+
+
+
+<a name="qdrant-InferenceObject-OptionsEntry"></a>
+
+### InferenceObject.OptionsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
 <a name="qdrant-IsEmptyCondition"></a>
 
 ### IsEmptyCondition
@@ -2844,6 +2953,37 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Vector](#qdrant-Vector) |  |  |
+
+
+
+
+
+
+<a name="qdrant-NamedVectorsOutput"></a>
+
+### NamedVectorsOutput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| vectors | [NamedVectorsOutput.VectorsEntry](#qdrant-NamedVectorsOutput-VectorsEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-NamedVectorsOutput-VectorsEntry"></a>
+
+### NamedVectorsOutput.VectorsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [VectorOutput](#qdrant-VectorOutput) |  |  |
 
 
 
@@ -3661,7 +3801,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  |  |
 | payload | [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry) | repeated |  |
-| vectors | [Vectors](#qdrant-Vectors) | optional |  |
+| vectors | [VectorsOutput](#qdrant-VectorsOutput) | optional |  |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
 | order_value | [OrderValue](#qdrant-OrderValue) | optional | Order-by value |
 
@@ -3698,7 +3838,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | payload | [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry) | repeated | Payload |
 | score | [float](#float) |  | Similarity score |
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
-| vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
+| vectors | [VectorsOutput](#qdrant-VectorsOutput) | optional | Vectors to search |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
 | order_value | [OrderValue](#qdrant-OrderValue) | optional | Order by value |
 
@@ -4240,9 +4380,15 @@ Legacy vector format, which determines the vector type by the configuration of i
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated | Vector data (flatten for multi vectors) |
-| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors |
-| vectors_count | [uint32](#uint32) | optional | Number of vectors per multi vector |
+| data | [float](#float) | repeated | Vector data (flatten for multi vectors), deprecated |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors, deprecated |
+| vectors_count | [uint32](#uint32) | optional | Number of vectors per multi vector, deprecated |
+| dense | [DenseVector](#qdrant-DenseVector) |  | Dense vector |
+| sparse | [SparseVector](#qdrant-SparseVector) |  | Sparse vector |
+| multi_dense | [MultiDenseVector](#qdrant-MultiDenseVector) |  | Multi dense vector |
+| document | [Document](#qdrant-Document) |  |  |
+| image | [Image](#qdrant-Image) |  |  |
+| object | [InferenceObject](#qdrant-InferenceObject) |  |  |
 
 
 
@@ -4277,6 +4423,29 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | dense | [DenseVector](#qdrant-DenseVector) |  |  |
 | sparse | [SparseVector](#qdrant-SparseVector) |  |  |
 | multi_dense | [MultiDenseVector](#qdrant-MultiDenseVector) |  |  |
+| document | [Document](#qdrant-Document) |  |  |
+| image | [Image](#qdrant-Image) |  |  |
+| object | [InferenceObject](#qdrant-InferenceObject) |  |  |
+
+
+
+
+
+
+<a name="qdrant-VectorOutput"></a>
+
+### VectorOutput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| data | [float](#float) | repeated | Vector data (flatten for multi vectors), deprecated |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors, deprecated |
+| vectors_count | [uint32](#uint32) | optional | Number of vectors per multi vector, deprecated |
+| dense | [DenseVector](#qdrant-DenseVector) |  | Dense vector |
+| sparse | [SparseVector](#qdrant-SparseVector) |  | Sparse vector |
+| multi_dense | [MultiDenseVector](#qdrant-MultiDenseVector) |  | Multi dense vector |
 
 
 
@@ -4293,6 +4462,22 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | ----- | ---- | ----- | ----------- |
 | vector | [Vector](#qdrant-Vector) |  |  |
 | vectors | [NamedVectors](#qdrant-NamedVectors) |  |  |
+
+
+
+
+
+
+<a name="qdrant-VectorsOutput"></a>
+
+### VectorsOutput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| vector | [VectorOutput](#qdrant-VectorOutput) |  |  |
+| vectors | [NamedVectorsOutput](#qdrant-NamedVectorsOutput) |  |  |
 
 
 
