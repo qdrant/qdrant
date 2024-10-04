@@ -311,10 +311,14 @@ impl TryFrom<grpc::VectorOutput> for VectorInternal {
         }
 
         if indices.is_some() {
-            return Err(OperationError::ValidationError {
-                description: "Sparse vector must be named".to_string(),
-            });
+            return Ok(VectorInternal::Sparse(
+                sparse::common::sparse_vector::SparseVector {
+                    values: data,
+                    indices: indices.unwrap().data,
+                },
+            ));
         }
+
         if let Some(vectors_count) = vectors_count {
             let dim = data.len() / vectors_count as usize;
             let multi = MultiDenseVectorInternal::try_from_flatten(data, dim)?;
