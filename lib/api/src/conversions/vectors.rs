@@ -310,11 +310,11 @@ impl TryFrom<grpc::VectorOutput> for VectorInternal {
             };
         }
 
-        if indices.is_some() {
+        if let Some(indices) = indices {
             return Ok(VectorInternal::Sparse(
                 sparse::common::sparse_vector::SparseVector {
                     values: data,
-                    indices: indices.unwrap().data,
+                    indices: indices.data,
                 },
             ));
         }
