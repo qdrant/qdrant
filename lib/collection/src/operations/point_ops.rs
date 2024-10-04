@@ -103,6 +103,52 @@ impl From<VectorPersisted> for VectorInternal {
     }
 }
 
+
+// General idea of having an extra layer of data structures after REST and gRPC
+// is to ensure that all vectors are inferenced and validated before they are persisted.
+//
+// This separation allows to have a single point, enforced by the type system,
+// where all Documents and other inference-able objects are resolved into raw vectors.
+//
+// Separation between VectorStructPersisted and VectorStructInternal is only needed
+// for legacy reasons, as the previous implementations wrote VectorStruct to WAL,
+// so we need an ability to read it back. VectorStructPersisted reproduces the same
+// structure as VectorStruct had in the previous versions.
+//
+//
+//        gRPC              REST API           ┌───┐              WAL
+//          │                  │               │ I │               ▲
+//          │                  │               │ n │               │
+//          │                  │               │ f │               │
+//  ┌───────▼───────┐    ┌─────▼──────┐        │ e │     ┌─────────┴───────────┐
+//  │ grpc::Vectors ├───►│VectorStruct├───────►│ r ├────►│VectorStructPersisted├─────┐
+//  └───────────────┘    └────────────┘        │ e │     └─────────────────────┘     │
+//                        Vectors              │ n │      Only Vectors               │
+//                        + Documents          │ c │                                 │
+//                        + Images             │ e │                                 │
+//                        + Other inference    └───┘                                 │
+//                        Implement JsonSchema                                       │
+//                                                       ┌─────────────────────┐     │
+//                                                       │                     ◄─────┘
+//                                                       │   Storage           │
+//                                                       │                     │
+//                        REST API Response              └────────┬────────────┘
+//                             ▲                                  │
+//                             │                                  │
+//                      ┌──────┴──────────────┐         ┌─────────▼───────────┐
+//                      │ VectorStructOutput  ◄───┬─────┤VectorStructInternal │
+//                      └─────────────────────┘   │     └─────────────────────┘
+//                       Only Vectors             │      Only Vectors
+//                       Implement JsonSchema     │      Optimized for search
+//                                                │
+//                                                │
+//                      ┌─────────────────────┐   │
+//                      │ grpc::VectorsOutput ◄───┘
+//                      └───────────┬─────────┘
+//                                  │
+//                                  ▼
+//                              gPRC Response
+
 /// Data structure for point vectors, as it is persisted in WAL
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(untagged, rename_all = "snake_case")]
