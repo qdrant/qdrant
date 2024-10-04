@@ -13,7 +13,7 @@ use collection::operations::types::{
     PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryRequest, Query, VectorInput, VectorQuery,
+    CollectionPrefetch, CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
@@ -129,7 +129,7 @@ impl<'a> CollectionAccessView<'a> {
 
     fn check_vector_query(
         &self,
-        vector_query: &VectorQuery<VectorInput>,
+        vector_query: &VectorQuery<VectorInputInternal>,
     ) -> Result<(), StorageError> {
         match vector_query {
             VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
@@ -153,10 +153,10 @@ impl<'a> CollectionAccessView<'a> {
         Ok(())
     }
 
-    fn check_vector_input(&self, vector_input: &VectorInput) -> Result<(), StorageError> {
+    fn check_vector_input(&self, vector_input: &VectorInputInternal) -> Result<(), StorageError> {
         match vector_input {
-            VectorInput::Vector(_) => Ok(()),
-            VectorInput::Id(_) => self.check_whole_access(),
+            VectorInputInternal::Vector(_) => Ok(()),
+            VectorInputInternal::Id(_) => self.check_whole_access(),
         }
     }
 }

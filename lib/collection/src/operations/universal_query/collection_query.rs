@@ -54,7 +54,7 @@ impl CollectionQueryRequest {
 /// Lightweight representation of a query request to implement the [RetrieveRequest] trait.
 #[derive(Debug)]
 pub struct CollectionQueryResolveRequest<'a> {
-    pub vector_query: &'a VectorQuery<VectorInput>,
+    pub vector_query: &'a VectorQuery<VectorInputInternal>,
     pub lookup_from: Option<LookupLocation>,
     pub using: String,
 }
@@ -80,7 +80,7 @@ pub struct CollectionQueryGroupsRequest {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Query {
     /// Score points against some vector(s)
-    Vector(VectorQuery<VectorInput>),
+    Vector(VectorQuery<VectorInputInternal>),
 
     /// Reciprocal rank fusion
     Fusion(Fusion),
@@ -118,16 +118,16 @@ impl Query {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
-pub enum VectorInput {
+pub enum VectorInputInternal {
     Id(PointIdType),
     Vector(VectorInternal),
 }
 
-impl VectorInput {
+impl VectorInputInternal {
     pub fn as_id(&self) -> Option<&PointIdType> {
         match self {
-            VectorInput::Id(id) => Some(id),
-            VectorInput::Vector(_) => None,
+            VectorInputInternal::Id(id) => Some(id),
+            VectorInputInternal::Vector(_) => None,
         }
     }
 }
@@ -154,8 +154,8 @@ impl<T> VectorQuery<T> {
     }
 }
 
-impl VectorQuery<VectorInput> {
-    /// Turns all [VectorInput]s into [VectorInternal]s, using the provided [ReferencedVectors] to look up the vectors.
+impl VectorQuery<VectorInputInternal> {
+    /// Turns all [VectorInputInternal]s into [VectorInternal]s, using the provided [ReferencedVectors] to look up the vectors.
     ///
     /// Will panic if the ids are not found in the [ReferencedVectors].
     fn ids_into_vectors(
@@ -230,7 +230,7 @@ impl VectorQuery<VectorInput> {
 
     /// Resolves the references in the RecoQuery into actual vectors.
     fn resolve_reco_reference(
-        reco_query: RecoQuery<VectorInput>,
+        reco_query: RecoQuery<VectorInputInternal>,
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
@@ -341,7 +341,7 @@ impl CollectionPrefetch {
 
         if !lookup_other_collection {
             if let Some(Query::Vector(vector_query)) = &self.query {
-                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
                     refs.push(*id);
                 }
                 refs.extend(vector_query.get_referenced_ids())
@@ -443,7 +443,7 @@ impl CollectionQueryRequest {
 
         if !lookup_other_collection {
             if let Some(Query::Vector(vector_query)) = &self.query {
-                if let VectorQuery::Nearest(VectorInput::Id(id)) = vector_query {
+                if let VectorQuery::Nearest(VectorInputInternal::Id(id)) = vector_query {
                     refs.push(*id);
                 }
                 refs.extend(vector_query.get_referenced_ids())
@@ -682,7 +682,7 @@ mod from_rest {
         }
     }
 
-    impl From<rest::RecommendInput> for VectorQuery<VectorInput> {
+    impl From<rest::RecommendInput> for VectorQuery<VectorInputInternal> {
         fn from(value: rest::RecommendInput) -> Self {
             let rest::RecommendInput {
                 positive,
@@ -701,7 +701,7 @@ mod from_rest {
         }
     }
 
-    impl From<rest::DiscoverInput> for VectorQuery<VectorInput> {
+    impl From<rest::DiscoverInput> for VectorQuery<VectorInputInternal> {
         fn from(value: rest::DiscoverInput) -> Self {
             let rest::DiscoverInput { target, context } = value;
 
@@ -716,7 +716,7 @@ mod from_rest {
         }
     }
 
-    impl From<rest::ContextInput> for VectorQuery<VectorInput> {
+    impl From<rest::ContextInput> for VectorQuery<VectorInputInternal> {
         fn from(value: rest::ContextInput) -> Self {
             let rest::ContextInput(pairs) = value;
 
@@ -730,17 +730,17 @@ mod from_rest {
         }
     }
 
-    impl From<rest::VectorInput> for VectorInput {
+    impl From<rest::VectorInput> for VectorInputInternal {
         fn from(value: rest::VectorInput) -> Self {
             match value {
-                rest::VectorInput::Id(id) => VectorInput::Id(id),
+                rest::VectorInput::Id(id) => VectorInputInternal::Id(id),
                 rest::VectorInput::DenseVector(dense) => {
-                    VectorInput::Vector(VectorInternal::Dense(dense))
+                    VectorInputInternal::Vector(VectorInternal::Dense(dense))
                 }
                 rest::VectorInput::SparseVector(sparse) => {
-                    VectorInput::Vector(VectorInternal::Sparse(sparse))
+                    VectorInputInternal::Vector(VectorInternal::Sparse(sparse))
                 }
-                rest::VectorInput::MultiDenseVector(multi_dense) => VectorInput::Vector(
+                rest::VectorInput::MultiDenseVector(multi_dense) => VectorInputInternal::Vector(
                     // TODO(universal-query): Validate at API level
                     VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(
                         multi_dense,
@@ -755,12 +755,12 @@ mod from_rest {
     }
 
     /// Circular dependencies prevents us from implementing `From` directly
-    fn context_pair_from_rest(value: rest::ContextPair) -> ContextPair<VectorInput> {
+    fn context_pair_from_rest(value: rest::ContextPair) -> ContextPair<VectorInputInternal> {
         let rest::ContextPair { positive, negative } = value;
 
         ContextPair {
-            positive: VectorInput::from(positive),
-            negative: VectorInput::from(negative),
+            positive: VectorInputInternal::from(positive),
+            negative: VectorInputInternal::from(negative),
         }
     }
 
@@ -956,7 +956,7 @@ pub mod from_grpc {
         }
     }
 
-    impl TryFrom<grpc::RecommendInput> for VectorQuery<VectorInput> {
+    impl TryFrom<grpc::RecommendInput> for VectorQuery<VectorInputInternal> {
         type Error = Status;
 
         fn try_from(value: grpc::RecommendInput) -> Result<Self, Self::Error> {
@@ -993,13 +993,13 @@ pub mod from_grpc {
         }
     }
 
-    impl TryFrom<grpc::DiscoverInput> for VectorQuery<VectorInput> {
+    impl TryFrom<grpc::DiscoverInput> for VectorQuery<VectorInputInternal> {
         type Error = Status;
 
         fn try_from(value: grpc::DiscoverInput) -> Result<Self, Self::Error> {
             let grpc::DiscoverInput { target, context } = value;
 
-            let target = VectorInput::try_from(
+            let target = VectorInputInternal::try_from(
                 target
                     .ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?,
             )?;
@@ -1016,7 +1016,7 @@ pub mod from_grpc {
         }
     }
 
-    impl TryFrom<grpc::ContextInput> for VectorQuery<VectorInput> {
+    impl TryFrom<grpc::ContextInput> for VectorQuery<VectorInputInternal> {
         type Error = Status;
 
         fn try_from(value: grpc::ContextInput) -> Result<Self, Self::Error> {
@@ -1026,7 +1026,7 @@ pub mod from_grpc {
         }
     }
 
-    impl TryFrom<grpc::VectorInput> for VectorInput {
+    impl TryFrom<grpc::VectorInput> for VectorInputInternal {
         type Error = Status;
 
         fn try_from(value: grpc::VectorInput) -> Result<Self, Self::Error> {
@@ -1037,14 +1037,14 @@ pub mod from_grpc {
                 .ok_or_else(|| Status::invalid_argument("VectorInput variant is missing"))?;
 
             let vector_input = match variant {
-                Variant::Id(id) => VectorInput::Id(TryFrom::try_from(id)?),
+                Variant::Id(id) => VectorInputInternal::Id(TryFrom::try_from(id)?),
                 Variant::Dense(dense) => {
-                    VectorInput::Vector(VectorInternal::Dense(From::from(dense)))
+                    VectorInputInternal::Vector(VectorInternal::Dense(From::from(dense)))
                 }
                 Variant::Sparse(sparse) => {
-                    VectorInput::Vector(VectorInternal::Sparse(From::from(sparse)))
+                    VectorInputInternal::Vector(VectorInternal::Sparse(From::from(sparse)))
                 }
-                Variant::MultiDense(multi_dense) => VectorInput::Vector(
+                Variant::MultiDense(multi_dense) => VectorInputInternal::Vector(
                     // TODO(universal-query): Validate at API level
                     VectorInternal::MultiDense(From::from(multi_dense)),
                 ),
@@ -1072,7 +1072,7 @@ pub mod from_grpc {
     /// Circular dependencies prevents us from implementing `TryFrom` directly
     fn context_query_from_grpc(
         value: grpc::ContextInput,
-    ) -> Result<ContextQuery<VectorInput>, Status> {
+    ) -> Result<ContextQuery<VectorInputInternal>, Status> {
         let grpc::ContextInput { pairs } = value;
 
         Ok(ContextQuery {
@@ -1086,7 +1086,7 @@ pub mod from_grpc {
     /// Circular dependencies prevents us from implementing `TryFrom` directly
     fn context_pair_from_grpc(
         value: grpc::ContextInputPair,
-    ) -> Result<ContextPair<VectorInput>, Status> {
+    ) -> Result<ContextPair<VectorInputInternal>, Status> {
         let grpc::ContextInputPair { positive, negative } = value;
 
         let positive =
@@ -1095,8 +1095,8 @@ pub mod from_grpc {
             negative.ok_or_else(|| Status::invalid_argument("ContextPair negative is missing"))?;
 
         Ok(ContextPair {
-            positive: VectorInput::try_from(positive)?,
-            negative: VectorInput::try_from(negative)?,
+            positive: VectorInputInternal::try_from(positive)?,
+            negative: VectorInputInternal::try_from(negative)?,
         })
     }
 }

@@ -19,7 +19,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::collection_query;
 use crate::operations::universal_query::collection_query::{
-    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInput,
+    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInputInternal,
 };
 
 pub async fn retrieve_points(
@@ -157,11 +157,11 @@ impl ReferencedVectors {
         &'a self,
         collection_name: Option<&'a String>,
         vector_name: &str,
-        vector_input: VectorInput,
+        vector_input: VectorInputInternal,
     ) -> Option<VectorInternal> {
         match vector_input {
-            VectorInput::Vector(vector) => Some(vector),
-            VectorInput::Id(vid) => {
+            VectorInputInternal::Vector(vector) => Some(vector),
+            VectorInputInternal::Id(vid) => {
                 let rec = self.get(collection_name, vid)?;
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
