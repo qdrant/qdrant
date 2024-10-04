@@ -126,6 +126,16 @@ impl ShardHolder {
         if let Some(replica_set) = self.shards.remove(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             drop(replica_set);
+
+            // Explicitly drop shard config file first
+            // If removing all shard files at once, it may be possible for the shard configuration
+            // file to be left behind if the process is killed in the middle. We must avoid this so
+            // we don't attempt to load this shard anymore on restart.
+            let shard_config_path = ShardConfig::get_config_path(&shard_path);
+            if let Err(err) = tokio::fs::remove_file(shard_config_path).await {
+                log::error!("Failed to remove shard config file before removing the rest of the files: {err}");
+            }
+
             tokio::fs::remove_dir_all(shard_path).await?;
         }
         Ok(())
