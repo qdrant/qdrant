@@ -37,6 +37,8 @@ pub struct RunningEnvironmentTelemetry {
     ram_size: Option<usize>,
     disk_size: Option<usize>,
     cpu_flags: String,
+    cpu_endian_compiled: CpuEndian,
+    cpu_endian_runtime: CpuEndian,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -130,6 +132,38 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         ram_size: sys_info::mem_info().ok().map(|x| x.total as usize),
         disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
         cpu_flags: cpu_flags.join(","),
+        cpu_endian_compiled: CpuEndian::compiled(),
+        cpu_endian_runtime: CpuEndian::runtime(),
+    }
+}
+
+#[derive(Serialize, Clone, Copy, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CpuEndian {
+    Little,
+    Big,
+    Other,
+}
+
+impl CpuEndian {
+    /// Compile time byte order
+    pub const fn compiled() -> Self {
+        if cfg!(target_endian = "little") {
+            CpuEndian::Little
+        } else if cfg!(target_endian = "big") {
+            CpuEndian::Big
+        } else {
+            CpuEndian::Other
+        }
+    }
+
+    /// Runtime byte order
+    pub fn runtime() -> Self {
+        match cpu_endian::working() {
+            cpu_endian::Endian::Little => CpuEndian::Little,
+            cpu_endian::Endian::Big => CpuEndian::Big,
+            cpu_endian::Endian::Minor => CpuEndian::Other,
+        }
     }
 }
 
@@ -168,6 +202,8 @@ impl Anonymize for RunningEnvironmentTelemetry {
             ram_size: self.ram_size.anonymize(),
             disk_size: self.disk_size.anonymize(),
             cpu_flags: self.cpu_flags.clone(),
+            cpu_endian_compiled: self.cpu_endian_compiled,
+            cpu_endian_runtime: self.cpu_endian_runtime,
         }
     }
 }
