@@ -20,12 +20,12 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, Document, FacetHit, FacetHitInternal,
-    FacetValue, FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString,
-    GroupId, Image, InferenceObject, KeywordIndexParams, LookupLocation, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
-    UuidIndexParams, VectorsOutput, WithLookup,
+    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
+    FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
+    KeywordIndexParams, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
+    OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint, SearchMatrixPair,
+    SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams,
+    VectorsOutput, WithLookup,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -62,7 +62,7 @@ pub fn dict_to_proto(dict: HashMap<String, serde_json::Value>) -> HashMap<String
         .collect()
 }
 
-fn json_to_proto(json_value: serde_json::Value) -> Value {
+pub fn json_to_proto(json_value: serde_json::Value) -> Value {
     match json_value {
         serde_json::Value::Null => Value {
             kind: Some(Kind::NullValue(0)),
@@ -751,81 +751,6 @@ impl TryFrom<PointStruct> for rest::PointStruct {
                 .try_into()?,
             vector: vector_struct,
             payload: converted_payload,
-        })
-    }
-}
-
-impl From<rest::Document> for Document {
-    fn from(document: rest::Document) -> Self {
-        Self {
-            text: document.text,
-            model: document.model,
-            options: document.options.map(dict_to_proto).unwrap_or_default(),
-        }
-    }
-}
-
-impl TryFrom<Document> for rest::Document {
-    type Error = Status;
-
-    fn try_from(document: Document) -> Result<Self, Self::Error> {
-        Ok(Self {
-            text: document.text,
-            model: document.model,
-            options: Some(proto_dict_to_json(document.options)?),
-        })
-    }
-}
-
-impl From<rest::Image> for Image {
-    fn from(image: rest::Image) -> Self {
-        Self {
-            image: image.image,
-            model: image.model,
-            options: image.options.map(dict_to_proto).unwrap_or_default(),
-        }
-    }
-}
-
-impl TryFrom<Image> for rest::Image {
-    type Error = Status;
-
-    fn try_from(image: Image) -> Result<Self, Self::Error> {
-        Ok(Self {
-            image: image.image,
-            model: image.model,
-            options: Some(proto_dict_to_json(image.options)?),
-        })
-    }
-}
-
-impl From<rest::InferenceObject> for InferenceObject {
-    fn from(object: rest::InferenceObject) -> Self {
-        Self {
-            object: Some(json_to_proto(object.object)),
-            model: object.model,
-            options: object.options.map(dict_to_proto).unwrap_or_default(),
-        }
-    }
-}
-
-impl TryFrom<InferenceObject> for rest::InferenceObject {
-    type Error = Status;
-
-    fn try_from(object: InferenceObject) -> Result<Self, Self::Error> {
-        let InferenceObject {
-            object,
-            model,
-            options,
-        } = object;
-
-        let object =
-            object.ok_or_else(|| Status::invalid_argument("Empty object is not allowed"))?;
-
-        Ok(Self {
-            object: proto_to_json(object)?,
-            model,
-            options: Some(proto_dict_to_json(options)?),
         })
     }
 }
