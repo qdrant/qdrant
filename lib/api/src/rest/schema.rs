@@ -318,6 +318,8 @@ pub enum VectorInput {
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

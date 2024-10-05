@@ -12801,6 +12801,12 @@
           },
           {
             "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
           }
         ]
       },

@@ -212,6 +212,14 @@ fn convert_vector_input(vector: rest::VectorInput) -> VectorInputInternal {
             // If this is reached, it means validation failed
             unimplemented!("Document inference is not implemented")
         }
+        rest::VectorInput::Image(_) => {
+            // If this is reached, it means validation failed
+            unimplemented!("Image inference is not implemented")
+        }
+        rest::VectorInput::Object(_) => {
+            // If this is reached, it means validation failed
+            unimplemented!("Object inference is not implemented")
+        }
     }
 }
 
