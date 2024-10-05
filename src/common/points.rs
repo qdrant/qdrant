@@ -47,7 +47,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
 
-use crate::common::inference::conversion::{
+use crate::common::inference::update_requests::{
     convert_batch, convert_point_struct, convert_point_vectors,
 };
 
