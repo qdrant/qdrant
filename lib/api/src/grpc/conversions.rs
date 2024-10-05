@@ -35,16 +35,16 @@ use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
-    Condition, DenseVector, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon,
-    GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams,
-    IsEmptyCondition, IsNullCondition, ListCollectionsResponse, Match, MinShould, MultiDenseVector,
-    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
-    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct,
-    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
-    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
-    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
+    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
+    IsNullCondition, ListCollectionsResponse, Match, MinShould, NamedVectors, NestedCondition,
+    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
+    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
+    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
+    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
+    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig, TextIndexParams,
+    TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount, VectorsSelector,
+    WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
 
@@ -1743,116 +1743,6 @@ impl From<UpdateResult> for UpdateResultInternal {
             status: res.status,
             clock_tag: None,
         }
-    }
-}
-
-impl From<DenseVector> for segment_vectors::DenseVector {
-    fn from(value: DenseVector) -> Self {
-        value.data
-    }
-}
-
-impl From<segment_vectors::DenseVector> for DenseVector {
-    fn from(value: segment_vectors::DenseVector) -> Self {
-        Self { data: value }
-    }
-}
-
-impl From<sparse::common::sparse_vector::SparseVector> for SparseVector {
-    fn from(value: sparse::common::sparse_vector::SparseVector) -> Self {
-        let sparse::common::sparse_vector::SparseVector { indices, values } = value;
-
-        Self { values, indices }
-    }
-}
-
-impl From<SparseVector> for sparse::common::sparse_vector::SparseVector {
-    fn from(value: SparseVector) -> Self {
-        let SparseVector { indices, values } = value;
-
-        Self { indices, values }
-    }
-}
-
-impl From<segment_vectors::MultiDenseVectorInternal> for MultiDenseVector {
-    fn from(value: segment_vectors::MultiDenseVectorInternal) -> Self {
-        let vectors = value
-            .flattened_vectors
-            .into_iter()
-            .chunks(value.dim)
-            .into_iter()
-            .map(Iterator::collect::<Vec<_>>)
-            .map(DenseVector::from)
-            .collect();
-        Self { vectors }
-    }
-}
-
-impl From<MultiDenseVector> for segment_vectors::MultiDenseVectorInternal {
-    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVectorInternal::new_unchecked), but rewritten to avoid collecting twice
-    fn from(value: MultiDenseVector) -> Self {
-        let dim = value.vectors[0].data.len();
-        let inner_vector = value
-            .vectors
-            .into_iter()
-            .flat_map(segment_vectors::DenseVector::from)
-            .collect();
-        Self {
-            flattened_vectors: inner_vector,
-            dim,
-        }
-    }
-}
-
-impl From<segment_vectors::VectorInternal> for RawVector {
-    fn from(value: segment_vectors::VectorInternal) -> Self {
-        use segment_vectors::VectorInternal;
-
-        use crate::grpc::qdrant::raw_vector::Variant;
-
-        let variant = match value {
-            VectorInternal::Dense(vector) => Variant::Dense(DenseVector::from(vector)),
-            VectorInternal::Sparse(vector) => Variant::Sparse(SparseVector::from(vector)),
-            VectorInternal::MultiDense(vector) => {
-                Variant::MultiDense(MultiDenseVector::from(vector))
-            }
-        };
-
-        Self {
-            variant: Some(variant),
-        }
-    }
-}
-
-impl TryFrom<RawVector> for segment_vectors::VectorInternal {
-    type Error = Status;
-
-    fn try_from(value: RawVector) -> Result<Self, Self::Error> {
-        use crate::grpc::qdrant::raw_vector::Variant;
-
-        let variant = value
-            .variant
-            .ok_or_else(|| Status::invalid_argument("No vector variant provided"))?;
-
-        let vector = match variant {
-            Variant::Dense(dense) => {
-                segment_vectors::VectorInternal::Dense(segment_vectors::DenseVector::from(dense))
-            }
-            Variant::Sparse(sparse) => segment_vectors::VectorInternal::Sparse(
-                sparse::common::sparse_vector::SparseVector::from(sparse),
-            ),
-            Variant::MultiDense(multi_dense) => segment_vectors::VectorInternal::MultiDense(
-                segment_vectors::MultiDenseVectorInternal::from(multi_dense),
-            ),
-        };
-
-        Ok(vector)
-    }
-}
-
-impl From<segment_vectors::NamedVectorStruct> for RawVector {
-    fn from(value: segment_vectors::NamedVectorStruct) -> Self {
-        Self::from(value.to_vector())
     }
 }
 

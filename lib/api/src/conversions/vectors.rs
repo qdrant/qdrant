@@ -1,12 +1,12 @@
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
-    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+    DenseVector, MultiDenseVectorInternal, NamedVectorStruct, VectorInternal, VectorStructInternal,
 };
+use sparse::common::sparse_vector::SparseVector;
 use tonic::Status;
 
 use crate::grpc::qdrant as grpc;
-use crate::grpc::qdrant::Vector;
 use crate::rest::schema as rest;
 
 fn convert_to_plain_multi_vector(
@@ -460,7 +460,7 @@ impl From<VectorStructInternal> for grpc::Vectors {
 impl TryFrom<grpc::Vector> for VectorInternal {
     type Error = Status;
 
-    fn try_from(vector: Vector) -> Result<Self, Self::Error> {
+    fn try_from(vector: grpc::Vector) -> Result<Self, Self::Error> {
         // sparse vector
         if let Some(indices) = vector.indices {
             return Ok(VectorInternal::Sparse(
@@ -487,5 +487,111 @@ impl TryFrom<grpc::Vector> for VectorInternal {
 
         // dense vector
         Ok(VectorInternal::Dense(vector.data))
+    }
+}
+
+impl From<grpc::DenseVector> for DenseVector {
+    fn from(value: grpc::DenseVector) -> Self {
+        value.data
+    }
+}
+
+impl From<DenseVector> for grpc::DenseVector {
+    fn from(value: DenseVector) -> Self {
+        Self { data: value }
+    }
+}
+
+impl From<SparseVector> for grpc::SparseVector {
+    fn from(value: SparseVector) -> Self {
+        let SparseVector { indices, values } = value;
+
+        Self { values, indices }
+    }
+}
+
+impl From<grpc::SparseVector> for SparseVector {
+    fn from(value: grpc::SparseVector) -> Self {
+        let grpc::SparseVector { indices, values } = value;
+
+        Self { indices, values }
+    }
+}
+
+impl From<MultiDenseVectorInternal> for grpc::MultiDenseVector {
+    fn from(value: MultiDenseVectorInternal) -> Self {
+        let vectors = value
+            .flattened_vectors
+            .into_iter()
+            .chunks(value.dim)
+            .into_iter()
+            .map(Iterator::collect::<Vec<_>>)
+            .map(grpc::DenseVector::from)
+            .collect();
+        Self { vectors }
+    }
+}
+
+impl From<grpc::MultiDenseVector> for MultiDenseVectorInternal {
+    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVectorInternal::new_unchecked), but rewritten to avoid collecting twice
+    fn from(value: grpc::MultiDenseVector) -> Self {
+        let dim = value.vectors[0].data.len();
+        let inner_vector = value
+            .vectors
+            .into_iter()
+            .flat_map(DenseVector::from)
+            .collect();
+        Self {
+            flattened_vectors: inner_vector,
+            dim,
+        }
+    }
+}
+
+impl From<VectorInternal> for grpc::RawVector {
+    fn from(value: VectorInternal) -> Self {
+        use crate::grpc::qdrant::raw_vector::Variant;
+
+        let variant = match value {
+            VectorInternal::Dense(vector) => Variant::Dense(grpc::DenseVector::from(vector)),
+            VectorInternal::Sparse(vector) => Variant::Sparse(grpc::SparseVector::from(vector)),
+            VectorInternal::MultiDense(vector) => {
+                Variant::MultiDense(grpc::MultiDenseVector::from(vector))
+            }
+        };
+
+        Self {
+            variant: Some(variant),
+        }
+    }
+}
+
+impl TryFrom<grpc::RawVector> for VectorInternal {
+    type Error = Status;
+
+    fn try_from(value: grpc::RawVector) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::raw_vector::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("No vector variant provided"))?;
+
+        let vector = match variant {
+            Variant::Dense(dense) => VectorInternal::Dense(DenseVector::from(dense)),
+            Variant::Sparse(sparse) => {
+                VectorInternal::Sparse(sparse::common::sparse_vector::SparseVector::from(sparse))
+            }
+            Variant::MultiDense(multi_dense) => {
+                VectorInternal::MultiDense(MultiDenseVectorInternal::from(multi_dense))
+            }
+        };
+
+        Ok(vector)
+    }
+}
+
+impl From<NamedVectorStruct> for grpc::RawVector {
+    fn from(value: NamedVectorStruct) -> Self {
+        Self::from(value.to_vector())
     }
 }
