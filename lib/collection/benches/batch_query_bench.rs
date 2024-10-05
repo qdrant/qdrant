@@ -7,7 +7,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::universal_query::shard_query::{
-    Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+    FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
@@ -254,7 +254,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                                     score_threshold: None,
                                 },
                             ],
-                            query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+                            query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
                             filter: filter.clone(),
                             params: None,
                             limit: 10,

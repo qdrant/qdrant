@@ -46,7 +46,7 @@ impl ShardQueryRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Fusion {
+pub enum FusionInternal {
     /// Reciprocal Rank Fusion
     Rrf,
     /// Distribution-based score fusion
@@ -54,7 +54,7 @@ pub enum Fusion {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Sample {
+pub enum SampleInternal {
     Random,
 }
 
@@ -65,21 +65,21 @@ pub enum ScoringQuery {
     Vector(QueryEnum),
 
     /// Reciprocal rank fusion
-    Fusion(Fusion),
+    Fusion(FusionInternal),
 
     /// Order by a payload field
     OrderBy(OrderBy),
 
     /// Sample points
-    Sample(Sample),
+    Sample(SampleInternal),
 }
 
 impl ScoringQuery {
     pub fn needs_intermediate_results(&self) -> bool {
         match self {
             Self::Fusion(fusion) => match fusion {
-                Fusion::Rrf => true,
-                Fusion::Dbsf => true,
+                FusionInternal::Rrf => true,
+                FusionInternal::Dbsf => true,
             },
             Self::Vector(_) | Self::OrderBy(_) | Self::Sample(_) => false,
         }
@@ -112,11 +112,11 @@ impl ScoringQuery {
                     }
                 }
                 ScoringQuery::Fusion(fusion) => match fusion {
-                    Fusion::Rrf | Fusion::Dbsf => Some(Order::LargeBetter),
+                    FusionInternal::Rrf | FusionInternal::Dbsf => Some(Order::LargeBetter),
                 },
                 ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
                 // Random sample does not require ordering
-                ScoringQuery::Sample(Sample::Random) => None,
+                ScoringQuery::Sample(SampleInternal::Random) => None,
             },
             None => {
                 // Order by ID
@@ -297,7 +297,7 @@ impl QueryEnum {
     }
 }
 
-impl TryFrom<i32> for Fusion {
+impl TryFrom<i32> for FusionInternal {
     type Error = tonic::Status;
 
     fn try_from(fusion: i32) -> Result<Self, Self::Error> {
@@ -305,11 +305,11 @@ impl TryFrom<i32> for Fusion {
             tonic::Status::invalid_argument(format!("invalid fusion type value {fusion}",))
         })?;
 
-        Ok(Fusion::from(fusion))
+        Ok(FusionInternal::from(fusion))
     }
 }
 
-impl TryFrom<i32> for Sample {
+impl TryFrom<i32> for SampleInternal {
     type Error = tonic::Status;
 
     fn try_from(sample: i32) -> Result<Self, Self::Error> {
@@ -317,40 +317,40 @@ impl TryFrom<i32> for Sample {
             tonic::Status::invalid_argument(format!("invalid sample type value {sample}",))
         })?;
 
-        Ok(Sample::from(sample))
+        Ok(SampleInternal::from(sample))
     }
 }
 
-impl From<api::grpc::qdrant::Fusion> for Fusion {
+impl From<api::grpc::qdrant::Fusion> for FusionInternal {
     fn from(fusion: api::grpc::qdrant::Fusion) -> Self {
         match fusion {
-            api::grpc::qdrant::Fusion::Rrf => Fusion::Rrf,
-            api::grpc::qdrant::Fusion::Dbsf => Fusion::Dbsf,
+            api::grpc::qdrant::Fusion::Rrf => FusionInternal::Rrf,
+            api::grpc::qdrant::Fusion::Dbsf => FusionInternal::Dbsf,
         }
     }
 }
 
-impl From<Fusion> for api::grpc::qdrant::Fusion {
-    fn from(fusion: Fusion) -> Self {
+impl From<FusionInternal> for api::grpc::qdrant::Fusion {
+    fn from(fusion: FusionInternal) -> Self {
         match fusion {
-            Fusion::Rrf => api::grpc::qdrant::Fusion::Rrf,
-            Fusion::Dbsf => api::grpc::qdrant::Fusion::Dbsf,
+            FusionInternal::Rrf => api::grpc::qdrant::Fusion::Rrf,
+            FusionInternal::Dbsf => api::grpc::qdrant::Fusion::Dbsf,
         }
     }
 }
 
-impl From<Sample> for api::grpc::qdrant::Sample {
-    fn from(value: Sample) -> Self {
+impl From<SampleInternal> for api::grpc::qdrant::Sample {
+    fn from(value: SampleInternal) -> Self {
         match value {
-            Sample::Random => api::grpc::qdrant::Sample::Random,
+            SampleInternal::Random => api::grpc::qdrant::Sample::Random,
         }
     }
 }
 
-impl From<api::grpc::qdrant::Sample> for Sample {
+impl From<api::grpc::qdrant::Sample> for SampleInternal {
     fn from(value: api::grpc::qdrant::Sample) -> Self {
         match value {
-            api::grpc::qdrant::Sample::Random => Sample::Random,
+            api::grpc::qdrant::Sample::Random => SampleInternal::Random,
         }
     }
 }
@@ -368,13 +368,13 @@ impl ScoringQuery {
                 ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
             }
             grpc::query_shard_points::query::Score::Fusion(fusion) => {
-                ScoringQuery::Fusion(Fusion::try_from(fusion)?)
+                ScoringQuery::Fusion(FusionInternal::try_from(fusion)?)
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
             }
             grpc::query_shard_points::query::Score::Sample(sample) => {
-                ScoringQuery::Sample(Sample::try_from(sample)?)
+                ScoringQuery::Sample(SampleInternal::try_from(sample)?)
             }
         };
 

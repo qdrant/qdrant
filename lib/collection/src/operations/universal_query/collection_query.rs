@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 
-use api::rest::{LookupLocation, RecommendStrategy};
+use api::rest::LookupLocation;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    MultiDenseVectorInternal, NamedQuery, NamedVectorStruct, VectorInternal, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    NamedQuery, NamedVectorStruct, VectorInternal, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -15,7 +14,9 @@ use segment::types::{
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 
-use super::shard_query::{Fusion, Sample, ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use super::shard_query::{
+    FusionInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+};
 use crate::common::fetch_vectors::ReferencedVectors;
 use crate::lookup::WithLookup;
 use crate::operations::query_enum::QueryEnum;
@@ -83,13 +84,13 @@ pub enum Query {
     Vector(VectorQuery<VectorInputInternal>),
 
     /// Reciprocal rank fusion
-    Fusion(Fusion),
+    Fusion(FusionInternal),
 
     /// Order by a payload field
     OrderBy(OrderBy),
 
     /// Sample points
-    Sample(Sample),
+    Sample(SampleInternal),
 }
 
 impl Query {
@@ -471,7 +472,9 @@ impl CollectionQueryRequest {
         )?;
 
         let mut offset = self.offset;
-        if matches!(self.query, Some(Query::Sample(Sample::Random))) && self.prefetch.is_empty() {
+        if matches!(self.query, Some(Query::Sample(SampleInternal::Random)))
+            && self.prefetch.is_empty()
+        {
             // Shortcut: Ignore offset with random query, since output is not stable.
             offset = 0;
         }
@@ -565,218 +568,19 @@ mod from_rest {
 
     use super::*;
 
-    impl From<rest::QueryGroupsRequestInternal> for CollectionQueryGroupsRequest {
-        fn from(value: rest::QueryGroupsRequestInternal) -> Self {
-            let rest::QueryGroupsRequestInternal {
-                prefetch,
-                query,
-                using,
-                filter,
-                score_threshold,
-                params,
-                with_vector,
-                with_payload,
-                lookup_from,
-                group_request,
-            } = value;
-
-            Self {
-                prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
-                query: query.map(From::from),
-                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
-                filter,
-                score_threshold,
-                params,
-                with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
-                with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-                lookup_from,
-                limit: group_request
-                    .limit
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-                group_by: group_request.group_by,
-                group_size: group_request
-                    .group_size
-                    .unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
-                with_lookup: group_request.with_lookup.map(WithLookup::from),
-            }
-        }
-    }
-
-    impl From<rest::QueryRequestInternal> for CollectionQueryRequest {
-        fn from(value: rest::QueryRequestInternal) -> Self {
-            let rest::QueryRequestInternal {
-                prefetch,
-                query,
-                using,
-                filter,
-                score_threshold,
-                params,
-                limit,
-                offset,
-                with_vector,
-                with_payload,
-                lookup_from,
-            } = value;
-
-            Self {
-                prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
-                query: query.map(From::from),
-                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
-                filter,
-                score_threshold,
-                limit: limit.unwrap_or(Self::DEFAULT_LIMIT),
-                offset: offset.unwrap_or(Self::DEFAULT_OFFSET),
-                params,
-                with_vector: with_vector.unwrap_or(Self::DEFAULT_WITH_VECTOR),
-                with_payload: with_payload.unwrap_or(Self::DEFAULT_WITH_PAYLOAD),
-                lookup_from: lookup_from.map(LookupLocation::from),
-            }
-        }
-    }
-
-    impl From<rest::Prefetch> for CollectionPrefetch {
-        fn from(value: rest::Prefetch) -> Self {
-            let rest::Prefetch {
-                prefetch,
-                query,
-                using,
-                filter,
-                score_threshold,
-                params,
-                limit,
-                lookup_from,
-            } = value;
-
-            Self {
-                prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
-                query: query.map(From::from),
-                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
-                filter,
-                score_threshold,
-                limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-                params,
-                lookup_from,
-            }
-        }
-    }
-
-    impl From<rest::QueryInterface> for Query {
-        fn from(value: rest::QueryInterface) -> Self {
-            Query::from(rest::Query::from(value))
-        }
-    }
-
-    impl From<rest::Query> for Query {
-        fn from(value: rest::Query) -> Self {
-            match value {
-                rest::Query::Nearest(nearest) => {
-                    Query::Vector(VectorQuery::Nearest(From::from(nearest.nearest)))
-                }
-                rest::Query::Recommend(recommend) => Query::Vector(From::from(recommend.recommend)),
-                rest::Query::Discover(discover) => Query::Vector(From::from(discover.discover)),
-                rest::Query::Context(context) => Query::Vector(From::from(context.context)),
-                rest::Query::OrderBy(order_by) => Query::OrderBy(OrderBy::from(order_by.order_by)),
-                rest::Query::Fusion(fusion) => Query::Fusion(Fusion::from(fusion.fusion)),
-                rest::Query::Sample(sample) => Query::Sample(Sample::from(sample.sample)),
-            }
-        }
-    }
-
-    impl From<rest::RecommendInput> for VectorQuery<VectorInputInternal> {
-        fn from(value: rest::RecommendInput) -> Self {
-            let rest::RecommendInput {
-                positive,
-                negative,
-                strategy,
-            } = value;
-
-            let positives = positive.into_iter().flatten().map(From::from).collect();
-            let negatives = negative.into_iter().flatten().map(From::from).collect();
-            let reco_query = RecoQuery::new(positives, negatives);
-
-            match strategy.unwrap_or_default() {
-                RecommendStrategy::AverageVector => VectorQuery::RecommendAverageVector(reco_query),
-                RecommendStrategy::BestScore => VectorQuery::RecommendBestScore(reco_query),
-            }
-        }
-    }
-
-    impl From<rest::DiscoverInput> for VectorQuery<VectorInputInternal> {
-        fn from(value: rest::DiscoverInput) -> Self {
-            let rest::DiscoverInput { target, context } = value;
-
-            let target = From::from(target);
-            let context = context
-                .into_iter()
-                .flatten()
-                .map(context_pair_from_rest)
-                .collect();
-
-            VectorQuery::Discover(DiscoveryQuery::new(target, context))
-        }
-    }
-
-    impl From<rest::ContextInput> for VectorQuery<VectorInputInternal> {
-        fn from(value: rest::ContextInput) -> Self {
-            let rest::ContextInput(pairs) = value;
-
-            let context = pairs
-                .into_iter()
-                .flatten()
-                .map(context_pair_from_rest)
-                .collect();
-
-            VectorQuery::Context(ContextQuery::new(context))
-        }
-    }
-
-    impl From<rest::VectorInput> for VectorInputInternal {
-        fn from(value: rest::VectorInput) -> Self {
-            match value {
-                rest::VectorInput::Id(id) => VectorInputInternal::Id(id),
-                rest::VectorInput::DenseVector(dense) => {
-                    VectorInputInternal::Vector(VectorInternal::Dense(dense))
-                }
-                rest::VectorInput::SparseVector(sparse) => {
-                    VectorInputInternal::Vector(VectorInternal::Sparse(sparse))
-                }
-                rest::VectorInput::MultiDenseVector(multi_dense) => VectorInputInternal::Vector(
-                    // TODO(universal-query): Validate at API level
-                    VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(
-                        multi_dense,
-                    )),
-                ),
-                rest::VectorInput::Document(_) => {
-                    // If this is reached, it means validation failed
-                    unimplemented!("Document inference is not implemented")
-                }
-            }
-        }
-    }
-
-    /// Circular dependencies prevents us from implementing `From` directly
-    fn context_pair_from_rest(value: rest::ContextPair) -> ContextPair<VectorInputInternal> {
-        let rest::ContextPair { positive, negative } = value;
-
-        ContextPair {
-            positive: VectorInputInternal::from(positive),
-            negative: VectorInputInternal::from(negative),
-        }
-    }
-
-    impl From<rest::Fusion> for Fusion {
+    impl From<rest::Fusion> for FusionInternal {
         fn from(value: rest::Fusion) -> Self {
             match value {
-                rest::Fusion::Rrf => Fusion::Rrf,
-                rest::Fusion::Dbsf => Fusion::Dbsf,
+                rest::Fusion::Rrf => FusionInternal::Rrf,
+                rest::Fusion::Dbsf => FusionInternal::Dbsf,
             }
         }
     }
 
-    impl From<rest::Sample> for Sample {
+    impl From<rest::Sample> for SampleInternal {
         fn from(value: rest::Sample) -> Self {
             match value {
-                rest::Sample::Random => Sample::Random,
+                rest::Sample::Random => SampleInternal::Random,
             }
         }
     }

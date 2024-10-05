@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::CollectionError;
 use crate::operations::universal_query::shard_query::{
-    Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest,
+    FusionInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
@@ -54,7 +54,7 @@ async fn test_shard_query_rrf_rescoring() {
     // RRF query without prefetches
     let query = ShardQueryRequest {
         prefetches: vec![],
-        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
         filter: None,
         score_threshold: None,
         limit: 0,
@@ -88,7 +88,7 @@ async fn test_shard_query_rrf_rescoring() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![nearest_query_prefetch.clone()],
-        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -134,7 +134,7 @@ async fn test_shard_query_rrf_rescoring() {
             nearest_query_prefetch.clone(),
             nearest_query_prefetch.clone(),
         ],
-        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -177,7 +177,7 @@ async fn test_shard_query_rrf_rescoring() {
                 ..nearest_query_prefetch.clone()
             },
         ],
-        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+        query: Some(ScoringQuery::Fusion(FusionInternal::Rrf)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,

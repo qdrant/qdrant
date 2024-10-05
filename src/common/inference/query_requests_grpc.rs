@@ -5,13 +5,14 @@ use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
     VectorInputInternal, VectorQuery,
 };
-use collection::operations::universal_query::shard_query::{Fusion, Sample};
+use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
-pub async fn convert_query_point_groups(
+/// ToDo: this function is supposed to call an inference endpoint internally
+pub async fn convert_query_point_groups_from_grpc(
     query: grpc::QueryPointGroups,
 ) -> Result<CollectionQueryGroupsRequest, Status> {
     let grpc::QueryPointGroups {
@@ -65,7 +66,8 @@ pub async fn convert_query_point_groups(
     Ok(request)
 }
 
-pub async fn convert_query_points(
+/// ToDo: this function is supposed to call an inference endpoint internally
+pub async fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
 ) -> Result<CollectionQueryRequest, Status> {
     let grpc::QueryPoints {
@@ -162,8 +164,8 @@ fn convert_query(query: grpc::Query) -> Result<Query, Status> {
         Variant::Discover(discover) => Query::Vector(convert_discover_input(discover)?),
         Variant::Context(context) => Query::Vector(convert_context_input(context)?),
         Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
-        Variant::Fusion(fusion) => Query::Fusion(Fusion::try_from(fusion)?),
-        Variant::Sample(sample) => Query::Sample(Sample::try_from(sample)?),
+        Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
+        Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
     };
 
     Ok(query)

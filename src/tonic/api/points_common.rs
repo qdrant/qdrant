@@ -53,7 +53,7 @@ use storage::rbac::Access;
 use tonic::{Response, Status};
 
 use crate::common::inference::query_requests_grpc::{
-    convert_query_point_groups, convert_query_points,
+    convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::points::{
@@ -1737,7 +1737,7 @@ pub async fn query(
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
     let timeout = query_points.timeout;
-    let request = convert_query_points(query_points).await?;
+    let request = convert_query_points_from_grpc(query_points).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -1786,7 +1786,7 @@ pub async fn query_batch(
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
-        let request = convert_query_points(query_points).await?;
+        let request = convert_query_points_from_grpc(query_points).await?;
         requests.push((request, shard_selector));
     }
 
@@ -1839,7 +1839,7 @@ pub async fn query_groups(
         .transpose()?;
     let timeout = query_points.timeout;
     let collection_name = query_points.collection_name.clone();
-    let request = convert_query_point_groups(query_points).await?;
+    let request = convert_query_point_groups_from_grpc(query_points).await?;
 
     let toc = toc_provider
         .check_strict_mode(
