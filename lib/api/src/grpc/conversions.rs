@@ -44,7 +44,7 @@ use crate::grpc::qdrant::{
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
     StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    ValuesCount, Vector, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
 
@@ -585,39 +585,6 @@ impl From<segment::types::PointIdType> for PointId {
                 segment::types::PointIdType::Uuid(uuid) => PointIdOptions::Uuid(uuid.to_string()),
             }),
         }
-    }
-}
-
-impl TryFrom<Vector> for segment_vectors::VectorInternal {
-    type Error = Status;
-
-    fn try_from(vector: Vector) -> Result<Self, Self::Error> {
-        // sparse vector
-        if let Some(indices) = vector.indices {
-            return Ok(segment_vectors::VectorInternal::Sparse(
-                sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
-                    .map_err(|_| {
-                        Status::invalid_argument(
-                            "Sparse indices does not match sparse vector conditions",
-                        )
-                    })?,
-            ));
-        }
-
-        // multi vector
-        if let Some(vector_count) = vector.vectors_count {
-            if vector_count == 0 {
-                return Err(Status::invalid_argument(
-                    "Vector count should be greater than 0",
-                ));
-            }
-            let dim = vector.data.len() / vector_count as usize;
-            let multi = segment_vectors::MultiDenseVectorInternal::new(vector.data, dim);
-            return Ok(segment_vectors::VectorInternal::MultiDense(multi));
-        }
-
-        // dense vector
-        Ok(segment_vectors::VectorInternal::Dense(vector.data))
     }
 }
 

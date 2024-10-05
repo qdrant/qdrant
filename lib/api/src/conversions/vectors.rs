@@ -6,6 +6,7 @@ use segment::data_types::vectors::{
 use tonic::Status;
 
 use crate::grpc::qdrant as grpc;
+use crate::grpc::qdrant::Vector;
 use crate::rest::schema as rest;
 
 fn convert_to_plain_multi_vector(
@@ -453,5 +454,38 @@ impl From<VectorStructInternal> for grpc::Vectors {
                 })),
             },
         }
+    }
+}
+
+impl TryFrom<grpc::Vector> for VectorInternal {
+    type Error = Status;
+
+    fn try_from(vector: Vector) -> Result<Self, Self::Error> {
+        // sparse vector
+        if let Some(indices) = vector.indices {
+            return Ok(VectorInternal::Sparse(
+                sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
+                    .map_err(|e| {
+                        Status::invalid_argument(format!(
+                            "Sparse indices does not match sparse vector conditions: {e}"
+                        ))
+                    })?,
+            ));
+        }
+
+        // multi vector
+        if let Some(vector_count) = vector.vectors_count {
+            if vector_count == 0 {
+                return Err(Status::invalid_argument(
+                    "Vector count should be greater than 0",
+                ));
+            }
+            let dim = vector.data.len() / vector_count as usize;
+            let multi = MultiDenseVectorInternal::new(vector.data, dim);
+            return Ok(VectorInternal::MultiDense(multi));
+        }
+
+        // dense vector
+        Ok(VectorInternal::Dense(vector.data))
     }
 }
