@@ -1,16 +1,15 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use itertools::Itertools;
-use tonic::{Response, Status};
-
 use api::grpc::conversions::{json_path_from_proto, proto_to_payloads};
+use api::grpc::qdrant::payload_index_params::IndexParams;
+use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
-    BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints, CountResponse,
-    CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints,
-    DeletePointVectors, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, FacetCounts,
-    FacetResponse, FieldType, GetPoints, GetResponse, GroupsResult, PayloadIndexParams,
-    points_update_operation, PointsOperationResponseInternal, PointsSelector, QueryBatchResponse,
+    points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
+    CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
+    DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
+    FacetCounts, FacetResponse, FieldType, GetPoints, GetResponse, GroupsResult,
+    PayloadIndexParams, PointsOperationResponseInternal, PointsSelector, QueryBatchResponse,
     QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
     ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
     RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
@@ -18,16 +17,13 @@ use api::grpc::qdrant::{
     SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse,
     UpdatePointVectors, UpsertPoints,
 };
-use api::grpc::qdrant::payload_index_params::IndexParams;
-use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
+use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{
     OrderByInterface, PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct,
 };
-use api::rest::schema::{PointInsertOperations, PointsList};
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
-use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
@@ -37,12 +33,14 @@ use collection::operations::point_ops::{self, PointOperations, PointSyncOperatio
 use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CoreSearchRequest, CoreSearchRequestBatch, default_exact_count, PointRequestInternal,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
     RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
+use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -52,17 +50,18 @@ use segment::types::{
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use tonic::{Response, Status};
 
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups, convert_query_points,
 };
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::points::{
-    CreateFieldIndex, do_clear_payload, do_core_search_points, do_count_points,
-    do_create_index, do_create_index_internal, do_delete_index, do_delete_index_internal,
-    do_delete_payload, do_delete_points, do_delete_vectors, do_get_points,
-    do_overwrite_payload, do_query_batch_points, do_query_point_groups, do_query_points,
-    do_scroll_points, do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points,
+    do_clear_payload, do_core_search_points, do_count_points, do_create_index,
+    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
+    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
+    do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
+    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
 };
 use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
