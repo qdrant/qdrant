@@ -10,7 +10,6 @@ use segment::data_types::index::{
     KeywordIndexType, TextIndexType, UuidIndexType,
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
-use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use segment::vector_storage::query as segment_query;
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -27,128 +26,27 @@ use super::qdrant::{
     SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams,
     VectorsOutput, WithLookup,
 };
+use crate::conversions::json;
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
 use crate::grpc::qdrant::r#match::MatchValue;
-use crate::grpc::qdrant::value::Kind;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
     Condition, DenseVector, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon,
     GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams,
-    IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match, MinShould,
-    MultiDenseVector, NamedVectors, NestedCondition, PayloadExcludeSelector,
-    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
-    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    IsEmptyCondition, IsNullCondition, ListCollectionsResponse, Match, MinShould, MultiDenseVector,
+    NamedVectors, NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector,
+    PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId, PointStruct,
+    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
     QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
     RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector,
-    StrictModeConfig, Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
-    Value, ValuesCount, Vector, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    ValuesCount, Vector, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 use crate::rest::schema as rest;
-
-pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
-    payload
-        .into_iter()
-        .map(|(k, v)| (k, json_to_proto(v)))
-        .collect()
-}
-
-pub fn dict_to_proto(dict: HashMap<String, serde_json::Value>) -> HashMap<String, Value> {
-    dict.into_iter()
-        .map(|(k, v)| (k, json_to_proto(v)))
-        .collect()
-}
-
-pub fn json_to_proto(json_value: serde_json::Value) -> Value {
-    match json_value {
-        serde_json::Value::Null => Value {
-            kind: Some(Kind::NullValue(0)),
-        },
-        serde_json::Value::Bool(v) => Value {
-            kind: Some(Kind::BoolValue(v)),
-        },
-        serde_json::Value::Number(n) => Value {
-            kind: if let Some(int) = n.as_i64() {
-                Some(Kind::IntegerValue(int))
-            } else {
-                Some(Kind::DoubleValue(n.as_f64().unwrap()))
-            },
-        },
-        serde_json::Value::String(s) => Value {
-            kind: Some(Kind::StringValue(s)),
-        },
-        serde_json::Value::Array(v) => {
-            let list = v.into_iter().map(json_to_proto).collect();
-            Value {
-                kind: Some(Kind::ListValue(ListValue { values: list })),
-            }
-        }
-        serde_json::Value::Object(m) => {
-            let map = m.into_iter().map(|(k, v)| (k, json_to_proto(v))).collect();
-            Value {
-                kind: Some(Kind::StructValue(Struct { fields: map })),
-            }
-        }
-    }
-}
-
-pub fn json_path_from_proto(a: &str) -> Result<JsonPath, Status> {
-    JsonPath::try_from(a)
-        .map_err(|_| Status::invalid_argument(format!("Invalid json path: \'{a}\'")))
-}
-
-pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {
-    let mut map: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-    for (k, v) in proto {
-        map.insert(k, proto_to_json(v)?);
-    }
-    Ok(map.into())
-}
-
-pub fn proto_dict_to_json(
-    proto: HashMap<String, Value>,
-) -> Result<HashMap<String, serde_json::Value>, Status> {
-    let mut map = HashMap::new();
-    for (k, v) in proto {
-        map.insert(k, proto_to_json(v)?);
-    }
-    Ok(map)
-}
-
-pub fn proto_to_json(proto: Value) -> Result<serde_json::Value, Status> {
-    match proto.kind {
-        None => Ok(serde_json::Value::default()),
-        Some(kind) => match kind {
-            Kind::NullValue(_) => Ok(serde_json::Value::Null),
-            Kind::DoubleValue(n) => {
-                let Some(v) = serde_json::Number::from_f64(n) else {
-                    return Err(Status::invalid_argument("cannot convert to json number"));
-                };
-                Ok(serde_json::Value::Number(v))
-            }
-            Kind::IntegerValue(i) => Ok(serde_json::Value::Number(i.into())),
-            Kind::StringValue(s) => Ok(serde_json::Value::String(s)),
-            Kind::BoolValue(b) => Ok(serde_json::Value::Bool(b)),
-            Kind::StructValue(s) => {
-                let mut map = serde_json::Map::new();
-                for (k, v) in s.fields {
-                    map.insert(k, proto_to_json(v)?);
-                }
-                Ok(serde_json::Value::Object(map))
-            }
-            Kind::ListValue(l) => {
-                let mut list = Vec::new();
-                for v in l.values {
-                    list.push(proto_to_json(v)?);
-                }
-                Ok(serde_json::Value::Array(list))
-            }
-        },
-    }
-}
 
 pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {
     match value {
@@ -592,14 +490,14 @@ impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
                 SelectorOptions::Exclude(s) => segment::types::PayloadSelectorExclude::new(
                     s.fields
                         .iter()
-                        .map(|i| json_path_from_proto(i))
+                        .map(|i| json::json_path_from_proto(i))
                         .collect::<Result<_, _>>()?,
                 )
                 .into(),
                 SelectorOptions::Include(s) => segment::types::PayloadSelectorInclude::new(
                     s.fields
                         .iter()
-                        .map(|i| json_path_from_proto(i))
+                        .map(|i| json::json_path_from_proto(i))
                         .collect::<Result<_, _>>()?,
                 )
                 .into(),
@@ -737,7 +635,7 @@ impl TryFrom<PointStruct> for rest::PointStruct {
         let converted_payload = if payload.is_empty() {
             None
         } else {
-            Some(proto_to_payloads(payload)?)
+            Some(json::proto_to_payloads(payload)?)
         };
 
         let vector_struct = match vectors {
@@ -760,7 +658,10 @@ impl TryFrom<rest::Record> for RetrievedPoint {
     fn try_from(record: rest::Record) -> Result<Self, Self::Error> {
         let retrieved_point = Self {
             id: Some(PointId::from(record.id)),
-            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
+            payload: record
+                .payload
+                .map(json::payload_to_proto)
+                .unwrap_or_default(),
             vectors: record.vector.map(VectorsOutput::try_from).transpose()?,
             shard_key: record.shard_key.map(convert_shard_key_to_grpc),
             order_value: record.order_value.map(From::from),
@@ -811,7 +712,10 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
             id: Some(PointId::from(point.id)),
-            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
+            payload: point
+                .payload
+                .map(json::payload_to_proto)
+                .unwrap_or_default(),
             score: point.score,
             version: point.version,
             vectors: point.vector.map(VectorsOutput::from),
@@ -826,7 +730,10 @@ impl TryFrom<crate::rest::ScoredPoint> for ScoredPoint {
     fn try_from(point: crate::rest::ScoredPoint) -> Result<Self, Self::Error> {
         Ok(Self {
             id: Some(PointId::from(point.id)),
-            payload: point.payload.map(payload_to_proto).unwrap_or_default(),
+            payload: point
+                .payload
+                .map(json::payload_to_proto)
+                .unwrap_or_default(),
             score: point.score,
             version: point.version,
             vectors: point.vector.map(VectorsOutput::try_from).transpose()?,
@@ -1238,7 +1145,7 @@ impl TryFrom<NestedCondition> for segment::types::Nested {
                 "Nested condition must have a filter",
             )),
             Some(filter) => Ok(Self {
-                key: json_path_from_proto(&value.key)?,
+                key: json::json_path_from_proto(&value.key)?,
                 filter: filter.try_into()?,
             }),
         }
@@ -1260,7 +1167,7 @@ impl TryFrom<IsEmptyCondition> for segment::types::IsEmptyCondition {
     fn try_from(value: IsEmptyCondition) -> Result<Self, Status> {
         Ok(segment::types::IsEmptyCondition {
             is_empty: segment::types::PayloadField {
-                key: json_path_from_proto(&value.key)?,
+                key: json::json_path_from_proto(&value.key)?,
             },
         })
     }
@@ -1280,7 +1187,7 @@ impl TryFrom<IsNullCondition> for segment::types::IsNullCondition {
     fn try_from(value: IsNullCondition) -> Result<Self, Status> {
         Ok(segment::types::IsNullCondition {
             is_null: segment::types::PayloadField {
-                key: json_path_from_proto(&value.key)?,
+                key: json::json_path_from_proto(&value.key)?,
             },
         })
     }
@@ -1340,7 +1247,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             .transpose()?;
 
         Ok(Self {
-            key: json_path_from_proto(&key)?,
+            key: json::json_path_from_proto(&key)?,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
             range: range.or(datetime_range),
             geo_bounding_box,
@@ -1651,6 +1558,7 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
     fn try_from(value: OrderBy) -> Result<Self, Self::Error> {
         use segment::data_types::order_by::StartFrom;
 
+        use crate::conversions::json;
         use crate::grpc::qdrant::start_from::Value;
 
         let direction = value
@@ -1680,7 +1588,7 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
             .transpose()?;
 
         Ok(Self {
-            key: json_path_from_proto(&value.key)?,
+            key: json::json_path_from_proto(&value.key)?,
             direction,
             start_from,
         })
@@ -2200,7 +2108,7 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
             with_vector,
             score_threshold,
             group_request: rest::BaseGroupRequest {
-                group_by: json_path_from_proto(&value.group_by)?,
+                group_by: json::json_path_from_proto(&value.group_by)?,
                 limit: value.limit,
                 group_size: value.group_size,
                 with_lookup: value

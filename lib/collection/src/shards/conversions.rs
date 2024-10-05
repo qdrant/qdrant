@@ -1,4 +1,5 @@
-use api::grpc::conversions::{convert_shard_key_from_grpc_opt, payload_to_proto};
+use api::conversions::json::payload_to_proto;
+use api::grpc::conversions::convert_shard_key_from_grpc_opt;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -400,7 +401,7 @@ pub fn try_scored_point_from_grpc(
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(point.payload)?)
     } else {
         debug_assert!(point.payload.is_empty());
         None

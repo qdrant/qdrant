@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
+use api::conversions::json::{json_path_from_proto, payload_to_proto};
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    from_grpc_dist, json_path_from_proto, payload_to_proto,
+    from_grpc_dist,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
@@ -128,7 +129,7 @@ pub fn try_record_from_grpc(
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(point.payload)?)
     } else {
         debug_assert!(point.payload.is_empty());
         None

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::conversions::{json_path_from_proto, proto_to_payloads};
+use api::conversions::json::{json_path_from_proto, proto_to_payloads};
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{

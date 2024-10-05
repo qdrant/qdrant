@@ -1,6 +1,6 @@
 use tonic::Status;
 
-use crate::grpc::conversions::{dict_to_proto, json_to_proto, proto_dict_to_json, proto_to_json};
+use crate::conversions::json::{dict_to_proto, json_to_proto, proto_dict_to_json, proto_to_json};
 use crate::grpc::qdrant as grpc;
 use crate::rest::schema as rest;
 

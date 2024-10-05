@@ -1,4 +1,4 @@
-use api::grpc::conversions::json_path_from_proto;
+use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant as grpc;
 use api::rest::RecommendStrategy;
 use collection::operations::universal_query::collection_query::{
