@@ -21,7 +21,7 @@ const DELETED_PATH: &str = "deleted.bin";
 const COUNTS_PER_HASH: &str = "counts_per_hash.bin";
 const POINTS_MAP: &str = "points_map.bin";
 const POINTS_MAP_IDS: &str = "points_map_ids.bin";
-const CONFIG_PATH: &str = "mmap_field_index_config.json";
+const STATS_PATH: &str = "mmap_field_index_stats.json";
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -39,12 +39,33 @@ struct PointKeyValue {
     ids_end: u32,
 }
 
+///
+///   points_map
+///  ┌─────────────────────────────────────────┐
+///  │ (ABC, 10, 20)|(ABD, 20, 40)             │
+///  └────────┬──┬──────────┬───┬──────────────┘
+///           │  │          │   │
+///    ┌──────┘  └────────┐ │   └───────────────────┐
+///    │                  │ └───┐                   │
+///    │                  │     │                   │
+///  ┌─▼──────────────────▼─────▼───────────────────▼──────────┐
+///  │ 1, 8, 10, 18, 129, 213, 12, 13, 14, 87, 99, 199         │
+///  └─────────────────────────────────────────────────────────┘
+///   points_map_ids
+///
 pub struct MmapGeoMapIndex {
     path: PathBuf,
+    /// Stores GeoHash, points count and values count.
+    /// Sorted by geohash, so we binary search the region.
     counts_per_hash: MmapSlice<Counts>,
+    /// Stores GeoHash and associated range of offsets in the points_map_ids.
+    /// Sorted by geohash, so we binary search the region.
     points_map: MmapSlice<PointKeyValue>,
+    /// A storage of associations between geo-hashes and point ids. (See the diagram above)
     points_map_ids: MmapSlice<PointOffsetType>,
+    /// One-to-many mapping of the PointOffsetType to the GeoPoint.
     point_to_values: MmapPointToValues<GeoPoint>,
+    /// Deleted flags for each PointOffsetType
     deleted: MmapBitSliceBufferedUpdateWrapper,
     deleted_count: usize,
     points_values_count: usize,
@@ -52,7 +73,7 @@ pub struct MmapGeoMapIndex {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct MmapGeoMapIndexConfig {
+struct MmapGeoMapIndexStat {
     points_values_count: usize,
     max_values_per_point: usize,
 }
@@ -62,7 +83,7 @@ impl MmapGeoMapIndex {
         create_dir_all(path)?;
 
         let deleted_path = path.join(DELETED_PATH);
-        let config_path = path.join(CONFIG_PATH);
+        let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
@@ -155,8 +176,8 @@ impl MmapGeoMapIndex {
         }
 
         atomic_save_json(
-            &config_path,
-            &MmapGeoMapIndexConfig {
+            &stats_path,
+            &MmapGeoMapIndexStat {
                 points_values_count: dynamic_index.points_values_count,
                 max_values_per_point: dynamic_index.max_values_per_point,
             },
@@ -167,12 +188,12 @@ impl MmapGeoMapIndex {
 
     pub fn load(path: &Path) -> OperationResult<Self> {
         let deleted_path = path.join(DELETED_PATH);
-        let config_path = path.join(CONFIG_PATH);
+        let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
-        let config: MmapGeoMapIndexConfig = read_json(&config_path)?;
+        let stats: MmapGeoMapIndexStat = read_json(&stats_path)?;
         let counts_per_hash = unsafe {
             MmapSlice::try_from(open_write_mmap(
                 &counts_per_hash_path,
@@ -208,8 +229,8 @@ impl MmapGeoMapIndex {
             point_to_values,
             deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
             deleted_count,
-            points_values_count: config.points_values_count,
-            max_values_per_point: config.max_values_per_point,
+            points_values_count: stats.points_values_count,
+            max_values_per_point: stats.max_values_per_point,
         })
     }
 
@@ -271,7 +292,7 @@ impl MmapGeoMapIndex {
             self.path.join(COUNTS_PER_HASH),
             self.path.join(POINTS_MAP),
             self.path.join(POINTS_MAP_IDS),
-            self.path.join(CONFIG_PATH),
+            self.path.join(STATS_PATH),
         ];
         files.extend(self.point_to_values.files());
         files
