@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::defaults;
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -90,11 +91,7 @@ pub(super) async fn transfer_wal_delta(
     let recovery_point = remote_shard
         .shard_recovery_point(collection_id, shard_id)
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to request recovery point from remote shard: {err}"
-            ))
-        })?;
+        .context("Failed to request recovery point from remote shard")?;
 
     let shard_holder_read = shard_holder.read().await;
 
@@ -109,9 +106,7 @@ pub(super) async fn transfer_wal_delta(
     let wal_delta_version = replica_set
         .resolve_wal_delta(recovery_point)
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
-        })?;
+        .context("Failed to resolve shard diff")?;
 
     if let Some(wal_delta_version) = wal_delta_version {
         // Queue proxy local shard
@@ -140,10 +135,8 @@ pub(super) async fn transfer_wal_delta(
             &remote_shard,
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
-            ))
+        .with_context(|| {
+            format!("Can't switch shard {shard_id} to Partial state after diff transfer")
         })?;
 
     // Transform queue proxy into forward proxy, transfer any remaining updates that just came in
@@ -161,10 +154,8 @@ pub(super) async fn transfer_wal_delta(
             defaults::CONSENSUS_META_OP_WAIT,
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Shard being transferred did not reach {partial_state:?} state in time: {err}",
-            ))
+        .with_context(|| {
+            format!("Shard being transferred did not reach {partial_state:?} state in time")
         })?;
 
     // Synchronize all nodes

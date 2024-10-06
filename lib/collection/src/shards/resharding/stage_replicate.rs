@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use tokio::sync::RwLock;
@@ -149,11 +150,11 @@ pub(super) async fn drive(
             await_transfer_end,
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to replicate shard {} to peer {target_peer} for resharding: {err}",
+        .with_context(|| {
+            format!(
+                "Failed to replicate shard {} to peer {target_peer} for resharding",
                 reshard_key.shard_id
-            ))
+            )
         })?;
         log::debug!(
             "Shard {} successfully replicated to peer {target_peer} for resharding",

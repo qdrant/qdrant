@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::types::Payload;
@@ -28,10 +29,10 @@ impl SimplePayloadStorage {
         ));
 
         for (key, val) in db_wrapper.lock_db().iter()? {
-            let point_id: PointOffsetType = serde_cbor::from_slice(&key)
-                .map_err(|_| OperationError::service_error("cannot deserialize point id"))?;
-            let payload: Payload = serde_cbor::from_slice(&val)
-                .map_err(|_| OperationError::service_error("cannot deserialize payload"))?;
+            let point_id: PointOffsetType =
+                serde_cbor::from_slice(&key).context("cannot deserialize point id")?;
+            let payload: Payload =
+                serde_cbor::from_slice(&val).context("cannot deserialize payload")?;
             payload_map.insert(point_id, payload);
         }
 

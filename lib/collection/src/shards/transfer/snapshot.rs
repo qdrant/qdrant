@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::defaults;
+use common::service_error::Context as _;
 use parking_lot::Mutex;
 use tempfile::TempPath;
 
@@ -202,11 +203,9 @@ pub(super) async fn transfer_snapshot(
         .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
         .await
         .map(TempPath::from_path)
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
-            ))
-        })?;
+        .context(
+            "Failed to determine snapshot path, cannot continue with shard snapshot recovery",
+        )?;
     let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
 
     // Recover shard snapshot on remote
@@ -227,11 +226,7 @@ pub(super) async fn transfer_snapshot(
             channel_service.api_key.as_deref(),
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to recover shard snapshot on remote: {err}"
-            ))
-        })?;
+        .context("Failed to recover shard snapshot on remote")?;
 
     if let Err(err) = snapshot_temp_path.close() {
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
@@ -249,10 +244,8 @@ pub(super) async fn transfer_snapshot(
             &remote_shard,
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't switch shard {shard_id} to Partial state after snapshot transfer: {err}"
-            ))
+        .with_context(|| {
+            format!("Can't switch shard {shard_id} to Partial state after snapshot transfer")
         })?;
 
     // Transfer queued updates to remote, transform into forward proxy
@@ -269,10 +262,8 @@ pub(super) async fn transfer_snapshot(
             defaults::CONSENSUS_META_OP_WAIT,
         )
         .await
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Shard being transferred did not reach {partial_state:?} state in time: {err}",
-            ))
+        .with_context(|| {
+            format!("Shard being transferred did not reach {partial_state:?} state in time")
         })?;
 
     // Synchronize all nodes

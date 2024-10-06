@@ -102,10 +102,10 @@ where
 }
 
 fn log_service_error(err: &StorageError) {
-    if let StorageError::ServiceError { backtrace, .. } = err {
+    if let StorageError::ServiceError(err) = err {
         log::error!("Error processing request: {err}");
 
-        if let Some(backtrace) = backtrace {
+        if let Some(backtrace) = &err.backtrace {
             log::trace!("Backtrace: {backtrace}");
         }
     }

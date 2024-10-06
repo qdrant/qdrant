@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ahash::HashMap;
 use common::mmap_hashmap::Key;
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -240,9 +241,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     pub fn decode_db_record(s: &str) -> OperationResult<(N::Owned, PointOffsetType)> {
         const DECODE_ERR: &str = "Index db parsing error: wrong data format";
-        let separator_pos = s
-            .rfind('/')
-            .ok_or_else(|| OperationError::service_error(DECODE_ERR))?;
+        let separator_pos = s.rfind('/').context(DECODE_ERR)?;
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }

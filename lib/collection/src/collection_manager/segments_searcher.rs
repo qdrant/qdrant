@@ -2,11 +2,11 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::types::ScoreType;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use ordered_float::Float;
-use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorStructInternal};
@@ -384,9 +384,9 @@ impl SegmentsSearcher {
         segments
             .read()
             .read_points(points, is_stopped, |id, segment| {
-                let version = segment.point_version(id).ok_or_else(|| {
-                    OperationError::service_error(format!("No version for point {id}"))
-                })?;
+                let version = segment
+                    .point_version(id)
+                    .with_context(|| format!("No version for point {id}"))?;
                 // If this point was not found yet or this segment have later version
                 if !point_version.contains_key(&id) || point_version[&id] < version {
                     point_records.insert(

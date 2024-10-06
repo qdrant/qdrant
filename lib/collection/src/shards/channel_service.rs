@@ -5,6 +5,7 @@ use std::time::Duration;
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
+use common::service_error::Context as _;
 use futures::future::try_join_all;
 use futures::Future;
 use semver::Version;
@@ -87,11 +88,7 @@ impl ChannelService {
                 description: "Failed to wait for consensus commit on all peers, timed out.".into(),
             })?
             // Await consensus error
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for consensus commit on peer: {err}"
-                ))
-            })?;
+            .context("Failed to wait for consensus commit on peer")?;
         Ok(())
     }
 
@@ -121,11 +118,7 @@ impl ChannelService {
                 client.wait_on_consensus_commit(Request::new(request)).await
             })
             .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Failed to wait for consensus commit on peer {peer_id}: {err}"
-                ))
-            })?
+            .with_context(|| format!("Failed to wait for consensus commit on peer {peer_id}"))?
             .into_inner();
 
         // Create error if wait request failed
@@ -146,7 +139,7 @@ impl ChannelService {
             .id_to_address
             .read()
             .get(&peer_id)
-            .ok_or_else(|| CollectionError::service_error("Address for peer ID is not found."))?
+            .context("Address for peer ID is not found.")?
             .clone();
         self.channel_pool
             .with_channel(&address, |channel| {
@@ -184,10 +177,11 @@ impl ChannelService {
             .read()
             .get(&this_peer_id)
             .cloned()
-            .ok_or_else(|| {
-                CollectionError::service_error(format!(
-                    "Cannot determine REST address, this peer not found in cluster by ID {this_peer_id} ",
-                ))
+            .with_context(|| {
+                format!(
+                    "Cannot determine REST address, \
+                     this peer not found in cluster by ID {this_peer_id}",
+                )
             })?;
 
         // Construct REST URL from URI

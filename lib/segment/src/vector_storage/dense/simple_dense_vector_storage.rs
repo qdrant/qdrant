@@ -5,12 +5,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -52,10 +53,10 @@ fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
     for (key, value) in db_wrapper.lock_db().iter()? {
-        let point_id: PointOffsetType = bincode::deserialize(&key)
-            .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredDenseVector<T> = bincode::deserialize(&value)
-            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+        let point_id: PointOffsetType =
+            bincode::deserialize(&key).context("cannot deserialize point id from db")?;
+        let stored_record: StoredDenseVector<T> =
+            bincode::deserialize(&value).context("cannot deserialize record from db")?;
 
         // Propagate deleted flag
         if stored_record.deleted {

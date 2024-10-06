@@ -3,6 +3,7 @@ use std::future::Future;
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use actix_web_validator::Query;
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::service_error::Context as _;
 use serde::Deserialize;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
@@ -98,7 +99,7 @@ async fn get_cluster_metadata_keys(
 
         let keys = dispatcher
             .consensus_state()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .context("Qdrant is running in standalone mode")?
             .persistent
             .read()
             .get_cluster_metadata_keys();
@@ -119,7 +120,7 @@ async fn get_cluster_metadata_key(
 
         let value = dispatcher
             .consensus_state()
-            .ok_or_else(|| StorageError::service_error("Qdrant is running in standalone mode"))?
+            .context("Qdrant is running in standalone mode")?
             .persistent
             .read()
             .get_cluster_metadata_key(key.as_ref());

@@ -5,11 +5,11 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
+use common::service_error::Context as _;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
 };
-use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
@@ -62,9 +62,7 @@ async fn query_points(
             )
             .await?
             .pop()
-            .ok_or_else(|| {
-                StorageError::service_error("Expected at least one response for one query")
-            })?
+            .context("Expected at least one response for one query")?
             .into_iter()
             .map(api::rest::ScoredPoint::from)
             .collect_vec();

@@ -2,13 +2,14 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use common::service_error::Context as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use smol_str::SmolStr;
 
 use super::GeoMapIndex;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
@@ -105,9 +106,8 @@ impl MutableGeoMapIndex {
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
+            let key_str = std::str::from_utf8(&key)
+                .context("Index load error: UTF8 error while DB parsing")?;
 
             let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
             let geo_point = GeoMapIndex::decode_db_value(value)?;
@@ -203,7 +203,7 @@ impl MutableGeoMapIndex {
 
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+                .context("Malformed geo points")?;
 
             let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
             let value = GeoMapIndex::encode_db_value(added_point);

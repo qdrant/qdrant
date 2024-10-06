@@ -6,6 +6,7 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use common::service_error::Context as _;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -176,9 +177,8 @@ impl CollectionConfig {
         let config_path = path.join(COLLECTION_CONFIG_FILE);
         let af = AtomicFile::new(&config_path, AllowOverwrite);
         let state_bytes = serde_json::to_vec(self).unwrap();
-        af.write(|f| f.write_all(&state_bytes)).map_err(|err| {
-            CollectionError::service_error(format!("Can't write {config_path:?}, error: {err}"))
-        })?;
+        af.write(|f| f.write_all(&state_bytes))
+            .with_context(|| format!("Can't write {config_path:?}"))?;
         Ok(())
     }
 

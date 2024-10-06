@@ -8,6 +8,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use common::iterator_ext::IteratorExt;
+use common::service_error::Context as _;
 use common::tar_ext;
 use futures::future::try_join_all;
 use io::storage_version::StorageVersion;
@@ -765,10 +766,9 @@ impl<'s> SegmentHolder {
             .into_iter()
             .map(|segment_id| {
                 self.get(segment_id)
-                    .ok_or_else(|| {
-                        OperationError::service_error(format!("No segment with ID {segment_id}"))
-                    })
+                    .with_context(|| format!("No segment with ID {segment_id}"))
                     .map(LockedSegment::get)
+                    .map_err(OperationError::from)
             })
             .collect()
     }
@@ -913,24 +913,22 @@ impl<'s> SegmentHolder {
         let config = match collection_params {
             // Base config on collection params
             Some(collection_params) => SegmentConfig {
-                vector_data: collection_params
-                    .to_base_vector_data()
-                    .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
-                sparse_vector_data: collection_params
-                    .to_sparse_vector_data()
-                    .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
+                vector_data: collection_params.to_base_vector_data().context(
+                    "Failed to source dense vector configuration from collection parameters",
+                )?,
+                sparse_vector_data: collection_params.to_sparse_vector_data().context(
+                    "Failed to source sparse vector configuration from collection parameters",
+                )?,
                 payload_storage_type: collection_params.payload_storage_type(),
             },
             // Fall back: base config on existing appendable segment
-            None => {
-                self
-                    .random_appendable_segment()
-                    .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
-                    .get()
-                    .read()
-                    .config()
-                    .clone()
-            }
+            None => self
+                .random_appendable_segment()
+                .context("No existing segment to source temporary segment configuration from")?
+                .get()
+                .read()
+                .config()
+                .clone(),
         };
 
         let mut segment = build_segment(segments_path, &config, save_version)?;
@@ -1218,11 +1216,7 @@ impl<'s> SegmentHolder {
         // Join and sum results in parallel
         let removed_points = try_join_all(tasks)
             .await
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to join task that removes duplicate points from segment: {err}"
-                ))
-            })?
+            .context("Failed to join task that removes duplicate points from segment")?
             .into_iter()
             .sum::<Result<_, _>>()?;
 

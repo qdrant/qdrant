@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use actix_web::HttpRequest;
+use common::service_error::Context as _;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -83,9 +84,7 @@ impl SnapshotStorageManager {
                     }
                 }
                 let client: Box<dyn object_store::ObjectStore> =
-                    Box::new(builder.build().map_err(|e| {
-                        CollectionError::service_error(format!("Failed to create S3 client: {e}"))
-                    })?);
+                    Box::new(builder.build().context("Failed to create S3 client")?);
 
                 Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
             }

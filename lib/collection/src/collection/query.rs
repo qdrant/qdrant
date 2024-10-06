@@ -2,6 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::service_error::Context as _;
 use common::types::ScoreType;
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
@@ -161,11 +162,9 @@ impl Collection {
             _ => {
                 // Otherwise, it will be a list with a single list of scored points.
                 debug_assert_eq!(intermediates.len(), 1);
-                intermediates.pop().ok_or_else(|| {
-                    CollectionError::service_error(
-                        "Query response was expected to have one list of results.",
-                    )
-                })?
+                intermediates
+                    .pop()
+                    .context("Query response was expected to have one list of results.")?
             }
         };
 
