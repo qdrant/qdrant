@@ -191,7 +191,7 @@ impl<W: Write + Seek> BuilderExt<W> {
                         output,
                         enabled: Arc::clone(&enabled),
                     })
-                    .tap_mut(|tar| tar.sparse(false)),
+                    .tap_mut(|tar| tar.sparse(true)),
                 ),
                 enabled,
             })),
