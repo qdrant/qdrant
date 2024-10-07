@@ -549,6 +549,9 @@ pub struct UpdateCollection {
     /// New sparse vector parameters
     #[prost(message, optional, tag = "8")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// New strict mode configuration
+    #[prost(message, optional, tag = "9")]
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
