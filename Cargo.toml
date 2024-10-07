@@ -65,7 +65,6 @@ clap = { version = "4.5.18", features = ["derive"] }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
-cpu-endian = "0.1"
 wal = { workspace = true }
 
 config = "~0.14.0"
