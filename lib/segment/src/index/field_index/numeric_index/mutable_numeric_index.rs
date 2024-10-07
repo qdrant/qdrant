@@ -18,11 +18,11 @@ use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
-    dynamic_index: DynamicNumericIndex<T>,
+    in_memory_index: InMemoryNumericIndex<T>,
 }
 
 // Numeric Index with insertions and deletions without persistence
-pub struct DynamicNumericIndex<T: Encodable + Numericable> {
+pub struct InMemoryNumericIndex<T: Encodable + Numericable> {
     pub map: BTreeSet<Point<T>>,
     pub histogram: Histogram<T>,
     pub points_count: usize,
@@ -30,7 +30,7 @@ pub struct DynamicNumericIndex<T: Encodable + Numericable> {
     pub point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: Encodable + Numericable> Default for DynamicNumericIndex<T> {
+impl<T: Encodable + Numericable> Default for InMemoryNumericIndex<T> {
     fn default() -> Self {
         Self {
             map: BTreeSet::new(),
@@ -42,11 +42,11 @@ impl<T: Encodable + Numericable> Default for DynamicNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Default> DynamicNumericIndex<T> {
+impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     pub fn from_iter(
         iter: impl Iterator<Item = OperationResult<(PointOffsetType, T)>>,
     ) -> OperationResult<Self> {
-        let mut index = DynamicNumericIndex::default();
+        let mut index = InMemoryNumericIndex::default();
         for pair in iter {
             let (idx, value) = pair?;
 
@@ -59,7 +59,7 @@ impl<T: Encodable + Numericable + Default> DynamicNumericIndex<T> {
             index.point_to_values[idx as usize].push(value);
 
             let key = Point::new(value, idx);
-            DynamicNumericIndex::add_to_map(&mut index.map, &mut index.histogram, key);
+            InMemoryNumericIndex::add_to_map(&mut index.map, &mut index.histogram, key);
         }
         for values in &index.point_to_values {
             if !values.is_empty() {
@@ -191,12 +191,12 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     pub fn new_from_db_wrapper(db_wrapper: DatabaseColumnScheduledDeleteWrapper) -> Self {
         Self {
             db_wrapper,
-            dynamic_index: DynamicNumericIndex::default(),
+            in_memory_index: InMemoryNumericIndex::default(),
         }
     }
 
-    pub fn into_dynamic_index(self) -> DynamicNumericIndex<T> {
-        self.dynamic_index
+    pub fn into_in_memory_index(self) -> InMemoryNumericIndex<T> {
+        self.in_memory_index
     }
 
     pub fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
@@ -211,7 +211,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         ));
         Self {
             db_wrapper,
-            dynamic_index: DynamicNumericIndex::default(),
+            in_memory_index: InMemoryNumericIndex::default(),
         }
     }
 
@@ -220,7 +220,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             return Ok(false);
         };
 
-        self.dynamic_index = DynamicNumericIndex::from_iter(
+        self.in_memory_index = InMemoryNumericIndex::from_iter(
             self.db_wrapper.lock_db().iter()?.map(|(key, value)| {
                 let value_idx =
                     u32::from_be_bytes(value.as_ref().try_into().map_err(|_| {
@@ -248,12 +248,12 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             let key = value.encode_key(idx);
             self.db_wrapper.put(&key, idx.to_be_bytes())?;
         }
-        self.dynamic_index.add_many_to_list(idx, values);
+        self.in_memory_index.add_many_to_list(idx, values);
         Ok(())
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        self.dynamic_index
+        self.in_memory_index
             .get_values(idx)
             .map(|mut values| {
                 values.try_for_each(|value| {
@@ -262,16 +262,16 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
                 })
             })
             .transpose()?;
-        self.dynamic_index.remove_point(idx);
+        self.in_memory_index.remove_point(idx);
         Ok(())
     }
 
     pub fn map(&self) -> &BTreeSet<Point<T>> {
-        &self.dynamic_index.map
+        &self.in_memory_index.map
     }
 
     delegate! {
-        to self.dynamic_index {
+        to self.in_memory_index {
             pub fn total_unique_values_count(&self) -> usize;
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool;
             pub fn get_points_count(&self) -> usize;

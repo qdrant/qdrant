@@ -79,7 +79,7 @@ pub enum MapIndex<N: MapIndexKey + ?Sized> {
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N> {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
+    pub fn new_memory(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
         } else {
@@ -1089,11 +1089,13 @@ mod tests {
     ) -> MapIndex<N> {
         let mut index = match index_type {
             IndexType::Mutable => {
-                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
+                MapIndex::<N>::new_memory(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
             }
-            IndexType::Immutable => {
-                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, false)
-            }
+            IndexType::Immutable => MapIndex::<N>::new_memory(
+                open_db_with_existing_cf(path).unwrap(),
+                FIELD_NAME,
+                false,
+            ),
             IndexType::Mmap => MapIndex::<N>::new_mmap(path).unwrap(),
         };
         index.load_from_db().unwrap();
