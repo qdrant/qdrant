@@ -6,6 +6,7 @@ use crate::common::Flusher;
 use crate::json_path::JsonPath;
 #[cfg(feature = "testing")]
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
+use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
@@ -17,6 +18,7 @@ pub enum PayloadStorageEnum {
     InMemoryPayloadStorage(InMemoryPayloadStorage),
     SimplePayloadStorage(SimplePayloadStorage),
     OnDiskPayloadStorage(OnDiskPayloadStorage),
+    MmapPayloadStorage(MmapPayloadStorage),
 }
 
 #[cfg(feature = "testing")]
@@ -38,6 +40,12 @@ impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
     }
 }
 
+impl From<MmapPayloadStorage> for PayloadStorageEnum {
+    fn from(a: MmapPayloadStorage) -> Self {
+        PayloadStorageEnum::MmapPayloadStorage(a)
+    }
+}
+
 impl PayloadStorageEnum {
     pub fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
@@ -48,6 +56,9 @@ impl PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::MmapPayloadStorage(_s) => {
+                todo!("implement iter for MmapPayloadStorage")
+            }
         }
     }
 }
@@ -59,6 +70,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.overwrite(point_id, payload),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.overwrite(point_id, payload),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.overwrite(point_id, payload),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload),
         }
     }
 
@@ -68,6 +80,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.set(point_id, payload),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set(point_id, payload),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload),
         }
     }
 
@@ -82,6 +95,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set_by_key(point_id, payload, key),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.set_by_key(point_id, payload, key),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set_by_key(point_id, payload, key),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.set_by_key(point_id, payload, key),
         }
     }
 
@@ -91,6 +105,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id),
         }
     }
 
@@ -100,6 +115,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key),
         }
     }
 
@@ -109,6 +125,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.clear(point_id),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear(point_id),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id),
         }
     }
 
@@ -118,6 +135,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.wipe(),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.wipe(),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.wipe(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.wipe(),
         }
     }
 
@@ -127,6 +145,7 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flusher(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.flusher(),
         }
     }
 }

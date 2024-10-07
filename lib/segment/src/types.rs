@@ -762,6 +762,8 @@ pub enum PayloadStorageType {
     InMemory,
     // Store payload on disk only, read each time it is requested
     OnDisk,
+    // Store payload on disk and in memory, read from memory if possible
+    Mmap,
 }
 
 impl PayloadStorageType {
