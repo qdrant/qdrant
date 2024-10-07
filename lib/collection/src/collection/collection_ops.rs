@@ -170,7 +170,7 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
             if let Some(current_config) = config.strict_mode_config.as_mut() {
-                *current_config = strict_mode_diff.update(&current_config)?;
+                *current_config = strict_mode_diff.update(current_config)?;
             } else {
                 config.strict_mode_config = Some(strict_mode_diff);
             }
