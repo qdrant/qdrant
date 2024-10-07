@@ -162,7 +162,6 @@ impl TableOfContent {
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
         }
-
         if let Some(strict_mode) = strict_mode {
             collection.update_strict_mode_config(strict_mode).await?;
         }
