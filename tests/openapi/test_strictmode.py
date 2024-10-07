@@ -305,8 +305,8 @@ def test_strict_mode_max_ef_hnsw_validation():
 
     search_fail = search_request()
 
-    assert search_fail.json()['status']['error'] == ('Forbidden: Limit exceeded 5 > 3 for "hnsw_ef". Help: Reduce the '
-                                                     '"hnsw_ef" parameter to or below 3.')
+    assert search_fail.json()['status']['error'] == ('Forbidden: Limit exceeded 5 > 4 for "hnsw_ef". Help: Reduce the '
+                                                     '"hnsw_ef" parameter to or below 4.')
     assert not search_fail.ok
 
 
@@ -377,6 +377,6 @@ def test_strict_mode_search_max_oversampling_validation():
 
     search_fail = search_request()
 
-    assert search_fail.json()['status']['error'] == ('Forbidden: Limit exceeded 2 > 1 for "oversampling". Help: Reduce '
-                                                     'the "oversampling" parameter to or below 1.')
+    assert search_fail.json()['status']['error'] == ('Forbidden: Limit exceeded 2 > 1.9 for "oversampling". Help: '
+                                                     'Reduce the "oversampling" parameter to or below 1.9.')
     assert not search_fail.ok
