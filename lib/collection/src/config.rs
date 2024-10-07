@@ -363,7 +363,7 @@ impl CollectionParams {
                         storage_type: if params.on_disk.unwrap_or_default() {
                             VectorStorageType::ChunkedMmap
                         } else {
-                            VectorStorageType::Memory
+                            VectorStorageType::InRamChunkedMmap
                         },
                         multivector_config: params.multivector_config,
                         datatype: params.datatype.map(VectorStorageDatatype::from),
