@@ -114,6 +114,12 @@ def test_strict_mode_query_limit_validation():
 
     set_strict_mode({
         "enabled": True,
+        "max_query_limit": 4,
+    })
+    
+    search_request().raise_for_status()
+    
+    set_strict_mode({
         "max_query_limit": 3,
     })
 
@@ -143,6 +149,8 @@ def test_strict_mode_timeout_validation():
         "enabled": True,
         "max_timeout": 2,
     })
+    
+    search_request_with_timeout(2).raise_for_status()
 
     search_fail = search_request_with_timeout(3)
 
@@ -177,6 +185,12 @@ def test_strict_mode_unindexed_filter_read_validation():
 
     set_strict_mode({
         "enabled": True,
+        "unindexed_filtering_retrieve": True,
+    })
+    
+    search_request_with_filter().raise_for_status()
+    
+    set_strict_mode({
         "unindexed_filtering_retrieve": False,
     })
 
@@ -229,6 +243,12 @@ def test_strict_mode_unindexed_filter_write_validation():
 
     set_strict_mode({
         "enabled": True,
+        "unindexed_filtering_update": True,
+    })
+    
+    update_request_with_filter().raise_for_status()
+    
+    set_strict_mode({
         "unindexed_filtering_update": False,
     })
 
@@ -274,7 +294,13 @@ def test_strict_mode_max_ef_hnsw_validation():
 
     set_strict_mode({
         "enabled": True,
-        "search_max_hnsw_ef": 3,
+        "search_max_hnsw_ef": 5,
+    })
+    
+    search_request().raise_for_status()
+    
+    set_strict_mode({
+        "search_max_hnsw_ef": 4,
     })
 
     search_fail = search_request()
@@ -303,6 +329,12 @@ def test_strict_mode_allow_exact_validation():
 
     set_strict_mode({
         "enabled": True,
+        "search_allow_exact": True,
+    })
+    
+    search_request().raise_for_status()
+    
+    set_strict_mode({
         "search_allow_exact": False,
     })
 
@@ -333,7 +365,14 @@ def test_strict_mode_search_max_oversampling_validation():
 
     set_strict_mode({
         "enabled": True,
-        "search_max_oversampling": 1.0,
+        "search_max_oversampling": 2.0,
+    })
+    
+    search_request().raise_for_status()
+    
+    set_strict_mode({
+        "enabled": True,
+        "search_max_oversampling": 1.9,
     })
 
     search_fail = search_request()
