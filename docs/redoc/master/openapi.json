@@ -10111,17 +10111,7 @@
           "cpu_flags": {
             "type": "string"
           },
-          "cpu_endian_compiled": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CpuEndian"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "cpu_endian_runtime": {
+          "cpu_endian": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CpuEndian"
