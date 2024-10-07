@@ -1,3 +1,16 @@
+# A nix-shell file that sets up a convenient environment to develop Qdrant.
+#
+# It includes all necessary dependencies used to build and develop Qdrant's Rust
+# code, run Python tests, and execute various scripts within the repository.
+#
+# To use this shell, you must have the Nix package manager installed on your
+# system. See https://nixos.org/download/. Available for Linux, macOS, and WSL2.
+#
+# Usage: Run `nix-shell` in the root directory of this repository. You will then
+# be dropped into a new shell with all programs and dependencies available.
+#
+# To update dependencies, run ./tools/nix/update.py.
+
 let
   sources = import ./tools/nix/npins;
   fenix = import sources.fenix { inherit pkgs; };
