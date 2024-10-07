@@ -39,9 +39,45 @@ def get_strict_mode():
         return config['strict_mode_config']
 
 
-def test_patch_collection():
+def strict_mode_enabled() -> bool:
     strict_mode = get_strict_mode()
-    assert strict_mode is None or not strict_mode['enabled']
+    return strict_mode is not None and strict_mode['enabled']
+
+
+def test_patch_collection_full():
+    assert not strict_mode_enabled()
+
+    set_strict_mode({
+        "enabled": True,
+        "max_query_limit": 10,
+        "max_timeout": 2,
+        "unindexed_filtering_retrieve": False,
+        "unindexed_filtering_update": False,
+        "search_max_hnsw_ef": 3,
+        "search_allow_exact": False,
+        "search_max_oversampling": 1.5,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['max_query_limit'] == 10
+    assert new_strict_mode_config['max_timeout'] == 2
+    assert not new_strict_mode_config['unindexed_filtering_retrieve']
+    assert not new_strict_mode_config['unindexed_filtering_update']
+    assert new_strict_mode_config['search_max_hnsw_ef'] == 3
+    assert not new_strict_mode_config['search_allow_exact']
+    assert new_strict_mode_config['search_max_oversampling'] == 1.5
+
+
+def test_patch_collection_partially():
+    assert not strict_mode_enabled()
 
     set_strict_mode({
         "enabled": True,
@@ -305,4 +341,3 @@ def test_strict_mode_search_max_oversampling_validation():
     assert search_fail.json()['status']['error'] == ('Forbidden: Limit exceeded 2 > 1 for "oversampling". Help: Reduce '
                                                      'the "oversampling" parameter to or below 1.')
     assert not search_fail.ok
-
