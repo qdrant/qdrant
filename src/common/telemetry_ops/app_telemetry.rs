@@ -192,7 +192,7 @@ impl Anonymize for RunningEnvironmentTelemetry {
             ram_size: self.ram_size.anonymize(),
             disk_size: self.disk_size.anonymize(),
             cpu_flags: self.cpu_flags.clone(),
-            cpu_endian: None,
+            cpu_endian: self.cpu_endian,
         }
     }
 }
