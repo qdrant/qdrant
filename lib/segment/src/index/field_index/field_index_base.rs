@@ -8,7 +8,7 @@ use super::binary_index::BinaryIndexBuilder;
 use super::facet_index::FacetIndex;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
-use super::geo_index::GeoMapIndexBuilder;
+use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
     NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
@@ -421,6 +421,7 @@ pub enum FieldIndexBuilder {
     FloatIndex(NumericIndexBuilder<FloatPayloadType, FloatPayloadType>),
     FloatMmapIndex(NumericIndexMmapBuilder<FloatPayloadType, FloatPayloadType>),
     GeoIndex(GeoMapIndexBuilder),
+    GeoMmapIndex(GeoMapIndexMmapBuilder),
     FullTextIndex(FullTextIndexBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     BinaryIndex(BinaryIndexBuilder),
@@ -444,6 +445,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FloatIndex(index) => index.init(),
             Self::FloatMmapIndex(index) => index.init(),
             Self::GeoIndex(index) => index.init(),
+            Self::GeoMmapIndex(index) => index.init(),
             Self::BinaryIndex(index) => index.init(),
             Self::FullTextIndex(index) => index.init(),
             Self::FullTextMmapIndex(builder) => builder.init(),
@@ -465,6 +467,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FloatIndex(index) => index.add_point(id, payload),
             Self::FloatMmapIndex(index) => index.add_point(id, payload),
             Self::GeoIndex(index) => index.add_point(id, payload),
+            Self::GeoMmapIndex(index) => index.add_point(id, payload),
             Self::BinaryIndex(index) => index.add_point(id, payload),
             Self::FullTextIndex(index) => index.add_point(id, payload),
             Self::FullTextMmapIndex(builder) => {
@@ -488,6 +491,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FloatIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
+            Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BinaryIndex(index) => FieldIndex::BinaryIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
