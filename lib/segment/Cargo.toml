@@ -85,7 +85,7 @@ strum = { workspace = true }
 byteorder = { workspace = true }
 zerocopy = { workspace = true }
 
-sysinfo = "0.31"
+sysinfo = "0.32"
 charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }
