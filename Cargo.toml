@@ -49,7 +49,6 @@ rusty-hook = "^0.11.2"
 [dependencies]
 parking_lot = { workspace = true, optional = true }
 
-bytes = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colored = "2"
@@ -71,7 +70,6 @@ wal = { workspace = true }
 config = "~0.14.0"
 
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.6"

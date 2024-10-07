@@ -1,30 +1,46 @@
+use std::error::Error;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use actix_files::NamedFile;
-use actix_web::{HttpRequest, HttpResponse, Responder};
-use futures::Stream;
+use actix_web::{HttpResponse, Responder};
+use bytes::Bytes;
+use futures::{Stream, TryStreamExt};
 
 pub struct SnapShotStreamLocalFS {
     pub snapshot_path: PathBuf,
-    pub req: HttpRequest,
 }
+
+type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Box<dyn Error>>>>>;
+
 pub struct SnapShotStreamCloudStrage {
-    pub streamer:
-        std::pin::Pin<Box<dyn Stream<Item = Result<bytes::Bytes, object_store::Error>> + Send>>,
+    stream: ByteStream,
 }
 
 pub enum SnapshotStream {
     LocalFS(SnapShotStreamLocalFS),
-    CloudStorage(SnapShotStreamCloudStrage),
+    ByteStream(SnapShotStreamCloudStrage),
+}
+
+impl SnapshotStream {
+    pub fn new_stream<S, E>(stream: S) -> Self
+    where
+        S: Stream<Item = Result<Bytes, E>> + 'static,
+        E: Into<Box<dyn Error>>,
+    {
+        SnapshotStream::ByteStream(SnapShotStreamCloudStrage {
+            stream: Box::pin(stream.map_err(|e| e.into())),
+        })
+    }
 }
 
 impl Responder for SnapshotStream {
     type Body = actix_web::body::BoxBody;
 
-    fn respond_to(self, _: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
+    fn respond_to(self, req: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
         match self {
             SnapshotStream::LocalFS(stream) => match NamedFile::open(stream.snapshot_path) {
-                Ok(file) => file.into_response(&stream.req),
+                Ok(file) => file.into_response(req),
                 Err(e) => match e.kind() {
                     std::io::ErrorKind::NotFound => {
                         HttpResponse::NotFound().body(format!("File not found: {e}"))
@@ -34,9 +50,9 @@ impl Responder for SnapshotStream {
                 },
             },
 
-            SnapshotStream::CloudStorage(stream) => HttpResponse::Ok()
+            SnapshotStream::ByteStream(stream) => HttpResponse::Ok()
                 .content_type("application/octet-stream")
-                .streaming(stream.streamer),
+                .streaming(stream.stream),
         }
     }
 }
