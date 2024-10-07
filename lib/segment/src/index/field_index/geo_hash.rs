@@ -29,6 +29,7 @@ use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
 /// Decoded     'd'   'r'   '5'   'r'   'u'   'j'   '4'   '4'   '7'                      9
 /// Meaning     s[0]  s[1]  s[2]  s[3]  s[4]  s[5]  s[6]  s[7]  s[8]  s[9]  s[10] s[11]  length
 /// ```
+#[repr(C)]
 #[derive(Default, Clone, Copy, Debug, PartialEq, Hash, Ord, PartialOrd, Eq)]
 pub struct GeoHash {
     packed: u64,
@@ -45,7 +46,7 @@ const BASE32_CODES: [char; 32] = [
 ];
 
 /// Max size of geo-hash used for indexing. size=12 is about 6cm2
-const GEOHASH_MAX_LENGTH: usize = 12;
+pub const GEOHASH_MAX_LENGTH: usize = 12;
 
 const LON_RANGE: Range<f64> = -180.0..180.0;
 const LAT_RANGE: Range<f64> = -90.0..90.0;
