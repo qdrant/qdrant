@@ -172,7 +172,7 @@ nix = { version = "0.29", features = ["fs"]}
 num-traits = "0.2.19"
 rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
-ph = "0.8.3"
+ph = "0.8.4"
 pprof = { version = "0.13.0", features = ["flamegraph", "prost-codec"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
