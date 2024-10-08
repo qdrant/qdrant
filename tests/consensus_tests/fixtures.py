@@ -8,7 +8,7 @@ from consensus_tests.assertions import assert_http_ok
 CITIES = ["London", "New York", "Paris", "Tokyo", "Berlin", "Rome", "Madrid", "Moscow"]
 
 # dense vector sizing
-DENSE_VECTOR_SIZE = 4
+DENSE_VECTOR_SIZE = 768
 
 # sparse vector sizing
 SPARSE_VECTOR_SIZE = 1000
@@ -91,12 +91,15 @@ def create_collection(
     r_batch = requests.put(
         f"{peer_url}/collections/{collection}?timeout={timeout}",
         json={
-            "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
-            "sparse_vectors": {"sparse-text": {}},
+            "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot", "on_disk": True},
+            # "sparse_vectors": {"sparse-text": {}},
             "shard_number": shard_number,
             "replication_factor": replication_factor,
             "write_consistency_factor": write_consistency_factor,
             "sharding_method": sharding_method,
+            "optimizers_config": {"indexing_threshold": 1},
+            "on_disk_payload": False,
+            "quantization_config": {"scalar": {"type": "int8", "quantile": 0.99, "always_ram": False}}
         },
         headers=headers,
     )

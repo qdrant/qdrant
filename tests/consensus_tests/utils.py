@@ -251,8 +251,8 @@ def get_shard_transfer_count(peer_api_uri: str, collection_name: str) -> int:
     return len(info["shard_transfers"])
 
 
-def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
-    r = requests.get(f"{peer_api_uri}/collections/{collection_name}")
+def get_collection_info(peer_api_uri: str, collection_name: str, headers={}) -> dict:
+    r = requests.get(f"{peer_api_uri}/collections/{collection_name}", headers=headers)
     assert_http_ok(r)
     res = r.json()["result"]
     return res
@@ -480,11 +480,11 @@ def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> st
     return get_leader(peer_api_uri, headers=headers)
 
 
-def wait_collection_green(peer_api_uri: str, collection_name: str):
+def wait_collection_green(peer_api_uri: str, collection_name: str, headers={}):
     try:
-        wait_for(check_collection_green, peer_api_uri, collection_name)
+        wait_for(check_collection_green, peer_api_uri, collection_name, headers=headers)
     except Exception as e:
-        print_clusters_info([peer_api_uri])
+        print_clusters_info([peer_api_uri], headers=headers)
         raise e
 
 
@@ -619,8 +619,8 @@ def wait_for_peer_online(peer_api_uri: str, path="/readyz"):
         raise e
 
 
-def check_collection_green(peer_api_uri: str, collection_name: str, expected_status: str = "green") -> bool:
-    collection_cluster_info = get_collection_info(peer_api_uri, collection_name)
+def check_collection_green(peer_api_uri: str, collection_name: str, expected_status: str = "green", headers={}) -> bool:
+    collection_cluster_info = get_collection_info(peer_api_uri, collection_name, headers=headers)
     return collection_cluster_info['status'] == expected_status
 
 
