@@ -28,7 +28,7 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
-use storage::content_manager::toc::transfer::ShardTransferDispatcher;
+use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -290,9 +290,8 @@ fn main() -> anyhow::Result<()> {
 
         dispatcher = dispatcher.with_consensus(consensus_state.clone());
 
-        let shard_transfer_dispatcher =
-            ShardTransferDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
-        toc_arc.with_shard_transfer_dispatcher(shard_transfer_dispatcher);
+        let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
+        toc_arc.with_toc_dispatcher(toc_dispatcher);
 
         let dispatcher_arc = Arc::new(dispatcher);
 

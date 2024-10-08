@@ -1,5 +1,3 @@
-use std::sync::Weak;
-
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::replica_set::ReplicaState;
@@ -8,35 +6,14 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferKey};
 use collection::shards::CollectionId;
 
-use super::TableOfContent;
+use super::dispatcher::TocDispatcher;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, ReshardingOperation, ShardTransferOperations,
 };
-use crate::content_manager::consensus_manager::ConsensusStateRef;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 
-#[derive(Clone)]
-pub struct ShardTransferDispatcher {
-    /// Reference to table of contents
-    ///
-    /// This dispatcher is stored inside the table of contents after construction. It therefore
-    /// uses a weak reference to avoid a reference cycle which would prevent dropping the table of
-    /// contents on exit.
-    toc: Weak<TableOfContent>,
-    consensus_state: ConsensusStateRef,
-}
-
-impl ShardTransferDispatcher {
-    pub fn new(toc: Weak<TableOfContent>, consensus_state: ConsensusStateRef) -> Self {
-        Self {
-            toc,
-            consensus_state,
-        }
-    }
-}
-
 #[async_trait]
-impl ShardTransferConsensus for ShardTransferDispatcher {
+impl ShardTransferConsensus for TocDispatcher {
     fn this_peer_id(&self) -> PeerId {
         self.consensus_state.this_peer_id()
     }
