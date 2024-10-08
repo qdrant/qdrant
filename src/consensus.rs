@@ -1422,8 +1422,8 @@ mod tests {
         });
         // Wait for Raft to establish the leader
         is_leader_established.await_ready();
-        // Leader election produces a raft log entry
-        assert_eq!(consensus_state.hard_state().commit, 1);
+        // Leader election produces a raft log entry, and then origin peer adds itself to consensus
+        assert_eq!(consensus_state.hard_state().commit, 2);
         // Initially there are 0 collections
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
