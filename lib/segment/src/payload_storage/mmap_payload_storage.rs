@@ -20,6 +20,10 @@ pub struct MmapPayloadStorage {
 }
 
 impl MmapPayloadStorage {
+    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+        Self::open(path).or_else(|_| Self::create(path))
+    }
+
     pub fn open(path: &Path) -> OperationResult<Self> {
         let path = path.join(STORAGE_PATH);
         if let Some(storage) = CratePayloadStorage::open(path, None) {
@@ -32,7 +36,7 @@ impl MmapPayloadStorage {
         }
     }
 
-    pub fn new(path: &Path) -> OperationResult<Self> {
+    pub fn create(path: &Path) -> OperationResult<Self> {
         let path = path.join(STORAGE_PATH);
         let storage = CratePayloadStorage::new(path, None);
         let storage = Arc::new(RwLock::new(storage));
