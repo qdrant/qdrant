@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -21,11 +21,19 @@ pub struct MmapPayloadStorage {
 
 impl MmapPayloadStorage {
     pub fn open_or_create(path: &Path) -> OperationResult<Self> {
-        Self::open(path).or_else(|_| Self::create(path))
+        let path = path.join(STORAGE_PATH);
+        if path.exists() {
+            Self::open(path)
+        } else {
+            // create folder if it does not exist
+            std::fs::create_dir_all(&path).map_err(|_| {
+                OperationError::service_error("Failed to create mmap payload storage directory")
+            })?;
+            Ok(Self::new(path))
+        }
     }
 
-    pub fn open(path: &Path) -> OperationResult<Self> {
-        let path = path.join(STORAGE_PATH);
+    fn open(path: PathBuf) -> OperationResult<Self> {
         if let Some(storage) = CratePayloadStorage::open(path, None) {
             let storage = Arc::new(RwLock::new(storage));
             Ok(Self { storage })
@@ -36,11 +44,10 @@ impl MmapPayloadStorage {
         }
     }
 
-    pub fn create(path: &Path) -> OperationResult<Self> {
-        let path = path.join(STORAGE_PATH);
+    fn new(path: PathBuf) -> Self {
         let storage = CratePayloadStorage::new(path, None);
         let storage = Arc::new(RwLock::new(storage));
-        Ok(Self { storage })
+        Self { storage }
     }
 }
 
