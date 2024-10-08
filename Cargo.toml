@@ -159,7 +159,7 @@ chrono = { version = "0.4.38", features = ["serde"] }
 data-encoding = "2.6.0"
 delegate = "0.13.0"
 fnv = "1.0"
-futures = "0.3.30"
+futures = "0.3.31"
 futures-util = "0.3.30"
 generic-tests = "0.1.2"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
