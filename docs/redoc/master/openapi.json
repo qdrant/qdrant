@@ -10115,8 +10115,26 @@
           },
           "cpu_flags": {
             "type": "string"
+          },
+          "cpu_endian": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuEndian"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "CpuEndian": {
+        "type": "string",
+        "enum": [
+          "little",
+          "big",
+          "other"
+        ]
       },
       "CollectionsTelemetry": {
         "type": "object",
