@@ -49,6 +49,23 @@ impl MmapPayloadStorage {
         let storage = Arc::new(RwLock::new(storage));
         Self { storage }
     }
+
+    pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        self.storage.read().iter(|point_id, payload| {
+            match callback(point_id, &payload.clone().into()) {
+                Ok(true) => Ok(true),
+                Ok(false) => Ok(false),
+                Err(e) => Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                )),
+            }
+        })?;
+        Ok(())
+    }
 }
 
 // TODO delete this after integration

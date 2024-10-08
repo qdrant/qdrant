@@ -56,9 +56,7 @@ impl PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::MmapPayloadStorage(_s) => {
-                todo!("implement iter for MmapPayloadStorage")
-            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback),
         }
     }
 }
