@@ -3,7 +3,8 @@ use std::future::Future;
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use actix_web_validator::Query;
 use collection::operations::verification::new_unchecked_verification_pass;
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
@@ -20,6 +21,12 @@ struct QueryParams {
     #[serde(default)]
     #[validate(range(min = 1))]
     timeout: Option<u64>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct MetadataParams {
+    #[serde(default)]
+    pub wait: bool,
 }
 
 #[get("/cluster")]
@@ -134,6 +141,7 @@ async fn update_cluster_metadata_key(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
     key: web::Path<String>,
+    params: Query<MetadataParams>,
     value: web::Json<serde_json::Value>,
 ) -> HttpResponse {
     // Not a collection level request.
@@ -142,7 +150,8 @@ async fn update_cluster_metadata_key(
         let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
-        toc.update_cluster_metadata(key.into_inner(), value.into_inner())?;
+        toc.update_cluster_metadata(key.into_inner(), value.into_inner(), params.wait)
+            .await?;
         Ok(true)
     })
     .await
@@ -153,6 +162,7 @@ async fn delete_cluster_metadata_key(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
     key: web::Path<String>,
+    params: Query<MetadataParams>,
 ) -> HttpResponse {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
@@ -160,7 +170,8 @@ async fn delete_cluster_metadata_key(
         let toc = dispatcher.toc(&access, &pass);
         access.check_global_access(AccessRequirements::new().write())?;
 
-        toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null)?;
+        toc.update_cluster_metadata(key.into_inner(), serde_json::Value::Null, params.wait)
+            .await?;
         Ok(true)
     })
     .await

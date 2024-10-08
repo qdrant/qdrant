@@ -297,7 +297,7 @@ impl TableOfContent {
 
         match operation {
             ReshardingOperation::Start(key) => {
-                let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                let consensus = match self.toc_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
@@ -395,7 +395,7 @@ impl TableOfContent {
         };
         let key = resharding_state.key();
 
-        let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+        let consensus = match self.toc_dispatcher.lock().as_ref() {
             Some(consensus) => Box::new(consensus.clone()),
             None => {
                 return Err(StorageError::service_error(
@@ -512,7 +512,7 @@ impl TableOfContent {
                     }
                 };
 
-                let shard_consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
