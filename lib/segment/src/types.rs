@@ -768,7 +768,7 @@ pub enum PayloadStorageType {
 
 impl PayloadStorageType {
     pub fn is_on_disk(&self) -> bool {
-        matches!(self, PayloadStorageType::OnDisk)
+        matches!(self, PayloadStorageType::OnDisk) || matches!(self, PayloadStorageType::Mmap)
     }
 }
 

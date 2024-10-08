@@ -4293,7 +4293,7 @@ checksum = "714c75db297bc88a63783ffc6ab9f830698a6705aa0201416931759ef4c8183d"
 dependencies = [
  "autocfg",
  "equivalent",
- "indexmap 2.5.0",
+ "indexmap 2.6.0",
 ]
 
 [[package]]

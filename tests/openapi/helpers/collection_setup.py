@@ -118,7 +118,7 @@ def geo_collection_setup(
 
 def basic_collection_setup(
         collection_name='test_collection',
-        on_disk_payload=False,
+        on_disk_payload=True,
         on_disk_vectors=False,
         wal_capacity=None,
 ):

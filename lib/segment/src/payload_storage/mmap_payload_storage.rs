@@ -12,7 +12,7 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};
 
-const STORAGE_PATH: &str = "payload-storage";
+const STORAGE_PATH: &str = "payload_storage";
 
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
