@@ -3674,7 +3674,7 @@ dependencies = [
 [[package]]
 name = "mmap-payload-storage"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#b27bd0c0be94030e75e7fc1f8306eeaeaa774dee"
+source = "git+https://github.com/qdrant/mmap-payload-storage#ccc3a694e1e67a9f5e3a06567b38e897b7fcc4bb"
 dependencies = [
  "log",
  "lz4_flex",
