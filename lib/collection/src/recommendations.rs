@@ -5,8 +5,8 @@ use std::time::Duration;
 use api::rest::RecommendStrategy;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector, Vector, VectorElementType,
-    VectorRef, DEFAULT_VECTOR_NAME,
+    DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector, VectorElementType,
+    VectorInternal, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -30,7 +30,9 @@ use crate::operations::types::{
     RecommendRequestInternal, UsingVector,
 };
 
-fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
+fn avg_vectors<'a>(
+    vectors: impl IntoIterator<Item = VectorRef<'a>>,
+) -> CollectionResult<VectorInternal> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
@@ -79,16 +81,16 @@ fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> Collecti
             for item in &mut avg_dense {
                 *item /= dense_count as VectorElementType;
             }
-            Ok(Vector::from(avg_dense))
+            Ok(VectorInternal::from(avg_dense))
         }
         (0, _, 0) => {
             for item in &mut avg_sparse.values {
                 *item /= sparse_count as VectorElementType;
             }
-            Ok(Vector::from(avg_sparse))
+            Ok(VectorInternal::from(avg_sparse))
         }
         (0, 0, _) => match avg_multi {
-            Some(avg_multi) => Ok(Vector::from(avg_multi)),
+            Some(avg_multi) => Ok(VectorInternal::from(avg_multi)),
             None => Err(CollectionError::bad_input(
                 "Positive vectors should not be empty with `average` strategy".to_owned(),
             )),
@@ -99,9 +101,12 @@ fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> Collecti
     }
 }
 
-fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> CollectionResult<Vector> {
+fn merge_positive_and_negative_avg(
+    positive: VectorInternal,
+    negative: VectorInternal,
+) -> CollectionResult<VectorInternal> {
     match (positive, negative) {
-        (Vector::Dense(positive), Vector::Dense(negative)) => {
+        (VectorInternal::Dense(positive), VectorInternal::Dense(negative)) => {
             let vector: DenseVector = positive
                 .iter()
                 .zip(negative.iter())
@@ -109,13 +114,13 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
                 .collect();
             Ok(vector.into())
         }
-        (Vector::Sparse(positive), Vector::Sparse(negative)) => Ok(positive
+        (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => Ok(positive
             .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
             .into()),
-        (Vector::MultiDense(mut positive), Vector::MultiDense(negative)) => {
+        (VectorInternal::MultiDense(mut positive), VectorInternal::MultiDense(negative)) => {
             // merge positive and negative vectors as concatenated vectors with negative vectors negated
             positive.flattened_vectors.extend(negative.flattened_vectors.into_iter().map(|x| -x));
-            Ok(Vector::MultiDense(positive))
+            Ok(VectorInternal::MultiDense(positive))
         },
         _ => Err(CollectionError::bad_input(
             "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi".to_owned(),
@@ -126,7 +131,7 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
 pub fn avg_vector_for_recommendation<'a>(
     positive: impl IntoIterator<Item = VectorRef<'a>>,
     mut negative: Peekable<impl Iterator<Item = VectorRef<'a>>>,
-) -> CollectionResult<Vector> {
+) -> CollectionResult<VectorInternal> {
     let avg_positive = avg_vectors(positive)?;
 
     let search_vector = if negative.peek().is_none() {
@@ -456,14 +461,14 @@ fn recommend_by_best_score(
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::{Vector, VectorRef};
+    use segment::data_types::vectors::{VectorInternal, VectorRef};
     use sparse::common::sparse_vector::SparseVector;
 
     use super::avg_vectors;
 
     #[test]
     fn test_avg_vectors() {
-        let vectors: Vec<Vector> = vec![
+        let vectors: Vec<VectorInternal> = vec![
             vec![1.0, 2.0, 3.0].into(),
             vec![1.0, 2.0, 3.0].into(),
             vec![1.0, 2.0, 3.0].into(),
@@ -473,7 +478,7 @@ mod tests {
             vec![1.0, 2.0, 3.0].into(),
         );
 
-        let vectors: Vec<Vector> = vec![
+        let vectors: Vec<VectorInternal> = vec![
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
                 .unwrap()
                 .into(),
@@ -488,7 +493,7 @@ mod tests {
                 .into(),
         );
 
-        let vectors: Vec<Vector> = vec![
+        let vectors: Vec<VectorInternal> = vec![
             vec![1.0, 2.0, 3.0].into(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
                 .unwrap()

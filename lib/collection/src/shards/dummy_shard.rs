@@ -14,7 +14,8 @@ use tokio::runtime::Handle;
 
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, ShardStatus, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, ShardStatus,
+    UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -79,7 +80,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<&OrderBy>,
         _: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }
 
@@ -112,7 +113,7 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: &Handle,
         _: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }
 

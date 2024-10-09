@@ -210,7 +210,7 @@ impl Collection {
         let retrieved_records = self
             .retrieve(retrieve_request, read_consistency, shard_selection, timeout)
             .await?;
-        let mut records_map: HashMap<ExtendedPointId, Record> = retrieved_records
+        let mut records_map: HashMap<ExtendedPointId, RecordInternal> = retrieved_records
             .into_iter()
             .map(|rec| (rec.id, rec))
             .collect();

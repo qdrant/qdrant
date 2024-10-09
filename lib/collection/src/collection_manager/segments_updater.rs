@@ -17,9 +17,11 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::operations::payload_ops::PayloadOps;
-use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
+use crate::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
+};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::vector_ops::{PointVectors, VectorOperations};
+use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
 use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
@@ -59,12 +61,12 @@ pub(crate) fn delete_points(
 pub(crate) fn update_vectors(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
-    points: Vec<PointVectors>,
+    points: Vec<PointVectorsPersisted>,
 ) -> CollectionResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
     let mut points_map: HashMap<PointIdType, NamedVectors> = HashMap::new();
     for point in points {
-        let PointVectors { id, vector } = point;
+        let PointVectorsPersisted { id, vector } = point;
         let named_vector = NamedVectors::from(vector);
 
         let entry = points_map.entry(id).or_default();
@@ -397,12 +399,9 @@ pub(crate) fn sync_points(
     op_num: SeqNumberType,
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
-    points: &[PointStruct],
+    points: &[PointStructPersisted],
 ) -> CollectionResult<(usize, usize, usize)> {
-    let id_to_point = points
-        .iter()
-        .map(|p| (p.id, p))
-        .collect::<HashMap<PointIdType, &PointStruct>>();
+    let id_to_point: HashMap<PointIdType, _> = points.iter().map(|p| (p.id, p)).collect();
     let sync_points: HashSet<_> = points.iter().map(|p| p.id).collect();
     // 1. Retrieve existing points for a range
     let stored_point_ids: HashSet<_> = segments
@@ -471,10 +470,9 @@ pub(crate) fn upsert_points<'a, T>(
     points: T,
 ) -> CollectionResult<usize>
 where
-    T: IntoIterator<Item = &'a PointStruct>,
+    T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    let points_map: HashMap<PointIdType, &PointStruct> =
-        points.into_iter().map(|p| (p.id, p)).collect();
+    let points_map: HashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     // Update points in writable segments
@@ -546,12 +544,12 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperationsInternal::PointsBatch(batch) => {
-                    let batch_vectors: BatchVectorStructInternal = batch.vectors.into();
+                    let batch_vectors = BatchVectorStructInternal::from(batch.vectors);
                     let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
                         None => vectors_iter
-                            .map(|(id, vectors)| PointStruct {
+                            .map(|(id, vectors)| PointStructPersisted {
                                 id,
                                 vector: VectorStructInternal::from(vectors).into(),
                                 payload: None,
@@ -559,7 +557,7 @@ pub(crate) fn process_point_operation(
                             .collect(),
                         Some(payloads) => vectors_iter
                             .zip(payloads)
-                            .map(|((id, vectors), payload)| PointStruct {
+                            .map(|((id, vectors), payload)| PointStructPersisted {
                                 id,
                                 vector: VectorStructInternal::from(vectors).into(),
                                 payload,

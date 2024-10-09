@@ -25,7 +25,9 @@ use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfig;
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier, Record};
+use crate::operations::types::{
+    CollectionResult, CoreSearchRequestBatch, Modifier, RecordInternal,
+};
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
@@ -348,7 +350,7 @@ impl SegmentsSearcher {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         runtime_handle: &Handle,
-    ) -> CollectionResult<HashMap<PointIdType, Record>> {
+    ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
         runtime_handle
             .spawn_blocking({
@@ -377,9 +379,9 @@ impl SegmentsSearcher {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
-    ) -> CollectionResult<HashMap<PointIdType, Record>> {
+    ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
-        let mut point_records: HashMap<PointIdType, Record> = Default::default();
+        let mut point_records: HashMap<PointIdType, RecordInternal> = Default::default();
 
         segments
             .read()
@@ -391,7 +393,7 @@ impl SegmentsSearcher {
                 if !point_version.contains_key(&id) || point_version[&id] < version {
                     point_records.insert(
                         id,
-                        Record {
+                        RecordInternal {
                             id,
                             payload: if with_payload.enable {
                                 if let Some(selector) = &with_payload.payload_selector {
@@ -403,8 +405,10 @@ impl SegmentsSearcher {
                                 None
                             },
                             vector: {
-                                let vector: Option<VectorStructInternal> = match with_vector {
-                                    WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
+                                match with_vector {
+                                    WithVector::Bool(true) => {
+                                        Some(VectorStructInternal::from(segment.all_vectors(id)?))
+                                    }
                                     WithVector::Bool(false) => None,
                                     WithVector::Selector(vector_names) => {
                                         let mut selected_vectors = NamedVectors::default();
@@ -413,10 +417,9 @@ impl SegmentsSearcher {
                                                 selected_vectors.insert(vector_name.into(), vector);
                                             }
                                         }
-                                        Some(selected_vectors.into())
+                                        Some(VectorStructInternal::from(selected_vectors))
                                     }
-                                };
-                                vector.map(Into::into)
+                                }
                             },
                             shard_key: None,
                             order_value: None,

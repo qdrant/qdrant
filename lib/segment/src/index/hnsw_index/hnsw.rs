@@ -25,7 +25,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::common::BYTES_IN_KB;
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -617,7 +617,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
     fn discovery_search_with_graph(
         &self,
-        discovery_query: DiscoveryQuery<Vector>,
+        discovery_query: DiscoveryQuery<VectorInternal>,
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,

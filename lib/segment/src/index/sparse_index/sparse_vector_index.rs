@@ -23,7 +23,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -512,10 +512,10 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             let search_results = if query_context.is_require_idf() {
                 let vector = (*vector).clone().transform(|mut vector| {
                     match &mut vector {
-                        Vector::Dense(_) | Vector::MultiDense(_) => {
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {
                             return Err(OperationError::WrongSparse);
                         }
-                        Vector::Sparse(sparse) => {
+                        VectorInternal::Sparse(sparse) => {
                             query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
                         }
                     }

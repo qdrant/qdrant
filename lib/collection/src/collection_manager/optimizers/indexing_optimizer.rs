@@ -287,7 +287,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
-    use segment::data_types::vectors::{BatchVectorStructInternal, DEFAULT_VECTOR_NAME};
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::hnsw_index::num_rayon_threads;
@@ -303,7 +303,9 @@ mod tests {
     use crate::collection_manager::segments_updater::{
         process_field_index_operation, process_point_operation,
     };
-    use crate::operations::point_ops::{Batch, PointOperations};
+    use crate::operations::point_ops::{
+        BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
+    };
     use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::operations::{CreateIndex, FieldIndexOperations};
@@ -607,21 +609,23 @@ mod tests {
         }
 
         let point_payload: Payload = json!({"number":10000i64}).into();
-        let insert_point_ops: PointOperations = Batch {
+
+        let batch = BatchPersisted {
             ids: vec![501.into(), 502.into(), 503.into()],
-            vectors: BatchVectorStructInternal::from(vec![
+            vectors: BatchVectorStructPersisted::Single(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
-            ])
-            .into(),
+            ]),
             payloads: Some(vec![
                 Some(point_payload.clone()),
                 Some(point_payload.clone()),
                 Some(point_payload),
             ]),
-        }
-        .into();
+        };
+
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         let smallest_size = infos
             .iter()
@@ -686,17 +690,18 @@ mod tests {
             "Testing that new segment is created if none left"
         );
 
-        let insert_point_ops: PointOperations = Batch {
+        let batch = BatchPersisted {
             ids: vec![601.into(), 602.into(), 603.into()],
-            vectors: BatchVectorStructInternal::from(vec![
+            vectors: BatchVectorStructPersisted::Single(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
-            ])
-            .into(),
+            ]),
             payloads: None,
-        }
-        .into();
+        };
+
+        let insert_point_ops =
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch));
 
         process_point_operation(
             locked_holder.deref(),

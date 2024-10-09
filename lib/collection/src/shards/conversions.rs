@@ -1,4 +1,5 @@
-use api::grpc::conversions::{convert_shard_key_from_grpc_opt, payload_to_proto};
+use api::conversions::json::payload_to_proto;
+use api::grpc::conversions::convert_shard_key_from_grpc_opt;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -7,7 +8,7 @@ use api::grpc::qdrant::{
     DeletePointVectors, DeletePoints, DeletePointsInternal, DeleteVectorsInternal, PointVectors,
     PointsIdsList, PointsSelector, SetPayloadPoints, SetPayloadPointsInternal, SyncPoints,
     SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
-    UpsertPointsInternal, VectorsSelector,
+    UpsertPointsInternal, Vectors, VectorsSelector,
 };
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
@@ -41,7 +42,7 @@ pub fn internal_sync_points(
             points: points_sync_operation
                 .points
                 .into_iter()
-                .map(|x| x.try_into())
+                .map(api::grpc::qdrant::PointStruct::try_from)
                 .collect::<Result<Vec<_>, Status>>()?,
             from_id: points_sync_operation.from_id.map(|x| x.into()),
             to_id: points_sync_operation.to_id.map(|x| x.into()),
@@ -65,10 +66,10 @@ pub fn internal_upsert_points(
             collection_name,
             wait: Some(wait),
             points: match point_insert_operations {
-                PointInsertOperationsInternal::PointsBatch(batch) => batch.try_into()?,
+                PointInsertOperationsInternal::PointsBatch(batch) => TryFrom::try_from(batch)?,
                 PointInsertOperationsInternal::PointsList(list) => list
                     .into_iter()
-                    .map(|id| id.try_into())
+                    .map(api::grpc::qdrant::PointStruct::try_from)
                     .collect::<Result<Vec<_>, Status>>()?,
             },
             ordering: ordering.map(write_ordering_to_proto),
@@ -132,25 +133,29 @@ pub fn internal_update_vectors(
     update_vectors: UpdateVectorsOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
-) -> UpdateVectorsInternal {
-    UpdateVectorsInternal {
+) -> CollectionResult<UpdateVectorsInternal> {
+    let points: Result<Vec<_>, _> = update_vectors
+        .points
+        .into_iter()
+        .map(|point| {
+            VectorStructInternal::try_from(point.vector).map(|vector_struct| PointVectors {
+                id: Some(point.id.into()),
+                vectors: Some(Vectors::from(vector_struct)),
+            })
+        })
+        .collect();
+
+    Ok(UpdateVectorsInternal {
         shard_id,
         clock_tag: clock_tag.map(Into::into),
         update_vectors: Some(UpdatePointVectors {
             collection_name,
             wait: Some(wait),
-            points: update_vectors
-                .points
-                .into_iter()
-                .map(|point| PointVectors {
-                    id: Some(point.id.into()),
-                    vectors: Some(VectorStructInternal::from(point.vector).into()),
-                })
-                .collect(),
+            points: points?,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
-    }
+    })
 }
 
 pub fn internal_delete_vectors(
@@ -396,7 +401,7 @@ pub fn try_scored_point_from_grpc(
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(point.payload)?)
     } else {
         debug_assert!(point.payload.is_empty());
         None
@@ -405,7 +410,8 @@ pub fn try_scored_point_from_grpc(
     let vector = point
         .vectors
         .map(|vectors| vectors.try_into())
-        .transpose()?;
+        .transpose()
+        .map_err(|e| tonic::Status::invalid_argument(format!("Failed to parse vectors: {e}")))?;
 
     Ok(ScoredPoint {
         id,

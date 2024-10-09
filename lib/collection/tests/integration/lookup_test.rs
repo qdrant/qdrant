@@ -2,14 +2,17 @@ use collection::collection::Collection;
 use collection::lookup::types::PseudoId;
 use collection::lookup::{lookup_ids, WithLookup};
 use collection::operations::consistency_params::ReadConsistency;
-use collection::operations::point_ops::{Batch, WriteOrdering};
+use collection::operations::point_ops::{
+    BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
+    WriteOrdering,
+};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
 use rstest::*;
-use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
+use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Payload, PointIdType};
 use serde_json::json;
 use tempfile::Builder;
@@ -55,13 +58,14 @@ async fn setup() -> Resources {
         .map(|i| Some(Payload::from(json!({ "foo": format!("bar {}", i) }))))
         .collect_vec();
 
+    let batch = BatchPersisted {
+        ids,
+        vectors: BatchVectorStructPersisted::Single(vectors),
+        payloads: Some(payloads),
+    };
+
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
-        Batch {
-            ids,
-            vectors: BatchVectorStructInternal::from(vectors).into(),
-            payloads: Some(payloads),
-        }
-        .into(),
+        PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
     );
 
     collection

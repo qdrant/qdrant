@@ -7,7 +7,6 @@ use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
-use validator::Validate as _;
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -137,8 +136,6 @@ impl Collection {
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
     ) -> CollectionResult<UpdateResult> {
-        operation.validate()?;
-
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
 
@@ -412,7 +409,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = request
             .with_payload
             .as_ref()

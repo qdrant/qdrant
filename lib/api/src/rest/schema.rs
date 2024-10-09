@@ -1,16 +1,19 @@
 use std::collections::HashMap;
 
 use common::types::ScoreType;
+use common::validation::validate_multi_vector;
 use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, IntPayloadType, PointIdType, SearchParams, ShardKey, WithPayloadInterface, WithVector,
+    Filter, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey, WithPayloadInterface,
+    WithVector,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
 
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
@@ -18,6 +21,9 @@ pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
 /// Type for multi dense vector
 pub type MultiDenseVector = Vec<DenseVector>;
 
+/// Vector Data
+/// Vectors can be described directly with values
+/// Or specified with source "objects" for inference
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
@@ -25,6 +31,30 @@ pub enum Vector {
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
+}
+
+/// Vector Data stored in Point
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum VectorOutput {
+    Dense(DenseVector),
+    Sparse(sparse::common::sparse_vector::SparseVector),
+    MultiDense(MultiDenseVector),
+}
+
+impl Validate for Vector {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            Vector::Dense(_) => Ok(()),
+            Vector::Sparse(v) => v.validate(),
+            Vector::MultiDense(m) => validate_multi_vector(m),
+            Vector::Document(_) => Ok(()),
+            Vector::Image(_) => Ok(()),
+            Vector::Object(_) => Ok(()),
+        }
+    }
 }
 
 fn vector_example() -> DenseVector {
@@ -47,6 +77,7 @@ fn named_vector_example() -> HashMap<String, Vector> {
     );
     map
 }
+
 /// Full vector data per point separator with single and multiple vector modes
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
@@ -58,19 +89,20 @@ pub enum VectorStruct {
     #[schemars(example = "named_vector_example")]
     Named(HashMap<String, Vector>),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
 }
 
-/// WARN: Work-in-progress, unimplemented
-///
-/// Text document for embedding. Requires inference infrastructure, unimplemented.
+/// Vector data stored in Point
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
-pub struct Document {
-    /// Text of the document
-    /// This field will be used as input for the embedding model
-    pub text: String,
-    /// Name of the model used to generate the vector
-    /// List of available models depends on a provider
-    pub model: Option<String>,
+#[serde(untagged, rename_all = "snake_case")]
+pub enum VectorStructOutput {
+    #[schemars(example = "vector_example")]
+    Single(DenseVector),
+    #[schemars(example = "multi_dense_vector_example")]
+    MultiDense(MultiDenseVector),
+    #[schemars(example = "named_vector_example")]
+    Named(HashMap<String, VectorOutput>),
 }
 
 impl VectorStruct {
@@ -84,10 +116,74 @@ impl VectorStruct {
                 Vector::Sparse(vector) => vector.indices.is_empty(),
                 Vector::MultiDense(vector) => vector.is_empty(),
                 Vector::Document(_) => false,
+                Vector::Image(_) => false,
+                Vector::Object(_) => false,
             }),
             VectorStruct::Document(_) => false,
+            VectorStruct::Image(_) => false,
+            VectorStruct::Object(_) => false,
         }
     }
+}
+
+impl Validate for VectorStruct {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            VectorStruct::Single(_) => Ok(()),
+            VectorStruct::MultiDense(v) => validate_multi_vector(v),
+            VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
+            VectorStruct::Document(_) => Ok(()),
+            VectorStruct::Image(_) => Ok(()),
+            VectorStruct::Object(_) => Ok(()),
+        }
+    }
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Text document for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Document {
+    /// Text of the document
+    /// This field will be used as input for the embedding model
+    pub text: String,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub options: Option<HashMap<String, Value>>,
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Image object for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Image {
+    /// Image data: base64 encoded image or an URL
+    pub image: String,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub options: Option<HashMap<String, Value>>,
+}
+
+/// WARN: Work-in-progress, unimplemented
+///
+/// Custom object for embedding. Requires inference infrastructure, unimplemented.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct InferenceObject {
+    /// Arbitrary data, used as input for the embedding model
+    /// Used if the model requires more than one input or a custom input
+    pub object: Value,
+    /// Name of the model used to generate the vector
+    /// List of available models depends on a provider
+    pub model: Option<String>,
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub options: Option<HashMap<String, Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -97,6 +193,16 @@ pub enum BatchVectorStruct {
     MultiDense(Vec<MultiDenseVector>),
     Named(HashMap<String, Vec<Vector>>),
     Document(Vec<Document>),
+    Image(Vec<Image>),
+    Object(Vec<InferenceObject>),
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct Batch {
+    pub ids: Vec<PointIdType>,
+    pub vectors: BatchVectorStruct,
+    pub payloads: Option<Vec<Option<Payload>>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
@@ -131,7 +237,7 @@ pub struct ScoredPoint {
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector: Option<VectorStruct>,
+    pub vector: Option<VectorStructOutput>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
@@ -151,7 +257,7 @@ pub struct Record {
     pub payload: Option<segment::types::Payload>,
     /// Vector of the point
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub vector: Option<VectorStruct>,
+    pub vector: Option<VectorStructOutput>,
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
@@ -212,6 +318,8 @@ pub enum VectorInput {
     MultiDenseVector(MultiDenseVector),
     Id(segment::types::PointIdType),
     Document(Document),
+    Image(Image),
+    Object(InferenceObject),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -781,4 +889,99 @@ pub struct FacetValueHit {
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct FacetResponse {
     pub hits: Vec<FacetValueHit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct PointStruct {
+    /// Point id
+    pub id: PointIdType,
+    /// Vectors
+    #[serde(alias = "vectors")]
+    #[validate(nested)]
+    pub vector: VectorStruct,
+    /// Payload values (optional)
+    pub payload: Option<Payload>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Validate, JsonSchema)]
+pub struct PointsBatch {
+    #[validate(nested)]
+    pub batch: Batch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct PointVectors {
+    /// Point id
+    pub id: PointIdType,
+    /// Vectors
+    #[serde(alias = "vectors")]
+    pub vector: VectorStruct,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+pub struct UpdateVectors {
+    /// Points with named vectors
+    #[validate(nested)]
+    #[validate(length(min = 1, message = "must specify points to update"))]
+    pub points: Vec<PointVectors>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, Validate)]
+pub struct PointsList {
+    #[validate(nested)]
+    pub points: Vec<PointStruct>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+impl<'de> serde::Deserialize<'de> for PointInsertOperations {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::Object(map) => {
+                if map.contains_key("batch") {
+                    PointsBatch::deserialize(serde_json::Value::Object(map))
+                        .map(PointInsertOperations::PointsBatch)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("points") {
+                    PointsList::deserialize(serde_json::Value::Object(map))
+                        .map(PointInsertOperations::PointsList)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    Err(serde::de::Error::custom(
+                        "Invalid PointInsertOperations format",
+                    ))
+                }
+            }
+            _ => Err(serde::de::Error::custom(
+                "Invalid PointInsertOperations format",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone, JsonSchema)]
+#[serde(untagged)]
+pub enum PointInsertOperations {
+    /// Inset points from a batch.
+    PointsBatch(PointsBatch),
+    /// Insert points from a list
+    PointsList(PointsList),
+}
+
+impl Validate for PointInsertOperations {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => batch.validate(),
+            PointInsertOperations::PointsList(list) => list.validate(),
+        }
+    }
 }

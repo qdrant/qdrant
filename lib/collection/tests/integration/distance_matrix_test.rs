@@ -1,10 +1,11 @@
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
-use collection::operations::point_ops::{Batch, WriteOrdering};
+use collection::operations::point_ops::{
+    BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
+};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::vectors::BatchVectorStructInternal;
 use tempfile::Builder;
 
 use crate::common::simple_collection_fixture;
@@ -50,13 +51,16 @@ async fn distance_matrix_anonymous_vector() {
         .map(|_| rng.gen::<[f32; 4]>().to_vec())
         .collect_vec();
 
+    let batch = BatchPersisted {
+        ids,
+        vectors: BatchVectorStructPersisted::Single(vectors),
+        payloads: None,
+    };
+
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
-        Batch {
-            ids,
-            vectors: BatchVectorStructInternal::from(vectors).into(),
-            payloads: None,
-        }
-        .into(),
+        collection::operations::point_ops::PointOperations::UpsertPoints(
+            collection::operations::point_ops::PointInsertOperationsInternal::from(batch),
+        ),
     );
 
     collection

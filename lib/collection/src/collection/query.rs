@@ -25,7 +25,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
-    Fusion, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
+    FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
 struct IntermediateQueryInfo<'a> {
@@ -147,8 +147,8 @@ impl Collection {
             Some(ScoringQuery::Fusion(fusion)) => {
                 // If the root query is a Fusion, the returned results correspond to each the prefetches.
                 let mut fused = match fusion {
-                    Fusion::Rrf => rrf_scoring(intermediates),
-                    Fusion::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
+                    FusionInternal::Rrf => rrf_scoring(intermediates),
+                    FusionInternal::Dbsf => score_fusion(intermediates, ScoreFusion::dbsf()),
                 };
                 if let Some(score_threshold) = score_threshold {
                     fused = fused

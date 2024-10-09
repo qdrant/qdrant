@@ -1312,7 +1312,7 @@ mod tests {
     use std::fs::File;
     use std::str::FromStr;
 
-    use segment::data_types::vectors::Vector;
+    use segment::data_types::vectors::VectorInternal;
     use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::{Distance, PayloadContainer};
@@ -1546,7 +1546,7 @@ mod tests {
             let read_segment_2 = locked_segment_2.read();
             assert!(read_segment_2.has_point(123.into()));
             let vector = read_segment_2.vector("", 123.into()).unwrap().unwrap();
-            assert_ne!(vector, Vector::Dense(vec![9.0; 4]));
+            assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
             assert_eq!(
                 read_segment_2
                     .payload(123.into())
@@ -1562,7 +1562,7 @@ mod tests {
                 &[123.into()],
                 |_, _| unreachable!(),
                 |_point_id, vectors, payload| {
-                    vectors.insert("".to_string(), Vector::Dense(vec![9.0; 4]));
+                    vectors.insert("".to_string(), VectorInternal::Dense(vec![9.0; 4]));
                     payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
                 },
                 |_| false,
@@ -1575,7 +1575,7 @@ mod tests {
         assert!(read_segment_1.has_point(123.into()));
 
         let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
-        assert_eq!(new_vector, Vector::Dense(vec![9.0; 4]));
+        assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
         let new_payload_value = read_segment_1.payload(123.into()).unwrap();
         assert_eq!(
             new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
