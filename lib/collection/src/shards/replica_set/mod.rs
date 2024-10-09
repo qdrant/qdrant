@@ -1072,18 +1072,17 @@ pub enum ReplicaState {
 }
 
 impl ReplicaState {
-    /// Check whether the replica state is active or listener.
-    pub fn is_active_or_listener(self) -> bool {
+    /// Check whether the replica state is active or listener or resharding.
+    pub fn is_active_or_listener_or_resharding(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Active | ReplicaState::Listener => true,
+            ReplicaState::Active | ReplicaState::Listener | ReplicaState::Resharding => true,
 
             ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery
-            | ReplicaState::Resharding => false,
+            | ReplicaState::Recovery => false,
         }
     }
 
