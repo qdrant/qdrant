@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -36,6 +38,8 @@ pub trait PayloadStorage {
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
+
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub trait ConditionChecker {
