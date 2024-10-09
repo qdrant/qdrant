@@ -85,6 +85,19 @@ impl PayloadStorage for SimplePayloadStorage {
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
     }
+
+    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        for (key, val) in self.payload.iter() {
+            let do_continue = callback(*key, val)?;
+            if !do_continue {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
