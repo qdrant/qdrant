@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
-use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse, ReplicaState};
+use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
 use api::grpc::transport_channel_pool::{self, TransportChannelPool};
 use collection::shards::shard::ShardId;
 use collection::shards::CollectionId;
