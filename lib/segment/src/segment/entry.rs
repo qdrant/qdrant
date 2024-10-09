@@ -23,6 +23,7 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
+use crate::payload_storage::PayloadStorage;
 use crate::segment::{
     DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
 };
@@ -859,6 +860,10 @@ fn snapshot_files(
     }
 
     for file in segment.payload_index.borrow().files() {
+        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
+    }
+
+    for file in segment.payload_storage.borrow().files() {
         tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
     }
 

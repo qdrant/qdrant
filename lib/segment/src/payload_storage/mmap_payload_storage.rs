@@ -175,4 +175,8 @@ impl PayloadStorage for MmapPayloadStorage {
             Ok(())
         })
     }
+
+    fn files(&self) -> Vec<PathBuf> {
+        self.storage.read().files()
+    }
 }

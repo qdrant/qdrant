@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -142,5 +143,9 @@ impl PayloadStorage for OnDiskPayloadStorage {
 
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }

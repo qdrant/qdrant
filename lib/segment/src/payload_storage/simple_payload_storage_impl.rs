@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -84,6 +85,10 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }
 

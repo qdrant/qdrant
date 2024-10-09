@@ -490,7 +490,7 @@ fn create_segment(
 
     let payload_index_path = get_payload_index_path(segment_path);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
-        payload_storage,
+        payload_storage.clone(),
         id_tracker.clone(),
         &payload_index_path,
         appendable_flag,
@@ -613,6 +613,7 @@ fn create_segment(
         segment_type,
         appendable_flag,
         payload_index,
+        payload_storage,
         segment_config: config.clone(),
         error_status: None,
         database,
