@@ -1,4 +1,6 @@
-use segment::data_types::vectors::{DenseVector, Named, NamedQuery, NamedVectorStruct, Vector};
+use segment::data_types::vectors::{
+    DenseVector, Named, NamedQuery, NamedVectorStruct, VectorInternal,
+};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -36,8 +38,8 @@ impl QueryEnum {
                 let name = reco_query.get_name();
                 for vector in reco_query.query.flat_iter() {
                     match vector {
-                        Vector::Sparse(sparse_vector) => f(name, sparse_vector),
-                        Vector::Dense(_) | Vector::MultiDense(_) => {}
+                        VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
                     }
                 }
             }
@@ -45,8 +47,8 @@ impl QueryEnum {
                 let name = discovery_query.get_name();
                 for pair in discovery_query.query.flat_iter() {
                     match pair {
-                        Vector::Sparse(sparse_vector) => f(name, sparse_vector),
-                        Vector::Dense(_) | Vector::MultiDense(_) => {}
+                        VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
                     }
                 }
             }
@@ -54,8 +56,8 @@ impl QueryEnum {
                 let name = context_query.get_name();
                 for pair in context_query.query.flat_iter() {
                     match pair {
-                        Vector::Sparse(sparse_vector) => f(name, sparse_vector),
-                        Vector::Dense(_) | Vector::MultiDense(_) => {}
+                        VectorInternal::Sparse(sparse_vector) => f(name, sparse_vector),
+                        VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
                     }
                 }
             }
@@ -66,9 +68,9 @@ impl QueryEnum {
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
-    RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
-    Discover(NamedQuery<DiscoveryQuery<Vector>>),
-    Context(NamedQuery<ContextQuery<Vector>>),
+    RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),
+    Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
+    Context(NamedQuery<ContextQuery<VectorInternal>>),
 }
 
 impl From<DenseVector> for QueryEnum {
@@ -77,8 +79,8 @@ impl From<DenseVector> for QueryEnum {
     }
 }
 
-impl From<NamedQuery<DiscoveryQuery<Vector>>> for QueryEnum {
-    fn from(query: NamedQuery<DiscoveryQuery<Vector>>) -> Self {
+impl From<NamedQuery<DiscoveryQuery<VectorInternal>>> for QueryEnum {
+    fn from(query: NamedQuery<DiscoveryQuery<VectorInternal>>) -> Self {
         QueryEnum::Discover(query)
     }
 }

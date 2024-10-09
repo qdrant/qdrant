@@ -91,7 +91,9 @@ mod tests {
     use crate::collection_manager::segments_searcher::SegmentsSearcher;
     use crate::collection_manager::segments_updater::upsert_points;
     use crate::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
-    use crate::operations::point_ops::{PointOperations, PointStruct};
+    use crate::operations::point_ops::{
+        PointOperations, PointStructPersisted, VectorStructPersisted,
+    };
 
     #[test]
     fn test_sync_ops() {
@@ -104,29 +106,29 @@ mod tests {
         let vec13 = only_default_vector(&[1.0, 0.0, 1.0, 1.0]);
 
         let points = vec![
-            PointStruct {
+            PointStructPersisted {
                 id: 11.into(),
-                vector: VectorStructInternal::from(vec11).into(),
+                vector: VectorStructPersisted::from(VectorStructInternal::from(vec11)),
                 payload: None,
             },
-            PointStruct {
+            PointStructPersisted {
                 id: 12.into(),
-                vector: VectorStructInternal::from(vec12).into(),
+                vector: VectorStructPersisted::from(VectorStructInternal::from(vec12)),
                 payload: None,
             },
-            PointStruct {
+            PointStructPersisted {
                 id: 13.into(),
-                vector: VectorStructInternal::from(vec13).into(),
+                vector: VectorStructPersisted::from(VectorStructInternal::from(vec13)),
                 payload: Some(json!({ "color": "red" }).into()),
             },
-            PointStruct {
+            PointStructPersisted {
                 id: 14.into(),
-                vector: VectorStructInternal::from(vec![0., 0., 0., 0.]).into(),
+                vector: VectorStructPersisted::Single(vec![0., 0., 0., 0.]),
                 payload: None,
             },
-            PointStruct {
+            PointStructPersisted {
                 id: 500.into(),
-                vector: VectorStructInternal::from(vec![2., 0., 2., 0.]).into(),
+                vector: VectorStructPersisted::Single(vec![2., 0., 2., 0.]),
                 payload: None,
             },
         ];
@@ -147,14 +149,14 @@ mod tests {
 
         let segments = build_test_holder(dir.path());
         let points = vec![
-            PointStruct {
+            PointStructPersisted {
                 id: 1.into(),
-                vector: VectorStructInternal::from(vec![2., 2., 2., 2.]).into(),
+                vector: VectorStructPersisted::Single(vec![2., 2., 2., 2.]),
                 payload: None,
             },
-            PointStruct {
+            PointStructPersisted {
                 id: 500.into(),
-                vector: VectorStructInternal::from(vec![2., 0., 2., 0.]).into(),
+                vector: VectorStructPersisted::Single(vec![2., 0., 2., 0.]),
                 payload: None,
             },
         ];

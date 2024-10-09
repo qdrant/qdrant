@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::rest::{SearchGroupsRequestInternal, ShardKeySelector};
+use api::rest::schema::{PointInsertOperations, PointsBatch, PointsList};
+use api::rest::{SearchGroupsRequestInternal, ShardKeySelector, UpdateVectors};
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -13,21 +14,19 @@ use collection::operations::payload_ops::{
     DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
 };
 use collection::operations::point_ops::{
-    FilterSelector, PointIdsList, PointInsertOperations, PointOperations, PointsSelector,
+    FilterSelector, PointIdsList, PointInsertOperationsInternal, PointOperations, PointsSelector,
     WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CollectionError, CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
     DiscoverRequestBatch, GroupsResult, PointRequestInternal, RecommendGroupsRequestInternal,
-    Record, ScrollRequestInternal, ScrollResult, UpdateResult,
+    RecordInternal, ScrollRequestInternal, ScrollResult, UpdateResult,
 };
 use collection::operations::universal_query::collection_query::{
     CollectionQueryGroupsRequest, CollectionQueryRequest,
 };
-use collection::operations::vector_ops::{
-    DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
-};
+use collection::operations::vector_ops::{DeleteVectors, UpdateVectorsOp, VectorOperations};
 use collection::operations::verification::{
     new_unchecked_verification_pass, StrictModeVerification,
 };
@@ -47,6 +46,10 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
+
+use crate::common::inference::update_requests::{
+    convert_batch, convert_point_struct, convert_point_vectors,
+};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CreateFieldIndex {
@@ -229,7 +232,17 @@ pub async fn do_upsert_points(
     ordering: WriteOrdering,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
-    let (shard_key, operation) = operation.decompose();
+    let (shard_key, operation) = match operation {
+        PointInsertOperations::PointsBatch(PointsBatch { batch, shard_key }) => (
+            shard_key,
+            PointInsertOperationsInternal::PointsBatch(convert_batch(batch).await?),
+        ),
+        PointInsertOperations::PointsList(PointsList { points, shard_key }) => (
+            shard_key,
+            PointInsertOperationsInternal::PointsList(convert_point_struct(points).await?),
+        ),
+    };
+
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
 
@@ -292,8 +305,12 @@ pub async fn do_update_vectors(
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
+    let persisted_points = convert_point_vectors(points).await?;
+
     let collection_operation = CollectionUpdateOperations::VectorOperation(
-        VectorOperations::UpdateVectors(UpdateVectorsOp { points }),
+        VectorOperations::UpdateVectors(UpdateVectorsOp {
+            points: persisted_points,
+        }),
     );
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
@@ -1001,7 +1018,7 @@ pub async fn do_get_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
-) -> Result<Vec<Record>, StorageError> {
+) -> Result<Vec<RecordInternal>, StorageError> {
     toc.retrieve(
         collection_name,
         request,

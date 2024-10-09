@@ -2,9 +2,6 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::universal_query::collection_query::{
-    CollectionQueryGroupsRequest, CollectionQueryRequest,
-};
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -17,6 +14,9 @@ use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
+use crate::common::inference::query_requests_rest::{
+    convert_query_groups_request_from_rest, convert_query_request_from_rest,
+};
 use crate::common::points::do_query_point_groups;
 
 #[post("/collections/{name}/points/query")]
@@ -51,11 +51,13 @@ async fn query_points(
             Some(shard_keys) => shard_keys.into(),
         };
 
+        let request = convert_query_request_from_rest(query_request).await?;
+
         let points = dispatcher
             .toc(&access, &pass)
             .query_batch(
                 &collection.name,
-                vec![(query_request.into(), shard_selection)],
+                vec![(request, shard_selection)],
                 params.consistency,
                 access,
                 params.timeout(),
@@ -98,23 +100,21 @@ async fn query_points_batch(
     };
 
     helpers::time(async move {
-        let batch = searches
-            .into_iter()
-            .map(|request| {
-                let QueryRequest {
-                    internal,
-                    shard_key,
-                } = request;
+        let mut batch = Vec::with_capacity(searches.len());
+        for request in searches {
+            let QueryRequest {
+                internal,
+                shard_key,
+            } = request;
 
-                let request = CollectionQueryRequest::from(internal);
-                let shard_selection = match shard_key {
-                    None => ShardSelectorInternal::All,
-                    Some(shard_keys) => shard_keys.into(),
-                };
+            let request = convert_query_request_from_rest(internal).await?;
+            let shard_selection = match shard_key {
+                None => ShardSelectorInternal::All,
+                Some(shard_keys) => shard_keys.into(),
+            };
 
-                (request, shard_selection)
-            })
-            .collect::<Vec<_>>();
+            batch.push((request, shard_selection));
+        }
 
         let res = dispatcher
             .toc(&access, &pass)
@@ -172,7 +172,8 @@ async fn query_points_groups(
             Some(shard_keys) => shard_keys.into(),
         };
 
-        let query_group_request = CollectionQueryGroupsRequest::from(search_group_request);
+        let query_group_request =
+            convert_query_groups_request_from_rest(search_group_request).await?;
 
         do_query_point_groups(
             dispatcher.toc(&access, &pass),

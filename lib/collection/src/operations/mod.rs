@@ -24,14 +24,13 @@ use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
-use validator::Validate;
 
 use crate::hash_ring::{HashRingRouter, ShardIds};
 use crate::shards::shard::{PeerId, ShardId};
 
 pub type ClockToken = u64;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
     pub field_name: JsonPath,
@@ -221,26 +220,6 @@ impl FieldIndexOperations {
         match self {
             FieldIndexOperations::CreateIndex(_) => true,
             FieldIndexOperations::DeleteIndex(_) => false,
-        }
-    }
-}
-
-impl Validate for FieldIndexOperations {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            FieldIndexOperations::CreateIndex(create_index) => create_index.validate(),
-            FieldIndexOperations::DeleteIndex(_) => Ok(()),
-        }
-    }
-}
-
-impl Validate for CollectionUpdateOperations {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            CollectionUpdateOperations::PointOperation(operation) => operation.validate(),
-            CollectionUpdateOperations::VectorOperation(operation) => operation.validate(),
-            CollectionUpdateOperations::PayloadOperation(operation) => operation.validate(),
-            CollectionUpdateOperations::FieldIndexOperation(operation) => operation.validate(),
         }
     }
 }

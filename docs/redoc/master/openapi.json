@@ -7156,7 +7156,7 @@
             "description": "Vector of the point",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorStruct"
+                "$ref": "#/components/schemas/VectorStructOutput"
               },
               {
                 "nullable": true
@@ -7194,8 +7194,8 @@
           "color": "green"
         }
       },
-      "VectorStruct": {
-        "description": "Full vector data per point separator with single and multiple vector modes",
+      "VectorStructOutput": {
+        "description": "Vector data stored in Point",
         "anyOf": [
           {
             "type": "array",
@@ -7239,7 +7239,7 @@
           {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/Vector"
+              "$ref": "#/components/schemas/VectorOutput"
             },
             "example": {
               "image-embeddings": [
@@ -7248,13 +7248,11 @@
                 0.897599995136261
               ]
             }
-          },
-          {
-            "$ref": "#/components/schemas/Document"
           }
         ]
       },
-      "Vector": {
+      "VectorOutput": {
+        "description": "Vector Data stored in Point",
         "anyOf": [
           {
             "type": "array",
@@ -7275,9 +7273,6 @@
                 "format": "float"
               }
             }
-          },
-          {
-            "$ref": "#/components/schemas/Document"
           }
         ]
       },
@@ -7305,24 +7300,6 @@
               "type": "number",
               "format": "float"
             }
-          }
-        }
-      },
-      "Document": {
-        "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
-        "type": "object",
-        "required": [
-          "text"
-        ],
-        "properties": {
-          "text": {
-            "description": "Text of the document This field will be used as input for the embedding model",
-            "type": "string"
-          },
-          "model": {
-            "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string",
-            "nullable": true
           }
         }
       },
@@ -8146,7 +8123,7 @@
             "description": "Vector of the point",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorStruct"
+                "$ref": "#/components/schemas/VectorStructOutput"
               },
               {
                 "nullable": true
@@ -9268,8 +9245,125 @@
             "items": {
               "$ref": "#/components/schemas/Document"
             }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Image"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InferenceObject"
+            }
           }
         ]
+      },
+      "Vector": {
+        "description": "Vector Data Vectors can be described directly with values Or specified with source \"objects\" for inference",
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
+          }
+        ]
+      },
+      "Document": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "description": "Text of the document This field will be used as input for the embedding model",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "Image": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nImage object for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "image": {
+            "description": "Image data: base64 encoded image or an URL",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "InferenceObject": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nCustom object for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "object"
+        ],
+        "properties": {
+          "object": {
+            "description": "Arbitrary data, used as input for the embedding model Used if the model requires more than one input or a custom input"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
       },
       "PointsList": {
         "type": "object",
@@ -9320,6 +9414,72 @@
             ]
           }
         }
+      },
+      "VectorStruct": {
+        "description": "Full vector data per point separator with single and multiple vector modes",
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "example": [
+              0.875,
+              0.140625,
+              0.897599995136261
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            },
+            "example": [
+              [
+                0.875,
+                0.140625,
+                0.11020000278949738
+              ],
+              [
+                0.7580000162124634,
+                0.28126001358032227,
+                0.9687100052833557
+              ],
+              [
+                0.6209999918937683,
+                0.42187801003456116,
+                0.9375
+              ]
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Vector"
+            },
+            "example": {
+              "image-embeddings": [
+                0.8730000257492065,
+                0.140625,
+                0.897599995136261
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
+          }
+        ]
       },
       "SetPayload": {
         "description": "This data structure is used in API interface and applied across multiple shards",
@@ -12664,6 +12824,12 @@
           },
           {
             "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
           }
         ]
       },

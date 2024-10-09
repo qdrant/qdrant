@@ -4,7 +4,9 @@ use actix_web::{get, post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
+use collection::operations::types::{
+    PointRequest, PointRequestInternal, RecordInternal, ScrollRequest,
+};
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
@@ -39,7 +41,7 @@ async fn do_get_point(
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
     access: Access,
-) -> Result<Option<Record>, StorageError> {
+) -> Result<Option<RecordInternal>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
         with_payload: Some(WithPayloadInterface::Bool(true)),

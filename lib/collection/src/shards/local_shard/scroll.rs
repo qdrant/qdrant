@@ -19,7 +19,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollOrder,
+    CollectionError, CollectionResult, QueryScrollRequestInternal, RecordInternal, ScrollOrder,
 };
 
 impl LocalShard {
@@ -156,7 +156,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
@@ -233,7 +233,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
         timeout: Option<Duration>,
-    ) -> CollectionResult<(Vec<Record>, Vec<OrderValue>)> {
+    ) -> CollectionResult<(Vec<RecordInternal>, Vec<OrderValue>)> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
@@ -317,7 +317,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();

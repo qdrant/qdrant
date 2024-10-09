@@ -1,10 +1,12 @@
 use actix_web::rt::time::Instant;
 use actix_web::{delete, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
+use api::rest::schema::PointInsertOperations;
+use api::rest::UpdateVectors;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
+use collection::operations::point_ops::{PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
-use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
+use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;

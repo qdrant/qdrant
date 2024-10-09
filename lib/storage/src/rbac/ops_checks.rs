@@ -13,7 +13,7 @@ use collection::operations::types::{
     PointRequestInternal, RecommendExample, RecommendRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryRequest, Query, VectorInput, VectorQuery,
+    CollectionPrefetch, CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
@@ -129,7 +129,7 @@ impl<'a> CollectionAccessView<'a> {
 
     fn check_vector_query(
         &self,
-        vector_query: &VectorQuery<VectorInput>,
+        vector_query: &VectorQuery<VectorInputInternal>,
     ) -> Result<(), StorageError> {
         match vector_query {
             VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
@@ -153,10 +153,10 @@ impl<'a> CollectionAccessView<'a> {
         Ok(())
     }
 
-    fn check_vector_input(&self, vector_input: &VectorInput) -> Result<(), StorageError> {
+    fn check_vector_input(&self, vector_input: &VectorInputInternal) -> Result<(), StorageError> {
         match vector_input {
-            VectorInput::Vector(_) => Ok(()),
-            VectorInput::Id(_) => self.check_whole_access(),
+            VectorInputInternal::Vector(_) => Ok(()),
+            VectorInputInternal::Id(_) => self.check_whole_access(),
         }
     }
 }
@@ -654,18 +654,18 @@ mod tests_ops {
     use std::fmt::Debug;
 
     use api::rest::{
-        self, BatchVectorStruct, LookupLocation, OrderByInterface, RecommendStrategy,
-        SearchRequestInternal, VectorStruct,
+        self, LookupLocation, OrderByInterface, RecommendStrategy, SearchRequestInternal,
     };
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
-        Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
-        PointOperationsDiscriminants, PointStruct, PointSyncOperation,
+        BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal,
+        PointInsertOperationsInternalDiscriminants, PointOperationsDiscriminants,
+        PointStructPersisted, PointSyncOperation, VectorStructPersisted,
     };
     use collection::operations::query_enum::QueryEnum;
     use collection::operations::types::UsingVector;
     use collection::operations::vector_ops::{
-        PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
+        PointVectorsPersisted, UpdateVectorsOp, VectorOperationsDiscriminants,
     };
     use collection::operations::{
         CollectionUpdateOperationsDiscriminants, CreateIndex, FieldIndexOperations,
@@ -1137,16 +1137,18 @@ mod tests_ops {
                 for discr in PointInsertOperationsInternalDiscriminants::iter() {
                     let inner = match discr {
                         PointInsertOperationsInternalDiscriminants::PointsBatch => {
-                            PointInsertOperationsInternal::PointsBatch(Batch {
+                            PointInsertOperationsInternal::PointsBatch(BatchPersisted {
                                 ids: vec![ExtendedPointId::NumId(12345)],
-                                vectors: BatchVectorStruct::Single(vec![vec![0.0, 1.0, 2.0]]),
+                                vectors: BatchVectorStructPersisted::Single(vec![vec![
+                                    0.0, 1.0, 2.0,
+                                ]]),
                                 payloads: None,
                             })
                         }
                         PointInsertOperationsInternalDiscriminants::PointsList => {
-                            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                            PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
                                 id: ExtendedPointId::NumId(12345),
-                                vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
+                                vector: VectorStructPersisted::Single(vec![0.0, 1.0, 2.0]),
                                 payload: None,
                             }])
                         }
@@ -1228,9 +1230,9 @@ mod tests_ops {
             VectorOperationsDiscriminants::UpdateVectors => {
                 let op = CollectionUpdateOperations::VectorOperation(
                     VectorOperations::UpdateVectors(UpdateVectorsOp {
-                        points: vec![PointVectors {
+                        points: vec![PointVectorsPersisted {
                             id: ExtendedPointId::NumId(12345),
-                            vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
+                            vector: VectorStructPersisted::Single(vec![0.0, 1.0, 2.0]),
                         }],
                     }),
                 );

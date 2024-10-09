@@ -13,7 +13,7 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
-use segment::data_types::vectors::{QueryVector, Vector};
+use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
@@ -532,7 +532,11 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
-    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Option<VectorInternal>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()

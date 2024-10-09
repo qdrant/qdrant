@@ -4,7 +4,8 @@ use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+    WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
@@ -15,7 +16,6 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use common::cpu::CpuBudget;
-use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
@@ -95,9 +95,9 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     // Upload 1000 random vectors to the collection
     let mut points = Vec::new();
     for i in 0..100 {
-        points.push(PointStruct {
+        points.push(PointStructPersisted {
             id: i.into(),
-            vector: VectorStructInternal::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::Single(vec![i as f32, 0.0, 0.0, 0.0]),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

@@ -6,7 +6,8 @@ use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+    WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
@@ -89,9 +90,9 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         vectors.insert(VEC_NAME1.to_string(), vec![i as f32, 0.0, 0.0, 0.0].into());
         vectors.insert(VEC_NAME2.to_string(), vec![0.0, i as f32, 0.0, 0.0].into());
 
-        points.push(PointStruct {
+        points.push(PointStructPersisted {
             id: i.into(),
-            vector: VectorStructInternal::from(vectors).into(),
+            vector: VectorStructPersisted::from(VectorStructInternal::from(vectors)),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }
