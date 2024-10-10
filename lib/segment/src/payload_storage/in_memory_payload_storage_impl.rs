@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -85,6 +86,10 @@ impl PayloadStorage for InMemoryPayloadStorage {
             }
         }
         Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }
 
