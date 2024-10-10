@@ -105,6 +105,7 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .sparse_vectors_config
                     .map(TryInto::try_into)
                     .transpose()?,
+                strict_mode_config: value.strict_mode_config.map(Into::into),
             },
         )))
     }

@@ -351,6 +351,7 @@ message UpdateCollection {
   optional VectorsConfigDiff vectors_config = 6; // New vector parameters
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
+  optional StrictModeConfig strict_mode_config = 9; // New strict mode configuration
 }
 
 message DeleteCollection {

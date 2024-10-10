@@ -170,7 +170,6 @@ pub struct CreateCollection {
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
     /// Strict-mode config.
     #[validate(nested)]
-    #[schemars(skip)]
     pub strict_mode_config: Option<StrictModeConfig>,
 }
 
@@ -229,6 +228,8 @@ pub struct UpdateCollection {
     /// Map of sparse vector data parameters to update for each sparse vector.
     #[validate(nested)]
     pub sparse_vectors: Option<SparseVectorsConfig>,
+    #[validate(nested)]
+    pub strict_mode_config: Option<StrictModeConfig>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -251,6 +252,7 @@ impl UpdateCollectionOperation {
                 optimizers_config: None,
                 quantization_config: None,
                 sparse_vectors: None,
+                strict_mode_config: None,
             },
             shard_replica_changes: None,
         }
