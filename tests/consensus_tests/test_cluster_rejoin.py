@@ -109,6 +109,7 @@ def rejoin_cluster_test(
 ):
     """
     Parameterized test body, that tests adding new peer after origin peer was removed from the cluster.
+    See: <https://github.com/qdrant/qdrant/issues/5138>
     """
 
     # Start cluster
