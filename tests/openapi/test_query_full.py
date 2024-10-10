@@ -1681,3 +1681,14 @@ def test_query_with_missing_vector():
     )
     assert not response.ok
     assert 'error' in response.json()['status']
+
+    response2 = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": 8,  # Point with ID=8 doesn't have a default vector which caused Qdrant to panic before.
+        },
+    )
+    assert not response2.ok
+    assert 'error' in response2.json()['status']
