@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::iter;
 
-use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::distributions::Distribution;

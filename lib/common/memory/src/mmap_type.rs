@@ -27,7 +27,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{fmt, mem, slice};
 
-use bitvec::slice::BitSlice;
+use common::bitvec::BitSlice;
 use memmap2::MmapMut;
 
 use crate::madvise::{Advice, AdviceSetting};

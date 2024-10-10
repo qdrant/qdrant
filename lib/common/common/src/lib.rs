@@ -1,3 +1,4 @@
+pub mod bitvec;
 pub mod cpu;
 pub mod defaults;
 pub mod disk;

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread;
 
 use atomic_refcell::AtomicRefCell;
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::{get_num_cpus, CpuPermit};

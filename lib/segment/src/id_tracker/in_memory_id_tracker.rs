@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;

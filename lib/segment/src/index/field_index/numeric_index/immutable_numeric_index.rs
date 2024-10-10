@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
+use common::bitvec::MemoryBitVec;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -28,7 +28,7 @@ pub struct ImmutableNumericIndex<T: Encodable + Numericable + Default> {
 
 pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
     data: Vec<Point<T>>,
-    deleted: BitVec,
+    deleted: MemoryBitVec,
     deleted_count: usize,
 }
 
@@ -41,7 +41,7 @@ pub(super) struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
     fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
         Self {
-            deleted: BitVec::repeat(false, map.len()),
+            deleted: MemoryBitVec::repeat(false, map.len()),
             data: map.into_iter().collect(),
             deleted_count: 0,
         }
@@ -162,7 +162,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         Self {
             map: NumericKeySortedVec {
                 data: Default::default(),
-                deleted: BitVec::new(),
+                deleted: Default::default(),
                 deleted_count: 0,
             },
             db_wrapper,

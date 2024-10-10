@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use bitvec::vec::BitVec;
+use common::bitvec::BitVec;
 use common::mmap_hashmap::MmapHashMap;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;

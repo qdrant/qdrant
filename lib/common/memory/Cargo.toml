@@ -13,11 +13,11 @@ publish = false
 workspace = true
 
 [dependencies]
-memmap2 = { workspace = true }
+common = { path = "../common" }
 log = { workspace = true }
+memmap2 = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-bitvec = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

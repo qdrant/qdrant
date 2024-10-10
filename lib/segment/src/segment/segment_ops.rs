@@ -4,7 +4,7 @@ use std::fs::{self};
 use std::path::Path;
 use std::thread::{self, JoinHandle};
 
-use bitvec::prelude::BitVec;
+use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;

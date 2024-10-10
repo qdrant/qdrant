@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use bitvec::prelude::{BitSlice, BitVec};
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;

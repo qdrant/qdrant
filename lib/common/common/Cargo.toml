@@ -16,6 +16,7 @@ workspace = true
 testing = []
 
 [dependencies]
+bitvec = "1.0.1"
 num_cpus = "1.16"
 ordered-float = "4.3"
 ph = { workspace = true }

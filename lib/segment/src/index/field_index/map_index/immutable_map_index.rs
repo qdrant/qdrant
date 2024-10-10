@@ -4,7 +4,7 @@ use std::iter;
 use std::ops::Range;
 use std::sync::Arc;
 
-use bitvec::vec::BitVec;
+use common::bitvec::MemoryBitVec;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -21,7 +21,7 @@ pub struct ImmutableMapIndex<N: MapIndexKey + ?Sized> {
     /// Container holding a slice of point IDs per value. `value_to_point` holds the range per value.
     /// Each slice MUST be sorted so that we can binary search over it.
     value_to_points_container: Vec<PointOffsetType>,
-    deleted_value_to_points_container: BitVec,
+    deleted_value_to_points_container: MemoryBitVec,
     point_to_values: ImmutablePointToValues<N::Owned>,
     /// Amount of point which have at least one indexed payload value
     indexed_points: usize,
@@ -115,7 +115,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     fn remove_idx_from_value_list(
         value_to_points: &mut HashMap<N::Owned, ContainerSegment>,
         value_to_points_container: &mut [PointOffsetType],
-        deleted_value_to_points_container: &mut BitVec,
+        deleted_value_to_points_container: &mut MemoryBitVec,
         value: &N,
         idx: PointOffsetType,
     ) {

@@ -4,9 +4,8 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
 
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};

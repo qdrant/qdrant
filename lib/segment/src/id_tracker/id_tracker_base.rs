@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};

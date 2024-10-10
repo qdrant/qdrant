@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 

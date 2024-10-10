@@ -4,7 +4,7 @@ use std::mem::{self, size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
-use bitvec::prelude::BitSlice;
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::AdviceSetting;
