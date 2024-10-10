@@ -1,203 +1,288 @@
-use std::fs::create_dir_all;
 use std::path::Path;
+use std::{cmp, fs};
 
-use itertools::Itertools;
 use prost_for_raft::Message;
 use protobuf::Message as _;
 use raft::eraftpb::Entry as RaftEntry;
 use wal::Wal;
 
 use crate::content_manager::consensus_manager;
-use crate::{ConsensusOperations, StorageError};
+use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::StorageError;
 
 const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 
-pub struct ConsensusOpWal(Wal);
+#[derive(Debug)]
+pub struct ConsensusOpWal {
+    wal: Wal,
+}
 
 impl ConsensusOpWal {
     pub fn new(storage_path: &str) -> Self {
         let collections_meta_wal_path = Path::new(storage_path).join(COLLECTIONS_META_WAL_DIR);
-        create_dir_all(&collections_meta_wal_path)
-            .expect("Can't create Collections meta Wal directory");
-        let wal = Wal::open(collections_meta_wal_path).expect("Can't open Collections meta Wal");
-        ConsensusOpWal(wal)
+
+        fs::create_dir_all(&collections_meta_wal_path)
+            .expect("Can't create consensus WAL directory");
+
+        let wal = Wal::open(collections_meta_wal_path).expect("Can't open consensus WAL");
+        Self { wal }
     }
 
     pub fn clear(&mut self) -> Result<(), StorageError> {
-        Ok(self.0.clear()?)
+        self.wal.clear()?;
+        Ok(())
     }
 
-    pub fn entry(&self, id: u64) -> raft::Result<RaftEntry> {
+    pub fn entry(&self, raft_index: u64) -> raft::Result<RaftEntry> {
         // Raft entries are expected to have index starting from 1
-        if id < 1 {
+        if raft_index < 1 {
             return Err(raft::Error::Store(raft::StorageError::Unavailable));
         }
-        let first_entry = self
-            .first_entry()
-            .map_err(consensus_manager::raft_error_other)?
-            .ok_or_else(|| raft::Error::Store(raft::StorageError::Unavailable))?;
-        if id < first_entry.index {
-            return Err(raft::Error::Store(raft::StorageError::Compacted));
-        }
-        // Due to snapshots there might be different offsets between wal index and raft entry index
-        let offset = first_entry.index - self.0.first_index();
-        <RaftEntry as prost_for_raft::Message>::decode(
-            self.0
-                .entry(id - offset)
-                .ok_or_else(|| raft::Error::Store(raft::StorageError::Unavailable))?
-                .as_ref(),
-        )
-        .map_err(consensus_manager::raft_error_other)
+
+        let wal_index = self
+            .index_offset()?
+            .try_raft_to_wal(raft_index)
+            .ok_or_else(|| raft::Error::Store(raft::StorageError::Compacted))?;
+
+        self.entry_by_wal_index(wal_index)
     }
 
     pub fn entries(
         &self,
-        low: u64,
-        high: u64,
-        max_size: Option<u64>,
+        from_raft_index: u64,
+        until_raft_index: u64,
+        max_size_bytes: Option<u64>,
     ) -> raft::Result<Vec<RaftEntry>> {
-        let mut size = 0;
+        let offset = self.index_offset()?;
 
-        let entries = (low..high)
-            .map(|id| self.entry(id))
-            .take_while(|entry| {
-                let Ok(entry) = entry else { return true };
+        // Map requested Raft indices to WAL indices
+        let from_wal_index = offset.raft_to_wal(from_raft_index);
+        let until_wal_index = offset.raft_to_wal(until_raft_index);
 
-                // It's somewhat unclear how `max_size == Some(0)` should be treated.
-                //
-                // `raft::storage::Storage::entries` documentation and `raft::util::limit_size` implementation
-                // suggest that it means "return only a single entry", but why not request a single entry
-                // using `low`/`high` arguments in that case? 🤔
-                //
-                // Another reasonable interpretation might be "unlimited" (e.g., same as `None` and `u64::MAX`).
-                //
-                // `raft::RawNode` would request ridiculous range (e.g., 1 mil entries) with `max_size == Some(0)`,
-                // which, IMO, does not make much sense. 😕
-                //
-                // The current implementation follows `raft::storage::Storage::entries` spec,
-                // but further research/experimentation might be needed.
-                //
-                // See:
-                // - https://docs.rs/raft/latest/raft/storage/trait.Storage.html#tymethod.entries
-                // - https://github.com/tikv/raft-rs/blob/v0.7.0/src/util.rs#L56-L71
-                let max_size = match max_size {
-                    Some(max_size) if max_size < u64::MAX => max_size,
+        // Bound mapped WAL indices between first/last WAL indices
+        let from_wal_index = cmp::max(from_wal_index, offset.wal_index);
+        let until_wal_index = cmp::min(until_wal_index, offset.wal_index + self.wal.num_entries());
 
-                    // It might also be reasonable to add a hard limit on the total size of returned entries here.
-                    //
-                    // For the same reason, that if `raft::RawNode` request some ginormous range without reasonable
-                    // `max_size` the current `entries` implementation will block consensus thread until the whole
-                    // range is collected.
-                    _ => return true,
-                };
+        // `Some(u64::MAX)` and `None` are treated as "no max size"
+        // `Some(0)` is treated as "return single entry"
+        //
+        // See:
+        // - https://docs.rs/raft/latest/raft/storage/trait.Storage.html#tymethod.entries
+        // - https://github.com/tikv/raft-rs/blob/v0.7.0/src/util.rs#L56-L71
+        let max_size_bytes = match max_size_bytes {
+            Some(u64::MAX) | None => None,
+            Some(max_size_bytes) => Some(max_size_bytes),
+        };
 
-                let first_entry = size == 0;
-                size += u64::from(entry.compute_size());
+        let mut size_bytes = 0;
+        let mut entries = Vec::with_capacity(until_wal_index.saturating_sub(from_wal_index) as _);
 
-                size <= max_size || first_entry
-            })
-            .try_collect()?;
+        for wal_index in from_wal_index..until_wal_index {
+            let entry = self.entry_by_wal_index(wal_index)?;
+
+            size_bytes += u64::from(entry.compute_size());
+            entries.push(entry);
+
+            if let Some(max_size_bytes) = max_size_bytes {
+                if size_bytes >= max_size_bytes {
+                    break;
+                }
+            }
+        }
 
         Ok(entries)
     }
 
     pub fn first_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let first_index = self.0.first_index();
-        let entry = self
-            .0
-            .entry(first_index)
-            .map(|entry| <RaftEntry as prost_for_raft::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
+        self.entry_by_wal_index_impl(self.wal.first_index())
     }
 
     pub fn last_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        let last_index = self.0.last_index();
-        let entry = self
-            .0
-            .entry(last_index)
-            .map(|entry| <RaftEntry as prost_for_raft::Message>::decode(entry.as_ref()));
-        Ok(entry.transpose()?)
+        self.entry_by_wal_index_impl(self.wal.last_index())
     }
 
-    /// Difference between raft index and WAL record number.
-    /// Difference might be different because of consensus snapshot.
-    pub fn index_offset(&self) -> Result<Option<u64>, StorageError> {
-        let last_known_index = self.0.first_index();
-        let first_entry = self.first_entry()?;
-        let offset = first_entry.map(|entry| entry.index - last_known_index);
-        Ok(offset)
-    }
+    pub fn append_entries(&mut self, new_entries: Vec<RaftEntry>) -> Result<(), StorageError> {
+        if new_entries.is_empty() {
+            return Ok(());
+        }
 
-    pub fn append_entries(&mut self, entries: Vec<RaftEntry>) -> Result<(), StorageError> {
-        for entry in entries {
-            let operation_opt = ConsensusOperations::try_from(&entry).ok();
+        // Calculate WAL to Raft index offset
+        let mut current_index_offset = self.index_offset_impl()?;
 
-            let index = entry.index;
-            let current_index = self.0.last_index();
-            let index_offset = self.index_offset()?;
+        // Use single buffer to encode all new entries to reduce allocations
+        let mut buf = Vec::new();
 
-            if let Some(offset) = index_offset {
-                // Assume we can't skip index numbers in WAL except for snapshot
-                // Example: 2 <= 0 + 1 + 1
-                debug_assert!(
-                    index <= current_index + offset + 1,
-                    "Expected no index skip: {index} <= {current_index} + {offset}"
-                );
+        for new_entry in new_entries {
+            // If WAL is not empty, check that new entry index is within WAL bounds
+            if let Some(offset) = current_index_offset {
+                // Check that new entry index was not already compacted (it's not less than first WAL index)
+                let Some(new_entry_wal_index) = offset.try_raft_to_wal(new_entry.index) else {
+                    return Err(StorageError::service_error(format!(
+                        "Can't append entry with Raft index {}, \
+                         because WAL is already compacted at Raft index {}",
+                        new_entry.index, offset.raft_index,
+                    )));
+                };
 
-                // check if truncation is needed
-                if index <= current_index + offset {
-                    // If there is a conflict, example:
-                    // Offset = 1
-                    // raft index = 10
-                    // wal index = 11
-                    // expected_wal_index = 10 - 1 = 9
-                    // 10 < 11 + 1
-                    if index < offset {
-                        return Err(StorageError::service_error(format!(
-                            "Wal index conflict, raft index: {index}, wal index: {current_index}, offset: {offset}"
-                        )));
-                    }
+                let next_wal_index = self.wal.last_index() + 1;
+
+                // Check that new entry index is sequential (it's not greater than next WAL index),
+                // or truncate entries at the tail of WAL, if it overwrites some
+                if new_entry_wal_index > next_wal_index {
+                    return Err(StorageError::service_error(format!(
+                        "Can't append entry with Raft index {} (expected WAL index {}), \
+                         because last entry in WAL is at WAL index {}, \
+                         and all entries have to be sequential",
+                        new_entry.index,
+                        new_entry_wal_index,
+                        self.wal.last_index(),
+                    )));
+                } else if new_entry_wal_index < next_wal_index {
                     log::debug!(
-                        "Truncate conflicting WAL entries from index {}, raft: {index}",
-                        index - offset,
+                        "Truncating conflicting WAL entries from Raft index {} \
+                         (WAL index {new_entry_wal_index})",
+                        new_entry.index,
                     );
-                    self.0.truncate(index - offset)?;
-                } // else:
-                  // Offset = 1
-                  // raft index = 11
-                  // wal index = 10
-                  // expected_wal_index = 11 - 1 = 10
-                  // 11 < 10 + 1
-            } else {
-                // There is no offset => there are no records in WAL
-                // If there are no records, conflict is impossible
-                // So we do nothing
+
+                    self.wal.truncate(new_entry_wal_index)?;
+                }
             }
 
-            if let Some(operation) = operation_opt {
-                let term = entry.term;
-                log::debug!(
-                    "Appending operation: term: {term}, index: {index} entry: {operation:?}"
-                );
-            } else {
-                log::debug!("Appending entry: {entry:?}");
+            if log::log_enabled!(log::Level::Debug) {
+                if let Ok(op) = ConsensusOperations::try_from(&new_entry) {
+                    log::debug!(
+                        "Appending operation, term: {}, index: {}, entry: {op:?}",
+                        new_entry.term,
+                        new_entry.index,
+                    );
+                } else {
+                    log::debug!("Appending entry: {new_entry:?}");
+                }
             }
 
-            let mut buf = vec![];
-            entry.encode(&mut buf)?;
-            #[allow(unused_variables)]
-            let wal_index = self.0.append(&buf)?;
+            buf.clear();
+            new_entry.encode(&mut buf)?;
+
+            let new_entry_wal_index = self.wal.append(&buf)?;
+
             #[cfg(debug_assertions)]
-            if let Some(offset) = index_offset {
-                debug_assert!(wal_index == index - offset);
-            } else {
-                debug_assert!(wal_index == 0)
+            {
+                // Assert that we calculated indices (and truncated WAL) correctly, and new entry
+                // was inserted at expected WAL index
+
+                let expected_new_entry_wal_index = current_index_offset
+                    .map_or(Some(0), |offset| offset.try_raft_to_wal(new_entry.index))
+                    .expect("new entry can't overwrite already compacted WAL entries");
+
+                debug_assert_eq!(
+                    new_entry_wal_index, expected_new_entry_wal_index,
+                    "WAL index of inserted entry does not match its expected WAL index, \
+                     Raft index: {}, inserted at WAL index: {}, expected WAL index: {}",
+                    new_entry.index, new_entry_wal_index, expected_new_entry_wal_index,
+                );
+            }
+
+            // Calculate WAL to Raft index offset, if we inserted first entry into empty WAL
+            if current_index_offset.is_none() {
+                current_index_offset = self.index_offset_impl()?;
             }
         }
-        // flush consensus WAL to disk
-        self.0.flush_open_segment()?;
+
+        // Flush WAL to disk
+        self.wal.flush_open_segment()?;
+
         Ok(())
     }
+
+    pub fn index_offset(&self) -> raft::Result<IndexOffset> {
+        let res = self.index_offset_impl();
+        into_raft_result(res)
+    }
+
+    pub fn index_offset_impl(&self) -> Result<Option<IndexOffset>, StorageError> {
+        let wal_index = self.wal.first_index();
+
+        let raft_index = self
+            .entry_by_wal_index_impl(wal_index)?
+            .map(|entry| entry.index);
+
+        let Some(raft_index) = raft_index else {
+            return Ok(None);
+        };
+
+        // WAL index of an entry should always be *less* than its Raft index, but this is already
+        // asserted in `entry_by_wal_index_impl`
+        let wal_to_raft_offset = raft_index - wal_index;
+
+        let offset = IndexOffset {
+            wal_index,
+            raft_index,
+            wal_to_raft_offset,
+        };
+
+        Ok(Some(offset))
+    }
+
+    fn entry_by_wal_index(&self, wal_index: u64) -> raft::Result<RaftEntry> {
+        let res = self.entry_by_wal_index_impl(wal_index);
+        into_raft_result(res)
+    }
+
+    fn entry_by_wal_index_impl(&self, wal_index: u64) -> Result<Option<RaftEntry>, StorageError> {
+        let entry: Option<RaftEntry> = self
+            .wal
+            .entry(wal_index)
+            .map(|entry| prost_for_raft::Message::decode(entry.as_ref()))
+            .transpose()?;
+
+        if let Some(entry) = &entry {
+            // WAL index of an entry should always be *less* than its Raft index.
+            //
+            // - WAL index starts with 0
+            // - Raft index starts with 1
+            // - if WAL is compacted, then difference between Raft index and WAL index may be even greater
+            // - Raft indices in the WAL should always be *sequential*
+            //
+            // So, if at any point WAL index of an entry is *greater-or-equal* than its Raft index,
+            // it's an error in `ConsensusOpWal` logic.
+
+            debug_assert!(
+                wal_index < entry.index,
+                "WAL index of an entry is greater than (or equal to) its Raft index, \
+                 WAL index: {wal_index}, Raft index: {}",
+                entry.index,
+            );
+        }
+
+        Ok(entry)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IndexOffset {
+    pub wal_index: u64,
+    pub raft_index: u64,
+    pub wal_to_raft_offset: u64,
+}
+
+impl IndexOffset {
+    pub fn try_raft_to_wal(&self, raft_index: u64) -> Option<u64> {
+        raft_index.checked_sub(self.wal_to_raft_offset)
+    }
+
+    pub fn raft_to_wal(&self, raft_index: u64) -> u64 {
+        raft_index.saturating_sub(self.wal_to_raft_offset)
+    }
+
+    pub fn wal_to_raft(&self, wal_index: u64) -> u64 {
+        wal_index + self.wal_to_raft_offset
+    }
+}
+
+fn into_raft_result<T>(result: Result<Option<T>, StorageError>) -> raft::Result<T> {
+    result
+        .map_err(consensus_manager::raft_error_other)?
+        .ok_or(raft::Error::Store(raft::StorageError::Unavailable))
 }
 
 #[cfg(test)]
@@ -274,7 +359,7 @@ mod tests {
 
         wal.clear().unwrap();
         wal.append_entries(entries_new).unwrap();
-        assert_eq!(wal.index_offset().unwrap(), Some(2));
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 2);
 
         let broken_entry = vec![Entry {
             entry_type: 0,
@@ -354,9 +439,9 @@ mod tests {
 
         // append original entries
         wal.append_entries(entries_orig).unwrap();
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 3);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 3);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 3);
 
@@ -372,9 +457,9 @@ mod tests {
 
         // append overlapping entries
         wal.append_entries(entries_new).unwrap();
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 4);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 4);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 4);
 
@@ -388,9 +473,9 @@ mod tests {
         // drop wal to check persistence
         drop(wal);
         let wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 4);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 4);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 4);
     }
@@ -439,9 +524,9 @@ mod tests {
 
         // append original entries
         wal.append_entries(entries_orig).unwrap();
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 3);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 3);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 3);
 
@@ -457,9 +542,9 @@ mod tests {
 
         // append overlapping entries
         wal.append_entries(entries_new).unwrap();
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 3);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 3);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 3);
 
@@ -472,9 +557,9 @@ mod tests {
         // drop wal to check persistence
         drop(wal);
         let wal = ConsensusOpWal::new(temp_dir.path().to_str().unwrap());
-        assert_eq!(wal.0.num_segments(), 1);
-        assert_eq!(wal.0.num_entries(), 3);
-        assert_eq!(wal.index_offset().unwrap(), Some(1));
+        assert_eq!(wal.wal.num_segments(), 1);
+        assert_eq!(wal.wal.num_entries(), 3);
+        assert_eq!(wal.index_offset().unwrap().wal_to_raft_offset, 1);
         assert_eq!(wal.first_entry().unwrap().unwrap().index, 1);
         assert_eq!(wal.last_entry().unwrap().unwrap().index, 3);
     }
