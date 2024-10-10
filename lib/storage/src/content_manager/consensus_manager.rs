@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
+use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -386,11 +387,30 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         for single_change in &change.changes {
             match single_change.change_type() {
                 ConfChangeType::AddNode => {
-                    debug_assert!(
-                        self.peer_address_by_id()
-                            .contains_key(&single_change.node_id),
-                        "Peer should be already known"
-                    )
+                    let context = entry.get_context();
+
+                    if !context.is_empty() {
+                        let peer_uri = str::from_utf8(context)
+                            .map_err(|err| {
+                                StorageError::service_error(format!(
+                                    "failed to parse peer URI: {err}"
+                                ))
+                            })?
+                            .parse()
+                            .map_err(|err| {
+                                StorageError::service_error(format!(
+                                    "failed to parse peer URI: {err}"
+                                ))
+                            })?;
+
+                        self.add_peer(single_change.node_id, peer_uri)?;
+                    } else {
+                        debug_assert!(
+                            self.peer_address_by_id()
+                                .contains_key(&single_change.node_id),
+                            "Peer should be already known"
+                        )
+                    }
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
