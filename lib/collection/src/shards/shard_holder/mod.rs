@@ -835,10 +835,6 @@ impl ShardHolder {
 
         let snapshots_path = Self::snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
 
-        if !snapshots_path.exists() {
-            return Ok(Vec::new());
-        }
-
         let shard = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;

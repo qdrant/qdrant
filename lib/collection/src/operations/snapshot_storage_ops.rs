@@ -173,8 +173,17 @@ pub async fn delete_snapshot(
     client: &dyn object_store::ObjectStore,
     path: &Path,
 ) -> CollectionResult<bool> {
+    let s3_path = trim_dot_slash(path)?;
+
+    client.head(&s3_path).await.map_err(|e| match e {
+        object_store::Error::NotFound { .. } => {
+            CollectionError::not_found(format!("Snapshot {s3_path:?}"))
+        }
+        _ => CollectionError::service_error(format!("Failed to delete snapshot: {e}")),
+    })?;
+
     client
-        .delete(&trim_dot_slash(path)?)
+        .delete(&s3_path)
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to delete snapshot: {e}")))?;
     Ok(true)
@@ -186,10 +195,12 @@ pub async fn download_snapshot(
     target_path: &Path,
 ) -> CollectionResult<()> {
     let s3_path = trim_dot_slash(path)?;
-    let download = client
-        .get(&s3_path)
-        .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get {s3_path}: {e}")))?;
+    let download = client.get(&s3_path).await.map_err(|e| match e {
+        object_store::Error::NotFound { .. } => {
+            CollectionError::not_found(format!("Snapshot {s3_path:?}"))
+        }
+        _ => CollectionError::service_error(format!("Failed to get {s3_path}: {e}")),
+    })?;
 
     let mut stream = download.into_stream();
 
