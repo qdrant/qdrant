@@ -261,6 +261,10 @@ impl Consensus {
             broker,
         };
 
+        if !state_ref.is_new_deployment() {
+            state_ref.recover_first_voter()?;
+        }
+
         Ok((consensus, sender))
     }
 
@@ -442,7 +446,7 @@ impl Consensus {
         // Only first peer has itself as a voter in the initial conf state.
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
         // So we skip the learner phase for the first peer.
-        state_ref.set_first_voter(all_peers.first_peer_id);
+        state_ref.set_first_voter(all_peers.first_peer_id)?;
         state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
         Ok(())
     }
