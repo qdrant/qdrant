@@ -105,7 +105,7 @@ impl Query {
             Query::Vector(vector_query) => {
                 let query_enum = vector_query
                     // Homogenize the input into raw vectors
-                    .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)
+                    .ids_into_vectors(ids_to_vectors, lookup_vector_name, lookup_collection)?
                     // Turn into QueryEnum
                     .into_query_enum(using)?;
                 ScoringQuery::Vector(query_enum)
@@ -164,14 +164,14 @@ impl VectorQuery<VectorInputInternal> {
         ids_to_vectors: &ReferencedVectors,
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
-    ) -> VectorQuery<VectorInternal> {
+    ) -> CollectionResult<VectorQuery<VectorInternal>> {
         match self {
             VectorQuery::Nearest(vector_input) => {
                 let vector = ids_to_vectors
                     .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
-                    .unwrap();
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
 
-                VectorQuery::Nearest(vector)
+                Ok(VectorQuery::Nearest(vector))
             }
             VectorQuery::RecommendAverageVector(reco) => {
                 let (positives, negatives) = Self::resolve_reco_reference(
@@ -180,7 +180,9 @@ impl VectorQuery<VectorInputInternal> {
                     lookup_vector_name,
                     lookup_collection,
                 );
-                VectorQuery::RecommendAverageVector(RecoQuery::new(positives, negatives))
+                Ok(VectorQuery::RecommendAverageVector(RecoQuery::new(
+                    positives, negatives,
+                )))
             }
             VectorQuery::RecommendBestScore(reco) => {
                 let (positives, negatives) = Self::resolve_reco_reference(
@@ -189,42 +191,64 @@ impl VectorQuery<VectorInputInternal> {
                     lookup_vector_name,
                     lookup_collection,
                 );
-                VectorQuery::RecommendBestScore(RecoQuery::new(positives, negatives))
+                Ok(VectorQuery::RecommendBestScore(RecoQuery::new(
+                    positives, negatives,
+                )))
             }
             VectorQuery::Discover(discover) => {
                 let target = ids_to_vectors
                     .resolve_reference(lookup_collection, lookup_vector_name, discover.target)
-                    .unwrap();
+                    .ok_or_else(|| vector_not_found_error(lookup_vector_name))?;
                 let pairs = discover
                     .pairs
                     .into_iter()
-                    .map(|pair| ContextPair {
-                        positive: ids_to_vectors
-                            .resolve_reference(lookup_collection, lookup_vector_name, pair.positive)
-                            .unwrap(),
-                        negative: ids_to_vectors
-                            .resolve_reference(lookup_collection, lookup_vector_name, pair.negative)
-                            .unwrap(),
+                    .map(|pair| {
+                        Ok(ContextPair {
+                            positive: ids_to_vectors
+                                .resolve_reference(
+                                    lookup_collection,
+                                    lookup_vector_name,
+                                    pair.positive,
+                                )
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                            negative: ids_to_vectors
+                                .resolve_reference(
+                                    lookup_collection,
+                                    lookup_vector_name,
+                                    pair.negative,
+                                )
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                        })
                     })
-                    .collect();
+                    .collect::<CollectionResult<_>>()?;
 
-                VectorQuery::Discover(DiscoveryQuery { target, pairs })
+                Ok(VectorQuery::Discover(DiscoveryQuery { target, pairs }))
             }
             VectorQuery::Context(context) => {
                 let pairs = context
                     .pairs
                     .into_iter()
-                    .map(|pair| ContextPair {
-                        positive: ids_to_vectors
-                            .resolve_reference(lookup_collection, lookup_vector_name, pair.positive)
-                            .unwrap(),
-                        negative: ids_to_vectors
-                            .resolve_reference(lookup_collection, lookup_vector_name, pair.negative)
-                            .unwrap(),
+                    .map(|pair| {
+                        Ok(ContextPair {
+                            positive: ids_to_vectors
+                                .resolve_reference(
+                                    lookup_collection,
+                                    lookup_vector_name,
+                                    pair.positive,
+                                )
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                            negative: ids_to_vectors
+                                .resolve_reference(
+                                    lookup_collection,
+                                    lookup_vector_name,
+                                    pair.negative,
+                                )
+                                .ok_or_else(|| vector_not_found_error(lookup_vector_name))?,
+                        })
                     })
-                    .collect();
+                    .collect::<CollectionResult<_>>()?;
 
-                VectorQuery::Context(ContextQuery { pairs })
+                Ok(VectorQuery::Context(ContextQuery { pairs }))
             }
         }
     }
@@ -260,6 +284,10 @@ impl VectorQuery<VectorInputInternal> {
             .collect();
         (positives, negatives)
     }
+}
+
+fn vector_not_found_error(vector_name: &str) -> CollectionError {
+    CollectionError::not_found(format!("Vector with name {vector_name:?} for point"))
 }
 
 impl VectorQuery<VectorInternal> {
