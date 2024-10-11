@@ -61,6 +61,8 @@ pub enum OperationError {
 }
 
 impl OperationError {
+    /// Create a new service error with a description and a backtrace
+    /// Warning: capturing a backtrace can be an expensive operation on some platforms, so this should be used with caution in performance-sensitive parts of code.
     pub fn service_error(description: impl Into<String>) -> OperationError {
         OperationError::ServiceError {
             description: description.into(),
