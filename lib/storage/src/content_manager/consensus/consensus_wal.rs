@@ -74,20 +74,21 @@ impl ConsensusOpWal {
             Some(max_size_bytes) => Some(max_size_bytes),
         };
 
-        let mut size_bytes = 0;
+        let mut size_bytes = 0_u64;
         let mut entries = Vec::with_capacity(until_wal_index.saturating_sub(from_wal_index) as _);
 
         for wal_index in from_wal_index..until_wal_index {
             let entry = self.entry_by_wal_index(wal_index)?;
 
-            size_bytes += u64::from(entry.compute_size());
-            entries.push(entry);
-
             if let Some(max_size_bytes) = max_size_bytes {
-                if size_bytes >= max_size_bytes {
+                size_bytes = size_bytes.saturating_add(entry.compute_size().into());
+
+                if size_bytes >= max_size_bytes && !entries.is_empty() {
                     break;
                 }
             }
+
+            entries.push(entry);
         }
 
         Ok(entries)
