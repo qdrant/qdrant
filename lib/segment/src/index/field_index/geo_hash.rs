@@ -189,7 +189,10 @@ impl From<GeoPoint> for Coord<f64> {
     }
 }
 
-pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> GeoHash {
+pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> Option<GeoHash> {
+    if geo_hashes.is_empty() {
+        return None;
+    }
     let first = &geo_hashes[0];
     let mut prefix: usize = first.len();
     for geo_hash in geo_hashes.iter().skip(1) {
@@ -200,7 +203,7 @@ pub fn common_hash_prefix(geo_hashes: &[GeoHash]) -> GeoHash {
             }
         }
     }
-    first.truncate(prefix)
+    Some(first.truncate(prefix))
 }
 
 /// Fix longitude for spherical overflow
@@ -1308,7 +1311,7 @@ mod tests {
             GeoHash::new("zbcd533").unwrap(),
         ];
 
-        let common_prefix = common_hash_prefix(&geo_hashes);
+        let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
         println!("common_prefix = {:?}", SmolStr::from(common_prefix));
 
         //assert_eq!(common_prefix, GeoHash::new("zbcd").unwrap());
@@ -1320,7 +1323,7 @@ mod tests {
             GeoHash::new("dbcd533").unwrap(),
         ];
 
-        let common_prefix = common_hash_prefix(&geo_hashes);
+        let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
         println!("common_prefix = {:?}", SmolStr::from(common_prefix));
 
         assert_eq!(common_prefix, GeoHash::new("").unwrap());
