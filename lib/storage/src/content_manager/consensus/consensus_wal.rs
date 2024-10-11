@@ -47,6 +47,10 @@ impl ConsensusOpWal {
         self.entry_by_wal_index(wal_index)
     }
 
+    /// Get all entries in the given range
+    ///
+    /// The end of the range is exclusive (`[from_raft_index, until_raft_index)`).
+    /// A specified `max_size_bytes` will be ignored for the first entry.
     pub fn entries(
         &self,
         from_raft_index: u64,
