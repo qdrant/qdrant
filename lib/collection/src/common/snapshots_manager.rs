@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use actix_web::HttpRequest;
 use common::tempfile_ext::MaybeTempPath;
@@ -16,8 +15,6 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::snapshot_storage_ops::{self};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
@@ -181,37 +178,6 @@ impl SnapshotStorageManager {
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl
                     .get_full_snapshot_path(snapshots_path, snapshot_name)
-                    .await
-            }
-        }
-    }
-
-    pub async fn get_shard_snapshot_path(
-        &self,
-        shards_holder: Arc<LockedShardHolder>,
-        shard_id: ShardId,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        match self {
-            SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl
-                    .get_shard_snapshot_path(
-                        shards_holder,
-                        shard_id,
-                        snapshots_path,
-                        snapshot_file_name,
-                    )
-                    .await
-            }
-            SnapshotStorageManager::S3(storage_impl) => {
-                storage_impl
-                    .get_shard_snapshot_path(
-                        shards_holder,
-                        shard_id,
-                        snapshots_path,
-                        snapshot_file_name,
-                    )
                     .await
             }
         }
@@ -419,20 +385,6 @@ impl SnapshotStorageLocalFS {
         Ok(absolute_snapshot_path)
     }
 
-    async fn get_shard_snapshot_path(
-        &self,
-        shards_holder: Arc<LockedShardHolder>,
-        shard_id: ShardId,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        shards_holder
-            .read()
-            .await
-            .get_shard_snapshot_path(snapshots_path, shard_id, snapshot_file_name)
-            .await
-    }
-
     async fn get_snapshot_file(
         &self,
         snapshot_path: &Path,
@@ -511,18 +463,6 @@ impl SnapshotStorageCloud {
         let absolute_snapshot_dir = PathBuf::from(snapshots_path);
         let absolute_snapshot_path = absolute_snapshot_dir.join(snapshot_name);
         Ok(absolute_snapshot_path)
-    }
-
-    async fn get_shard_snapshot_path(
-        &self,
-        _shards_holder: Arc<LockedShardHolder>,
-        shard_id: u32,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        Ok(snapshots_path
-            .join(format!("shards/{shard_id}"))
-            .join(snapshot_file_name))
     }
 
     async fn get_snapshot_file(
