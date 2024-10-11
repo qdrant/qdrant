@@ -797,25 +797,25 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
-        let wrapped_size = self
-            .wrapped_segment
-            .get()
-            .read()
-            .available_vectors_size_in_bytes(vector_name)?;
-        let wrapped_count = self.wrapped_segment.get().read().available_point_count();
-        let write_size = self
-            .write_segment
-            .get()
-            .read()
-            .available_vectors_size_in_bytes(vector_name)?;
-        let write_count = self.write_segment.get().read().available_point_count();
-        let deleted_points_count = self.deleted_points.read().len();
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;
+        let wrapped_count = wrapped_segment_guard.available_point_count();
+        drop(wrapped_segment_guard);
+
+        let write_segment = self.write_segment.get();
+        let write_segment_guard = write_segment.read();
+        let write_size = write_segment_guard.available_vectors_size_in_bytes(vector_name)?;
+        let write_count = write_segment_guard.available_point_count();
+        drop(write_segment_guard);
+
         let stored_points = wrapped_count + write_count;
-        let avaliable_points = stored_points.saturating_sub(deleted_points_count);
         // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
         if stored_points > 0 {
+            let deleted_points_count = self.deleted_points.read().len();
+            let available_points = stored_points.saturating_sub(deleted_points_count);
             Ok(
-                ((wrapped_size as u128 + write_size as u128) * avaliable_points as u128
+                ((wrapped_size as u128 + write_size as u128) * available_points as u128
                     / stored_points as u128) as usize,
             )
         } else {
