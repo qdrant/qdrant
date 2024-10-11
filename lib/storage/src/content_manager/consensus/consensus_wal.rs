@@ -128,6 +128,7 @@ impl ConsensusOpWal {
 
                 // Check that new entry index is sequential (it's not greater than next WAL index),
                 // or truncate entries at the tail of WAL, if it overwrites some
+                #[allow(clippy::comparison_chain)] // stupid ahh diagnostics 🙄
                 if new_entry_wal_index > next_wal_index {
                     return Err(StorageError::service_error(format!(
                         "Can't append entry with Raft index {} (expected WAL index {}), \
