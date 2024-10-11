@@ -15,6 +15,7 @@ const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 #[derive(Debug)]
 pub struct ConsensusOpWal {
     wal: Wal,
+    compacted_until_raft_index: u64,
 }
 
 impl ConsensusOpWal {
@@ -25,7 +26,11 @@ impl ConsensusOpWal {
             .expect("Can't create consensus WAL directory");
 
         let wal = Wal::open(collections_meta_wal_path).expect("Can't open consensus WAL");
-        Self { wal }
+
+        Self {
+            wal,
+            compacted_until_raft_index: 0,
+        }
     }
 
     pub fn clear(&mut self) -> Result<(), StorageError> {
@@ -37,6 +42,10 @@ impl ConsensusOpWal {
         // Raft entries are expected to have index starting from 1
         if raft_index < 1 {
             return Err(raft::Error::Store(raft::StorageError::Unavailable));
+        }
+
+        if raft_index < self.compacted_until_raft_index {
+            return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
 
         let wal_index = self
@@ -54,6 +63,9 @@ impl ConsensusOpWal {
         max_size_bytes: Option<u64>,
     ) -> raft::Result<Vec<RaftEntry>> {
         let offset = self.index_offset()?;
+
+        // TODO
+        let from_raft_index = cmp::max(from_raft_index, self.compacted_until_raft_index);
 
         // Map requested Raft indices to WAL indices
         let from_wal_index = offset.raft_to_wal(from_raft_index);
@@ -95,11 +107,34 @@ impl ConsensusOpWal {
     }
 
     pub fn first_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        self.entry_by_wal_index_impl(self.wal.first_index())
+        let Some(entry) = self.entry_by_wal_index_impl(self.wal.first_index())? else {
+            return Ok(None);
+        };
+
+        if entry.index >= self.compacted_until_raft_index {
+            Ok(Some(entry))
+        } else {
+            let wal_index = IndexOffset::new(self.wal.first_index(), &entry)
+                .try_raft_to_wal(self.compacted_until_raft_index);
+
+            let Some(wal_index) = wal_index else {
+                return Ok(None);
+            };
+
+            self.entry_by_wal_index_impl(wal_index)
+        }
     }
 
     pub fn last_entry(&self) -> Result<Option<RaftEntry>, StorageError> {
-        self.entry_by_wal_index_impl(self.wal.last_index())
+        let Some(entry) = self.entry_by_wal_index_impl(self.wal.last_index())? else {
+            return Ok(None);
+        };
+
+        if entry.index >= self.compacted_until_raft_index {
+            Ok(Some(entry))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn append_entries(&mut self, new_entries: Vec<RaftEntry>) -> Result<(), StorageError> {
@@ -114,13 +149,22 @@ impl ConsensusOpWal {
         let mut buf = Vec::new();
 
         for new_entry in new_entries {
+            // Check that new entry index was not already compacted
+            if new_entry.index < self.compacted_until_raft_index {
+                return Err(StorageError::service_error(format!(
+                    "Can't append entry with Raft index {}, \
+                     because WAL is already *logically* compacted at Raft index {}",
+                    new_entry.index, self.compacted_until_raft_index,
+                )));
+            }
+
             // If WAL is not empty, check that new entry index is within WAL bounds
             if let Some(offset) = current_index_offset {
                 // Check that new entry index was not already compacted (it's not less than first WAL index)
                 let Some(new_entry_wal_index) = offset.try_raft_to_wal(new_entry.index) else {
                     return Err(StorageError::service_error(format!(
                         "Can't append entry with Raft index {}, \
-                         because WAL is already compacted at Raft index {}",
+                         because WAL is already *physically* compacted at Raft index {}",
                         new_entry.index, offset.raft_index,
                     )));
                 };
@@ -196,6 +240,26 @@ impl ConsensusOpWal {
         Ok(())
     }
 
+    pub fn compact(&mut self, until_raft_index: u64) -> Result<(), StorageError> {
+        if until_raft_index <= self.compacted_until_raft_index {
+            return Ok(());
+        }
+
+        self.compacted_until_raft_index = until_raft_index;
+
+        let compact_until_wal_index = self
+            .index_offset_impl()?
+            .and_then(|offset| offset.try_raft_to_wal(until_raft_index));
+
+        let Some(compact_until_wal_index) = compact_until_wal_index else {
+            return Ok(());
+        };
+
+        self.wal.prefix_truncate(compact_until_wal_index)?;
+
+        Ok(())
+    }
+
     pub fn index_offset(&self) -> raft::Result<IndexOffset> {
         let res = self.index_offset_impl();
         into_raft_result(res)
@@ -204,25 +268,11 @@ impl ConsensusOpWal {
     pub fn index_offset_impl(&self) -> Result<Option<IndexOffset>, StorageError> {
         let wal_index = self.wal.first_index();
 
-        let raft_index = self
-            .entry_by_wal_index_impl(wal_index)?
-            .map(|entry| entry.index);
-
-        let Some(raft_index) = raft_index else {
+        let Some(entry) = self.entry_by_wal_index_impl(wal_index)? else {
             return Ok(None);
         };
 
-        // WAL index of an entry should always be *less* than its Raft index, but this is already
-        // asserted in `entry_by_wal_index_impl`
-        let wal_to_raft_offset = raft_index - wal_index;
-
-        let offset = IndexOffset {
-            wal_index,
-            raft_index,
-            wal_to_raft_offset,
-        };
-
-        Ok(Some(offset))
+        Ok(Some(IndexOffset::new(wal_index, &entry)))
     }
 
     fn entry_by_wal_index(&self, wal_index: u64) -> raft::Result<RaftEntry> {
@@ -268,6 +318,17 @@ pub struct IndexOffset {
 }
 
 impl IndexOffset {
+    pub fn new(wal_index: u64, entry: &RaftEntry) -> Self {
+        // WAL index of an entry should always be *less* than its Raft index, but this is already
+        // asserted in `entry_by_wal_index_impl`
+
+        Self {
+            wal_index,
+            raft_index: entry.index,
+            wal_to_raft_offset: entry.index - wal_index,
+        }
+    }
+
     pub fn try_raft_to_wal(&self, raft_index: u64) -> Option<u64> {
         raft_index.checked_sub(self.wal_to_raft_offset)
     }
