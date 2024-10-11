@@ -204,7 +204,9 @@ impl GeoMapIndex {
             return CardinalityEstimation::exact(0);
         }
 
-        let common_hash = common_hash_prefix(values);
+        let Some(common_hash) = common_hash_prefix(values) else {
+            return CardinalityEstimation::exact(0);
+        };
 
         let total_points = self.points_of_hash(&common_hash);
         let total_values = self.values_of_hash(&common_hash);
