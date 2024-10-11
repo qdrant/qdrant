@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -eEuo pipefail
 
 
 declare QDRANT_HOST="${QDRANT_HOST:-localhost}"
@@ -38,6 +38,7 @@ declare FILESERVER_PID=''
 
 function main {
 	load-qdrant-status
+	trap 'failure $LINENO' ERR
 	trap cleanup EXIT
 	"$@"
 }
@@ -78,6 +79,21 @@ function cleanup {
 	then
 		rm "$DOWNLOADED_SNAPSHOT"
 	fi
+}
+
+function failure {
+	printf "Exit code: %d\n" $? >&2
+	declare INDEX
+	for (( INDEX=0; INDEX<${#BASH_LINENO[@]}-1; INDEX++ ))
+	do
+		printf "%s:%d@%s: " \
+			"${BASH_SOURCE[INDEX+1]}" \
+			"$(( INDEX > 0 ? BASH_LINENO[INDEX] : $1 ))" \
+			"${FUNCNAME[INDEX+1]}"
+		(( INDEX > 0 )) && \
+			printf "%s\n" "${FUNCNAME[INDEX]}" || \
+			printf "%s\n" " $BASH_COMMAND"
+	done >&2
 }
 
 function kill-jobs {
