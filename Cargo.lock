@@ -1175,7 +1175,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "fnv",
- "fs4",
+ "fs4 0.10.0",
  "fs_extra",
  "futures",
  "hashring",
@@ -2059,6 +2059,16 @@ name = "fs4"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8c6b3bd49c37d2aa3f3f2220233b29a7cd23f79d1fe70e5337d25fb390793de"
+dependencies = [
+ "rustix 0.38.37",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "fs4"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec6fcfb3c0c1d71612528825042261419d5dade9678c39a781e05b63677d9b32"
 dependencies = [
  "rustix 0.38.37",
  "windows-sys 0.52.0",
@@ -7107,7 +7117,7 @@ dependencies = [
  "crossbeam-channel",
  "docopt",
  "env_logger",
- "fs4",
+ "fs4 0.9.1",
  "log",
  "memmap2 0.9.5",
  "rand 0.8.5",
