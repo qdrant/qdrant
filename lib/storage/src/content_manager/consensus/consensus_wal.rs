@@ -149,7 +149,7 @@ impl ConsensusOpWal {
         let mut buf = Vec::new();
 
         for new_entry in new_entries {
-            // Check that new entry index was not already compacted
+            // Check that new entry index was not already *logically* compacted
             if new_entry.index < self.compacted_until_raft_index {
                 return Err(StorageError::service_error(format!(
                     "Can't append entry with Raft index {}, \
@@ -160,7 +160,8 @@ impl ConsensusOpWal {
 
             // If WAL is not empty, check that new entry index is within WAL bounds
             if let Some(offset) = current_index_offset {
-                // Check that new entry index was not already compacted (it's not less than first WAL index)
+                // Check that new entry index was not already *physically* compacted (it's not less
+                // than first WAL index)
                 let Some(new_entry_wal_index) = offset.try_raft_to_wal(new_entry.index) else {
                     return Err(StorageError::service_error(format!(
                         "Can't append entry with Raft index {}, \
@@ -241,20 +242,41 @@ impl ConsensusOpWal {
     }
 
     pub fn compact(&mut self, until_raft_index: u64) -> Result<(), StorageError> {
+        // Check if WAL is empty
+        let Some(offset) = self.index_offset_impl()? else {
+            return Ok(());
+        };
+
+        // Check if WAL is already *logically* compacted
         if until_raft_index <= self.compacted_until_raft_index {
             return Ok(());
         }
 
-        self.compacted_until_raft_index = until_raft_index;
+        // Check if WAL is already *physically* compacted (this should not happen, but we can handle
+        // it gracefully)
+        let Some(compact_until_wal_index) = offset.try_raft_to_wal(until_raft_index) else {
+            log::warn!(
+                "WAL logical/physical compaction mismatch: \
+                 WAL is logically truncated at Raft index {}, \
+                 but it's physically truncated at Raft index {} (WAL index {})",
+                self.compacted_until_raft_index,
+                offset.raft_index,
+                offset.wal_index,
+            );
 
-        let compact_until_wal_index = self
-            .index_offset_impl()?
-            .and_then(|offset| offset.try_raft_to_wal(until_raft_index));
-
-        let Some(compact_until_wal_index) = compact_until_wal_index else {
+            self.compacted_until_raft_index = until_raft_index;
             return Ok(());
         };
 
+        // Bound compaction index, so that there's at least 1 entry available after compaction
+        // (compact *at most* until last WAL index)
+        let compact_until_wal_index = cmp::min(
+            compact_until_wal_index,
+            offset.wal_index + self.wal.num_entries() - 1, // there's always *at least* 1 entry, because WAL is not empty
+        );
+
+        // Compact WAL
+        self.compacted_until_raft_index = offset.wal_to_raft(compact_until_wal_index);
         self.wal.prefix_truncate(compact_until_wal_index)?;
 
         Ok(())
