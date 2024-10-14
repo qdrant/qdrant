@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -389,44 +390,49 @@ impl SegmentsSearcher {
                 let version = segment.point_version(id).ok_or_else(|| {
                     OperationError::service_error(format!("No version for point {id}"))
                 })?;
-                // If this point was not found yet or this segment have later version
-                if !point_version.contains_key(&id) || point_version[&id] < version {
-                    point_records.insert(
-                        id,
-                        RecordInternal {
-                            id,
-                            payload: if with_payload.enable {
-                                if let Some(selector) = &with_payload.payload_selector {
-                                    Some(selector.process(segment.payload(id)?))
-                                } else {
-                                    Some(segment.payload(id)?)
-                                }
-                            } else {
-                                None
-                            },
-                            vector: {
-                                match with_vector {
-                                    WithVector::Bool(true) => {
-                                        Some(VectorStructInternal::from(segment.all_vectors(id)?))
-                                    }
-                                    WithVector::Bool(false) => None,
-                                    WithVector::Selector(vector_names) => {
-                                        let mut selected_vectors = NamedVectors::default();
-                                        for vector_name in vector_names {
-                                            if let Some(vector) = segment.vector(vector_name, id)? {
-                                                selected_vectors.insert(vector_name.into(), vector);
-                                            }
-                                        }
-                                        Some(VectorStructInternal::from(selected_vectors))
-                                    }
-                                }
-                            },
-                            shard_key: None,
-                            order_value: None,
-                        },
-                    );
-                    point_version.insert(id, version);
+
+                // If we already have the latest point version, keep that and continue
+                let version_entry = point_version.entry(id);
+                if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
+                    return Ok(true);
                 }
+
+                point_records.insert(
+                    id,
+                    RecordInternal {
+                        id,
+                        payload: if with_payload.enable {
+                            if let Some(selector) = &with_payload.payload_selector {
+                                Some(selector.process(segment.payload(id)?))
+                            } else {
+                                Some(segment.payload(id)?)
+                            }
+                        } else {
+                            None
+                        },
+                        vector: {
+                            match with_vector {
+                                WithVector::Bool(true) => {
+                                    Some(VectorStructInternal::from(segment.all_vectors(id)?))
+                                }
+                                WithVector::Bool(false) => None,
+                                WithVector::Selector(vector_names) => {
+                                    let mut selected_vectors = NamedVectors::default();
+                                    for vector_name in vector_names {
+                                        if let Some(vector) = segment.vector(vector_name, id)? {
+                                            selected_vectors.insert(vector_name.into(), vector);
+                                        }
+                                    }
+                                    Some(VectorStructInternal::from(selected_vectors))
+                                }
+                            }
+                        },
+                        shard_key: None,
+                        order_value: None,
+                    },
+                );
+                *version_entry.or_default() = version;
+
                 Ok(true)
             })?;
 
