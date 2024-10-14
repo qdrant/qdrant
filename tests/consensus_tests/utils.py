@@ -112,14 +112,22 @@ def init_pytest_log_folder() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None) -> str:
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, given_grpc_port=None, given_http_port=None) -> str:
     if extra_env is None:
         extra_env = {}
     p2p_port = get_port() if port is None else port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+
+    if given_grpc_port is None:
+        grpc_port = get_port() if port is None else port + 1
+    else:
+        grpc_port = given_grpc_port
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+
+    if given_http_port is None:
+        http_port = get_port() if port is None else port + 2
+    else:
+        http_port = given_http_port
     _occupy_port(http_port)
 
     env = {
@@ -139,15 +147,22 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -> Tuple[str, str]:
+def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, given_grpc_port=None, given_http_port=None) -> Tuple[str, str]:
     if extra_env is None:
         extra_env = {}
 
     p2p_port = get_port() if port is None else port + 0
     _occupy_port(p2p_port)
-    grpc_port = get_port() if port is None else port + 1
+    if given_grpc_port is None:
+        grpc_port = get_port() if port is None else port + 1
+    else:
+        grpc_port = given_grpc_port
     _occupy_port(grpc_port)
-    http_port = get_port() if port is None else port + 2
+
+    if given_http_port is None:
+        http_port = get_port() if port is None else port + 2
+    else:
+        http_port = given_http_port
     _occupy_port(http_port)
 
     env = {
