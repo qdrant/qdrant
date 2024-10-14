@@ -157,7 +157,7 @@ atomicwrites = "0.4.4"
 bytes = "1.7.2"
 chrono = { version = "0.4.38", features = ["serde"] }
 data-encoding = "2.6.0"
-delegate = "0.13.0"
+delegate = "0.13.1"
 fnv = "1.0"
 futures = "0.3.31"
 futures-util = "0.3.30"
