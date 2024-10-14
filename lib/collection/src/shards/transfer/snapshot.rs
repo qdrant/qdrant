@@ -225,6 +225,7 @@ pub(super) async fn transfer_snapshot(
             SnapshotPriority::ShardTransfer,
             // Provide API key here so the remote can access our snapshot
             channel_service.api_key.as_deref(),
+            &snapshot_description.checksum,
         )
         .await
         .map_err(|err| {
