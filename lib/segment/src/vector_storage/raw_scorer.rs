@@ -23,6 +23,7 @@ use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQ
 use crate::vector_storage::query_scorer::QueryScorer;
 
 /// RawScorer composition:
+///
 ///                                              Metric
 ///                                             ┌───────────────────┐
 ///                                             │  - Cosine         │
