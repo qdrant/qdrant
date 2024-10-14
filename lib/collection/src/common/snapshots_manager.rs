@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use actix_web::HttpRequest;
+use common::tempfile_ext::MaybeTempPath;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -15,8 +15,6 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::snapshot_storage_ops::{self};
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
@@ -102,6 +100,7 @@ impl SnapshotStorageManager {
             }
         }
     }
+
     pub async fn list_snapshots(
         &self,
         directory: &Path,
@@ -115,6 +114,7 @@ impl SnapshotStorageManager {
             }
         }
     }
+
     pub async fn store_file(
         &self,
         source_path: &Path,
@@ -183,39 +183,27 @@ impl SnapshotStorageManager {
         }
     }
 
-    pub async fn get_shard_snapshot_path(
+    pub async fn get_snapshot_file(
         &self,
-        shards_holder: Arc<LockedShardHolder>,
-        shard_id: ShardId,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
+        snapshot_path: &Path,
+        temp_dir: &Path,
+    ) -> CollectionResult<MaybeTempPath> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl
-                    .get_shard_snapshot_path(
-                        shards_holder,
-                        shard_id,
-                        snapshots_path,
-                        snapshot_file_name,
-                    )
+                    .get_snapshot_file(snapshot_path, temp_dir)
                     .await
             }
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl
-                    .get_shard_snapshot_path(
-                        shards_holder,
-                        shard_id,
-                        snapshots_path,
-                        snapshot_file_name,
-                    )
+                    .get_snapshot_file(snapshot_path, temp_dir)
                     .await
             }
         }
     }
 
     pub async fn get_snapshot_stream(
-        self,
+        &self,
         req: HttpRequest,
         snapshot_path: &Path,
     ) -> CollectionResult<SnapshotStream> {
@@ -238,7 +226,12 @@ impl SnapshotStorageLocalFS {
             tokio::fs::remove_file(checksum_path),
         );
 
-        delete_snapshot?;
+        delete_snapshot.map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                CollectionError::not_found(format!("Snapshot {snapshot_path:?}"))
+            }
+            _ => e.into(),
+        })?;
 
         // We might not have a checksum file for the snapshot, ignore deletion errors in that case
         if let Err(err) = delete_checksum {
@@ -249,7 +242,11 @@ impl SnapshotStorageLocalFS {
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        let mut entries = tokio::fs::read_dir(directory).await?;
+        let mut entries = match tokio::fs::read_dir(directory).await {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
         let mut snapshots = Vec::new();
 
         while let Some(entry) = entries.next_entry().await? {
@@ -388,18 +385,17 @@ impl SnapshotStorageLocalFS {
         Ok(absolute_snapshot_path)
     }
 
-    async fn get_shard_snapshot_path(
+    async fn get_snapshot_file(
         &self,
-        shards_holder: Arc<LockedShardHolder>,
-        shard_id: ShardId,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        shards_holder
-            .read()
-            .await
-            .get_shard_snapshot_path(snapshots_path, shard_id, snapshot_file_name)
-            .await
+        snapshot_path: &Path,
+        _temp_dir: &Path,
+    ) -> CollectionResult<MaybeTempPath> {
+        if !snapshot_path.exists() {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_path:?}"
+            )));
+        }
+        Ok(MaybeTempPath::Persistent(snapshot_path.to_path_buf()))
     }
 
     async fn get_snapshot_stream(
@@ -469,16 +465,24 @@ impl SnapshotStorageCloud {
         Ok(absolute_snapshot_path)
     }
 
-    async fn get_shard_snapshot_path(
+    async fn get_snapshot_file(
         &self,
-        _shards_holder: Arc<LockedShardHolder>,
-        shard_id: u32,
-        snapshots_path: &Path,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        Ok(snapshots_path
-            .join(format!("shards/{shard_id}"))
-            .join(snapshot_file_name))
+        snapshot_path: &Path,
+        temp_dir: &Path,
+    ) -> CollectionResult<MaybeTempPath> {
+        let temp_path = tempfile::Builder::new()
+            .prefix(
+                snapshot_path
+                    .file_stem()
+                    .ok_or(CollectionError::bad_request("Invalid snapshot path"))?,
+            )
+            .suffix(".snapshot")
+            .tempfile_in(temp_dir)?
+            .into_temp_path();
+
+        snapshot_storage_ops::download_snapshot(&self.client, snapshot_path, &temp_path).await?;
+
+        Ok(MaybeTempPath::Temporary(temp_path))
     }
 
     pub async fn get_snapshot_stream(

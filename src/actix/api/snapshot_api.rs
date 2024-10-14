@@ -537,13 +537,11 @@ async fn download_shard_snapshot(
         .get_collection(&collection_pass)
         .await?;
     let snapshots_storage_manager = collection.get_snapshots_storage_manager()?;
-    let snapshot_path = snapshots_storage_manager
-        .get_shard_snapshot_path(
-            collection.shards_holder(),
-            shard,
-            collection.snapshots_path(),
-            &snapshot,
-        )
+    let snapshot_path = collection
+        .shards_holder()
+        .read()
+        .await
+        .get_shard_snapshot_path(collection.snapshots_path(), shard, &snapshot)
         .await?;
     let snapshot_stream = snapshots_storage_manager
         .get_snapshot_stream(req, &snapshot_path)
