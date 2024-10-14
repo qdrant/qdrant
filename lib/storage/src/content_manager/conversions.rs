@@ -1,5 +1,8 @@
+use collection::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+};
 use collection::operations::conversions::sharding_method_from_proto;
-use collection::operations::types::SparseVectorsConfig;
+use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
 use segment::types::StrictModeConfig;
 use tonic::Status;
 
@@ -92,19 +95,23 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                 vectors: value
                     .vectors_config
                     .and_then(|config| config.config)
-                    .map(TryInto::try_into)
+                    .map(VectorsConfigDiff::try_from)
                     .transpose()?,
-                hnsw_config: value.hnsw_config.map(Into::into),
-                params: value.params.map(TryInto::try_into).transpose()?,
-                optimizers_config: value.optimizers_config.map(Into::into),
+                hnsw_config: value.hnsw_config.map(HnswConfigDiff::from),
+                params: value
+                    .params
+                    .map(CollectionParamsDiff::try_from)
+                    .transpose()?,
+                optimizers_config: value.optimizers_config.map(OptimizersConfigDiff::from),
                 quantization_config: value
                     .quantization_config
-                    .map(TryInto::try_into)
+                    .map(QuantizationConfigDiff::try_from)
                     .transpose()?,
                 sparse_vectors: value
                     .sparse_vectors_config
-                    .map(TryInto::try_into)
+                    .map(SparseVectorsConfig::try_from)
                     .transpose()?,
+                strict_mode_config: value.strict_mode_config.map(StrictModeConfig::from),
             },
         )))
     }

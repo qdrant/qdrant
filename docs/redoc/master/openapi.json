@@ -8683,6 +8683,17 @@
               "$ref": "#/components/schemas/SparseVectorParams"
             },
             "nullable": true
+          },
+          "strict_mode_config": {
+            "description": "Strict-mode config.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8777,6 +8788,58 @@
           }
         }
       },
+      "StrictModeConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether strict mode is enabled for a collection or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "max_query_limit": {
+            "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_timeout": {
+            "description": "Max allowed `timeout` parameter.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "unindexed_filtering_retrieve": {
+            "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "unindexed_filtering_update": {
+            "description": "Allow usage of unindexed fields in filtered updates (eg. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_hnsw_ef": {
+            "description": "Max HNSW value allowed in search parameters.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_allow_exact": {
+            "description": "Whether exact search is allowed or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_oversampling": {
+            "description": "Max oversampling value allowed in search.",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        }
+      },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
@@ -8842,6 +8905,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SparseVectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "strict_mode_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
               },
               {
                 "nullable": true
