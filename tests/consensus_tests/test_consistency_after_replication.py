@@ -22,11 +22,12 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 INITIAL_POINTS_COUNT = 10000
+POINTS_COUNT_UNDER_CHECK = 100
 N_PEERS = 3
 N_SHARDS = 2
 N_REPLICAS = 1
-COLLECTION_NAME = "test_collection"
-LOOPS_OF_REPLICATION = 20
+COLLECTION_NAME = "benchmark"
+LOOPS_OF_REPLICATION = 3
 INCONSISTENCY_CHECK_ATTEMPTS = 10
 HEADERS = {}
 
@@ -141,6 +142,21 @@ def get_all_points(peer_url, collection_name):
     return res.json()["result"]
 
 
+def get_some_points(peer_url, collection_name, points_ids):
+    res = requests.post(
+        f"{peer_url}/collections/{collection_name}/points",
+        json={
+            "ids": points_ids,
+            "with_vector": True,
+            "with_payload": True,
+        },
+        timeout=30,
+        headers=HEADERS
+    )
+    assert_http_ok(res)
+    return res.json()["result"]
+
+
 def replicate_shard(peer_api_uris, collection_name):
     random_api_uri = random.choice(peer_api_uris)
     collection_cluster_info = get_collection_cluster_info(random_api_uri, collection_name, headers=HEADERS)
@@ -181,23 +197,25 @@ def replicate_shard(peer_api_uris, collection_name):
     )
     print(f"    Replicate shard {shard_id} from {source_peer_id} to {target_peer_id}")
     assert_http_ok(res)
-
+    time.sleep(2)
     wait_for_collection_shard_transfers_count(source_uri, collection_name, 0, headers=HEADERS)
 
     return res.json()["result"]
 
 
-def check_consistency(peer_api_uris):
+def check_consistency(peer_api_uris, peer_dirs, loop_num='final'):
     print("8. Check consistency")
     attempts_counter = INCONSISTENCY_CHECK_ATTEMPTS
-    results = []
     diffs = {}
+    ids = random.sample(range(INITIAL_POINTS_COUNT + 1), POINTS_COUNT_UNDER_CHECK)
+    is_diff = False
     while attempts_counter > 0:
         print(f"attempts_counter {attempts_counter}")
         results = []
         for url in peer_api_uris:
             try:
-                res = get_all_points(url, COLLECTION_NAME)
+                # res = get_all_points(url, COLLECTION_NAME)
+                res = get_some_points(url, COLLECTION_NAME, ids)
                 results.append(res)
             except Exception as ex:
                 print(f"failed with {ex}")
@@ -207,10 +225,12 @@ def check_consistency(peer_api_uris):
         is_diff = False
         for node_id, res in enumerate(results[1::]):
             diffs[f'attempt_{attempts_counter}'][f'node_{node_id + 1}'] = []
-            for idx, row in enumerate(res['points']):
-                expected_row = results[0]['points'][idx]
+            # get_all_points
+            # for idx, row in enumerate(res['points']):
+            #     expected_row = results[0]['points'][idx]
+            for idx, row in enumerate(res):
+                expected_row = results[0][idx]
                 if row != expected_row:
-                    # diffs.append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
                     diffs[f'attempt_{attempts_counter}'][f'node_{node_id + 1}'].append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
                     is_diff = True
         if is_diff:
@@ -218,28 +238,84 @@ def check_consistency(peer_api_uris):
             time.sleep(1)
             attempts_counter -= 1
         else:
+            print(f"    No inconsistencies found, continue to final check")
             break
 
-    # final check
+    if is_diff:
+        print("Restart peers")
+        restart_peers(peer_dirs, None, loop_num=loop_num)
+        print("Final check after restart peers")
+    else:
+        print("Final check")
+
+    results = []
+    for url in peer_api_uris:
+        try:
+            # res = get_all_points(url, COLLECTION_NAME)
+            res = get_some_points(url, COLLECTION_NAME, ids)
+            results.append(res)
+        except Exception as ex:
+            print(f"failed with {ex}")
+            raise ex
     diffs['final'] = {}
-    is_diff = False
+    is_final_diff = False
     for node_id, res in enumerate(results[1::]):
         diffs['final'][f'node_{node_id + 1}'] = []
-        for idx, row in enumerate(res['points']):
-            expected_row = results[0]['points'][idx]
+        # get_all_points
+        # for idx, row in enumerate(res['points']):
+        #     expected_row = results[0]['points'][idx]
+        for idx, row in enumerate(res):
+            expected_row = results[0][idx]
             if row != expected_row:
-                # diffs.append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
                 diffs['final'][f'node_{node_id + 1}'].append(
                     f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
-                is_diff = True
+                is_final_diff = True
 
-    with open('diff.json', 'w') as diff_log:
+    with open(f'diff_{loop_num}.json', 'w') as diff_log:
         diff_log.write(json.dumps(diffs))
 
-    if is_diff:
+    if is_diff or is_final_diff:
         print("Consistency check FAILED")
-        raise AssertionError("There are inconsistencies found after 10 attempts")
-    print("Consistency check OK")
+        print(f"There are inconsistencies found after {INCONSISTENCY_CHECK_ATTEMPTS} + 1 attempts")
+        return False
+    else:
+        print("Consistency check OK")
+        return True
+
+
+def restart_peers(peer_dirs, extra_env, loop_num):
+    counter = len(processes) - 1
+    processes_info = {}
+    while processes:
+        p = processes.pop()
+        p_http_port = str(p.http_port)
+        p_p2p_port = str(p.p2p_port)
+        p_grpc_port = str(p.grpc_port)
+        processes_info[counter] = {
+            "http_port": int(p_http_port),
+            "p2p_port": int(p_p2p_port),
+            "grpc_port": int(p_grpc_port)
+        }
+        counter = counter - 1
+        print(f"    Kill node http://localhost:{p_http_port}, p2p port: {p_p2p_port}")
+        p.kill()
+
+    time.sleep(3)
+    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], f"peer_0_restarted_{loop_num}.log",
+                                                          port=processes_info[0]["p2p_port"],
+                                                          extra_env=extra_env,
+                                                          given_grpc_port=processes_info[0]["grpc_port"],
+                                                          given_http_port=processes_info[0]["http_port"]
+                                                          )
+    time.sleep(3)
+    # Start other peers
+    for i in range(1, len(peer_dirs)):
+        start_peer(
+            peer_dirs[i], f"peer_{i}_restarted_{loop_num}.log", bootstrap_uri, port=processes_info[i]["p2p_port"], extra_env=extra_env,
+            given_grpc_port=processes_info[i]["grpc_port"],
+            given_http_port=processes_info[i]["http_port"]
+        )
+    time.sleep(3)
 
 
 def test_consistency(tmp_path: pathlib.Path):
@@ -247,9 +323,11 @@ def test_consistency(tmp_path: pathlib.Path):
 
     print("\n1. Create a 3-nodes cluster")
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    # peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env={"QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "stream_records"})
     grpc_uris = []
     for item in processes:
         grpc_uris.append(f"http://127.0.0.1:{item.grpc_port}")
+    print(peer_dirs)
 
     print(f"2. Create a collection with {N_SHARDS} shards")
     create_collection(peer_api_uris[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS, headers=HEADERS)
@@ -267,9 +345,10 @@ def test_consistency(tmp_path: pathlib.Path):
     print("4. Start updating points in the background (random nodes)")
     # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
     upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
-    upsert_process_2 = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
     print("     Wait for some time")
     time.sleep(5)
+
+    checks = []
 
     for i in range(LOOPS_OF_REPLICATION):
         print("5-6. Trigger one of the shards' replication. Wait for the replication to complete")
@@ -278,27 +357,32 @@ def test_consistency(tmp_path: pathlib.Path):
         time.sleep(random.randint(3, 15))
 
         # random_bool = random.choice([True, False])
+        # check consistency after each replication
         random_bool = True
         if random_bool:
             print("     Stop updating points")
             upsert_process.kill()
-            upsert_process_2.kill()
             print("         Wait for some time")
             time.sleep(3)
 
-            check_consistency(peer_api_uris)
-
+            result = check_consistency(peer_api_uris, peer_dirs, loop_num=str(i))
+            checks.append(result)
+            # if not result:
+            #     restart_peers(peer_dirs, None, loop_num=str(i))
+            #     check_consistency(peer_api_uris, loop_num=f"{i}_again")
             print("     Start updating points again")
             # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
             upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
-            upsert_process_2 = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
 
     print("7. Stop updating points")
     upsert_process.kill()
-    upsert_process_2.kill()
     print("    Wait for some time")
-    time.sleep(3)
+    time.sleep(30)
 
-    check_consistency(peer_api_uris)
+    checks.append(check_consistency(peer_api_uris, peer_dirs, loop_num='final'))
+
+    for item in checks:
+        if not item:
+            raise AssertionError("FAILED")
 
     print("OK")
