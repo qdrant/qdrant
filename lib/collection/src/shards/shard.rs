@@ -25,6 +25,7 @@ pub type PeerId = u64;
 pub type ShardReplicasPlacement = Vec<PeerId>;
 
 /// List of shards placements. Each element defines placements of replicas for a single shard.
+///
 /// Number of elements corresponds to the number of shards.
 /// Example: [
 ///     [1, 2],

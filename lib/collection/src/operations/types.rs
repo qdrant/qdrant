@@ -73,6 +73,7 @@ pub enum CollectionStatus {
 }
 
 /// Current state of the shard (supports same states as the collection)
+///
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]

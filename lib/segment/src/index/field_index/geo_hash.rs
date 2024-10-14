@@ -458,7 +458,8 @@ fn boundary_hashes(boundary: &LineString, max_regions: usize) -> OperationResult
     create_hashes(mapping_fn)
 }
 
-/// A function used for cardinality estimation
+/// A function used for cardinality estimation.
+///
 /// The first return value is as-high-as-possible with maximum of `max_regions`
 /// number of geo-hash guaranteed to contain the polygon's exterior.
 /// The second return value is all as-high-as-possible with maximum of `max_regions`

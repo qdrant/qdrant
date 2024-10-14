@@ -85,6 +85,8 @@ pub async fn retrieve_points_with_locked_collection(
 
 pub type CollectionName = String;
 
+/// This is a temporary structure, which holds resolved references to vectors,
+/// mentioned in the query.
 ///
 ///  ┌──────────────┐
 ///  │              │  -> Batch request
@@ -104,8 +106,6 @@ pub type CollectionName = String;
 ///  │                              │
 ///  └──────────────────────────────┘
 ///
-/// This is a temporary structure, which holds resolved references to vectors,
-/// mentioned in the query.
 #[derive(Default, Debug)]
 pub struct ReferencedVectors {
     collection_mapping: HashMap<CollectionName, HashMap<PointIdType, RecordInternal>>,
@@ -377,6 +377,7 @@ where
 }
 
 /// This function is used to build a list of queries to resolve vectors for the given batch of query requests.
+///
 /// For each request, one query is issue for the root request and one query for each nested prefetch.
 /// The resolver queries have no prefetches.
 pub fn build_vector_resolver_queries(
