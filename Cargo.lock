@@ -3502,6 +3502,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75761162ae2b0e580d7e7c390558127e5f01b4194debd6221fd8c207fc80e3f5"
+
+[[package]]
 name = "macro_rules_attribute"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3673,6 +3679,23 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "mmap-payload-storage"
+version = "0.1.0"
+source = "git+https://github.com/qdrant/mmap-payload-storage#ccc3a694e1e67a9f5e3a06567b38e897b7fcc4bb"
+dependencies = [
+ "log",
+ "lz4_flex",
+ "memmap2 0.9.5",
+ "parking_lot",
+ "priority-queue",
+ "rand 0.8.5",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -4270,6 +4293,17 @@ checksum = "8d3928fb5db768cb86f891ff014f0144589297e3c6a1aba6ed7cecfdace270c7"
 dependencies = [
  "proc-macro2",
  "syn 2.0.79",
+]
+
+[[package]]
+name = "priority-queue"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "714c75db297bc88a63783ffc6ab9f830698a6705aa0201416931759ef4c8183d"
+dependencies = [
+ "autocfg",
+ "equivalent",
+ "indexmap 2.6.0",
 ]
 
 [[package]]
@@ -5670,6 +5704,7 @@ dependencies = [
  "memmap2 0.9.5",
  "memory",
  "merge",
+ "mmap-payload-storage",
  "nom",
  "num-cmp",
  "num-derive",
@@ -7120,7 +7155,7 @@ dependencies = [
  "memmap2 0.9.5",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.38.37",
+ "rustix 0.37.27",
  "serde",
 ]
 
