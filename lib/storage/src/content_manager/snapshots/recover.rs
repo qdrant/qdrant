@@ -98,8 +98,7 @@ async fn _do_recover_from_snapshot(
         download_dir.path().display(),
     );
 
-    let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path()).await?;
+    let snapshot_path = download_snapshot(client, location, download_dir.path()).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;
@@ -129,10 +128,10 @@ async fn _do_recover_from_snapshot(
     );
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
+    let snapshot_path_clone = snapshot_path.to_path_buf();
     let restoring = tokio::task::spawn_blocking(move || {
-        // Unpack snapshot collection to the target folder
         Collection::restore_snapshot(
-            &snapshot_path,
+            &snapshot_path_clone,
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,
@@ -330,10 +329,8 @@ async fn _do_recover_from_snapshot(
     tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
 
     // Remove snapshot after recovery if downloaded
-    if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.close() {
-            log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
-        }
+    if let Err(err) = snapshot_path.close() {
+        log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
     }
 
     Ok(true)

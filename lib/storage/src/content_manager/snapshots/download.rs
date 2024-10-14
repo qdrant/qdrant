@@ -1,5 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use common::tempfile_ext::MaybeTempPath;
 use futures::StreamExt;
 use reqwest;
 use tempfile::TempPath;
@@ -62,12 +63,11 @@ async fn download_file(
 ///
 /// May returen a `TempPath` if a file was downloaded from a remote source. If it is dropped the
 /// downloaded file is deleted automatically. To keep the file `keep()` may be used.
-#[must_use = "may return a TempPath, if dropped the downloaded file is deleted"]
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
     snapshots_dir: &Path,
-) -> Result<(PathBuf, Option<TempPath>), StorageError> {
+) -> Result<MaybeTempPath, StorageError> {
     match url.scheme() {
         "file" => {
             let local_path = url.to_file_path().map_err(|_| {
@@ -80,13 +80,13 @@ pub async fn download_snapshot(
                     "Snapshot file {local_path:?} does not exist"
                 )));
             }
-            Ok((local_path, None))
+            Ok(MaybeTempPath::Persistent(local_path))
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));
 
             let temp_path = download_file(client, &url, &download_to).await?;
-            Ok((download_to, Some(temp_path)))
+            Ok(MaybeTempPath::Temporary(temp_path))
         }
         _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
