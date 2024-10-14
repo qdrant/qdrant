@@ -483,8 +483,9 @@ impl LocalShard {
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
                 sparse_vector_data: sparse_vector_params.clone(),
+                // TODO how to use new PayloadStorageType::Mmap here?
                 payload_storage_type: if config.params.on_disk_payload {
-                    PayloadStorageType::OnDisk
+                    PayloadStorageType::Mmap // test drive new impl here
                 } else {
                     PayloadStorageType::InMemory
                 },

@@ -88,6 +88,8 @@ zerocopy = { workspace = true }
 sysinfo = "0.32"
 charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }
 
+mmap-payload-storage = { git = "https://github.com/qdrant/mmap-payload-storage"}
+
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
