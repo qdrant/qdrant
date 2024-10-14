@@ -41,7 +41,7 @@ fn id_serialization_speed(c: &mut Criterion) {
     group.bench_function("u128", |b| {
         b.iter(|| {
             let key: u64 = rng.gen_range(0..100000000);
-            let new_key = key as u128;
+            let new_key = u128::from(key);
             bincode::serialize(&new_key).unwrap();
         });
     });
@@ -62,7 +62,7 @@ fn id_serialization_speed(c: &mut Criterion) {
             let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: None,
-                uuid: Some(Uuid::from_u128(key as u128)),
+                uuid: Some(Uuid::from_u128(u128::from(key))),
             };
             bincode::serialize(&new_key).unwrap();
         });
@@ -79,7 +79,7 @@ fn id_serialization_speed(c: &mut Criterion) {
     group.bench_function("enum-uuid", |b| {
         b.iter(|| {
             let key: u64 = rng.gen_range(0..100000000);
-            let new_key = EnumIdTagged::Uuid(Uuid::from_u128(key as u128));
+            let new_key = EnumIdTagged::Uuid(Uuid::from_u128(u128::from(key)));
             bincode::serialize(&new_key).unwrap();
         });
     });
@@ -87,7 +87,7 @@ fn id_serialization_speed(c: &mut Criterion) {
     group.bench_function("struct-cbor-u128", |b| {
         b.iter(|| {
             let key: u64 = rng.gen_range(0..100000000);
-            let new_key = key as u128;
+            let new_key = u128::from(key);
             serde_cbor::to_vec(&new_key).unwrap();
         });
     });
@@ -108,7 +108,7 @@ fn id_serialization_speed(c: &mut Criterion) {
             let key: u64 = rng.gen_range(0..100000000);
             let new_key = StructId {
                 id: None,
-                uuid: Some(Uuid::from_u128(key as u128)),
+                uuid: Some(Uuid::from_u128(u128::from(key))),
             };
             serde_cbor::to_vec(&new_key).unwrap();
         });
@@ -125,7 +125,7 @@ fn id_serialization_speed(c: &mut Criterion) {
     group.bench_function("enum-cbor-uuid", |b| {
         b.iter(|| {
             let key: u64 = rng.gen_range(0..100000000);
-            let new_key = EnumId::Uuid(Uuid::from_u128(key as u128));
+            let new_key = EnumId::Uuid(Uuid::from_u128(u128::from(key)));
             serde_cbor::to_vec(&new_key).unwrap();
         });
     });

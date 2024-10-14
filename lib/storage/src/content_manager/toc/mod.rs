@@ -46,6 +46,7 @@ pub const COLLECTIONS_DIR: &str = "collections";
 pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 
 /// The main object of the service. It holds all objects, required for proper functioning.
+///
 /// In most cases only one `TableOfContent` is enough for service. It is created only once during
 /// the launch of the service.
 pub struct TableOfContent {

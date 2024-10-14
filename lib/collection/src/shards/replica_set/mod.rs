@@ -78,6 +78,7 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 //
 
 /// A set of shard replicas.
+///
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
