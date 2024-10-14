@@ -202,7 +202,7 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let records_map = tokio::time::timeout(
+        let mut records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
                 segments,
@@ -217,7 +217,8 @@ impl LocalShard {
 
         let ordered_records = point_ids
             .iter()
-            .filter_map(|point| records_map.get(point).cloned())
+            // Use remove to avoid cloning, we take each point ID only once
+            .filter_map(|point_id| records_map.remove(point_id))
             .collect();
 
         Ok(ordered_records)
@@ -303,7 +304,7 @@ impl LocalShard {
 
         let ordered_records = point_ids
             .iter()
-            .filter_map(|point| records_map.get(point).cloned())
+            .filter_map(|point_id| records_map.get(point_id).cloned())
             .collect();
 
         Ok((ordered_records, values))
