@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -125,6 +127,15 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.files(),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.files(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.files(),
         }
     }
 }

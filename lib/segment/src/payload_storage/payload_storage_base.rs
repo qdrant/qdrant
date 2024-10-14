@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -44,6 +46,10 @@ pub trait PayloadStorage {
     fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
+
+    /// Return all files that are used by storage to include in snapshots.
+    /// RocksDB storages are captured outside of this trait.
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub trait ConditionChecker {
