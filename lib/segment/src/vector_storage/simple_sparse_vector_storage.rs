@@ -130,6 +130,19 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
         })?;
         Ok(record.vector)
     }
+
+    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
+        let bin_key = bincode::serialize(&key)
+            .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
+        if let Some(data) = self.db_wrapper.get_opt(bin_key)? {
+            let record: StoredSparseVector = bincode::deserialize(&data).map_err(|_| {
+                OperationError::service_error("Cannot deserialize sparse vector from db")
+            })?;
+            Ok(Some(record.vector))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 impl VectorStorage for SimpleSparseVectorStorage {
@@ -163,7 +176,10 @@ impl VectorStorage for SimpleSparseVectorStorage {
     ///
     /// ignore any error
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        self.get_sparse(key).ok().map(CowVector::from)
+        match self.get_sparse_opt(key) {
+            Ok(Some(vector)) => Some(CowVector::from(vector)),
+            _ => None,
+        }
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
