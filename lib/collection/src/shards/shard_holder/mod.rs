@@ -969,6 +969,7 @@ impl ShardHolder {
 
         Ok(SnapshotStream::new_stream(
             FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
+            Some(snapshot_file_name),
         ))
     }
 

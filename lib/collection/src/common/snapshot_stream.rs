@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use actix_files::NamedFile;
+use actix_web::http::header::ContentDisposition;
 use actix_web::{HttpResponse, Responder};
 use bytes::Bytes;
 use futures::{Stream, TryStreamExt};
@@ -15,6 +16,7 @@ type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, Box<dyn Error>>>>>;
 
 pub struct SnapShotStreamCloudStrage {
     stream: ByteStream,
+    filename: Option<String>,
 }
 
 pub enum SnapshotStream {
@@ -23,13 +25,19 @@ pub enum SnapshotStream {
 }
 
 impl SnapshotStream {
-    pub fn new_stream<S, E>(stream: S) -> Self
+    /// Create a new snapshot stream from a byte stream.
+    ///
+    /// The `filename` is used as the `Content-Disposition` header and only
+    /// makes sense when the snapshot needs to be saved under a different
+    /// name than the endpoint path.
+    pub fn new_stream<S, E>(stream: S, filename: Option<String>) -> Self
     where
         S: Stream<Item = Result<Bytes, E>> + 'static,
         E: Into<Box<dyn Error>>,
     {
         SnapshotStream::ByteStream(SnapShotStreamCloudStrage {
             stream: Box::pin(stream.map_err(|e| e.into())),
+            filename,
         })
     }
 }
@@ -50,9 +58,14 @@ impl Responder for SnapshotStream {
                 },
             },
 
-            SnapshotStream::ByteStream(stream) => HttpResponse::Ok()
-                .content_type("application/octet-stream")
-                .streaming(stream.stream),
+            SnapshotStream::ByteStream(SnapShotStreamCloudStrage { stream, filename }) => {
+                let mut response = HttpResponse::Ok();
+                response.content_type("application/octet-stream");
+                if let Some(filename) = filename {
+                    response.insert_header(ContentDisposition::attachment(filename));
+                }
+                response.streaming(stream)
+            }
         }
     }
 }

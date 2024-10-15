@@ -489,6 +489,6 @@ impl SnapshotStorageCloud {
             }
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
-        Ok(SnapshotStream::new_stream(download.into_stream()))
+        Ok(SnapshotStream::new_stream(download.into_stream(), None))
     }
 }
