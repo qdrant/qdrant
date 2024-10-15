@@ -741,6 +741,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn compact_wal(&self, min_entries_to_truncate: u64) -> Result<bool, StorageError> {
+        if min_entries_to_truncate == 0 {
+            return Ok(false);
+        }
+
         let Some(first_entry) = self.wal.lock().first_entry()? else {
             return Ok(false);
         };
@@ -749,11 +753,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             return Ok(false);
         };
 
-        if applied_index - first_entry.index + 1 < min_entries_to_truncate {
+        let unapplied_index = applied_index + 1;
+
+        debug_assert!(unapplied_index <= first_entry.index);
+
+        if unapplied_index - first_entry.index < min_entries_to_truncate {
             return Ok(false);
         }
 
-        self.wal.lock().compact(applied_index + 1)?;
+        self.wal.lock().compact(unapplied_index)?;
         Ok(true)
     }
 
