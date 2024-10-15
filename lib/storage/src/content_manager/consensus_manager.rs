@@ -740,8 +740,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.toc.sync_local_state()
     }
 
-    pub fn compact_wal(&self, min_entries_to_truncate: u64) -> Result<bool, StorageError> {
-        if min_entries_to_truncate == 0 {
+    pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
+        if min_entries_to_compact == 0 {
             return Ok(false);
         }
 
@@ -757,7 +757,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         debug_assert!(unapplied_index <= first_entry.index);
 
-        if unapplied_index - first_entry.index < min_entries_to_truncate {
+        if unapplied_index - first_entry.index < min_entries_to_compact {
             return Ok(false);
         }
 
