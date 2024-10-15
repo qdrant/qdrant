@@ -148,6 +148,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         self.pooled.scores.clear(); // keep underlying allocated memory
         self.pooled.scores.resize(batch_len as usize, 0.0);
 
+        let cpu_counter = self.hardware_counter.cpu_counter_mut();
+
         for posting in self.postings_iterators.iter_mut() {
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
@@ -159,6 +161,9 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                     // SAFETY: `id` is within `batch_start_id..=batch_last_id`
                     // Thus, `local_id` is within `0..batch_len`.
                     *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+
+                    // Measure CPU usage of indexed sparse search.
+                    cpu_counter.incr_mut();
                 },
             );
         }
