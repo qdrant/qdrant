@@ -96,7 +96,7 @@ impl InferenceService {
 
         let request = InferenceRequest {
             inputs: vec![InferenceInput::from(document.clone())],
-            inference: "document".to_string(),
+            inference: InferenceType::Document,
             token: Option::from("todo: token will be here".to_string()),
         };
 
