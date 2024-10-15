@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
@@ -198,7 +199,14 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[query], filter, top, None, &Default::default())
+                .search(
+                    &[query],
+                    filter,
+                    top,
+                    None,
+                    &Default::default(),
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -216,6 +224,7 @@ fn check_matches(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         sames += sames_count(&index_result, plain_result);
@@ -249,6 +258,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         let best_1 = oversampling_1_result[0][0];
@@ -269,6 +279,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         let best_2 = oversampling_2_result[0][0];
@@ -306,6 +317,7 @@ fn check_rescoring(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         for result in &index_result[0] {

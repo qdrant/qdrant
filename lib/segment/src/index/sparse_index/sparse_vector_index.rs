@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
@@ -319,6 +320,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         top: usize,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
         vector_query_context: &VectorQueryContext,
+        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
@@ -352,7 +354,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             memory_handle,
             &is_stopped,
         );
-        Ok(search_context.plain_search(&ids))
+        let search_result = search_context.plain_search(&ids);
+        hardware_counter.apply_from(search_context.hardware_counter());
+        Ok(search_result)
     }
 
     // search using sparse vector inverted index
@@ -406,6 +410,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         top: usize,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
         vector_query_context: &VectorQueryContext,
+        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         if vector.is_empty() {
             return Ok(vec![]);
@@ -430,6 +435,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         top,
                         prefiltered_points,
                         vector_query_context,
+                        hardware_counter,
                     )
                 } else {
                     let _timer =
@@ -451,6 +457,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         top: usize,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
         vector_query_context: &VectorQueryContext,
+        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         if top == 0 {
             return Ok(vec![]);
@@ -463,6 +470,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 top,
                 prefiltered_points,
                 vector_query_context,
+                hardware_counter,
             ),
             QueryVector::Recommend(_) | QueryVector::Discovery(_) | QueryVector::Context(_) => {
                 let _timer = if filter.is_some() {
@@ -503,6 +511,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         top: usize,
         _params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
+        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
@@ -523,9 +532,23 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                     Ok(vector)
                 })?;
 
-                self.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
+                self.search_query(
+                    &vector,
+                    filter,
+                    top,
+                    &mut prefiltered_points,
+                    query_context,
+                    hardware_counter,
+                )?
             } else {
-                self.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
+                self.search_query(
+                    vector,
+                    filter,
+                    top,
+                    &mut prefiltered_points,
+                    query_context,
+                    hardware_counter,
+                )?
             };
 
             results.push(search_results);

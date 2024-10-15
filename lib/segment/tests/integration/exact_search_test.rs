@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -160,12 +161,20 @@ fn exact_search_test() {
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &Default::default())
+            .search(
+                &[&query],
+                None,
+                top,
+                None,
+                &Default::default(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
 
         assert_eq!(
@@ -199,12 +208,20 @@ fn exact_search_test() {
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &Default::default())
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &Default::default(),
+                &HardwareCounterCell::new(),
+            )
             .unwrap();
 
         assert_eq!(

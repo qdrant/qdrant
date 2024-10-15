@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -187,6 +188,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -197,6 +199,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 

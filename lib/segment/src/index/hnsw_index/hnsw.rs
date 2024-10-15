@@ -7,6 +7,7 @@ use std::thread;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::{get_num_cpus, CpuPermit};
@@ -768,6 +769,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
+        _hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {

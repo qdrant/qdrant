@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::prelude::StdRng;
@@ -96,7 +97,14 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
             let query = random_multi_vector(&mut rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT).into();
 
             let results = hnsw_index
-                .search(&[&query], None, TOP, None, &Default::default())
+                .search(
+                    &[&query],
+                    None,
+                    TOP,
+                    None,
+                    &Default::default(),
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
             assert_eq!(results[0].len(), TOP);
         })

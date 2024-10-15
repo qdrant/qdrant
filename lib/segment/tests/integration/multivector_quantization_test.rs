@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
@@ -360,6 +361,7 @@ fn test_multivector_quantization_hnsw(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -378,6 +380,7 @@ fn test_multivector_quantization_hnsw(
                     ..Default::default()
                 }),
                 &Default::default(),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 

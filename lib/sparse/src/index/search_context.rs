@@ -2,6 +2,7 @@ use std::cmp::{max, min, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
@@ -32,6 +33,7 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
@@ -86,6 +88,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             max_record_id,
             pooled,
             use_pruning,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 
@@ -94,6 +97,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         // sort ids to fully leverage posting list iterator traversal
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
+
+        let cpu_counter = self.hardware_counter.cpu_counter_mut();
 
         for id in sorted_ids {
             // check for cancellation
@@ -115,6 +120,11 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                     }
                 }
             }
+
+            // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
+            // as measurement for CPU usage of plain search.
+            cpu_counter.incr_delta_mut(indices.len() + self.query.indices.len());
+
             // reconstruct sparse vector and score against query
             let sparse_vector = RemappedSparseVector { indices, values };
             self.top_results.push(ScoredPointOffset {
@@ -373,6 +383,11 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
         // no pruning took place
         false
+    }
+
+    /// Return the current hardware measurement counter.
+    pub fn hardware_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
     }
 }
 
