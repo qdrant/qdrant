@@ -15,6 +15,13 @@ const COLLECTIONS_META_WAL_DIR: &str = "collections_meta_wal";
 #[derive(Debug)]
 pub struct ConsensusOpWal {
     wal: Wal,
+    /// This value represents which entries are compacted in the WAL.
+    /// If the record is below this value, it is considered compacted.
+    /// If the record is equal to or greater than this value, it is considered not compacted.
+    ///
+    /// Note: this value uses Raft index, not WAL index.
+    /// Raft indexes start from 1 always, but WAL indexes represent physical offsets in the file,
+    /// so they can start with bigger values if WAL is really compacted.
     compacted_until_raft_index: u64,
 }
 
@@ -29,6 +36,10 @@ impl ConsensusOpWal {
 
         Self {
             wal,
+            // If we load WAL, we don't know if it was compacted or not.
+            // We can run `compact` to set this value correctly.
+            // But even if we don't, the worst thing that can happen is that we will read some
+            // entries that are already compacted.
             compacted_until_raft_index: 0,
         }
     }
@@ -112,8 +123,10 @@ impl ConsensusOpWal {
         };
 
         if entry.index >= self.compacted_until_raft_index {
+            // If the first physical entry is not compacted, return it
             Ok(Some(entry))
         } else {
+            // If it is compacted, then we need to find the first non-compacted entry
             let wal_index = IndexOffset::new(self.wal.first_index(), &entry)
                 .try_raft_to_wal(self.compacted_until_raft_index);
 

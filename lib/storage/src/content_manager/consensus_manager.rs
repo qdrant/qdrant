@@ -753,15 +753,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             return Ok(false);
         };
 
-        let unapplied_index = applied_index + 1;
+        let first_unapplied_index = applied_index + 1;
 
-        debug_assert!(unapplied_index <= first_entry.index);
+        debug_assert!(first_unapplied_index <= first_entry.index);
 
-        if unapplied_index - first_entry.index < min_entries_to_compact {
+        if first_unapplied_index - first_entry.index < min_entries_to_compact {
             return Ok(false);
         }
 
-        self.wal.lock().compact(unapplied_index)?;
+        self.wal.lock().compact(first_unapplied_index)?;
         Ok(true)
     }
 
