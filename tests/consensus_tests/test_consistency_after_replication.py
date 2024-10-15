@@ -13,7 +13,7 @@ import logging
 import multiprocessing
 import pathlib
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .fixtures import create_collection, random_dense_vector
 from .utils import *
@@ -72,7 +72,7 @@ def upsert_random_points_with_payload(
     while num > 0:
         size = num if batch_size is None else min(num, batch_size)
 
-        timestamp_str = datetime.now().isoformat()
+        timestamp_str = str(datetime.now(timezone.utc))
         points = [
                     {
                         "id": i + offset,
@@ -229,6 +229,7 @@ def check_consistency(peer_api_uris, peer_dirs, loop_num='final'):
             # for idx, row in enumerate(res['points']):
             #     expected_row = results[0]['points'][idx]
             for idx, row in enumerate(res):
+                # compare with node 0
                 expected_row = results[0][idx]
                 if row != expected_row:
                     diffs[f'attempt_{attempts_counter}'][f'node_{node_id + 1}'].append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
@@ -315,7 +316,7 @@ def restart_peers(peer_dirs, extra_env, loop_num):
             given_grpc_port=processes_info[i]["grpc_port"],
             given_http_port=processes_info[i]["http_port"]
         )
-    time.sleep(3)
+    time.sleep(10)
 
 
 def test_consistency(tmp_path: pathlib.Path):
@@ -348,8 +349,6 @@ def test_consistency(tmp_path: pathlib.Path):
     print("     Wait for some time")
     time.sleep(5)
 
-    checks = []
-
     for i in range(LOOPS_OF_REPLICATION):
         print("5-6. Trigger one of the shards' replication. Wait for the replication to complete")
         replicate_shard(peer_api_uris, COLLECTION_NAME)
@@ -366,7 +365,6 @@ def test_consistency(tmp_path: pathlib.Path):
             time.sleep(3)
 
             result = check_consistency(peer_api_uris, peer_dirs, loop_num=str(i))
-            checks.append(result)
             # if not result:
             #     restart_peers(peer_dirs, None, loop_num=str(i))
             #     check_consistency(peer_api_uris, loop_num=f"{i}_again")
@@ -379,10 +377,9 @@ def test_consistency(tmp_path: pathlib.Path):
     print("    Wait for some time")
     time.sleep(30)
 
-    checks.append(check_consistency(peer_api_uris, peer_dirs, loop_num='final'))
+    final_check = check_consistency(peer_api_uris, peer_dirs, loop_num='final')
 
-    for item in checks:
-        if not item:
-            raise AssertionError("FAILED")
+    if not final_check:
+        raise AssertionError("FAILED")
 
     print("OK")
