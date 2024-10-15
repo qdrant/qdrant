@@ -558,6 +558,9 @@ mod tests {
                 },
             ]
         );
+
+        // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
+        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 9);
     }
 
     #[test]
@@ -695,6 +698,12 @@ mod tests {
             ]
         );
 
+        // [ID=1] (Retrieve all 9 Vectors) => 9
+        // [ID=2] (Retrieve 1-3)           => 3
+        // [ID=3] (Retrieve 1-3)           => 3
+        //                       3 + 3 + 9 => 15
+        assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
+
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -724,6 +733,10 @@ mod tests {
                 ScoredPointOffset { score: 6.0, idx: 9 },
             ]
         );
+
+        // No difference to previous calculation because it's the same amount of score
+        // calculations when increasing the "top" parameter.
+        assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
     }
 
     #[test]
@@ -935,6 +948,12 @@ mod tests {
                 },
             ]
         );
+
+        // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
+        // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
+        // [ID=3] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
+        //                                                      6 + 5 + 5 => 16
+        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 16);
     }
 
     #[test]
@@ -978,5 +997,11 @@ mod tests {
                 },
             ]
         );
+
+        // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
+        // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
+        // [ID=3] (Retrieve one sparse vector (3))    + QueryLength=2 => 3
+        //                                                  4 + 4 + 3 => 11
+        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 11);
     }
 }
