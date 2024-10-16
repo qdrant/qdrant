@@ -298,6 +298,8 @@ impl ProxySegment {
         top: usize,
         params: Option<&SearchParams>,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
         let result = self.search_batch(
             vector_name,
             &[vector],
@@ -306,7 +308,7 @@ impl ProxySegment {
             filter,
             top,
             params,
-            Default::default(),
+            &segment_query_context,
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -339,7 +341,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        query_context: SegmentQueryContext,
+        query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -363,7 +365,7 @@ impl SegmentEntry for ProxySegment {
                     filter,
                     top,
                     params,
-                    query_context_with_deleted,
+                    &query_context_with_deleted,
                 )?
             } else {
                 let wrapped_filter =
@@ -377,7 +379,7 @@ impl SegmentEntry for ProxySegment {
                     Some(&wrapped_filter),
                     top,
                     params,
-                    query_context.clone(),
+                    query_context,
                 )?
             }
         } else {
@@ -389,7 +391,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
-                query_context.clone(),
+                query_context,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -1240,6 +1242,9 @@ mod tests {
 
         eprintln!("search_result = {search_result:#?}");
 
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+
         let search_batch_result = proxy_segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
@@ -1249,7 +1254,7 @@ mod tests {
                 None,
                 10,
                 None,
-                Default::default(),
+                &segment_query_context,
             )
             .unwrap();
 
@@ -1294,6 +1299,9 @@ mod tests {
 
         eprintln!("search_result = {search_result:#?}");
 
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+
         let search_batch_result = proxy_segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
@@ -1303,7 +1311,7 @@ mod tests {
                 None,
                 10,
                 None,
-                Default::default(),
+                &segment_query_context,
             )
             .unwrap();
 
@@ -1358,6 +1366,9 @@ mod tests {
 
         eprintln!("search_result = {all_single_results:#?}");
 
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+
         let search_batch_result = proxy_segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
@@ -1367,7 +1378,7 @@ mod tests {
                 None,
                 10,
                 None,
-                Default::default(),
+                &segment_query_context,
             )
             .unwrap();
 

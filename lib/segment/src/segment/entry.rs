@@ -60,7 +60,7 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        query_context: SegmentQueryContext,
+        query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         // TODO: Populate this value to callers of `search_batch`
         let hardware_counter = HardwareCounterCell::new();

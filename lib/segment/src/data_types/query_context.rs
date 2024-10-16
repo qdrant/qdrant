@@ -80,7 +80,7 @@ impl QueryContext {
 
     pub fn get_segment_query_context(&self) -> SegmentQueryContext {
         SegmentQueryContext {
-            query_context: Some(self),
+            query_context: self,
             deleted_points: None,
         }
     }
@@ -93,27 +93,24 @@ impl Default for QueryContext {
 }
 
 /// Defines context of the search query on the segment level
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct SegmentQueryContext<'a> {
-    query_context: Option<&'a QueryContext>,
+    query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
 }
 
 impl<'a> SegmentQueryContext<'a> {
+    pub fn available_point_count(&self) -> usize {
+        self.query_context.available_point_count()
+    }
+
     pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
-        if let Some(query_context) = self.query_context {
-            VectorQueryContext {
-                available_point_count: query_context.available_point_count,
-                search_optimized_threshold_kb: query_context.search_optimized_threshold_kb,
-                is_stopped: Some(&query_context.is_stopped),
-                idf: query_context.idf.get(vector_name),
-                deleted_points: self.deleted_points,
-            }
-        } else {
-            VectorQueryContext {
-                deleted_points: self.deleted_points,
-                ..Default::default()
-            }
+        VectorQueryContext {
+            available_point_count: self.query_context.available_point_count,
+            search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,
+            is_stopped: Some(&self.query_context.is_stopped),
+            idf: self.query_context.idf.get(vector_name),
+            deleted_points: self.deleted_points,
         }
     }
 
