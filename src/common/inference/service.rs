@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::time::Duration;
 
 use api::rest::Document;
 use reqwest::Client;
@@ -8,7 +10,24 @@ use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::config::InferenceConfig;
-use crate::settings::Settings;
+
+const DOCUMENT_DATA_TYPE: &str = "text";
+const IMAGE_DATA_TYPE: &str = "image";
+const OBJECT_DATA_TYPE: &str = "object";
+const AUDIO_DATA_TYPE: &str = "audio";
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum InferenceType {
+    Document,
+    Query,
+}
+
+impl Display for InferenceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", format!("{self:?}").to_lowercase())
+    }
+}
 
 #[derive(Debug, Serialize, Default)]
 struct InferenceRequest {
@@ -41,8 +60,8 @@ impl From<Document> for InferenceInput {
     fn from(doc: Document) -> Self {
         InferenceInput {
             data: doc.text,
-            data_type: "text".to_string(), // Always "text" for Document
-            model: doc.model.ok_or("").unwrap(),
+            data_type: DOCUMENT_DATA_TYPE.parse().unwrap(), // Always "text" for Document
+            model: doc.model.clone().unwrap_or_default(),
             options: doc.options.clone(),
         }
     }
@@ -56,18 +75,22 @@ pub struct InferenceService {
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
 
 impl InferenceService {
-    pub fn new(settings: Settings) -> Self {
+    pub fn new(config: InferenceConfig) -> Self {
         Self {
-            config: InferenceConfig {
-                url: settings.inference_address.clone(),
-            },
-            client: Client::new(),
+            config: config.clone(),
+            client: Client::builder()
+                .timeout(Duration::from_secs(config.timeout))
+                .build()
+                .expect("Failed to create HTTP client"),
         }
     }
 
-    pub fn init(settings: Settings) {
-        let mut inference_service = INFERENCE_SERVICE.write().unwrap();
-        *inference_service = Some(Arc::new(Self::new(settings)));
+    pub fn init(config: InferenceConfig) -> Result<(), StorageError> {
+        let mut inference_service = INFERENCE_SERVICE
+            .write()
+            .map_err(|_| StorageError::service_error("Failed to acquire write lock"))?;
+        *inference_service = Some(Arc::new(Self::new(config)));
+        Ok(())
     }
 
     pub fn global() -> RwLockReadGuard<'static, Option<Arc<InferenceService>>> {
@@ -75,9 +98,14 @@ impl InferenceService {
     }
 
     pub(crate) fn expect(&self) -> Result<InferenceService, StorageError> {
-        if self.config.url.as_ref().map_or(true, |url| url.is_empty()) {
-            Err(StorageError::service_error(
-                "Expected 'url' not found in configuration",
+        if self
+            .config
+            .address
+            .as_ref()
+            .map_or(true, |url| url.is_empty())
+        {
+            Err(StorageError::inference_error(
+                "Expected 'address' not found in configuration",
             ))
         } else {
             Ok(InferenceService {
@@ -90,13 +118,13 @@ impl InferenceService {
     pub async fn infer(&self, document: &Document) -> Result<Vec<f32>, StorageError> {
         let url = self
             .config
-            .url
+            .address
             .as_ref()
-            .ok_or_else(|| StorageError::service_error("Inference URL is not configured"))?;
+            .ok_or_else(|| StorageError::inference_error("Inference URL is not configured"))?;
 
         let request = InferenceRequest {
             inputs: vec![InferenceInput::from(document.clone())],
-            inference: InferenceType::Document,
+            inference: InferenceType::Document.to_string(),
             token: Option::from("todo: token will be here".to_string()),
         };
 
@@ -108,38 +136,72 @@ impl InferenceService {
             .await
             .map_err(|e| {
                 let error_body = e.to_string();
-                StorageError::service_error(format!(
+                StorageError::inference_error(format!(
                     "Failed to send inference request: {e}, body: {error_body}"
                 ))
             })?;
 
         let status = response.status();
         let response_body = response.text().await.map_err(|e| {
-            StorageError::service_error(format!("Failed to read response body: {e}"))
+            StorageError::inference_error(format!("Failed to read response body: {e}"))
         })?;
 
-        if status == reqwest::StatusCode::BAD_REQUEST {
-            let error_json: serde_json::Value =
-                serde_json::from_str(&response_body).map_err(|e| {
-                    StorageError::service_error(format!("Failed to parse error response: {e}"))
+        Self::handle_inference_response(status, &response_body)
+    }
+
+    fn handle_inference_response(
+        status: reqwest::StatusCode,
+        response_body: &str,
+    ) -> Result<Vec<f32>, StorageError> {
+        match status {
+            reqwest::StatusCode::BAD_REQUEST => {
+                let error_json: Value = serde_json::from_str(response_body).map_err(|e| {
+                    StorageError::inference_error(format!("Failed to parse error response: {e}"))
                 })?;
 
-            if let Some(error_message) = error_json["error"].as_str() {
-                return Err(StorageError::service_error(error_message.to_string()));
+                if let Some(error_message) = error_json["error"].as_str() {
+                    Err(StorageError::inference_error(error_message.to_string()))
+                } else {
+                    Err(StorageError::inference_error("Unknown error"))
+                }
             }
+            reqwest::StatusCode::NOT_FOUND => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            reqwest::StatusCode::FORBIDDEN => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            reqwest::StatusCode::UNAUTHORIZED => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            reqwest::StatusCode::OK => {
+                let inference_response: InferenceResponse = serde_json::from_str(response_body)
+                    .map_err(|e| {
+                        StorageError::inference_error(format!(
+                            "Failed to parse inference response: {e}"
+                        ))
+                    })?;
+
+                if inference_response.embeddings.is_empty() {
+                    Err(StorageError::inference_error(
+                        "Inference response contained no embeddings",
+                    ))
+                } else {
+                    Ok(inference_response.embeddings[0].values.clone())
+                }
+            }
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            reqwest::StatusCode::SERVICE_UNAVAILABLE => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            reqwest::StatusCode::GATEWAY_TIMEOUT => {
+                Err(StorageError::inference_error(response_body.to_string()))
+            }
+            _ => Err(StorageError::inference_error(format!(
+                "Unexpected status code: {status}",
+            ))),
         }
-
-        let inference_response: InferenceResponse =
-            serde_json::from_str(&response_body).map_err(|e| {
-                StorageError::service_error(format!("Failed to parse inference response: {e}"))
-            })?;
-
-        if inference_response.embeddings.is_empty() {
-            return Err(StorageError::service_error(
-                "Inference response contained no embeddings".to_string(),
-            ));
-        }
-
-        Ok(inference_response.embeddings[0].values.clone())
     }
 }

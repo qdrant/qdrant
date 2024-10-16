@@ -1,5 +1,8 @@
 log_level: DEBUG
-inference_address: "http://localhost:2114/api/v1/infer"
+
+inference:
+  address: "http://localhost:2114/api/v1/infer"
+  timeout: 10
 
 service:
   host: 127.0.0.1

@@ -138,7 +138,11 @@ fn main() -> anyhow::Result<()> {
     let settings = Settings::new(args.config_path)?;
 
     // Inference Service initialization
-    InferenceService::init(settings.clone());
+    if let Some(inference_config) = settings.inference.clone() {
+        let _ = InferenceService::init(inference_config);
+    } else {
+        log::info!("Inference service is not configured.");
+    }
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 

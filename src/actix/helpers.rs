@@ -130,6 +130,7 @@ impl ResponseError for HttpError {
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
             StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
+            StorageError::InferenceError { .. } => http::StatusCode::BAD_REQUEST,
         }
     }
 }

@@ -10,6 +10,7 @@ use storage::types::StorageConfig;
 use validator::Validate;
 
 use crate::common::debugger::DebuggerConfig;
+use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
@@ -152,7 +153,7 @@ pub struct Settings {
     #[serde(default, skip)]
     pub load_errors: Vec<LogMsg>,
     #[serde(default)]
-    pub inference_address: Option<String>,
+    pub inference: Option<InferenceConfig>,
 }
 
 impl Settings {

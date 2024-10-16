@@ -1,3 +1,0 @@
-[alias]
-# allows to run "cargo lint" instead of "cargo clippy...
-lint = "clippy --all --all-features -- -D warnings"

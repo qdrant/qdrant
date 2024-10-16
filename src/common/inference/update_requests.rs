@@ -28,20 +28,21 @@ pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted
 
                 Vector::Document(doc) => match inference_service {
                     Some(ref service) => {
-                        let vector = service.infer(&doc).await.map_err(|e| {
-                            StorageError::service_error(format!("Inference failed: {e}"))
-                        })?;
+                        let vector = service
+                            .infer(&doc)
+                            .await
+                            .map_err(|e| StorageError::inference_error(e.to_string()))?;
                         Ok(VectorPersisted::Dense(DenseVector::from(vector)))
                     }
-                    None => Err(StorageError::service_error(
+                    None => Err(StorageError::inference_error(
                         "InferenceService not initialized",
                     )),
                 },
 
-                Vector::Image(_) => Err(StorageError::service_error(
+                Vector::Image(_) => Err(StorageError::inference_error(
                     "Inference for Image is not implemented",
                 )),
-                Vector::Object(_) => Err(StorageError::service_error(
+                Vector::Object(_) => Err(StorageError::inference_error(
                     "Inference for Object is not implemented",
                 )),
             }
@@ -79,19 +80,20 @@ pub async fn convert_point_struct(
                         Vector::MultiDense(multi) => Ok(VectorPersisted::MultiDense(multi)),
                         Vector::Document(doc) => match &inference_service {
                             Some(ref service) => {
-                                let vector = service.infer(&doc).await.map_err(|e| {
-                                    StorageError::service_error(format!("Inference failed: {e}"))
-                                })?;
+                                let vector = service
+                                    .infer(&doc)
+                                    .await
+                                    .map_err(|e| StorageError::inference_error(e.to_string()))?;
                                 Ok(VectorPersisted::Dense(DenseVector::from(vector)))
                             }
-                            None => Err(StorageError::service_error(
+                            None => Err(StorageError::inference_error(
                                 "InferenceService not initialized",
                             )),
                         },
-                        Vector::Image(_) => Err(StorageError::service_error(
+                        Vector::Image(_) => Err(StorageError::inference_error(
                             "Inference for Image is not implemented",
                         )),
-                        Vector::Object(_) => Err(StorageError::service_error(
+                        Vector::Object(_) => Err(StorageError::inference_error(
                             "Inference for Object is not implemented",
                         )),
                     }?;
@@ -101,24 +103,25 @@ pub async fn convert_point_struct(
             }
             VectorStruct::Document(doc) => match &inference_service {
                 Some(ref service) => {
-                    let vector = service.infer(&doc).await.map_err(|e| {
-                        StorageError::service_error(format!("Inference failed: {e}"))
-                    })?;
+                    let vector = service
+                        .infer(&doc)
+                        .await
+                        .map_err(|e| StorageError::inference_error(e.to_string()))?;
                     VectorStructPersisted::Single(DenseVector::from(vector))
                 }
                 None => {
-                    return Err(StorageError::service_error(
+                    return Err(StorageError::inference_error(
                         "InferenceService not initialized",
                     ))
                 }
             },
             VectorStruct::Image(_) => {
-                return Err(StorageError::service_error(
+                return Err(StorageError::inference_error(
                     "Inference for Image is not implemented",
                 ))
             }
             VectorStruct::Object(_) => {
-                return Err(StorageError::service_error(
+                return Err(StorageError::inference_error(
                     "Inference for Object is not implemented",
                 ))
             }
@@ -158,13 +161,19 @@ pub async fn convert_batch(batch: Batch) -> Result<BatchPersisted, StorageError>
                 BatchVectorStructPersisted::Named(named_vectors)
             }
             BatchVectorStruct::Document(_) => {
-                return Err(StorageError::service_error("Inference is not implemented1"))
+                return Err(StorageError::inference_error(
+                    "Inference for Document is not implemented",
+                ))
             }
             BatchVectorStruct::Image(_) => {
-                return Err(StorageError::service_error("Inference is not implemented2"))
+                return Err(StorageError::inference_error(
+                    "Inference for Image is not implemented",
+                ))
             }
             BatchVectorStruct::Object(_) => {
-                return Err(StorageError::service_error("Inference is not implemented3"))
+                return Err(StorageError::inference_error(
+                    "Inference for Object is not implemented",
+                ))
             }
         },
         payloads,
@@ -193,18 +202,18 @@ pub async fn convert_point_vectors(
                         Vector::Sparse(sparse) => VectorPersisted::Sparse(sparse),
                         Vector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
                         Vector::Document(_) => {
-                            return Err(StorageError::service_error(
-                                "Inference1 is not implemented",
+                            return Err(StorageError::inference_error(
+                                "Inference for Document is not implemented",
                             ))
                         }
                         Vector::Image(_) => {
-                            return Err(StorageError::service_error(
-                                "Inference2 is not implemented",
+                            return Err(StorageError::inference_error(
+                                "Inference for Image is not implemented",
                             ))
                         }
                         Vector::Object(_) => {
-                            return Err(StorageError::service_error(
-                                "Inference3 is not implemented",
+                            return Err(StorageError::inference_error(
+                                "Inference for Object is not implemented",
                             ))
                         }
                     };
@@ -214,13 +223,19 @@ pub async fn convert_point_vectors(
                 VectorStructPersisted::Named(converted)
             }
             VectorStruct::Document(_) => {
-                return Err(StorageError::service_error("Inference4 is not implemented"))
+                return Err(StorageError::inference_error(
+                    "Inference for Document is not implemented",
+                ))
             }
             VectorStruct::Image(_) => {
-                return Err(StorageError::service_error("Inference5 is not implemented"))
+                return Err(StorageError::inference_error(
+                    "Inference for Image is not implemented",
+                ))
             }
             VectorStruct::Object(_) => {
-                return Err(StorageError::service_error("Inference6 is not implemented"))
+                return Err(StorageError::inference_error(
+                    "Inference for Object is not implemented",
+                ))
             }
         };
 
