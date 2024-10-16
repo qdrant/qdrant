@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use api::rest::{
-    Batch, BatchVectorStruct, DenseVector, PointStruct, PointVectors, Vector, VectorStruct,
-};
+use api::rest::{Batch, BatchVectorStruct, PointStruct, PointVectors, Vector, VectorStruct};
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointStructPersisted, VectorPersisted,
     VectorStructPersisted,
@@ -32,7 +30,9 @@ pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted
                             .infer(&doc)
                             .await
                             .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                        Ok(VectorPersisted::Dense(DenseVector::from(vector)))
+                        vector.into_iter().next().ok_or_else(|| {
+                            StorageError::inference_error("Inference service returned empty vector")
+                        })
                     }
                     None => Err(StorageError::inference_error(
                         "InferenceService not initialized",
@@ -84,7 +84,11 @@ pub async fn convert_point_struct(
                                     .infer(&doc)
                                     .await
                                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                                Ok(VectorPersisted::Dense(DenseVector::from(vector)))
+                                vector.into_iter().next().ok_or_else(|| {
+                                    StorageError::inference_error(
+                                        "Inference service returned empty vector",
+                                    )
+                                })
                             }
                             None => Err(StorageError::inference_error(
                                 "InferenceService not initialized",
@@ -107,7 +111,18 @@ pub async fn convert_point_struct(
                         .infer(&doc)
                         .await
                         .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                    VectorStructPersisted::Single(DenseVector::from(vector))
+                    let res = vector.into_iter().next().ok_or_else(|| {
+                        StorageError::inference_error("Inference service returned empty vector")
+                    })?;
+                    match res {
+                        VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
+                        VectorPersisted::Sparse(_) => {
+                            return Err(StorageError::bad_request("Sparse vector should be named"))
+                        }
+                        VectorPersisted::MultiDense(multi) => {
+                            VectorStructPersisted::MultiDense(multi)
+                        }
+                    }
                 }
                 None => {
                     return Err(StorageError::inference_error(

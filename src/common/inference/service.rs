@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use std::time::Duration;
 
 use api::rest::Document;
+use collection::operations::point_ops::VectorPersisted;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,9 +17,10 @@ const IMAGE_DATA_TYPE: &str = "image";
 const OBJECT_DATA_TYPE: &str = "object";
 const AUDIO_DATA_TYPE: &str = "audio";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 enum InferenceType {
+    #[default]
     Document,
     Query,
 }
@@ -32,7 +34,7 @@ impl Display for InferenceType {
 #[derive(Debug, Serialize, Default)]
 struct InferenceRequest {
     inputs: Vec<InferenceInput>,
-    inference: String,
+    inference: InferenceType,
     #[serde(default)]
     token: Option<String>,
 }
@@ -47,22 +49,22 @@ struct InferenceInput {
 
 #[derive(Debug, Deserialize)]
 struct InferenceResponse {
-    embeddings: Vec<Embedding>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Embedding {
-    indices: Vec<i32>,
-    values: Vec<f32>,
+    embeddings: Vec<VectorPersisted>,
 }
 
 impl From<Document> for InferenceInput {
     fn from(doc: Document) -> Self {
+        let Document {
+            text,
+            model,
+            options,
+        } = doc;
+
         InferenceInput {
-            data: doc.text,
-            data_type: DOCUMENT_DATA_TYPE.parse().unwrap(), // Always "text" for Document
-            model: doc.model.clone().unwrap_or_default(),
-            options: doc.options.clone(),
+            data: text,
+            data_type: DOCUMENT_DATA_TYPE.to_string(), // Always "text" for Document
+            model: model.unwrap_or_default(),
+            options,
         }
     }
 }
@@ -115,7 +117,7 @@ impl InferenceService {
         }
     }
 
-    pub async fn infer(&self, document: &Document) -> Result<Vec<f32>, StorageError> {
+    pub async fn infer(&self, document: &Document) -> Result<Vec<VectorPersisted>, StorageError> {
         let url = self
             .config
             .address
@@ -124,7 +126,7 @@ impl InferenceService {
 
         let request = InferenceRequest {
             inputs: vec![InferenceInput::from(document.clone())],
-            inference: InferenceType::Document.to_string(),
+            inference: InferenceType::Document,
             token: Option::from("todo: token will be here".to_string()),
         };
 
@@ -152,7 +154,7 @@ impl InferenceService {
     fn handle_inference_response(
         status: reqwest::StatusCode,
         response_body: &str,
-    ) -> Result<Vec<f32>, StorageError> {
+    ) -> Result<Vec<VectorPersisted>, StorageError> {
         match status {
             reqwest::StatusCode::BAD_REQUEST => {
                 let error_json: Value = serde_json::from_str(response_body).map_err(|e| {
@@ -160,20 +162,14 @@ impl InferenceService {
                 })?;
 
                 if let Some(error_message) = error_json["error"].as_str() {
-                    Err(StorageError::inference_error(error_message.to_string()))
+                    Err(StorageError::inference_error(error_message))
                 } else {
                     Err(StorageError::inference_error("Unknown error"))
                 }
             }
-            reqwest::StatusCode::NOT_FOUND => {
-                Err(StorageError::inference_error(response_body.to_string()))
-            }
-            reqwest::StatusCode::FORBIDDEN => {
-                Err(StorageError::inference_error(response_body.to_string()))
-            }
-            reqwest::StatusCode::UNAUTHORIZED => {
-                Err(StorageError::inference_error(response_body.to_string()))
-            }
+            reqwest::StatusCode::NOT_FOUND => Err(StorageError::inference_error(response_body)),
+            reqwest::StatusCode::FORBIDDEN => Err(StorageError::inference_error(response_body)),
+            reqwest::StatusCode::UNAUTHORIZED => Err(StorageError::inference_error(response_body)),
             reqwest::StatusCode::OK => {
                 let inference_response: InferenceResponse = serde_json::from_str(response_body)
                     .map_err(|e| {
@@ -187,17 +183,17 @@ impl InferenceService {
                         "Inference response contained no embeddings",
                     ))
                 } else {
-                    Ok(inference_response.embeddings[0].values.clone())
+                    Ok(inference_response.embeddings)
                 }
             }
             reqwest::StatusCode::INTERNAL_SERVER_ERROR => {
-                Err(StorageError::inference_error(response_body.to_string()))
+                Err(StorageError::inference_error(response_body))
             }
             reqwest::StatusCode::SERVICE_UNAVAILABLE => {
-                Err(StorageError::inference_error(response_body.to_string()))
+                Err(StorageError::inference_error(response_body))
             }
             reqwest::StatusCode::GATEWAY_TIMEOUT => {
-                Err(StorageError::inference_error(response_body.to_string()))
+                Err(StorageError::inference_error(response_body))
             }
             _ => Err(StorageError::inference_error(format!(
                 "Unexpected status code: {status}",
