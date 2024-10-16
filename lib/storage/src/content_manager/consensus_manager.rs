@@ -774,6 +774,31 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.toc.sync_local_state()
     }
 
+    pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
+        if min_entries_to_compact == 0 {
+            return Ok(false);
+        }
+
+        let Some(first_entry) = self.wal.lock().first_entry()? else {
+            return Ok(false);
+        };
+
+        let Some(applied_index) = self.persistent.read().last_applied_entry() else {
+            return Ok(false);
+        };
+
+        let first_unapplied_index = applied_index + 1;
+
+        debug_assert!(first_unapplied_index <= first_entry.index);
+
+        if first_unapplied_index - first_entry.index < min_entries_to_compact {
+            return Ok(false);
+        }
+
+        self.wal.lock().compact(first_unapplied_index)?;
+        Ok(true)
+    }
+
     /// Try to update our peer metadata if it's outdated
     ///
     /// It rate limits updating to `CONSENSUS_PEER_METADATA_UPDATE_INTERVAL`.
