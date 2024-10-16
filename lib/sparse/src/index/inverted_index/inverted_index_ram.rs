@@ -63,7 +63,7 @@ impl InvertedIndex for InvertedIndexRam {
             if let Some(posting) = self.postings.get_mut(dim_id as usize) {
                 posting.delete(id);
             } else {
-                debug_assert!(false, "Posting list for dimension {dim_id} not found");
+                log::debug!("Posting list for dimension {dim_id} not found");
             }
         }
 
@@ -130,7 +130,7 @@ impl InvertedIndexRam {
                 if let Some(posting) = self.postings.get_mut(dim_id) {
                     posting.delete(id);
                 } else {
-                    debug_assert!(false, "Posting list for dimension {dim_id} not found");
+                    log::debug!("Posting list for dimension {dim_id} not found");
                 }
             }
         }

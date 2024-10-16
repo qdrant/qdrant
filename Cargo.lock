@@ -6064,6 +6064,7 @@ dependencies = [
  "indicatif",
  "io",
  "itertools 0.13.0",
+ "log",
  "memmap2 0.9.5",
  "memory",
  "ordered-float 4.3.0",
