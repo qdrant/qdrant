@@ -10,6 +10,7 @@ use storage::types::StorageConfig;
 use validator::Validate;
 
 use crate::common::debugger::DebuggerConfig;
+use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
@@ -151,6 +152,8 @@ pub struct Settings {
     /// We therefore need to log these messages later, after the logger is ready.
     #[serde(default, skip)]
     pub load_errors: Vec<LogMsg>,
+    #[serde(default)]
+    pub inference: Option<InferenceConfig>,
 }
 
 impl Settings {

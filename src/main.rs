@@ -42,6 +42,7 @@ use crate::common::helpers::{
     create_general_purpose_runtime, create_search_runtime, create_update_runtime,
     load_tls_client_config,
 };
+use crate::common::inference::service::InferenceService;
 use crate::common::telemetry::TelemetryCollector;
 use crate::common::telemetry_reporting::TelemetryReporter;
 use crate::greeting::welcome;
@@ -135,6 +136,13 @@ fn main() -> anyhow::Result<()> {
     remove_started_file_indicator();
 
     let settings = Settings::new(args.config_path)?;
+
+    // Inference Service initialization
+    if let Some(inference_config) = settings.inference.clone() {
+        let _ = InferenceService::init(inference_config);
+    } else {
+        log::info!("Inference service is not configured.");
+    }
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 

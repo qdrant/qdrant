@@ -34,9 +34,17 @@ pub enum StorageError {
     Forbidden { description: String },
     #[error("Pre-condition failure: {description}")]
     PreconditionFailed { description: String }, // system is not in the state to perform the operation
+    #[error("{description}")]
+    InferenceError { description: String },
 }
 
 impl StorageError {
+    pub fn inference_error(description: impl Into<String>) -> StorageError {
+        StorageError::InferenceError {
+            description: description.into(),
+        }
+    }
+
     pub fn service_error(description: impl Into<String>) -> StorageError {
         StorageError::ServiceError {
             description: description.into(),
@@ -134,6 +142,9 @@ impl StorageError {
                 backtrace: None,
             },
             CollectionError::StrictMode { description } => StorageError::Forbidden { description },
+            CollectionError::InferenceError { description } => {
+                StorageError::InferenceError { description }
+            }
         }
     }
 }
@@ -183,6 +194,9 @@ impl From<CollectionError> for StorageError {
                 backtrace: None,
             },
             CollectionError::StrictMode { description } => StorageError::Forbidden { description },
+            CollectionError::InferenceError { description } => {
+                StorageError::InferenceError { description }
+            }
         }
     }
 }
