@@ -1,9 +1,5 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dataset::Dataset;
@@ -26,6 +22,9 @@ use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndex
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::loaders::Csr;
 use tempfile::Builder;
+
+#[cfg(not(target_os = "windows"))]
+mod prof;
 
 const NUM_VECTORS: usize = 50_000;
 const MAX_SPARSE_DIM: usize = 30_000;
@@ -125,14 +124,7 @@ fn sparse_vector_index_search_benchmark_impl(
             || query_vector_it.next().unwrap().clone().into(),
             |vec| {
                 let results = sparse_vector_index_mmap
-                    .search(
-                        &[&vec],
-                        None,
-                        TOP,
-                        None,
-                        &Default::default(),
-                        &HardwareCounterCell::default(),
-                    )
+                    .search(&[&vec], None, TOP, None, &Default::default())
                     .unwrap();
 
                 assert_eq!(results[0].len(), TOP);
@@ -147,14 +139,7 @@ fn sparse_vector_index_search_benchmark_impl(
             || query_vector_it.next().unwrap().clone().into(),
             |vec| {
                 let results = sparse_vector_index
-                    .search(
-                        &[&vec],
-                        None,
-                        TOP,
-                        None,
-                        &Default::default(),
-                        &HardwareCounterCell::new(),
-                    )
+                    .search(&[&vec], None, TOP, None, &Default::default())
                     .unwrap();
 
                 assert_eq!(results[0].len(), TOP);
@@ -183,7 +168,6 @@ fn sparse_vector_index_search_benchmark_impl(
                             TOP,
                             &mut prefiltered_points,
                             &Default::default(),
-                            &HardwareCounterCell::new(),
                         )
                         .unwrap();
 
@@ -209,14 +193,7 @@ fn sparse_vector_index_search_benchmark_impl(
             || query_vector_it.next().unwrap().clone().into(),
             |vec| {
                 let results = sparse_vector_index
-                    .search(
-                        &[&vec],
-                        Some(&filter),
-                        TOP,
-                        None,
-                        &Default::default(),
-                        &HardwareCounterCell::new(),
-                    )
+                    .search(&[&vec], Some(&filter), TOP, None, &Default::default())
                     .unwrap();
 
                 assert_eq!(results[0].len(), TOP);
@@ -239,7 +216,6 @@ fn sparse_vector_index_search_benchmark_impl(
                             TOP,
                             &mut prefiltered_points,
                             &Default::default(),
-                            &HardwareCounterCell::new(),
                         )
                         .unwrap();
 

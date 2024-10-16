@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -188,7 +187,6 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -199,7 +197,6 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -210,7 +207,6 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 

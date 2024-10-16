@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
@@ -279,7 +278,6 @@ impl VectorIndex for PlainIndex {
         top: usize,
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
-        _hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
         if is_indexed_only

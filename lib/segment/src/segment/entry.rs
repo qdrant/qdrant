@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
@@ -62,9 +61,6 @@ impl SegmentEntry for Segment {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        // TODO: Populate this value to callers of `search_batch`
-        let hardware_counter = HardwareCounterCell::new();
-
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let vector_query_context = query_context.get_vector_context(vector_name);
@@ -74,7 +70,6 @@ impl SegmentEntry for Segment {
             top,
             params,
             &vector_query_context,
-            &hardware_counter,
         )?;
 
         check_stopped(&vector_query_context.is_stopped())?;

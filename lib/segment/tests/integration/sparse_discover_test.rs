@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -183,27 +182,13 @@ fn sparse_index_discover_test() {
         let (sparse_query, dense_query) = random_discovery_query(&mut rnd, dim);
 
         let sparse_discovery_result = sparse_index
-            .search(
-                &[&sparse_query],
-                None,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&sparse_query], None, top, None, &Default::default())
             .unwrap();
 
         let dense_discovery_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&dense_query],
-                None,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&dense_query], None, top, None, &Default::default())
             .unwrap();
 
         // check id only because scores can be epsilon-size different
@@ -221,27 +206,13 @@ fn sparse_index_discover_test() {
         // do regular nearest search
         let (sparse_query, dense_query) = random_nearest_query(&mut rnd, dim);
         let sparse_search_result = sparse_index
-            .search(
-                &[&sparse_query],
-                None,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&sparse_query], None, top, None, &Default::default())
             .unwrap();
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&dense_query],
-                None,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&dense_query], None, top, None, &Default::default())
             .unwrap();
 
         // check that nearest search uses sparse index

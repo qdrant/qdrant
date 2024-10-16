@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
@@ -232,7 +231,6 @@ fn test_multi_filterable_hnsw(
                     ..Default::default()
                 }),
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -249,14 +247,7 @@ fn test_multi_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_result == index_result {

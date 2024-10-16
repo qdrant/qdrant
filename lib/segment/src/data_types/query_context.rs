@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
@@ -82,6 +83,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
+            hardware_counter: HardwareCounterCell::default(),
         }
     }
 }
@@ -97,6 +99,7 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> SegmentQueryContext<'a> {
@@ -111,6 +114,7 @@ impl<'a> SegmentQueryContext<'a> {
             is_stopped: Some(&self.query_context.is_stopped),
             idf: self.query_context.idf.get(vector_name),
             deleted_points: self.deleted_points,
+            hardware_counter: Some(&self.hardware_counter),
         }
     }
 
@@ -135,6 +139,8 @@ pub struct VectorQueryContext<'a> {
     idf: Option<&'a HashMap<DimId, usize>>,
 
     deleted_points: Option<&'a BitSlice>,
+
+    hardware_counter: Option<&'a HardwareCounterCell>,
 }
 
 pub enum SimpleCow<'a, T> {
@@ -154,6 +160,10 @@ impl<'a, T> Deref for SimpleCow<'a, T> {
 }
 
 impl VectorQueryContext<'_> {
+    pub fn hardware_counter(&self) -> Option<&HardwareCounterCell> {
+        self.hardware_counter
+    }
+
     pub fn available_point_count(&self) -> usize {
         self.available_point_count
     }
@@ -207,6 +217,7 @@ impl Default for VectorQueryContext<'_> {
             is_stopped: None,
             idf: None,
             deleted_points: None,
+            hardware_counter: None,
         }
     }
 }

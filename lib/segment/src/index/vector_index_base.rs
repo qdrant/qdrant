@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
@@ -31,7 +30,6 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
-        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
@@ -117,105 +115,44 @@ impl VectorIndex for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
-        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
-            VectorIndexEnum::Plain(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::HnswRam(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::HnswMmap(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseRam(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseImmutableRam(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseMmap(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedMmapF32(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedMmapF16(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
-            VectorIndexEnum::SparseCompressedMmapU8(index) => index.search(
-                vectors,
-                filter,
-                top,
-                params,
-                query_context,
-                hardware_counter,
-            ),
+            VectorIndexEnum::Plain(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::HnswRam(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::HnswMmap(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseRam(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseImmutableRam(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseMmap(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedImmutableRamU8(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedMmapF32(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedMmapF16(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
+            VectorIndexEnum::SparseCompressedMmapU8(index) => {
+                index.search(vectors, filter, top, params, query_context)
+            }
         }
     }
 

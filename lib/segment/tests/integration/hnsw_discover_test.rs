@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -139,21 +138,13 @@ fn hnsw_discover_precision() {
                     ..Default::default()
                 }),
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                None,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
@@ -277,21 +268,13 @@ fn filtered_hnsw_discover_precision() {
                     ..Default::default()
                 }),
                 &Default::default(),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-                &HardwareCounterCell::new(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
