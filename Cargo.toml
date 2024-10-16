@@ -49,7 +49,6 @@ rusty-hook = "^0.11.2"
 [dependencies]
 parking_lot = { workspace = true, optional = true }
 
-bytes = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 colored = "2"
