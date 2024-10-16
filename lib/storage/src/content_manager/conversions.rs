@@ -27,6 +27,7 @@ impl From<StorageError> for tonic::Status {
             StorageError::ChecksumMismatch { .. } => tonic::Code::DataLoss,
             StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
             StorageError::PreconditionFailed { .. } => tonic::Code::FailedPrecondition,
+            StorageError::InferenceError { .. } => tonic::Code::InvalidArgument,
         };
         tonic::Status::new(error_code, format!("{error}"))
     }

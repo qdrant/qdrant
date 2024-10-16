@@ -969,6 +969,8 @@ pub enum CollectionError {
     ObjectStoreError { what: String },
     #[error("Strict mode error: {description}")]
     StrictMode { description: String },
+    #[error("{description}")]
+    InferenceError { description: String },
 }
 
 impl CollectionError {
@@ -1068,6 +1070,7 @@ impl CollectionError {
             Self::ForwardProxyError { .. } => false,
             Self::ObjectStoreError { .. } => false,
             Self::StrictMode { .. } => false,
+            Self::InferenceError { .. } => false,
         }
     }
 
