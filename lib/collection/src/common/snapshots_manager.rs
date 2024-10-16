@@ -114,11 +114,17 @@ impl SnapshotStorageManager {
         }
     }
 
+    /// Store file in the snapshot storage.
+    /// On success, the `source_path` is deleted.
     pub async fn store_file(
         &self,
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
+        debug_assert_ne!(
+            source_path, target_path,
+            "Source and target paths must be different"
+        );
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
                 storage_impl.store_file(source_path, target_path).await
@@ -272,18 +278,14 @@ impl SnapshotStorageLocalFS {
         // 5. Move the temporary file to the target file. (move is atomic, copy is not)
 
         if let Some(target_dir) = target_path.parent() {
-            if !target_dir.exists() {
-                std::fs::create_dir_all(target_dir)?;
-            }
+            std::fs::create_dir_all(target_dir)?;
         }
 
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
         // We can't copy to the target location directly, because copy is not atomic.
         // So we copy to the final location with a temporary name and then rename atomically.
-        let target_path_tmp_move = target_path.with_extension("tmp");
-        // Ensure that the temporary file is deleted on error
-        let _temp_path = TempPath::from_path(&target_path_tmp_move);
+        let target_path_tmp = TempPath::from_path(target_path.with_extension("tmp"));
 
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
@@ -293,10 +295,8 @@ impl SnapshotStorageLocalFS {
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        if target_path != source_path {
-            move_file(&source_path, &target_path_tmp_move).await?;
-            tokio::fs::rename(&target_path_tmp_move, &target_path).await?;
-        }
+        move_file(&source_path, &target_path_tmp).await?;
+        target_path_tmp.persist(target_path).map_err(|e| e.error)?;
 
         checksum_file.keep()?;
         get_snapshot_description(target_path).await
@@ -418,6 +418,7 @@ impl SnapshotStorageCloud {
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
         snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path).await?;
+        tokio::fs::remove_file(source_path).await?;
         snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await
     }
 
