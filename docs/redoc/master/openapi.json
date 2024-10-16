@@ -5642,7 +5642,7 @@
         ],
         "summary": "Search points matrix distance pairs",
         "description": "Compute distance matrix for sampled points with a pair based output format",
-        "operationId": "search_points_matrix_pairs",
+        "operationId": "search_matrix_pairs",
         "requestBody": {
           "description": "Search matrix request with optional filtering",
           "content": {
@@ -5739,7 +5739,7 @@
         ],
         "summary": "Search points matrix distance offsets",
         "description": "Compute distance matrix for sampled points with an offset based output format",
-        "operationId": "search_points_matrix_offsets",
+        "operationId": "search_matrix_offsets",
         "requestBody": {
           "description": "Search matrix request with optional filtering",
           "content": {
@@ -6816,6 +6816,11 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/GeoIndexType"
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -7135,7 +7140,7 @@
             "description": "Vector of the point",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorStruct"
+                "$ref": "#/components/schemas/VectorStructOutput"
               },
               {
                 "nullable": true
@@ -7173,8 +7178,8 @@
           "color": "green"
         }
       },
-      "VectorStruct": {
-        "description": "Full vector data per point separator with single and multiple vector modes",
+      "VectorStructOutput": {
+        "description": "Vector data stored in Point",
         "anyOf": [
           {
             "type": "array",
@@ -7218,7 +7223,7 @@
           {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/Vector"
+              "$ref": "#/components/schemas/VectorOutput"
             },
             "example": {
               "image-embeddings": [
@@ -7227,13 +7232,11 @@
                 0.897599995136261
               ]
             }
-          },
-          {
-            "$ref": "#/components/schemas/Document"
           }
         ]
       },
-      "Vector": {
+      "VectorOutput": {
+        "description": "Vector Data stored in Point",
         "anyOf": [
           {
             "type": "array",
@@ -7254,9 +7257,6 @@
                 "format": "float"
               }
             }
-          },
-          {
-            "$ref": "#/components/schemas/Document"
           }
         ]
       },
@@ -7284,24 +7284,6 @@
               "type": "number",
               "format": "float"
             }
-          }
-        }
-      },
-      "Document": {
-        "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
-        "type": "object",
-        "required": [
-          "text"
-        ],
-        "properties": {
-          "text": {
-            "description": "Text of the document This field will be used as input for the embedding model",
-            "type": "string"
-          },
-          "model": {
-            "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string",
-            "nullable": true
           }
         }
       },
@@ -8125,7 +8107,7 @@
             "description": "Vector of the point",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/VectorStruct"
+                "$ref": "#/components/schemas/VectorStructOutput"
               },
               {
                 "nullable": true
@@ -8685,6 +8667,17 @@
               "$ref": "#/components/schemas/SparseVectorParams"
             },
             "nullable": true
+          },
+          "strict_mode_config": {
+            "description": "Strict-mode config.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8779,6 +8772,58 @@
           }
         }
       },
+      "StrictModeConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether strict mode is enabled for a collection or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "max_query_limit": {
+            "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_timeout": {
+            "description": "Max allowed `timeout` parameter.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "unindexed_filtering_retrieve": {
+            "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "unindexed_filtering_update": {
+            "description": "Allow usage of unindexed fields in filtered updates (eg. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_hnsw_ef": {
+            "description": "Max HNSW value allowed in search parameters.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_allow_exact": {
+            "description": "Whether exact search is allowed or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_oversampling": {
+            "description": "Max oversampling value allowed in search.",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        }
+      },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
@@ -8844,6 +8889,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SparseVectorsConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "strict_mode_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
               },
               {
                 "nullable": true
@@ -9247,8 +9302,125 @@
             "items": {
               "$ref": "#/components/schemas/Document"
             }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Image"
+            }
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InferenceObject"
+            }
           }
         ]
+      },
+      "Vector": {
+        "description": "Vector Data Vectors can be described directly with values Or specified with source \"objects\" for inference",
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
+          }
+        ]
+      },
+      "Document": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "description": "Text of the document This field will be used as input for the embedding model",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "Image": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nImage object for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "image": {
+            "description": "Image data: base64 encoded image or an URL",
+            "type": "string"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "InferenceObject": {
+        "description": "WARN: Work-in-progress, unimplemented\n\nCustom object for embedding. Requires inference infrastructure, unimplemented.",
+        "type": "object",
+        "required": [
+          "object"
+        ],
+        "properties": {
+          "object": {
+            "description": "Arbitrary data, used as input for the embedding model Used if the model requires more than one input or a custom input"
+          },
+          "model": {
+            "description": "Name of the model used to generate the vector List of available models depends on a provider",
+            "type": "string",
+            "nullable": true
+          },
+          "options": {
+            "description": "Parameters for the model Values of the parameters are model-specific",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
       },
       "PointsList": {
         "type": "object",
@@ -9299,6 +9471,72 @@
             ]
           }
         }
+      },
+      "VectorStruct": {
+        "description": "Full vector data per point separator with single and multiple vector modes",
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            },
+            "example": [
+              0.875,
+              0.140625,
+              0.897599995136261
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            },
+            "example": [
+              [
+                0.875,
+                0.140625,
+                0.11020000278949738
+              ],
+              [
+                0.7580000162124634,
+                0.28126001358032227,
+                0.9687100052833557
+              ],
+              [
+                0.6209999918937683,
+                0.42187801003456116,
+                0.9375
+              ]
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Vector"
+            },
+            "example": {
+              "image-embeddings": [
+                0.8730000257492065,
+                0.140625,
+                0.897599995136261
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
+          }
+        ]
       },
       "SetPayload": {
         "description": "This data structure is used in API interface and applied across multiple shards",
@@ -10094,8 +10332,26 @@
           },
           "cpu_flags": {
             "type": "string"
+          },
+          "cpu_endian": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuEndian"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "CpuEndian": {
+        "type": "string",
+        "enum": [
+          "little",
+          "big",
+          "other"
+        ]
       },
       "CollectionsTelemetry": {
         "type": "object",
@@ -10246,7 +10502,7 @@
         }
       },
       "ShardStatus": {
-        "description": "Current state of the shard (supports same states as the collection) `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered",
+        "description": "Current state of the shard (supports same states as the collection)\n\n`Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered",
         "type": "string",
         "enum": [
           "green",
@@ -11500,7 +11756,7 @@
         }
       },
       "SnapshotPriority": {
-        "description": "Defines source of truth for snapshot recovery: `NoSync` means - restore snapshot without *any* additional synchronization. `Snapshot` means - prefer snapshot data over the current state. `Replica` means - prefer existing data over the snapshot.",
+        "description": "Defines source of truth for snapshot recovery:\n\n`NoSync` means - restore snapshot without *any* additional synchronization. `Snapshot` means - prefer snapshot data over the current state. `Replica` means - prefer existing data over the snapshot.",
         "type": "string",
         "enum": [
           "no_sync",
@@ -12625,6 +12881,12 @@
           },
           {
             "$ref": "#/components/schemas/Document"
+          },
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/InferenceObject"
           }
         ]
       },
@@ -13218,6 +13480,9 @@
           {
             "type": "integer",
             "format": "int64"
+          },
+          {
+            "type": "boolean"
           }
         ]
       }

@@ -25,4 +25,7 @@ pub mod strings;
 
 pub mod debugger;
 
+#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
+pub mod inference;
+
 pub mod pyroscope_state;

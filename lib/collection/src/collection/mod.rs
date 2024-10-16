@@ -784,6 +784,10 @@ impl Collection {
     pub fn shards_holder(&self) -> Arc<LockedShardHolder> {
         self.shards_holder.clone()
     }
+
+    pub async fn trigger_optimizers(&self) {
+        self.shards_holder.read().await.trigger_optimizers().await;
+    }
 }
 
 struct CollectionVersion;

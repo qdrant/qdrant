@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
-use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
-use segment::data_types::vectors::{Vector, VectorStructInternal};
+use api::rest::{
+    BaseGroupRequest, Batch, BatchVectorStruct, PointStruct, PointVectors, PointsList,
+    SearchGroupsRequestInternal, SearchRequestInternal, Vector, VectorStruct,
+};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
-use crate::operations::point_ops::{Batch, PointStruct, PointsBatch, PointsList};
 use crate::operations::types::{
     ContextExamplePair, DiscoverRequestInternal, RecommendExample, RecommendRequestInternal,
 };
-use crate::operations::vector_ops::PointVectors;
 
 fn wrong_sparse_vector() -> SparseVector {
     SparseVector {
@@ -26,11 +26,11 @@ fn wrong_named_vector_struct() -> api::rest::NamedVectorStruct {
 }
 
 fn wrong_point_struct() -> PointStruct {
-    let vector_data: HashMap<String, Vector> =
-        HashMap::from([("sparse".to_owned(), wrong_sparse_vector().into())]);
+    let vector_data: HashMap<String, _> =
+        HashMap::from([("sparse".to_owned(), Vector::Sparse(wrong_sparse_vector()))]);
     PointStruct {
         id: 0.into(),
-        vector: VectorStructInternal::Named(vector_data).into(),
+        vector: VectorStruct::Named(vector_data),
         payload: None,
     }
 }
@@ -54,16 +54,14 @@ fn validate_error_sparse_vector_point_struct() {
 
 #[test]
 fn validate_error_sparse_vector_points_batch() {
-    let vector_data: HashMap<String, Vec<Vector>> =
-        HashMap::from([("sparse".to_owned(), vec![wrong_sparse_vector().into()])]);
-    check_validation_error(PointsBatch {
-        batch: Batch {
-            ids: vec![1.into()],
-            vectors: segment::data_types::vectors::BatchVectorStructInternal::Named(vector_data)
-                .into(),
-            payloads: None,
-        },
-        shard_key: None,
+    let vector_data: HashMap<String, Vec<_>> = HashMap::from([(
+        "sparse".to_owned(),
+        vec![Vector::Sparse(wrong_sparse_vector())],
+    )]);
+    check_validation_error(Batch {
+        ids: vec![1.into()],
+        vectors: BatchVectorStruct::Named(vector_data),
+        payloads: None,
     });
 }
 
@@ -159,10 +157,13 @@ fn validate_error_sparse_vector_discover_request_internal() {
 
 #[test]
 fn validate_error_sparse_vector_point_vectors() {
-    let vector_data: HashMap<String, Vector> =
-        HashMap::from([("sparse".to_owned(), wrong_sparse_vector().into())]);
+    let vector_data: HashMap<String, _> =
+        HashMap::from([("sparse".to_owned(), Vector::Sparse(wrong_sparse_vector()))]);
+
+    let vector_struct = VectorStruct::Named(vector_data);
+
     check_validation_error(PointVectors {
         id: 1.into(),
-        vector: VectorStructInternal::Named(vector_data).into(),
+        vector: vector_struct,
     });
 }

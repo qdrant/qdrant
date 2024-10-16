@@ -3,79 +3,12 @@ use std::borrow::Cow;
 use common::validation::validate_multi_vector;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::schema::{BatchVectorStruct, Vector, VectorStruct};
+use super::schema::BatchVectorStruct;
 use super::{
-    ContextInput, Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, Sample,
-    VectorInput,
+    Batch, ContextInput, Fusion, OrderByInterface, PointVectors, Query, QueryInterface,
+    RecommendInput, Sample, VectorInput,
 };
 use crate::rest::NamedVectorStruct;
-
-impl Validate for VectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            VectorStruct::Single(_) => Ok(()),
-            VectorStruct::MultiDense(v) => validate_multi_vector(v),
-            VectorStruct::Named(v) => common::validation::validate_iter(v.values()),
-            VectorStruct::Document(_) => {
-                let mut errors = ValidationErrors::default();
-                let mut err = ValidationError::new("not_supported_inference");
-                err.add_param(
-                    Cow::from("message"),
-                    &"Document inference is not implemented, please use vectors instead",
-                );
-                errors.add("text", err);
-                Err(errors)
-            }
-        }
-    }
-}
-
-impl Validate for BatchVectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            BatchVectorStruct::Single(_) => Ok(()),
-            BatchVectorStruct::MultiDense(vectors) => {
-                for vector in vectors {
-                    common::validation::validate_multi_vector(vector)?;
-                }
-                Ok(())
-            }
-            BatchVectorStruct::Named(v) => {
-                common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
-            }
-            BatchVectorStruct::Document(_) => {
-                let mut errors = ValidationErrors::default();
-                let mut err = ValidationError::new("not_supported_inference");
-                err.add_param(
-                    Cow::from("message"),
-                    &"Document inference is not implemented, please use vectors instead",
-                );
-                errors.add("text", err);
-                Err(errors)
-            }
-        }
-    }
-}
-
-impl Validate for Vector {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            Vector::Dense(_) => Ok(()),
-            Vector::Sparse(v) => v.validate(),
-            Vector::MultiDense(m) => common::validation::validate_multi_vector(m),
-            Vector::Document(_) => {
-                let mut errors = ValidationErrors::default();
-                let mut err = ValidationError::new("not_supported_inference");
-                err.add_param(
-                    Cow::from("message"),
-                    &"Document inference is not implemented, please use vectors instead",
-                );
-                errors.add("text", err);
-                Err(errors)
-            }
-        }
-    }
-}
 
 impl Validate for NamedVectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -125,6 +58,26 @@ impl Validate for VectorInput {
                     &"Document inference is not implemented, please use vectors instead",
                 );
                 errors.add("text", err);
+                Err(errors)
+            }
+            VectorInput::Image(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Image inference is not implemented, please use vectors instead",
+                );
+                errors.add("image", err);
+                Err(errors)
+            }
+            VectorInput::Object(_) => {
+                let mut errors = ValidationErrors::default();
+                let mut err = ValidationError::new("not_supported_inference");
+                err.add_param(
+                    Cow::from("message"),
+                    &"Object inference is not implemented, please use vectors instead",
+                );
+                errors.add("object", err);
                 Err(errors)
             }
         }
@@ -183,9 +136,106 @@ impl Validate for OrderByInterface {
 }
 
 impl Validate for Sample {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+    fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             Sample::Random => Ok(()),
+        }
+    }
+}
+
+impl Validate for BatchVectorStruct {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            BatchVectorStruct::Single(_) => Ok(()),
+            BatchVectorStruct::MultiDense(vectors) => {
+                for vector in vectors {
+                    validate_multi_vector(vector)?;
+                }
+                Ok(())
+            }
+            BatchVectorStruct::Named(v) => {
+                common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
+            }
+            BatchVectorStruct::Document(_) => Ok(()),
+            BatchVectorStruct::Image(_) => Ok(()),
+            BatchVectorStruct::Object(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for Batch {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let batch = self;
+
+        let bad_input_description = |ids: usize, vecs: usize| -> String {
+            format!("number of ids and vectors must be equal ({ids} != {vecs})")
+        };
+        let create_error = |message: String| -> ValidationErrors {
+            let mut errors = ValidationErrors::new();
+            errors.add("batch", {
+                let mut error = ValidationError::new("point_insert_operation");
+                error.message.replace(Cow::from(message));
+                error
+            });
+            errors
+        };
+
+        self.vectors.validate()?;
+        match &batch.vectors {
+            BatchVectorStruct::Single(vectors) => {
+                if batch.ids.len() != vectors.len() {
+                    return Err(create_error(bad_input_description(
+                        batch.ids.len(),
+                        vectors.len(),
+                    )));
+                }
+            }
+            BatchVectorStruct::MultiDense(vectors) => {
+                if batch.ids.len() != vectors.len() {
+                    return Err(create_error(bad_input_description(
+                        batch.ids.len(),
+                        vectors.len(),
+                    )));
+                }
+            }
+            BatchVectorStruct::Named(named_vectors) => {
+                for vectors in named_vectors.values() {
+                    if batch.ids.len() != vectors.len() {
+                        return Err(create_error(bad_input_description(
+                            batch.ids.len(),
+                            vectors.len(),
+                        )));
+                    }
+                }
+            }
+            BatchVectorStruct::Document(_) => {}
+            BatchVectorStruct::Image(_) => {}
+            BatchVectorStruct::Object(_) => {}
+        }
+        if let Some(payload_vector) = &batch.payloads {
+            if payload_vector.len() != batch.ids.len() {
+                return Err(create_error(format!(
+                    "number of ids and payloads must be equal ({} != {})",
+                    batch.ids.len(),
+                    payload_vector.len(),
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Validate for PointVectors {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if self.vector.is_empty() {
+            let mut err = ValidationError::new("length");
+            err.message = Some(Cow::from("must specify vectors to update for point"));
+            err.add_param(Cow::from("min"), &1);
+            let mut errors = ValidationErrors::new();
+            errors.add("vector", err);
+            Err(errors)
+        } else {
+            self.vector.validate()
         }
     }
 }

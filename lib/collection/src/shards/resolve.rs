@@ -9,7 +9,7 @@ use segment::types::{Payload, ScoredPoint};
 use tinyvec::TinyVec;
 
 use crate::common::transpose_iterator::transposed_iter;
-use crate::operations::types::{CountResult, Record};
+use crate::operations::types::{CountResult, RecordInternal};
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -132,7 +132,7 @@ impl Resolve for FacetResponse {
     }
 }
 
-impl Resolve for Vec<Record> {
+impl Resolve for Vec<RecordInternal> {
     fn resolve(records: Vec<Self>, condition: ResolveCondition) -> Self {
         Resolver::resolve(records, |record| record.id, record_eq, condition)
     }
@@ -165,7 +165,7 @@ impl Resolve for Vec<ShardQueryResponse> {
     }
 }
 
-fn record_eq(this: &Record, other: &Record) -> bool {
+fn record_eq(this: &RecordInternal, other: &RecordInternal) -> bool {
     this.id == other.id
         && this.order_value == other.order_value
         && this.vector == other.vector

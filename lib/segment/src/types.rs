@@ -14,6 +14,7 @@ use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -416,6 +417,9 @@ pub struct CollectionConfigDefaults {
     #[serde(default = "default_write_consistency_factor_const")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: u32,
+
+    #[validate(nested)]
+    pub strict_mode: Option<StrictModeConfig>,
 }
 
 /// Configuration for vectors.
@@ -658,6 +662,73 @@ impl From<ProductQuantizationConfig> for QuantizationConfig {
 impl From<BinaryQuantizationConfig> for QuantizationConfig {
     fn from(config: BinaryQuantizationConfig) -> Self {
         QuantizationConfig::Binary(BinaryQuantization { binary: config })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge)]
+pub struct StrictModeConfig {
+    // Global
+    /// Whether strict mode is enabled for a collection or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+
+    /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_query_limit: Option<usize>,
+
+    /// Max allowed `timeout` parameter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_timeout: Option<usize>,
+
+    /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_retrieve: Option<bool>,
+
+    /// Allow usage of unindexed fields in filtered updates (eg. delete by payload).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_update: Option<bool>,
+
+    // Search
+    /// Max HNSW value allowed in search parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_hnsw_ef: Option<usize>,
+
+    /// Whether exact search is allowed or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_allow_exact: Option<bool>,
+
+    /// Max oversampling value allowed in search.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_oversampling: Option<f64>,
+}
+
+impl Eq for StrictModeConfig {}
+
+impl Hash for StrictModeConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            // We skip hashing this field because we cannot reliably hash a float
+            search_max_oversampling: _,
+        } = self;
+        (
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+        )
+            .hash(state);
     }
 }
 
@@ -986,9 +1057,8 @@ impl Payload {
         utils::merge_map(&mut self.0, &value.0)
     }
 
-    pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) -> OperationResult<()> {
+    pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) {
         JsonPath::value_set(Some(key), &mut self.0, &value.0);
-        Ok(())
     }
 
     pub fn remove(&mut self, path: &JsonPath) -> Vec<Value> {
@@ -1211,7 +1281,7 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Text(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Geo(_) => false,
+            PayloadSchemaParams::Geo(i) => i.on_disk.unwrap_or_default(),
             PayloadSchemaParams::Bool(_) => false,
         }
     }
@@ -2375,6 +2445,73 @@ impl Filter {
             .chain(self.should.iter().flatten())
             .chain(self.min_should.iter().flat_map(|i| &i.conditions))
     }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum SnapshotFormat {
+    /// Created by Qdrant `<0.11.0`.
+    ///
+    /// The collection snapshot contains nested tar archives for segments.
+    /// Segment tar archives contain a plain copy of the segment directory.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10.tar
+    /// │   ├── segment.json
+    /// │   ├── CURRENT
+    /// │   ├── 000009.sst
+    /// │   ├── 000010.sst
+    /// │   └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b.tar
+    /// └── …
+    /// ```
+    Ancient,
+    /// Qdrant `>=0.11.0` `<=1.13` (and maybe even later).
+    ///
+    /// The collection snapshot contains nested tar archives for segments.
+    /// Distinguished by a single top-level directory `snapshot` in each segment
+    /// tar archive. RocksDB data stored as backups and requires unpacking
+    /// procedure.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10.tar
+    /// │   └── snapshot/                               # single top-level dir
+    /// │       ├── db_backup/                          # rockdb backup
+    /// │       │   ├── meta/
+    /// │       │   ├── private/
+    /// │       │   └── shared_checksum/
+    /// │       ├── payload_index_db_backup             # rocksdb backup
+    /// │       │   ├── meta/
+    /// │       │   ├── private/
+    /// │       │   └── shared_checksum/
+    /// │       └── files/                              # regular files
+    /// │           ├── segment.json
+    /// │           └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b.tar
+    /// └── …
+    /// ```
+    Regular,
+    /// New experimental format.
+    ///
+    /// ```plaintext
+    /// ./0/segments/
+    /// ├── 0b31e274-dc65-40e4-8493-67ebed4bcf10/
+    /// │   ├── db_backup/                              # rockdb backup
+    /// │   │   ├── meta/
+    /// │   │   ├── private/
+    /// │   │   └── shared_checksum/
+    /// │   ├── payload_index_db_backup                 # rocksdb backup
+    /// │   │   ├── meta/
+    /// │   │   ├── private/
+    /// │   │   └── shared_checksum/
+    /// │   └── files/                                  # regular files
+    /// │       ├── segment.json
+    /// │       └── …
+    /// ├── 1d6c96ec-7965-491a-9c45-362d55361e9b/
+    /// └── …
+    /// ```
+    Streamable,
 }
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
-    CollectionError, CollectionResult, QueryScrollRequestInternal, Record, ScrollOrder,
+    CollectionError, CollectionResult, QueryScrollRequestInternal, RecordInternal, ScrollOrder,
 };
 
 impl LocalShard {
@@ -156,7 +156,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
@@ -202,7 +202,7 @@ impl LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         // update timeout
         let timeout = timeout.saturating_sub(start.elapsed());
-        let records_map = tokio::time::timeout(
+        let mut records_map = tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
                 segments,
@@ -217,7 +217,8 @@ impl LocalShard {
 
         let ordered_records = point_ids
             .iter()
-            .filter_map(|point| records_map.get(point).cloned())
+            // Use remove to avoid cloning, we take each point ID only once
+            .filter_map(|point_id| records_map.remove(point_id))
             .collect();
 
         Ok(ordered_records)
@@ -233,7 +234,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
         timeout: Option<Duration>,
-    ) -> CollectionResult<(Vec<Record>, Vec<OrderValue>)> {
+    ) -> CollectionResult<(Vec<RecordInternal>, Vec<OrderValue>)> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
@@ -303,7 +304,7 @@ impl LocalShard {
 
         let ordered_records = point_ids
             .iter()
-            .filter_map(|point| records_map.get(point).cloned())
+            .filter_map(|point_id| records_map.get(point_id).cloned())
             .collect();
 
         Ok((ordered_records, values))
@@ -317,7 +318,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();

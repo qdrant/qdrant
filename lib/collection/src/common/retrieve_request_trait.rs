@@ -4,7 +4,7 @@ use segment::types::PointIdType;
 
 use crate::operations::types::{DiscoverRequestInternal, RecommendRequestInternal, UsingVector};
 use crate::operations::universal_query::collection_query::{
-    CollectionQueryResolveRequest, VectorInput, VectorQuery,
+    CollectionQueryResolveRequest, VectorInputInternal, VectorQuery,
 };
 
 const EMPTY_SHARD_KEY_SELECTOR: Option<ShardKeySelector> = None;
@@ -135,8 +135,10 @@ impl<'a> RetrieveRequest for CollectionQueryResolveRequest<'a> {
             .unwrap_or(&EMPTY_SHARD_KEY_SELECTOR)
     }
 }
-impl VectorQuery<VectorInput> {
+impl VectorQuery<VectorInputInternal> {
     pub fn get_referenced_ids(&self) -> Vec<&PointIdType> {
-        self.flat_iter().filter_map(VectorInput::as_id).collect()
+        self.flat_iter()
+            .filter_map(VectorInputInternal::as_id)
+            .collect()
     }
 }

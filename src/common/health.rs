@@ -292,6 +292,10 @@ impl Task {
             .commit
     }
 
+    /// List shards that are unhealthy, which may undergo automatic recovery.
+    ///
+    /// Shards in resharding state are not considered unhealthy and are excluded here.
+    /// They require an external driver to make them active or to drop them.
     async fn unhealthy_shards(&self) -> HashSet<Shard> {
         let this_peer_id = self.toc.this_peer_id;
         let collections = self
@@ -312,7 +316,7 @@ impl Task {
                     continue;
                 };
 
-                if state.is_active_or_listener() {
+                if state.is_active_or_listener_or_resharding() {
                     continue;
                 }
 

@@ -13,7 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
-atomicwrites = "0.4.3"
+atomicwrites = { workspace = true }
 bincode = "1.3.3"
 nix = { workspace = true }
 semver = { workspace = true }

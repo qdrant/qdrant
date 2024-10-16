@@ -290,6 +290,12 @@ jobs:
           MINIO_ACCESS_KEY: "minioadmin"
           MINIO_SECRET_KEY: "minioadmin"
     steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -302,11 +308,26 @@ jobs:
         run: sudo apt-get install clang jq
       - name: Build
         run: cargo build --bin qdrant
-      - name: Run Shard Snapshot API Tests
+      - name: Run Shard Snapshot API Tests (local)
         shell: bash
         run: |
           cargo run &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
+
           ./tests/shard-snapshot-api.sh test-all
-          ./tests/shard-snapshot-api.sh storage-s3-test-all
+      - name: Run Shard Snapshot API Tests (s3)
+        shell: bash
+        run: |
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE=s3
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET=test-bucket
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__REGION=us-east-1
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ACCESS_KEY=minioadmin
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY=minioadmin
+          export QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL=http://127.0.0.1:9000
+
+          cargo run &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+
+          ./tests/shard-snapshot-api.sh test-all

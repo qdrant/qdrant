@@ -5,6 +5,8 @@ import hashlib
 import json
 import pathlib
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -34,9 +36,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.nix:
-        print("Running `npins update`", file=sys.stderr)
+        if shutil.which("npins") is not None:
+            command = ["npins", "update"]
+        else:
+            command = ["nix-shell", "-p", "npins", "--run", "npins update"]
+        print(f"Running {shlex.join(command)}", file=sys.stderr)
         subprocess.run(
-            args=["npins", "update"],
+            args=command,
             cwd=pathlib.Path(__file__).parent,
             check=True,
         )

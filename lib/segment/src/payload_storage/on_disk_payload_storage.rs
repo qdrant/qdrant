@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -52,22 +53,6 @@ impl OnDiskPayloadStorage {
             .transpose()
             .map_err(OperationError::from)
     }
-
-    pub fn iter<F>(&self, mut callback: F) -> OperationResult<()>
-    where
-        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
-    {
-        for (key, val) in self.db_wrapper.lock_db().iter()? {
-            let do_continue = callback(
-                serde_cbor::from_slice(&key)?,
-                &serde_cbor::from_slice(&val)?,
-            )?;
-            if !do_continue {
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
 }
 
 impl PayloadStorage for OnDiskPayloadStorage {
@@ -96,12 +81,12 @@ impl PayloadStorage for OnDiskPayloadStorage {
         let stored_payload = self.read_payload(point_id)?;
         match stored_payload {
             Some(mut point_payload) => {
-                point_payload.merge_by_key(payload, key)?;
+                point_payload.merge_by_key(payload, key);
                 self.update_storage(point_id, &point_payload)
             }
             None => {
                 let mut dest_payload = Payload::default();
-                dest_payload.merge_by_key(payload, key)?;
+                dest_payload.merge_by_key(payload, key);
                 self.update_storage(point_id, &dest_payload)
             }
         }
@@ -142,5 +127,25 @@ impl PayloadStorage for OnDiskPayloadStorage {
 
     fn flusher(&self) -> Flusher {
         self.db_wrapper.flusher()
+    }
+
+    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        for (key, val) in self.db_wrapper.lock_db().iter()? {
+            let do_continue = callback(
+                serde_cbor::from_slice(&key)?,
+                &serde_cbor::from_slice(&val)?,
+            )?;
+            if !do_continue {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
     }
 }

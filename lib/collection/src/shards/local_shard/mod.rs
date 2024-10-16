@@ -29,7 +29,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
     CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, SegmentType,
+    QuantizationConfig, SegmentConfig, SegmentType, SnapshotFormat,
 };
 use segment::utils::mem::Mem;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
@@ -727,9 +727,17 @@ impl LocalShard {
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
+
         self.update_sender.load().send(UpdateSignal::Nop).await?;
 
         Ok(())
+    }
+
+    pub fn trigger_optimizers(&self) {
+        // Send a trigger signal and ignore errors because all error cases are acceptable:
+        // - If receiver is already dead - we do not care
+        // - If channel is full - optimization will be triggered by some other signal
+        let _ = self.update_sender.load().try_send(UpdateSignal::Nop);
     }
 
     /// Finishes ongoing update tasks
@@ -746,25 +754,14 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        // recover segments
-        let segments_path = LocalShard::segments_path(snapshot_path);
-        // iterate over segments directory and recover each segment
-        for entry in std::fs::read_dir(segments_path)? {
-            let entry_path = entry?.path();
-            if entry_path.extension().map(|s| s == "tar").unwrap_or(false) {
-                let segment_id_opt = entry_path
-                    .file_stem()
-                    .map(|s| s.to_str().unwrap().to_owned());
-                if segment_id_opt.is_none() {
-                    return Err(CollectionError::service_error(
-                        "Segment ID is empty".to_string(),
-                    ));
-                }
-                let segment_id = segment_id_opt.unwrap();
-                Segment::restore_snapshot(&entry_path, &segment_id)?;
-                std::fs::remove_file(&entry_path)?;
-            }
+        // Read dir first as the directory contents would change during restore.
+        let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for entry in entries {
+            Segment::restore_snapshot_in_place(&entry.path())?;
         }
+
         Ok(())
     }
 
@@ -773,6 +770,7 @@ impl LocalShard {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
@@ -803,6 +801,7 @@ impl LocalShard {
                 &payload_index_schema.read().clone(),
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
+                format,
             )?;
 
             if save_wal {

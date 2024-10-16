@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.11.5-dev"
+version = "1.12.1-dev"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -61,7 +61,7 @@ itertools = { workspace = true }
 anyhow = "1.0.89"
 futures = { workspace = true }
 futures-util = { workspace = true }
-clap = { version = "4.5.17", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
@@ -81,9 +81,9 @@ tower = { version = "0.5.1", features = ["util"] }
 tower-layer = "0.3.3"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
-rustls = { version = "0.23.13", default-features = false, features = [ "logging", "std", "tls12", "ring"] }
+rustls = { version = "0.23.14", default-features = false, features = [ "logging", "std", "tls12", "ring"] }
 rustls-pki-types = "1.8.0"
-rustls-pemfile = "2.1.3"
+rustls-pemfile = "2.2.0"
 prometheus = { version = "0.13.4", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = "9.3.0"
@@ -99,7 +99,6 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
-quantization = { path = "lib/quantization" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
@@ -112,7 +111,7 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.4", default-features = false, features = ["parking_lot"], optional = true }
-tracing-tracy = { version = "0.11.2", features = ["ondemand"], optional = true }
+tracing-tracy = { version = "0.11.3", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -152,11 +151,13 @@ used_underscore_binding = "warn"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [workspace.dependencies]
+atomicwrites = "0.4.4"
+bytes = "1.7.2"
 chrono = { version = "0.4.38", features = ["serde"] }
 data-encoding = "2.6.0"
-delegate = "0.12.0"
+delegate = "0.13.1"
 fnv = "1.0"
-futures = "0.3.30"
+futures = "0.3.31"
 futures-util = "0.3.30"
 generic-tests = "0.1.2"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
@@ -169,14 +170,14 @@ nix = { version = "0.29", features = ["fs"]}
 num-traits = "0.2.19"
 rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
-ph = "0.8.3"
+ph = "0.8.4"
 pprof = { version = "0.13.0", features = ["flamegraph", "prost-codec"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
 prost-for-raft = { package = "prost", version = "=0.11.9" } # version of prost used by raft
 rand = "0.8.5"
-reqwest = { version = "0.12.7", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12.8", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
 schemars = { version = "0.8.21", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "~1.0", features = ["derive", "rc"] }
@@ -185,10 +186,11 @@ serde_variant = "0.1.3"
 sha2 = "0.10.8"
 serde_json = {version = "~1.0", features = ["preserve_order"]}
 strum = { version = "0.26.3", features = ["derive"] }
+tap = "1.0.1"
 tar = "0.4.41"
-tempfile = "3.12.0"
+tempfile = "3.13.0"
 tokio = { version = "1.40.0", features = ["full"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
 tonic = { version = "0.11.0", features = ["gzip", "tls"] }
 tonic-build = { version = "0.11.0", features = ["prost"] }
 tonic-reflection = "0.11.0"
@@ -199,8 +201,9 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "7c9202d0874b719212e6ea
 zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
-thiserror = "1.0.63"
+thiserror = "1.0.64"
 bitvec = "1.0.1"
+merge = "0.1.0"
 
 [[bin]]
 name = "schema_generator"

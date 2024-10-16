@@ -1,3 +1,16 @@
+# A nix-shell file that sets up a convenient environment to develop Qdrant.
+#
+# It includes all necessary dependencies used to build and develop Qdrant's Rust
+# code, run Python tests, and execute various scripts within the repository.
+#
+# To use this shell, you must have the Nix package manager installed on your
+# system. See https://nixos.org/download/. Available for Linux, macOS, and WSL2.
+#
+# Usage: Run `nix-shell` in the root directory of this repository. You will then
+# be dropped into a new shell with all programs and dependencies available.
+#
+# To update dependencies, run ./tools/nix/update.py.
+
 let
   sources = import ./tools/nix/npins;
   fenix = import sources.fenix { inherit pkgs; };
@@ -39,15 +52,20 @@ let
   };
 
   # Use mold linker to speed up builds
-  mkShellMold = pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; };
+  mkShell =
+    if !pkgs.stdenv.isDarwin then
+      pkgs.mkShell.override { stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv; }
+    else
+      pkgs.mkShell;
 in
-mkShellMold {
+mkShell {
   buildInputs = [
     # Rust toolchain
     cargo-wrapper # should be before rust-combined
     rust-combined
 
     # Crates' build dependencies
+    pkgs.iconv # for libc on darwin
     pkgs.libunwind # for unwind-sys
     pkgs.pkg-config # for unwind-sys and other deps
     pkgs.protobuf # for prost-wkt-types
@@ -55,12 +73,14 @@ mkShellMold {
 
     # For tests and tools
     pkgs.cargo-nextest # mentioned in .github/workflows/rust.yml
+    pkgs.ccache # mentioned in shellHook
     pkgs.curl # used in ./tests
     pkgs.gnuplot # optional runtime dep for criterion
     pkgs.jq # used in ./tests and ./tools
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
     pkgs.poetry # used to update poetry.lock
+    pkgs.sccache # mentioned in shellHook
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
@@ -69,7 +89,6 @@ mkShellMold {
 
   shellHook = ''
     # Caching for C/C++ deps, particularly for librocksdb-sys
-    PATH="${pkgs.ccache}/bin:$PATH"
     export CC="ccache $CC"
     export CXX="ccache $CXX"
 
@@ -80,6 +99,14 @@ mkShellMold {
     # Caching for lindera-unidic
     [ "''${LINDERA_CACHE+x}" ] ||
       export LINDERA_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/lindera"
+
+    # Fix for older macOS
+    # https://github.com/rust-rocksdb/rust-rocksdb/issues/776
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      export CFLAGS="-mmacosx-version-min=10.13"
+      export CXXFLAGS="-mmacosx-version-min=10.13"
+      export MACOSX_DEPLOYMENT_TARGET="10.13"
+    fi
 
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000

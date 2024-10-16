@@ -89,7 +89,13 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
     } else {
         vec![]
     };
-    let db = DB::open_cf(&db_options(), path, existing_column_families)?;
+    let options = db_options();
+    // Make sure that all column families have the same options
+    let column_with_options = existing_column_families
+        .into_iter()
+        .map(|cf| (cf, options.clone()))
+        .collect::<Vec<_>>();
+    let db = DB::open_cf_with_opts(&db_options(), path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
@@ -122,6 +128,16 @@ impl DatabaseColumnWrapper {
         db.get_cf(cf_handle, key)
             .map_err(|err| OperationError::service_error(format!("RocksDB get_cf error: {err}")))?
             .ok_or_else(|| OperationError::service_error("RocksDB get_cf error: key not found"))
+    }
+
+    pub fn get_opt<K>(&self, key: K) -> OperationResult<Option<Vec<u8>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        let db = self.database.read();
+        let cf_handle = self.get_column_family(&db)?;
+        db.get_cf(cf_handle, key)
+            .map_err(|err| OperationError::service_error(format!("RocksDB get_cf error: {err}")))
     }
 
     pub fn get_pinned<T, F>(&self, key: &[u8], f: F) -> OperationResult<Option<T>>

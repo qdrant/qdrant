@@ -1,5 +1,3 @@
-mod test_search_aggregation;
-
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -18,7 +16,9 @@ use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
 use crate::collection_manager::segments_updater::upsert_points;
-use crate::operations::point_ops::PointStruct;
+use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+
+mod test_search_aggregation;
 
 fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> SegmentId {
     let mut write_segments = segments.write();
@@ -69,14 +69,14 @@ fn test_update_proxy_segments() {
 
     for i in 1..10 {
         let points = vec![
-            PointStruct {
+            PointStructPersisted {
                 id: (100 * i + 1).into(),
-                vector: VectorStructInternal::from(vectors[0].clone()).into(),
+                vector: VectorStructPersisted::from(VectorStructInternal::from(vectors[0].clone())),
                 payload: None,
             },
-            PointStruct {
+            PointStructPersisted {
                 id: (100 * i + 2).into(),
-                vector: VectorStructInternal::from(vectors[1].clone()).into(),
+                vector: VectorStructPersisted::from(VectorStructInternal::from(vectors[1].clone())),
                 payload: None,
             },
         ];
@@ -118,14 +118,14 @@ fn test_move_points_to_copy_on_write() {
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
     let points = vec![
-        PointStruct {
+        PointStructPersisted {
             id: 1.into(),
-            vector: VectorStructInternal::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::from(vec![0.0, 0.0, 0.0, 0.0]),
             payload: None,
         },
-        PointStruct {
+        PointStructPersisted {
             id: 2.into(),
-            vector: VectorStructInternal::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::from(vec![0.0, 0.0, 0.0, 0.0]),
             payload: None,
         },
     ];
@@ -133,14 +133,14 @@ fn test_move_points_to_copy_on_write() {
     upsert_points(&segments.read(), 1001, &points).unwrap();
 
     let points = vec![
-        PointStruct {
+        PointStructPersisted {
             id: 2.into(),
-            vector: VectorStructInternal::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::from(vec![0.0, 0.0, 0.0, 0.0]),
             payload: None,
         },
-        PointStruct {
+        PointStructPersisted {
             id: 3.into(),
-            vector: VectorStructInternal::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::from(vec![0.0, 0.0, 0.0, 0.0]),
             payload: None,
         },
     ];
@@ -220,9 +220,11 @@ fn test_upsert_points_in_smallest_segment() {
     let segments = Arc::new(RwLock::new(holder));
 
     let points: Vec<_> = (1000..1010)
-        .map(|id| PointStruct {
+        .map(|id| PointStructPersisted {
             id: id.into(),
-            vector: VectorStructInternal::from(vec![0.0, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStructPersisted::from(VectorStructInternal::from(vec![
+                0.0, 0.0, 0.0, 0.0,
+            ])),
             payload: None,
         })
         .collect();

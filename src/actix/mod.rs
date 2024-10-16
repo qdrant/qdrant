@@ -19,6 +19,7 @@ use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Res
 use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
 use collection::operations::validation;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 
@@ -61,12 +62,16 @@ pub fn init(
     logger_handle: LoggerHandle,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
         let auth_keys = AuthKeys::try_create(
             &settings.service,
-            dispatcher.toc(&Access::full("For JWT validation")).clone(),
+            dispatcher
+                .toc(&Access::full("For JWT validation"), &pass)
+                .clone(),
         );
         let upload_dir = dispatcher
-            .toc(&Access::full("For upload dir"))
+            .toc(&Access::full("For upload dir"), &pass)
             .upload_dir()
             .unwrap();
         let dispatcher_data = web::Data::from(dispatcher);

@@ -11,7 +11,7 @@ use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStruct, WriteOrdering,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, WriteOrdering,
 };
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -337,7 +337,7 @@ async fn drive_down(
             let points: Result<Vec<_>, _> = points
                 .into_iter()
                 .filter(|point| hashring.is_in_shard(&point.id, target_shard_id))
-                .map(PointStruct::try_from)
+                .map(PointStructPersisted::try_from)
                 .collect();
             let points = points.map_err(|err| {
                 CollectionError::service_error(format!(

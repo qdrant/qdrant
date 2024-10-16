@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -36,6 +38,18 @@ pub trait PayloadStorage {
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
+
+    /// Iterate over all stored payload and apply the provided callback.
+    /// Stop iteration if callback returns false or error.
+    ///
+    /// Required for building payload index.
+    fn iter<F>(&self, callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
+
+    /// Return all files that are used by storage to include in snapshots.
+    /// RocksDB storages are captured outside of this trait.
+    fn files(&self) -> Vec<PathBuf>;
 }
 
 pub trait ConditionChecker {

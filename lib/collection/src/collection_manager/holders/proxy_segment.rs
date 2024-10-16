@@ -13,15 +13,15 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
-use segment::data_types::vectors::{QueryVector, Vector};
+use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
-    WithVector,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
+    SnapshotFormat, WithPayload, WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -31,6 +31,7 @@ type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
 type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 
 /// This object is a wrapper around read-only segment.
+///
 /// It could be used to provide all read and write operations while wrapped segment is being optimized (i.e. not available for writing)
 /// It writes all changed records into a temporary `write_segment` and keeps track on changed points
 #[derive(Debug)]
@@ -532,7 +533,11 @@ impl SegmentEntry for ProxySegment {
             .clear_payload(op_num, point_id)
     }
 
-    fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
+    fn vector(
+        &self,
+        vector_name: &str,
+        point_id: PointIdType,
+    ) -> OperationResult<Option<VectorInternal>> {
         return if self.deleted_points.read().contains(&point_id) {
             self.write_segment
                 .get()
@@ -793,25 +798,25 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
-        let wrapped_size = self
-            .wrapped_segment
-            .get()
-            .read()
-            .available_vectors_size_in_bytes(vector_name)?;
-        let wrapped_count = self.wrapped_segment.get().read().available_point_count();
-        let write_size = self
-            .write_segment
-            .get()
-            .read()
-            .available_vectors_size_in_bytes(vector_name)?;
-        let write_count = self.write_segment.get().read().available_point_count();
-        let deleted_points_count = self.deleted_points.read().len();
+        let wrapped_segment = self.wrapped_segment.get();
+        let wrapped_segment_guard = wrapped_segment.read();
+        let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;
+        let wrapped_count = wrapped_segment_guard.available_point_count();
+        drop(wrapped_segment_guard);
+
+        let write_segment = self.write_segment.get();
+        let write_segment_guard = write_segment.read();
+        let write_size = write_segment_guard.available_vectors_size_in_bytes(vector_name)?;
+        let write_count = write_segment_guard.available_point_count();
+        drop(write_segment_guard);
+
         let stored_points = wrapped_count + write_count;
-        let avaliable_points = stored_points.saturating_sub(deleted_points_count);
         // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
         if stored_points > 0 {
+            let deleted_points_count = self.deleted_points.read().len();
+            let available_points = stored_points.saturating_sub(deleted_points_count);
             Ok(
-                ((wrapped_size as u128 + write_size as u128) * avaliable_points as u128
+                ((wrapped_size as u128 + write_size as u128) * available_points as u128
                     / stored_points as u128) as usize,
             )
         } else {
@@ -1071,22 +1076,27 @@ impl SegmentEntry for ProxySegment {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
 
         // snapshot wrapped segment data into the temporary dir
-        self.wrapped_segment
-            .get()
-            .read()
-            .take_snapshot(temp_path, tar, snapshotted_segments)?;
+        self.wrapped_segment.get().read().take_snapshot(
+            temp_path,
+            tar,
+            format,
+            snapshotted_segments,
+        )?;
 
         // snapshot write_segment
         // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
-        self.write_segment
-            .get()
-            .read()
-            .take_snapshot(temp_path, tar, snapshotted_segments)?;
+        self.write_segment.get().read().take_snapshot(
+            temp_path,
+            tar,
+            format,
+            snapshotted_segments,
+        )?;
 
         Ok(())
     }
@@ -1560,15 +1570,25 @@ mod tests {
 
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
         eprintln!("Snapshot into {:?}", snapshot_file.path());
-        let tar = tar_ext::BuilderExt::new(File::create(&snapshot_file).unwrap());
+        let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let temp_dir2 = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let mut snapshotted_segments = HashSet::new();
         proxy_segment
-            .take_snapshot(temp_dir.path(), &tar, &mut snapshotted_segments)
+            .take_snapshot(
+                temp_dir.path(),
+                &tar,
+                SnapshotFormat::Regular,
+                &mut snapshotted_segments,
+            )
             .unwrap();
         proxy_segment2
-            .take_snapshot(temp_dir2.path(), &tar, &mut snapshotted_segments)
+            .take_snapshot(
+                temp_dir2.path(),
+                &tar,
+                SnapshotFormat::Regular,
+                &mut snapshotted_segments,
+            )
             .unwrap();
         tar.blocking_finish().unwrap();
 

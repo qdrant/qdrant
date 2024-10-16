@@ -2,6 +2,7 @@ use std::ops::Deref as _;
 use std::path::Path;
 
 use common::tar_ext;
+use segment::types::SnapshotFormat;
 
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -16,12 +17,15 @@ impl ShardReplicaSet {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
-            local.create_snapshot(temp_path, tar, save_wal).await?
+            local
+                .create_snapshot(temp_path, tar, format, save_wal)
+                .await?
         }
 
         self.replica_state

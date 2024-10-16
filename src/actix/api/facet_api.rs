@@ -26,7 +26,14 @@ async fn facet(
         shard_key,
     } = request.into_inner();
 
-    let pass = match check_strict_mode(&facet_request, &collection.name, &dispatcher, &access).await
+    let pass = match check_strict_mode(
+        &facet_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
     {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, timing),
@@ -40,7 +47,7 @@ async fn facet(
     };
 
     let response = dispatcher
-        .toc_new(&access, &pass)
+        .toc(&access, &pass)
         .facet(
             &collection.name,
             facet_params,

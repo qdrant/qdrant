@@ -78,6 +78,7 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 //
 
 /// A set of shard replicas.
+///
 /// Handles operations so that the state is consistent across all the replicas of the shard.
 /// Prefers local shard for read-only operations.
 /// Perform updates on all replicas and report error if there is at least one failure.
@@ -986,6 +987,15 @@ impl ShardReplicaSet {
     pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
         SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
+
+    pub(crate) async fn trigger_optimizers(&self) -> bool {
+        let shard = self.local.read().await;
+        let Some(shard) = shard.as_ref() else {
+            return false;
+        };
+        shard.trigger_optimizers().await;
+        true
+    }
 }
 
 /// Represents a replica set state
@@ -1063,18 +1073,17 @@ pub enum ReplicaState {
 }
 
 impl ReplicaState {
-    /// Check whether the replica state is active or listener.
-    pub fn is_active_or_listener(self) -> bool {
+    /// Check whether the replica state is active or listener or resharding.
+    pub fn is_active_or_listener_or_resharding(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Active | ReplicaState::Listener => true,
+            ReplicaState::Active | ReplicaState::Listener | ReplicaState::Resharding => true,
 
             ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery
-            | ReplicaState::Resharding => false,
+            | ReplicaState::Recovery => false,
         }
     }
 

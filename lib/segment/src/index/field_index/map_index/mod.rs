@@ -40,6 +40,7 @@ pub mod mmap_map_index;
 pub mod mutable_map_index;
 
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
+pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
 pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
     type Owned: Borrow<Self> + Hash + Eq + Clone + FromStr + Default;
@@ -78,7 +79,7 @@ pub enum MapIndex<N: MapIndexKey + ?Sized> {
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N> {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
+    pub fn new_memory(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
         } else {
@@ -198,7 +199,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdRefIter<'_>)> + '_> {
+    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdIter<'_>)> + '_> {
         match self {
             MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
@@ -1088,11 +1089,13 @@ mod tests {
     ) -> MapIndex<N> {
         let mut index = match index_type {
             IndexType::Mutable => {
-                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
+                MapIndex::<N>::new_memory(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
             }
-            IndexType::Immutable => {
-                MapIndex::<N>::new(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, false)
-            }
+            IndexType::Immutable => MapIndex::<N>::new_memory(
+                open_db_with_existing_cf(path).unwrap(),
+                FIELD_NAME,
+                false,
+            ),
             IndexType::Mmap => MapIndex::<N>::new_mmap(path).unwrap(),
         };
         index.load_from_db().unwrap();

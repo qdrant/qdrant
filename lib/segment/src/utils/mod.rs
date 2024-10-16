@@ -3,4 +3,3 @@ pub mod fs;
 pub mod mem;
 pub mod path;
 pub mod scored_point_ties;
-pub mod tar;

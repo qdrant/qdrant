@@ -549,6 +549,9 @@ pub struct UpdateCollection {
     /// New sparse vector parameters
     #[prost(message, optional, tag = "8")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// New strict mode configuration
+    #[prost(message, optional, tag = "9")]
+    pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -693,7 +696,11 @@ pub struct FloatIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GeoIndexParams {}
+pub struct GeoIndexParams {
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "1")]
+    pub on_disk: ::core::option::Option<bool>,
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3820,20 +3827,120 @@ pub struct SparseIndices {
     #[prost(uint32, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u32>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Document {
+    /// Text of the document
+    #[prost(string, tag = "1")]
+    pub text: ::prost::alloc::string::String,
+    /// Model name
+    #[prost(string, optional, tag = "3")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    /// Model options
+    #[prost(map = "string, message", tag = "4")]
+    pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Image {
+    /// Image data, either base64 encoded or URL
+    #[prost(string, tag = "1")]
+    pub image: ::prost::alloc::string::String,
+    /// Model name
+    #[prost(string, optional, tag = "2")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    /// Model options
+    #[prost(map = "string, message", tag = "3")]
+    pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InferenceObject {
+    /// Object to infer
+    #[prost(message, optional, tag = "1")]
+    pub object: ::core::option::Option<Value>,
+    /// Model name
+    #[prost(string, optional, tag = "2")]
+    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    /// Model options
+    #[prost(map = "string, message", tag = "3")]
+    pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
 /// Legacy vector format, which determines the vector type by the configuration of its fields.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
-    /// Vector data (flatten for multi vectors)
+    /// Vector data (flatten for multi vectors), deprecated
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
-    /// Sparse indices for sparse vectors
+    /// Sparse indices for sparse vectors, deprecated
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
-    /// Number of vectors per multi vector
+    /// Number of vectors per multi vector, deprecated
     #[prost(uint32, optional, tag = "3")]
     pub vectors_count: ::core::option::Option<u32>,
+    #[prost(oneof = "vector::Vector", tags = "101, 102, 103, 104, 105, 106")]
+    pub vector: ::core::option::Option<vector::Vector>,
+}
+/// Nested message and enum types in `Vector`.
+pub mod vector {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Vector {
+        /// Dense vector
+        #[prost(message, tag = "101")]
+        Dense(super::DenseVector),
+        /// Sparse vector
+        #[prost(message, tag = "102")]
+        Sparse(super::SparseVector),
+        /// Multi dense vector
+        #[prost(message, tag = "103")]
+        MultiDense(super::MultiDenseVector),
+        #[prost(message, tag = "104")]
+        Document(super::Document),
+        #[prost(message, tag = "105")]
+        Image(super::Image),
+        #[prost(message, tag = "106")]
+        Object(super::InferenceObject),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorOutput {
+    /// Vector data (flatten for multi vectors), deprecated
+    #[prost(float, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+    /// Sparse indices for sparse vectors, deprecated
+    #[prost(message, optional, tag = "2")]
+    pub indices: ::core::option::Option<SparseIndices>,
+    /// Number of vectors per multi vector, deprecated
+    #[prost(uint32, optional, tag = "3")]
+    pub vectors_count: ::core::option::Option<u32>,
+    #[prost(oneof = "vector_output::Vector", tags = "101, 102, 103")]
+    pub vector: ::core::option::Option<vector_output::Vector>,
+}
+/// Nested message and enum types in `VectorOutput`.
+pub mod vector_output {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Vector {
+        /// Dense vector
+        #[prost(message, tag = "101")]
+        Dense(super::DenseVector),
+        /// Sparse vector
+        #[prost(message, tag = "102")]
+        Sparse(super::SparseVector),
+        /// Multi dense vector
+        #[prost(message, tag = "103")]
+        MultiDense(super::MultiDenseVector),
+    }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3863,7 +3970,7 @@ pub struct MultiDenseVector {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorInput {
-    #[prost(oneof = "vector_input::Variant", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "vector_input::Variant", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub variant: ::core::option::Option<vector_input::Variant>,
 }
 /// Nested message and enum types in `VectorInput`.
@@ -3880,6 +3987,12 @@ pub mod vector_input {
         Sparse(super::SparseVector),
         #[prost(message, tag = "4")]
         MultiDense(super::MultiDenseVector),
+        #[prost(message, tag = "5")]
+        Document(super::Document),
+        #[prost(message, tag = "6")]
+        Image(super::Image),
+        #[prost(message, tag = "7")]
+        Object(super::InferenceObject),
     }
 }
 #[derive(serde::Serialize)]
@@ -4188,6 +4301,16 @@ pub struct NamedVectors {
     #[validate(nested)]
     pub vectors: ::std::collections::HashMap<::prost::alloc::string::String, Vector>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NamedVectorsOutput {
+    #[prost(map = "string, message", tag = "1")]
+    pub vectors: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        VectorOutput,
+    >,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4207,6 +4330,25 @@ pub mod vectors {
         Vector(super::Vector),
         #[prost(message, tag = "2")]
         Vectors(super::NamedVectors),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorsOutput {
+    #[prost(oneof = "vectors_output::VectorsOptions", tags = "1, 2")]
+    pub vectors_options: ::core::option::Option<vectors_output::VectorsOptions>,
+}
+/// Nested message and enum types in `VectorsOutput`.
+pub mod vectors_output {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum VectorsOptions {
+        #[prost(message, tag = "1")]
+        Vector(super::VectorOutput),
+        #[prost(message, tag = "2")]
+        Vectors(super::NamedVectorsOutput),
     }
 }
 #[derive(serde::Serialize)]
@@ -5099,7 +5241,7 @@ pub struct FacetCounts {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetValue {
-    #[prost(oneof = "facet_value::Variant", tags = "1, 2")]
+    #[prost(oneof = "facet_value::Variant", tags = "1, 2, 3")]
     pub variant: ::core::option::Option<facet_value::Variant>,
 }
 /// Nested message and enum types in `FacetValue`.
@@ -5114,6 +5256,9 @@ pub mod facet_value {
         /// Integer value from the facet
         #[prost(int64, tag = "2")]
         IntegerValue(i64),
+        /// Boolean value from the facet
+        #[prost(bool, tag = "3")]
+        BoolValue(bool),
     }
 }
 #[derive(serde::Serialize)]
@@ -5425,7 +5570,7 @@ pub struct ScoredPoint {
     pub version: u64,
     /// Vectors to search
     #[prost(message, optional, tag = "6")]
-    pub vectors: ::core::option::Option<Vectors>,
+    pub vectors: ::core::option::Option<VectorsOutput>,
     /// Shard key
     #[prost(message, optional, tag = "7")]
     pub shard_key: ::core::option::Option<ShardKey>,
@@ -5585,7 +5730,7 @@ pub struct RetrievedPoint {
     #[prost(map = "string, message", tag = "2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
     #[prost(message, optional, tag = "4")]
-    pub vectors: ::core::option::Option<Vectors>,
+    pub vectors: ::core::option::Option<VectorsOutput>,
     /// Shard key
     #[prost(message, optional, tag = "5")]
     pub shard_key: ::core::option::Option<ShardKey>,
@@ -9263,7 +9408,7 @@ pub struct FacetCountsInternal {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FacetValueInternal {
-    #[prost(oneof = "facet_value_internal::Variant", tags = "1, 2, 3")]
+    #[prost(oneof = "facet_value_internal::Variant", tags = "1, 2, 3, 4")]
     pub variant: ::core::option::Option<facet_value_internal::Variant>,
 }
 /// Nested message and enum types in `FacetValueInternal`.
@@ -9278,6 +9423,8 @@ pub mod facet_value_internal {
         IntegerValue(i64),
         #[prost(bytes, tag = "3")]
         UuidValue(::prost::alloc::vec::Vec<u8>),
+        #[prost(bool, tag = "4")]
+        BoolValue(bool),
     }
 }
 #[derive(serde::Serialize)]

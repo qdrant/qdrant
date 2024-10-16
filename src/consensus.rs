@@ -207,7 +207,7 @@ impl Consensus {
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
-                uri,
+                uri.clone(),
                 p2p_port,
                 &config,
                 tls_config.clone(),
@@ -260,6 +260,10 @@ impl Consensus {
             config,
             broker,
         };
+
+        if !state_ref.is_new_deployment() {
+            state_ref.recover_first_voter()?;
+        }
 
         Ok((consensus, sender))
     }
@@ -442,14 +446,21 @@ impl Consensus {
         // Only first peer has itself as a voter in the initial conf state.
         // This needs to be propagated manually to other peers as it is not contained in any log entry.
         // So we skip the learner phase for the first peer.
-        state_ref.set_first_voter(all_peers.first_peer_id);
+        state_ref.set_first_voter(all_peers.first_peer_id)?;
         state_ref.set_conf_state(ConfState::from((vec![all_peers.first_peer_id], vec![])))?;
         Ok(())
     }
 
     pub fn start(&mut self) -> anyhow::Result<()> {
-        let tick_period = Duration::from_millis(self.config.tick_period_ms);
+        // If this is the only peer in the cluster, tick Raft node a few times to instantly
+        // self-elect itself as Raft leader
+        if self.node.store().peer_count() == 1 {
+            while !self.node.has_ready() {
+                self.node.tick();
+            }
+        }
 
+        let tick_period = Duration::from_millis(self.config.tick_period_ms);
         let mut previous_tick = Instant::now();
 
         loop {
@@ -489,6 +500,34 @@ impl Consensus {
     ) -> anyhow::Result<Option<usize>> {
         if previous_tick.elapsed() >= tick_period {
             return Ok(None);
+        }
+
+        match self.try_add_origin() {
+            // `try_add_origin` is not applicable:
+            // - either current peer is not an origin peer
+            // - or cluster is already established
+            Ok(false) => (),
+
+            // Successfully proposed origin peer to consensus, return to consensus loop to handle `on_ready`
+            Ok(true) => return Ok(Some(1)),
+
+            // Origin peer is not a leader yet, wait for the next tick and return to consensus loop
+            // to tick Raft node
+            Err(err @ TryAddOriginError::NotLeader) => {
+                log::debug!("{err}");
+
+                let next_tick = previous_tick + tick_period;
+                let duration_until_next_tick = next_tick.saturating_duration_since(Instant::now());
+                thread::sleep(duration_until_next_tick);
+
+                return Ok(None);
+            }
+
+            // Failed to propose origin peer ID to consensus (which should never happen!),
+            // log error and continue regular consensus loop
+            Err(err) => {
+                log::error!("{err}");
+            }
         }
 
         if self
@@ -651,6 +690,65 @@ impl Consensus {
             }
         }
         Ok(())
+    }
+
+    /// Tries to propose "origin peer" (the very first peer, that starts new cluster) to consensus
+    fn try_add_origin(&mut self) -> Result<bool, TryAddOriginError> {
+        // We can determine origin peer from consensus state:
+        // - it should be the only peer in the cluster
+        // - and its commit index should be at 0 or 1
+        //
+        // When we add a new node to existing cluster, we have to bootstrap it from existing cluster
+        // node, and during bootstrap we explicitly add all current peers to consensus state. So,
+        // *all* peers added to the cluster after the origin will always have at least two peers.
+        //
+        // When origin peer starts new cluster, it self-elects itself as a leader and commits empty
+        // operation with index 1. It is impossible to commit anything to consensus before this
+        // operation is committed. And to add another (second/third/etc) peer to the cluster, we
+        // have to commit a conf-change operation. Which means that only origin peer can ever be at
+        // commit index 0 or 1.
+
+        // Check that we are the only peer in the cluster
+        if self.node.store().peer_count() > 1 {
+            return Ok(false);
+        }
+
+        let status = self.node.status();
+
+        // Check that we are at index 0 or 1
+        if status.hs.commit > 1 {
+            return Ok(false);
+        }
+
+        // If we reached this point, we are the origin peer, but it's impossible to propose anything
+        // to consensus, before leader is elected (`propose_conf_change` will return an error),
+        // so we have to wait for a few ticks for self-election
+        if status.ss.raft_state != StateRole::Leader {
+            return Err(TryAddOriginError::NotLeader);
+        }
+
+        // Propose origin peer to consensus
+        let mut change = ConfChangeV2::default();
+
+        change.set_changes(vec![raft_proto::new_conf_change_single(
+            status.id,
+            ConfChangeType::AddNode,
+        )]);
+
+        let peer_uri = self
+            .node
+            .store()
+            .persistent
+            .read()
+            .peer_address_by_id
+            .read()
+            .get(&status.id)
+            .ok_or_else(|| TryAddOriginError::UriNotFound)?
+            .to_string();
+
+        self.node.propose_conf_change(peer_uri.into(), change)?;
+
+        Ok(true)
     }
 
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
@@ -855,6 +953,18 @@ enum TryRecvUpdateError {
 
     #[error("channel closed")]
     Closed,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum TryAddOriginError {
+    #[error("origin peer is not a leader")]
+    NotLeader,
+
+    #[error("origin peer URI not found")]
+    UriNotFound,
+
+    #[error("failed to propose origin peer URI to consensus: {0}")]
+    RaftError(#[from] raft::Error),
 }
 
 /// This function actually applies the committed entries to the state machine.
@@ -1316,8 +1426,8 @@ mod tests {
         });
         // Wait for Raft to establish the leader
         is_leader_established.await_ready();
-        // Leader election produces a raft log entry
-        assert_eq!(consensus_state.hard_state().commit, 1);
+        // Leader election produces a raft log entry, and then origin peer adds itself to consensus
+        assert_eq!(consensus_state.hard_state().commit, 2);
         // Initially there are 0 collections
         assert_eq!(toc_arc.all_collections_sync().len(), 0);
 
@@ -1354,7 +1464,7 @@ mod tests {
             .unwrap();
 
         // Then
-        assert_eq!(consensus_state.hard_state().commit, 4); // Collection + 2 of shard activations
+        assert_eq!(consensus_state.hard_state().commit, 5); // first peer self-election + add first peer + create collection + activate shard x2
         assert_eq!(toc_arc.all_collections_sync(), vec!["test"]);
     }
 }

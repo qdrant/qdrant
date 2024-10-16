@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
 use lazy_static::lazy_static;
-use segment::types::QuantizationConfig;
+use segment::types::{QuantizationConfig, StrictModeConfig};
 use semver::Version;
 
 use super::Collection;
@@ -156,6 +156,23 @@ impl Collection {
                 QuantizationConfigDiff::Disabled(_) => {
                     config.quantization_config = None;
                 }
+            }
+        }
+        self.collection_config.read().await.save(&self.path)?;
+        Ok(())
+    }
+
+    /// Updates the strict mode configuration and saves it to disk.
+    pub async fn update_strict_mode_config(
+        &self,
+        strict_mode_diff: StrictModeConfig,
+    ) -> CollectionResult<()> {
+        {
+            let mut config = self.collection_config.write().await;
+            if let Some(current_config) = config.strict_mode_config.as_mut() {
+                *current_config = strict_mode_diff.update(current_config)?;
+            } else {
+                config.strict_mode_config = Some(strict_mode_diff);
             }
         }
         self.collection_config.read().await.save(&self.path)?;

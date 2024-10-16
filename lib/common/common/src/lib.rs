@@ -7,6 +7,7 @@ pub mod math;
 pub mod mmap_hashmap;
 pub mod panic;
 pub mod tar_ext;
+pub mod tempfile_ext;
 pub mod top_k;
 pub mod types;
 pub mod validation;

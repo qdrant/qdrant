@@ -15,6 +15,7 @@ use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
 };
+use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
@@ -235,8 +236,11 @@ pub async fn do_update_collection_cluster(
         Ok(())
     };
 
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+
     let collection = dispatcher
-        .toc(&access)
+        .toc(&access, &pass)
         .get_collection(&collection_pass)
         .await?;
 

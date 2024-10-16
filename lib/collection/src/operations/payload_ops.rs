@@ -30,7 +30,7 @@ pub struct SetPayload {
 ///
 /// Unlike `SetPayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SetPayloadOp {
     pub payload: Payload,
     /// Assigns payload to each point in this list
@@ -98,7 +98,7 @@ pub struct DeletePayload {
 ///
 /// Unlike `DeletePayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct DeletePayloadOp {
     /// List of payload keys to remove from payload
     pub keys: Vec<PayloadKeyType>,
@@ -191,18 +191,6 @@ where
 {
     if let Some(vec) = vec {
         vec.retain(filter);
-    }
-}
-
-impl Validate for PayloadOps {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            PayloadOps::SetPayload(operation) => operation.validate(),
-            PayloadOps::DeletePayload(operation) => operation.validate(),
-            PayloadOps::ClearPayload { .. } => Ok(()),
-            PayloadOps::ClearPayloadByFilter(_) => Ok(()),
-            PayloadOps::OverwritePayload(operation) => operation.validate(),
-        }
     }
 }
 

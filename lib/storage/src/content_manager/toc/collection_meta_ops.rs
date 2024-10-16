@@ -126,6 +126,7 @@ impl TableOfContent {
             optimizers_config,
             quantization_config,
             sparse_vectors,
+            strict_mode_config: strict_mode,
         } = operation.update_collection;
         let collection = self
             .get_collection_unchecked(&operation.collection_name)
@@ -160,6 +161,9 @@ impl TableOfContent {
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
+        }
+        if let Some(strict_mode) = strict_mode {
+            collection.update_strict_mode_config(strict_mode).await?;
         }
 
         // Recreate optimizers
@@ -297,7 +301,7 @@ impl TableOfContent {
 
         match operation {
             ReshardingOperation::Start(key) => {
-                let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                let consensus = match self.toc_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(
@@ -395,7 +399,7 @@ impl TableOfContent {
         };
         let key = resharding_state.key();
 
-        let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+        let consensus = match self.toc_dispatcher.lock().as_ref() {
             Some(consensus) => Box::new(consensus.clone()),
             None => {
                 return Err(StorageError::service_error(
@@ -512,7 +516,7 @@ impl TableOfContent {
                     }
                 };
 
-                let shard_consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                let shard_consensus = match self.toc_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
                         return Err(StorageError::service_error(

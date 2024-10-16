@@ -5,7 +5,7 @@ use std::time::Duration;
 use api::rest::ShardKeySelector;
 use futures::future::try_join_all;
 use futures::Future;
-use segment::data_types::vectors::{Vector, VectorRef};
+use segment::data_types::vectors::{VectorInternal, VectorRef};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
 
@@ -15,11 +15,11 @@ use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
+    CollectionError, CollectionResult, PointRequestInternal, RecommendExample, RecordInternal,
 };
 use crate::operations::universal_query::collection_query;
 use crate::operations::universal_query::collection_query::{
-    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInput,
+    CollectionQueryRequest, CollectionQueryResolveRequest, VectorInputInternal,
 };
 
 pub async fn retrieve_points(
@@ -29,7 +29,7 @@ pub async fn retrieve_points(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-) -> CollectionResult<Vec<Record>> {
+) -> CollectionResult<Vec<RecordInternal>> {
     collection
         .retrieve(
             PointRequestInternal {
@@ -56,7 +56,7 @@ pub async fn retrieve_points_with_locked_collection(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-) -> CollectionResult<Vec<Record>> {
+) -> CollectionResult<Vec<RecordInternal>> {
     match collection_holder {
         CollectionRefHolder::Ref(collection) => {
             retrieve_points(
@@ -85,6 +85,8 @@ pub async fn retrieve_points_with_locked_collection(
 
 pub type CollectionName = String;
 
+/// This is a temporary structure, which holds resolved references to vectors,
+/// mentioned in the query.
 ///
 ///  ┌──────────────┐
 ///  │              │  -> Batch request
@@ -104,19 +106,17 @@ pub type CollectionName = String;
 ///  │                              │
 ///  └──────────────────────────────┘
 ///
-/// This is a temporary structure, which holds resolved references to vectors,
-/// mentioned in the query.
 #[derive(Default, Debug)]
 pub struct ReferencedVectors {
-    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
-    default_mapping: HashMap<PointIdType, Record>,
+    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, RecordInternal>>,
+    default_mapping: HashMap<PointIdType, RecordInternal>,
 }
 
 impl ReferencedVectors {
     pub fn extend(
         &mut self,
         collection_name: Option<CollectionName>,
-        mapping: impl IntoIterator<Item = (PointIdType, Record)>,
+        mapping: impl IntoIterator<Item = (PointIdType, RecordInternal)>,
     ) {
         match collection_name {
             None => self.default_mapping.extend(mapping),
@@ -141,7 +141,7 @@ impl ReferencedVectors {
         &self,
         lookup_collection_name: Option<&CollectionName>,
         point_id: PointIdType,
-    ) -> Option<&Record> {
+    ) -> Option<&RecordInternal> {
         match lookup_collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
@@ -157,11 +157,11 @@ impl ReferencedVectors {
         &'a self,
         collection_name: Option<&'a String>,
         vector_name: &str,
-        vector_input: VectorInput,
-    ) -> Option<Vector> {
+        vector_input: VectorInputInternal,
+    ) -> Option<VectorInternal> {
         match vector_input {
-            VectorInput::Vector(vector) => Some(vector),
-            VectorInput::Id(vid) => {
+            VectorInputInternal::Vector(vector) => Some(vector),
+            VectorInputInternal::Id(vid) => {
                 let rec = self.get(collection_name, vid)?;
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
@@ -256,7 +256,8 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                 }
             }
         }
-        let all_reference_vectors: Vec<Vec<Record>> = try_join_all(vector_retrieves).await?;
+        let all_reference_vectors: Vec<Vec<RecordInternal>> =
+            try_join_all(vector_retrieves).await?;
         let mut all_vectors_records_map: ReferencedVectors = Default::default();
 
         for (collection_name, reference_vectors) in
@@ -279,7 +280,7 @@ pub fn convert_to_vectors_owned(
     all_vectors_records_map: &ReferencedVectors,
     vector_name: &str,
     collection_name: Option<&String>,
-) -> Vec<Vector> {
+) -> Vec<VectorInternal> {
     examples
         .into_iter()
         .filter_map(|example| match example {
@@ -376,6 +377,7 @@ where
 }
 
 /// This function is used to build a list of queries to resolve vectors for the given batch of query requests.
+///
 /// For each request, one query is issue for the root request and one query for each nested prefetch.
 /// The resolver queries have no prefetches.
 pub fn build_vector_resolver_queries(

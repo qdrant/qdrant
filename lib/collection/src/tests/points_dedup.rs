@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use api::rest::{OrderByInterface, VectorStruct};
+use api::rest::OrderByInterface;
 use common::cpu::CpuBudget;
 use rand::{thread_rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
@@ -14,7 +14,9 @@ use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
-use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
+use crate::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -105,9 +107,9 @@ async fn fixture() -> Collection {
     for (shard_id, shard) in collection.shards_holder().write().await.get_shards() {
         let op = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
-                PointStruct {
+                PointStructPersisted {
                     id: u64::from(*shard_id).into(),
-                    vector: VectorStruct::Single(
+                    vector: VectorStructPersisted::Single(
                         (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
                     ),
                     payload: Some(Payload(Map::from_iter([(
@@ -115,9 +117,9 @@ async fn fixture() -> Collection {
                         Value::from(-(*shard_id as i32)),
                     )]))),
                 },
-                PointStruct {
+                PointStructPersisted {
                     id: DUPLICATE_POINT_ID,
-                    vector: VectorStruct::Single(
+                    vector: VectorStructPersisted::Single(
                         (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
                     ),
                     payload: Some(Payload(Map::from_iter([(

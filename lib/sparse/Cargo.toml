@@ -25,11 +25,12 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-ordered-float = "4.2"
+ordered-float = "4.3"
 rand = { workspace = true }
 validator = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"

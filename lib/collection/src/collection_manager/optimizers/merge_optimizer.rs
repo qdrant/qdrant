@@ -18,6 +18,7 @@ use crate::config::CollectionParams;
 const BYTES_IN_KB: usize = 1024;
 
 /// Optimizer that tries to reduce number of segments until it fits configured value.
+///
 /// It merges 3 smallest segments into a single large segment.
 /// Merging 3 segments instead of 2 guarantees that after the optimization the number of segments
 /// will be less than before.

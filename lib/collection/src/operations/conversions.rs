@@ -2,28 +2,29 @@ use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::Duration;
 
+use api::conversions::json::{json_path_from_proto, payload_to_proto};
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    from_grpc_dist, json_path_from_proto, payload_to_proto, proto_to_payloads,
+    from_grpc_dist,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
-use api::grpc::qdrant::CreateShardKey;
+use api::grpc::qdrant::{CreateShardKey, Vectors};
 use api::rest::schema::ShardKeySelector;
 use api::rest::BaseGroupRequest;
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
-    BatchVectorStructInternal, NamedQuery, Vector, VectorStructInternal,
+    BatchVectorStructInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
-use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
+use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, StrictModeConfig};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
-use super::config_diff::StrictModeConfig;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
@@ -49,13 +50,14 @@ use crate::operations::config_diff::{
 };
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
-    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
+    BatchPersisted, FilterSelector, PointIdsList, PointStructPersisted, PointsSelector,
+    WriteOrdering,
 };
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
-    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, Record, RemoteShardInfo,
+    LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RecordInternal, RemoteShardInfo,
     ShardTransferInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
 use crate::optimizers_builder::OptimizersConfig;
@@ -120,27 +122,28 @@ pub fn write_ordering_from_proto(
 pub fn try_record_from_grpc(
     point: api::grpc::qdrant::RetrievedPoint,
     with_payload: bool,
-) -> Result<Record, tonic::Status> {
+) -> Result<RecordInternal, tonic::Status> {
     let id = point
         .id
         .ok_or_else(|| tonic::Status::invalid_argument("retrieved point does not have an ID"))?
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(point.payload)?)
     } else {
         debug_assert!(point.payload.is_empty());
         None
     };
 
-    let vector: Option<VectorStructInternal> = point
+    let vector: Option<_> = point
         .vectors
-        .map(|vectors| vectors.try_into())
-        .transpose()?;
+        .map(VectorStructInternal::try_from)
+        .transpose()
+        .map_err(|e| tonic::Status::invalid_argument(format!("Cannot convert vectors: {e}")))?;
 
     let order_value = point.order_value.map(TryFrom::try_from).transpose()?;
 
-    Ok(Record {
+    Ok(RecordInternal {
         id,
         payload,
         vector,
@@ -431,7 +434,9 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
                 }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
-                strict_mode_config: config.strict_mode_config.map(From::from),
+                strict_mode_config: config
+                    .strict_mode_config
+                    .map(api::grpc::qdrant::StrictModeConfig::from),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -441,29 +446,14 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
     }
 }
 
-impl From<StrictModeConfig> for api::grpc::qdrant::StrictModeConfig {
-    fn from(value: StrictModeConfig) -> Self {
-        api::grpc::qdrant::StrictModeConfig {
-            enabled: value.enabled,
-            max_query_limit: value.max_query_limit.map(|i| i as u32),
-            max_timeout: value.max_timeout.map(|i| i as u32),
-            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
-            unindexed_filtering_update: value.unindexed_filtering_update,
-            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as u32),
-            search_allow_exact: value.search_allow_exact,
-            search_max_oversampling: value.search_max_oversampling.map(|i| i as f32),
-        }
-    }
-}
-
-impl From<Record> for api::grpc::qdrant::RetrievedPoint {
-    fn from(record: Record) -> Self {
+impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
+    fn from(record: RecordInternal) -> Self {
         let vectors = record.vector.map(VectorStructInternal::from);
 
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: vectors.map(api::grpc::qdrant::Vectors::from),
+            vectors: vectors.map(api::grpc::qdrant::VectorsOutput::from),
             shard_key: record.shard_key.map(convert_shard_key_to_grpc),
             order_value: record.order_value.map(From::from),
         }
@@ -837,63 +827,20 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     }
 }
 
-impl From<api::grpc::qdrant::StrictModeConfig> for StrictModeConfig {
-    fn from(value: api::grpc::qdrant::StrictModeConfig) -> Self {
-        Self {
-            enabled: value.enabled,
-            max_query_limit: value.max_query_limit.map(|i| i as usize),
-            max_timeout: value.max_timeout.map(|i| i as usize),
-            unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
-            unindexed_filtering_update: value.unindexed_filtering_update,
-            search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
-            search_allow_exact: value.search_allow_exact,
-            search_max_oversampling: value.search_max_oversampling.map(f64::from),
-        }
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
+impl TryFrom<PointStructPersisted> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::PointStruct) -> Result<Self, Self::Error> {
-        let api::grpc::qdrant::PointStruct {
+    fn try_from(value: PointStructPersisted) -> Result<Self, Self::Error> {
+        let PointStructPersisted {
             id,
-            vectors,
+            vector,
             payload,
         } = value;
 
-        // empty payload means None in PointStruct
-        let converted_payload = if payload.is_empty() {
-            None
-        } else {
-            Some(proto_to_payloads(payload)?)
-        };
+        let vectors_internal = VectorStructInternal::try_from(vector)
+            .map_err(|e| Status::invalid_argument(format!("Failed to convert vectors: {e}")))?;
 
-        let vector_struct: VectorStructInternal = match vectors {
-            None => return Err(Status::invalid_argument("Expected some vectors")),
-            Some(vectors) => vectors.try_into()?,
-        };
-
-        Ok(Self {
-            id: id
-                .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
-                .try_into()?,
-            vector: api::rest::VectorStruct::from(vector_struct),
-            payload: converted_payload,
-        })
-    }
-}
-
-impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
-    type Error = Status;
-
-    fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let vectors = VectorStructInternal::from(value.vector);
-        let vectors = api::grpc::qdrant::Vectors::from(vectors);
-
-        let id = value.id;
-        let payload = value.payload;
-
+        let vectors = api::grpc::qdrant::Vectors::from(vectors_internal);
         let converted_payload = match payload {
             None => HashMap::new(),
             Some(payload) => payload_to_proto(payload),
@@ -907,10 +854,10 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     }
 }
 
-impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
+impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
     type Error = Status;
 
-    fn try_from(batch: Batch) -> Result<Self, Self::Error> {
+    fn try_from(batch: BatchPersisted) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
         let batch_vectors = BatchVectorStructInternal::from(batch.vectors);
         let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
@@ -927,7 +874,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vectors: vectors.map(|v| v.into()),
+                vectors: vectors.map(Vectors::from),
                 payload: payload.unwrap_or_default(),
             };
             points.push(point);
@@ -1205,7 +1152,7 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
 
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
-) -> Result<ContextPair<Vector>, Status> {
+) -> Result<ContextPair<VectorInternal>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
             positive: positive.try_into()?,
@@ -1301,20 +1248,23 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
     }
 }
 
-impl From<PointGroup> for api::grpc::qdrant::PointGroup {
-    fn from(group: PointGroup) -> Self {
-        Self {
-            hits: group
-                .hits
-                .into_iter()
-                .map_into::<ScoredPoint>()
-                .map_into()
-                .collect(),
+impl TryFrom<PointGroup> for api::grpc::qdrant::PointGroup {
+    type Error = OperationError;
+    fn try_from(group: PointGroup) -> Result<Self, Self::Error> {
+        let hits: Result<_, _> = group
+            .hits
+            .into_iter()
+            .map(api::grpc::qdrant::ScoredPoint::try_from)
+            .collect();
+
+        Ok(Self {
+            hits: hits?,
             id: Some(group.id.into()),
             lookup: group
                 .lookup
-                .map(|record| api::grpc::qdrant::RetrievedPoint::from(Record::from(record))),
-        }
+                .map(api::grpc::qdrant::RetrievedPoint::try_from)
+                .transpose()?,
+        })
     }
 }
 
@@ -1370,11 +1320,11 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
-        let vector: Vector = value.try_into()?;
+        let vector: VectorInternal = value.try_into()?;
         match vector {
-            Vector::Dense(vector) => Ok(Self::Dense(vector)),
-            Vector::Sparse(vector) => Ok(Self::Sparse(vector)),
-            Vector::MultiDense(_vector) => Err(Status::invalid_argument(
+            VectorInternal::Dense(vector) => Ok(Self::Dense(vector)),
+            VectorInternal::Sparse(vector) => Ok(Self::Sparse(vector)),
+            VectorInternal::MultiDense(_vector) => Err(Status::invalid_argument(
                 "MultiDense vector is not supported in search request",
             )),
         }
@@ -1529,11 +1479,17 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
     }
 }
 
-impl From<GroupsResult> for api::grpc::qdrant::GroupsResult {
-    fn from(value: GroupsResult) -> Self {
-        Self {
-            groups: value.groups.into_iter().map(Into::into).collect(),
-        }
+impl TryFrom<GroupsResult> for api::grpc::qdrant::GroupsResult {
+    type Error = OperationError;
+
+    fn try_from(value: GroupsResult) -> Result<Self, Self::Error> {
+        let groups: Result<_, _> = value
+            .groups
+            .into_iter()
+            .map(api::grpc::qdrant::PointGroup::try_from)
+            .collect();
+
+        Ok(Self { groups: groups? })
     }
 }
 

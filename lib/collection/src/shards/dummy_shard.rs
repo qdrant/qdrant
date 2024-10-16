@@ -7,13 +7,15 @@ use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
+    WithVector,
 };
 use tokio::runtime::Handle;
 
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, ShardStatus, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, ShardStatus,
+    UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -36,6 +38,7 @@ impl DummyShard {
         &self,
         _temp_path: &Path,
         _tar: &tar_ext::BuilderExt,
+        _format: SnapshotFormat,
         _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()
@@ -77,7 +80,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<&OrderBy>,
         _: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }
 
@@ -110,7 +113,7 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: &Handle,
         _: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }
 

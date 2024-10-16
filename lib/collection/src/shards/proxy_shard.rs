@@ -10,8 +10,8 @@ use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, SnapshotFormat, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{oneshot, RwLock};
@@ -23,7 +23,7 @@ use crate::operations::operation_effect::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
@@ -72,15 +72,21 @@ impl ProxyShard {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
-            .create_snapshot(temp_path, tar, save_wal)
+            .create_snapshot(temp_path, tar, format, save_wal)
             .await
     }
 
     pub async fn on_optimizer_config_update(&self) -> CollectionResult<()> {
         self.wrapped_shard.on_optimizer_config_update().await
+    }
+
+    pub fn trigger_optimizers(&self) {
+        // TODO: we might want to defer this trigger until we unproxy
+        self.wrapped_shard.trigger_optimizers();
     }
 
     pub async fn reinit_changelog(&self) -> CollectionResult<()> {
@@ -200,7 +206,7 @@ impl ShardOperation for ProxyShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .scroll_by(
@@ -256,7 +262,7 @@ impl ShardOperation for ProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
             .retrieve(

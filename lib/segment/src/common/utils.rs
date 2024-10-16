@@ -6,7 +6,7 @@ use serde_json::Value;
 use smallvec::SmallVec;
 
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::vectors::Vector;
+use crate::data_types::vectors::VectorInternal;
 use crate::index::field_index::FieldIndex;
 use crate::types::PayloadKeyType;
 
@@ -47,7 +47,7 @@ pub fn merge_map(
     }
 }
 
-pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
+pub fn transpose_map_into_named_vector<TVector: Into<VectorInternal>>(
     map: HashMap<String, Vec<TVector>>,
 ) -> Vec<NamedVectors<'static>> {
     let mut result = Vec::new();

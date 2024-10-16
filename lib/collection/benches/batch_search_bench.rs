@@ -3,7 +3,7 @@ use std::sync::Arc;
 use api::rest::SearchRequestInternal;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
-    PointInsertOperationsInternal, PointOperations, PointStruct,
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
 use collection::operations::types::CoreSearchRequestBatch;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
@@ -36,7 +36,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         payload_map.insert("a".to_string(), (i % 5).into());
         let vector = random_vector(&mut rng, dim);
         let vectors = only_default_vector(&vector);
-        let point = PointStruct {
+        let point = PointStructPersisted {
             id: (i as u64).into(),
             vector: VectorStructInternal::from(vectors).into(),
             payload: Some(Payload(payload_map)),

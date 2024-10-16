@@ -25,7 +25,14 @@ async fn count_points(
         shard_key,
     } = request.into_inner();
 
-    let pass = match check_strict_mode(&count_request, &collection.name, &dispatcher, &access).await
+    let pass = match check_strict_mode(
+        &count_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
     {
         Ok(pass) => pass,
         Err(err) => return process_response_error(err, Instant::now()),
@@ -37,7 +44,7 @@ async fn count_points(
     };
 
     helpers::time(do_count_points(
-        dispatcher.toc_new(&access, &pass),
+        dispatcher.toc(&access, &pass),
         &collection.name,
         count_request,
         params.consistency,

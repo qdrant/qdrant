@@ -176,6 +176,24 @@ impl TableOfContent {
             Some(diff) => Some(diff),
         };
 
+        let strict_mode_config = match strict_mode_config {
+            Some(diff) => {
+                let default_config = self
+                    .storage_config
+                    .collection
+                    .as_ref()
+                    .and_then(|i| i.strict_mode.clone())
+                    .unwrap_or_default();
+                Some(diff.update(&default_config)?)
+            }
+            None => self
+                .storage_config
+                .collection
+                .as_ref()
+                .and_then(|i| i.strict_mode.as_ref())
+                .cloned(),
+        };
+
         let storage_config = self
             .storage_config
             .to_shared_storage_config(self.is_distributed())

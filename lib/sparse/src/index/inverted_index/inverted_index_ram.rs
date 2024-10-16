@@ -60,7 +60,11 @@ impl InvertedIndex for InvertedIndexRam {
 
     fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
         for dim_id in old_vector.indices {
-            self.postings[dim_id as usize].delete(id);
+            if let Some(posting) = self.postings.get_mut(dim_id as usize) {
+                posting.delete(id);
+            } else {
+                log::debug!("Posting list for dimension {dim_id} not found");
+            }
         }
 
         self.vector_count = self.vector_count.saturating_sub(1);
@@ -125,6 +129,8 @@ impl InvertedIndexRam {
             for dim_id in elements_to_delete {
                 if let Some(posting) = self.postings.get_mut(dim_id) {
                     posting.delete(id);
+                } else {
+                    log::debug!("Posting list for dimension {dim_id} not found");
                 }
             }
         }

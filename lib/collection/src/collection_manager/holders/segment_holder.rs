@@ -18,7 +18,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType};
+use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType, SnapshotFormat};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -1156,6 +1156,7 @@ impl<'s> SegmentHolder {
         payload_index_schema: &PayloadIndexSchema,
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
@@ -1168,7 +1169,7 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, tar, &mut snapshotted_segments)?;
+                read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
                 Ok(())
             },
         )
@@ -1311,7 +1312,7 @@ mod tests {
     use std::fs::File;
     use std::str::FromStr;
 
-    use segment::data_types::vectors::Vector;
+    use segment::data_types::vectors::VectorInternal;
     use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::{Distance, PayloadContainer};
@@ -1545,7 +1546,7 @@ mod tests {
             let read_segment_2 = locked_segment_2.read();
             assert!(read_segment_2.has_point(123.into()));
             let vector = read_segment_2.vector("", 123.into()).unwrap().unwrap();
-            assert_ne!(vector, Vector::Dense(vec![9.0; 4]));
+            assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
             assert_eq!(
                 read_segment_2
                     .payload(123.into())
@@ -1561,7 +1562,7 @@ mod tests {
                 &[123.into()],
                 |_, _| unreachable!(),
                 |_point_id, vectors, payload| {
-                    vectors.insert("".to_string(), Vector::Dense(vec![9.0; 4]));
+                    vectors.insert("".to_string(), VectorInternal::Dense(vec![9.0; 4]));
                     payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
                 },
                 |_| false,
@@ -1574,7 +1575,7 @@ mod tests {
         assert!(read_segment_1.has_point(123.into()));
 
         let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
-        assert_eq!(new_vector, Vector::Dense(vec![9.0; 4]));
+        assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
         let new_payload_value = read_segment_1.payload(123.into()).unwrap();
         assert_eq!(
             new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
@@ -1646,7 +1647,7 @@ mod tests {
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
-        let tar = tar_ext::BuilderExt::new(File::create(&snapshot_file).unwrap());
+        let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
         SegmentHolder::snapshot_all_segments(
             holder.clone(),
             segments_dir.path(),
@@ -1654,6 +1655,7 @@ mod tests {
             &PayloadIndexSchema::default(),
             temp_dir.path(),
             &tar,
+            SnapshotFormat::Regular,
         )
         .unwrap();
 

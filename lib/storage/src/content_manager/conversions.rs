@@ -1,5 +1,9 @@
+use collection::operations::config_diff::{
+    CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
+};
 use collection::operations::conversions::sharding_method_from_proto;
-use collection::operations::types::SparseVectorsConfig;
+use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
+use segment::types::StrictModeConfig;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -62,9 +66,22 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     .sharding_method
                     .map(sharding_method_from_proto)
                     .transpose()?,
-                strict_mode_config: value.strict_mode_config.map(From::from),
+                strict_mode_config: value.strict_mode_config.map(strict_mode_from_api),
             },
         )))
+    }
+}
+
+pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> StrictModeConfig {
+    StrictModeConfig {
+        enabled: value.enabled,
+        max_query_limit: value.max_query_limit.map(|i| i as usize),
+        max_timeout: value.max_timeout.map(|i| i as usize),
+        unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
+        unindexed_filtering_update: value.unindexed_filtering_update,
+        search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
+        search_allow_exact: value.search_allow_exact,
+        search_max_oversampling: value.search_max_oversampling.map(f64::from),
     }
 }
 
@@ -78,19 +95,23 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                 vectors: value
                     .vectors_config
                     .and_then(|config| config.config)
-                    .map(TryInto::try_into)
+                    .map(VectorsConfigDiff::try_from)
                     .transpose()?,
-                hnsw_config: value.hnsw_config.map(Into::into),
-                params: value.params.map(TryInto::try_into).transpose()?,
-                optimizers_config: value.optimizers_config.map(Into::into),
+                hnsw_config: value.hnsw_config.map(HnswConfigDiff::from),
+                params: value
+                    .params
+                    .map(CollectionParamsDiff::try_from)
+                    .transpose()?,
+                optimizers_config: value.optimizers_config.map(OptimizersConfigDiff::from),
                 quantization_config: value
                     .quantization_config
-                    .map(TryInto::try_into)
+                    .map(QuantizationConfigDiff::try_from)
                     .transpose()?,
                 sparse_vectors: value
                     .sparse_vectors_config
-                    .map(TryInto::try_into)
+                    .map(SparseVectorsConfig::try_from)
                     .transpose()?,
+                strict_mode_config: value.strict_mode_config.map(StrictModeConfig::from),
             },
         )))
     }

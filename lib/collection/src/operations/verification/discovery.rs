@@ -1,8 +1,7 @@
-use segment::types::{Filter, SearchParams};
+use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::config_diff::StrictModeConfig;
 use crate::operations::types::{CollectionError, DiscoverRequestBatch, DiscoverRequestInternal};
 
 impl StrictModeVerification for DiscoverRequestInternal {
@@ -14,20 +13,16 @@ impl StrictModeVerification for DiscoverRequestInternal {
         self.filter.as_ref()
     }
 
-    fn request_search_params(&self) -> Option<&SearchParams> {
-        self.params.as_ref()
-    }
-
-    fn timeout(&self) -> Option<usize> {
-        None
-    }
-
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
     }
 
     fn request_exact(&self) -> Option<bool> {
         None
+    }
+
+    fn request_search_params(&self) -> Option<&SearchParams> {
+        self.params.as_ref()
     }
 }
 
@@ -46,10 +41,6 @@ impl StrictModeVerification for DiscoverRequestBatch {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        None
-    }
-
-    fn timeout(&self) -> Option<usize> {
         None
     }
 

@@ -4,6 +4,7 @@ use std::path::Path;
 
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use segment::types::SnapshotFormat;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -24,6 +25,7 @@ pub type PeerId = u64;
 pub type ShardReplicasPlacement = Vec<PeerId>;
 
 /// List of shards placements. Each element defines placements of replicas for a single shard.
+///
 /// Number of elements corresponds to the number of shards.
 /// Example: [
 ///     [1, 2],
@@ -86,23 +88,34 @@ impl Shard {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
         save_wal: bool,
     ) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => {
-                local_shard.create_snapshot(temp_path, tar, save_wal).await
+                local_shard
+                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .await
             }
             Shard::Proxy(proxy_shard) => {
-                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
+                proxy_shard
+                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .await
             }
             Shard::ForwardProxy(proxy_shard) => {
-                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
+                proxy_shard
+                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .await
             }
             Shard::QueueProxy(proxy_shard) => {
-                proxy_shard.create_snapshot(temp_path, tar, save_wal).await
+                proxy_shard
+                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .await
             }
             Shard::Dummy(dummy_shard) => {
-                dummy_shard.create_snapshot(temp_path, tar, save_wal).await
+                dummy_shard
+                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .await
             }
         }
     }
@@ -114,6 +127,18 @@ impl Shard {
             Shard::ForwardProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::QueueProxy(proxy_shard) => proxy_shard.on_optimizer_config_update().await,
             Shard::Dummy(dummy_shard) => dummy_shard.on_optimizer_config_update().await,
+        }
+    }
+
+    pub async fn trigger_optimizers(&self) {
+        match self {
+            Shard::Local(local_shard) => local_shard.trigger_optimizers(),
+            Shard::Proxy(proxy_shard) => proxy_shard.trigger_optimizers(),
+            Shard::ForwardProxy(forward_proxy_shard) => {
+                forward_proxy_shard.trigger_optimizers();
+            }
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.trigger_optimizers(),
+            Shard::Dummy(_) => (),
         }
     }
 

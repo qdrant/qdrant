@@ -2,6 +2,7 @@ use collection::collection::Collection;
 use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfig;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
+use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
@@ -80,7 +81,11 @@ async fn _do_recover_from_snapshot(
         checksum,
         api_key: _,
     } = source;
-    let toc = dispatcher.toc(&access);
+
+    // All checks should've been done at this point.
+    let pass = new_unchecked_verification_pass();
+
+    let toc = dispatcher.toc(&access, &pass);
 
     let this_peer_id = toc.this_peer_id;
 
@@ -93,8 +98,7 @@ async fn _do_recover_from_snapshot(
         download_dir.path().display(),
     );
 
-    let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path()).await?;
+    let snapshot_path = download_snapshot(client, location, download_dir.path()).await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;
@@ -124,10 +128,10 @@ async fn _do_recover_from_snapshot(
     );
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
+    let snapshot_path_clone = snapshot_path.to_path_buf();
     let restoring = tokio::task::spawn_blocking(move || {
-        // Unpack snapshot collection to the target folder
         Collection::restore_snapshot(
-            &snapshot_path,
+            &snapshot_path_clone,
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,
@@ -316,14 +320,17 @@ async fn _do_recover_from_snapshot(
         }
     }
 
+    // Explicitly trigger optimizers for the collection we have recovered. This prevents them from
+    // remaining in grey state if the snapshot is not optimized.
+    // See: <ttps://github.com/qdrant/qdrant/issues/5139>
+    collection.trigger_optimizers().await;
+
     // Remove tmp collection dir
     tokio::fs::remove_dir_all(&tmp_collection_dir).await?;
 
     // Remove snapshot after recovery if downloaded
-    if let Some(path) = snapshot_temp_path {
-        if let Err(err) = path.close() {
-            log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
-        }
+    if let Err(err) = snapshot_path.close() {
+        log::error!("Failed to remove downloaded collection snapshot after recovery: {err}");
     }
 
     Ok(true)

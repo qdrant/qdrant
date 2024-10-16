@@ -1653,3 +1653,42 @@ def test_discover_batch(query_filter):
 
     assert search_result[0] == query_result[0]["points"]
     assert search_result[1] == query_result[1]["points"]
+
+
+# Qdrant did panic for some Query API requests when using a vector name that is not existing
+# for the given point. This tests ensures that a proper error response gets returned.
+# See https://github.com/qdrant/qdrant/issues/5208 for more details.
+def test_query_with_missing_vector():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": 7,
+            "using": "sparse-text"
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": 8,  # Point with ID=8 doesn't have a vector 'sparse-text' which caused Qdrant to panic before.
+            "using": "sparse-text"
+        },
+    )
+    assert not response.ok
+    assert 'error' in response.json()['status']
+
+    response2 = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": 8,  # Point with ID=8 doesn't have a default vector which caused Qdrant to panic before.
+        },
+    )
+    assert not response2.ok
+    assert 'error' in response2.json()['status']

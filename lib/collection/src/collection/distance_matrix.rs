@@ -13,7 +13,9 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
-use crate::operations::universal_query::shard_query::{Sample, ScoringQuery, ShardQueryRequest};
+use crate::operations::universal_query::shard_query::{
+    SampleInternal, ScoringQuery, ShardQueryRequest,
+};
 
 #[derive(Debug, Default)]
 pub struct CollectionSearchMatrixResponse {
@@ -174,7 +176,7 @@ impl Collection {
             // Sample points with query API
             let sampling_query = ShardQueryRequest {
                 prefetches: vec![],
-                query: Some(ScoringQuery::Sample(Sample::Random)),
+                query: Some(ScoringQuery::Sample(SampleInternal::Random)),
                 filter,
                 score_threshold: None,
                 limit: sample_size,

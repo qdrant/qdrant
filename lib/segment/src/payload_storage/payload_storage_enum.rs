@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -35,20 +37,6 @@ impl From<SimplePayloadStorage> for PayloadStorageEnum {
 impl From<OnDiskPayloadStorage> for PayloadStorageEnum {
     fn from(a: OnDiskPayloadStorage) -> Self {
         PayloadStorageEnum::OnDiskPayloadStorage(a)
-    }
-}
-
-impl PayloadStorageEnum {
-    pub fn iter<F>(&self, callback: F) -> OperationResult<()>
-    where
-        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
-    {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
-        }
     }
 }
 
@@ -127,6 +115,27 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.flusher(),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.flusher(),
+        }
+    }
+
+    fn iter<F>(&self, callback: F) -> OperationResult<()>
+    where
+        F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
+    {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
+        }
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.files(),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.files(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.files(),
         }
     }
 }

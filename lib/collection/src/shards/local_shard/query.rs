@@ -22,7 +22,7 @@ use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, RescoreParams, Source,
 };
 use crate::operations::universal_query::shard_query::{
-    Fusion, Sample, ScoringQuery, ShardQueryResponse,
+    FusionInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
 };
 
 pub enum FetchedSource {
@@ -294,7 +294,7 @@ impl LocalShard {
                 })
             }
             ScoringQuery::Sample(sample) => match sample {
-                Sample::Random => {
+                SampleInternal::Random => {
                     // create single scroll request for rescoring query
                     let filter = filter_with_sources_ids(sources.into_iter());
 
@@ -328,7 +328,7 @@ impl LocalShard {
     async fn fusion_rescore<'a>(
         &self,
         sources: impl Iterator<Item = Vec<ScoredPoint>>,
-        fusion: Fusion,
+        fusion: FusionInternal,
         score_threshold: Option<f32>,
         limit: usize,
         with_payload: WithPayloadInterface,
@@ -336,8 +336,8 @@ impl LocalShard {
         timeout: Duration,
     ) -> Result<Vec<ScoredPoint>, CollectionError> {
         let fused = match fusion {
-            Fusion::Rrf => rrf_scoring(sources),
-            Fusion::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
+            FusionInternal::Rrf => rrf_scoring(sources),
+            FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),
         };
 
         let top_fused: Vec<_> = if let Some(score_threshold) = score_threshold {

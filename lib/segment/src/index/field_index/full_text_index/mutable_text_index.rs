@@ -179,7 +179,7 @@ mod tests {
 
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new(db, config, "text", immutable);
+            let mut index = FullTextIndex::new_memory(db, config, "text", immutable);
             let loaded = index.load().unwrap();
             assert!(loaded);
 

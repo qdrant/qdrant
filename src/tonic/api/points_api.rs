@@ -16,20 +16,22 @@ use api::grpc::qdrant::{
     UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
+use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
     delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, search_groups, search_points_matrix, update_batch, update_vectors,
+    recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
 };
 use super::validate;
 use crate::tonic::api::points_common::{
     clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
     delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
-    scroll, search, set_payload, upsert,
+    search, set_payload, upsert,
 };
 use crate::tonic::auth::extract_access;
+use crate::tonic::verification::StrictModeCheckedTocProvider;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -49,10 +51,13 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc(&access).clone(),
+            self.dispatcher.toc(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,
@@ -71,7 +76,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -87,7 +92,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         get(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -101,10 +106,13 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
+        // Nothing to verify here.
+        let pass = new_unchecked_verification_pass();
+
         let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc(&access).clone(),
+            self.dispatcher.toc(&access, &pass).clone(),
             request.into_inner(),
             None,
             None,
@@ -123,7 +131,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_vectors(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -142,7 +150,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         set_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -161,7 +169,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         overwrite_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -180,7 +188,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -199,7 +207,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         clear_payload(
-            self.dispatcher.toc(&access).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -217,14 +225,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        update_batch(
-            self.dispatcher.toc(&access).clone(),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
+        update_batch(&self.dispatcher, request.into_inner(), None, None, access).await
     }
 
     async fn create_field_index(
@@ -272,7 +273,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         search(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -309,7 +310,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             requests,
             read_consistency,
@@ -326,7 +327,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         search_groups(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -343,7 +344,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         scroll(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -357,7 +358,12 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        recommend(self.dispatcher.toc(&access), request.into_inner(), access).await
+        recommend(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn recommend_batch(
@@ -372,8 +378,9 @@ impl Points for PointsService {
             read_consistency,
             timeout,
         } = request.into_inner();
+
         recommend_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             recommend_points,
             read_consistency,
@@ -391,7 +398,12 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        recommend_groups(self.dispatcher.toc(&access), request.into_inner(), access).await
+        recommend_groups(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn discover(
@@ -402,7 +414,12 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        discover(self.dispatcher.toc(&access), request.into_inner(), access).await
+        discover(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn discover_batch(
@@ -421,7 +438,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             discover_points,
             read_consistency,
@@ -440,10 +457,10 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         count(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
-            access,
+            &access,
         )
         .await
     }
@@ -455,7 +472,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         query(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -478,7 +495,7 @@ impl Points for PointsService {
         } = request;
         let timeout = timeout.map(Duration::from_secs);
         query_batch(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             collection_name,
             query_points,
             read_consistency,
@@ -494,7 +511,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let access = extract_access(&mut request);
         query_groups(
-            self.dispatcher.toc(&access),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
@@ -507,7 +524,12 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        facet(self.dispatcher.toc(&access), request.into_inner(), access).await
+        facet(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await
     }
 
     async fn search_matrix_pairs(
@@ -517,9 +539,12 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let search_matrix_response =
-            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
-                .await?;
+        let search_matrix_response = search_points_matrix(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await?;
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
@@ -534,9 +559,12 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let search_matrix_response =
-            search_points_matrix(self.dispatcher.toc(&access), request.into_inner(), access)
-                .await?;
+        let search_matrix_response = search_points_matrix(
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
+            request.into_inner(),
+            access,
+        )
+        .await?;
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),

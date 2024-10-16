@@ -24,7 +24,7 @@ impl ShardReplicaSet {
         local_only: bool,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
         let filter = filter.map(|filter| Arc::new(filter.clone()));
@@ -108,7 +108,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         local_only: bool,
-    ) -> CollectionResult<Vec<Record>> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
 

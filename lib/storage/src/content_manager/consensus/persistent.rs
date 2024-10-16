@@ -38,6 +38,8 @@ pub struct Persistent {
     /// Operations to applied, consensus consider them committed, but this peer didn't apply them yet
     #[serde(default)]
     pub apply_progress_queue: EntryApplyProgressQueue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_voter: Option<PeerId>,
     /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
@@ -200,6 +202,15 @@ impl Persistent {
         self.apply_progress_queue.get_last_applied()
     }
 
+    pub fn first_voter(&self) -> Option<PeerId> {
+        self.first_voter
+    }
+
+    pub fn set_first_voter(&mut self, id: PeerId) -> Result<(), StorageError> {
+        self.first_voter = Some(id);
+        self.save()
+    }
+
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.peer_address_by_id.read().clone()
     }
@@ -244,6 +255,7 @@ impl Persistent {
                 conf_state: ConfState::from((voters, vec![])),
             },
             apply_progress_queue: Default::default(),
+            first_voter: if first_peer { Some(this_peer_id) } else { None },
             peer_address_by_id: Default::default(),
             peer_metadata_by_id: Default::default(),
             cluster_metadata: Default::default(),

@@ -5,6 +5,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::binary_index::BinaryIndex;
+use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};
 use super::mmap_point_to_values::MmapValue;
@@ -62,11 +63,7 @@ impl<'a> IndexSelector<'a> {
             )
             .collect(),
             PayloadSchemaParams::Float(_) => vec![FieldIndex::FloatIndex(self.numeric_new(field)?)],
-            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
-                self.as_rocksdb()?.db.clone(),
-                &field.to_string(),
-                self.as_rocksdb()?.is_appendable,
-            ))],
+            PayloadSchemaParams::Geo(_) => vec![FieldIndex::GeoIndex(self.geo_new(field)?)],
             PayloadSchemaParams::Text(text_index_params) => {
                 vec![FieldIndex::FullTextIndex(
                     self.text_new(field, text_index_params.clone())?,
@@ -126,10 +123,11 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Geo(_) => {
-                vec![FieldIndexBuilder::GeoIndex(GeoMapIndex::builder(
-                    self.as_rocksdb()?.db.clone(),
-                    &field.to_string(),
-                ))]
+                vec![self.geo_builder(
+                    field,
+                    FieldIndexBuilder::GeoIndex,
+                    FieldIndexBuilder::GeoMmapIndex,
+                )]
             }
             PayloadSchemaParams::Text(text_index_params) => {
                 vec![self.text_builder(field, text_index_params.clone())]
@@ -160,7 +158,7 @@ impl<'a> IndexSelector<'a> {
     fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                MapIndex::new(Arc::clone(db), &field.to_string(), *is_appendable)
+                MapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
                 MapIndex::new_mmap(&map_dir(dir, field))?
@@ -218,6 +216,33 @@ impl<'a> IndexSelector<'a> {
         }
     }
 
+    fn geo_new(&self, field: &JsonPath) -> OperationResult<GeoMapIndex> {
+        Ok(match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
+                GeoMapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
+            }
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                GeoMapIndex::new_mmap(&map_dir(dir, field))?
+            }
+        })
+    }
+
+    fn geo_builder(
+        &self,
+        field: &JsonPath,
+        make_rocksdb: fn(GeoMapIndexBuilder) -> FieldIndexBuilder,
+        make_mmap: fn(GeoMapIndexMmapBuilder) -> FieldIndexBuilder,
+    ) -> FieldIndexBuilder {
+        match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
+                make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
+            }
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                make_mmap(GeoMapIndex::mmap_builder(&map_dir(dir, field)))
+            }
+        }
+    }
+
     fn text_new(
         &self,
         field: &JsonPath,
@@ -225,7 +250,12 @@ impl<'a> IndexSelector<'a> {
     ) -> OperationResult<FullTextIndex> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                FullTextIndex::new(Arc::clone(db), config, &field.to_string(), *is_appendable)
+                FullTextIndex::new_memory(
+                    Arc::clone(db),
+                    config,
+                    &field.to_string(),
+                    *is_appendable,
+                )
             }
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
                 FullTextIndex::new_mmap(text_dir(dir, field), config)?
