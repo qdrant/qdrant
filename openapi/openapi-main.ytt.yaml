@@ -239,6 +239,10 @@ tags:
     description: Float-point vectors with payload.
   - name: Search
     description: Find points in a collection.
+  - name: Aliases
+    description: Additional names for existing collections.
+  - name: Indexes
+    description: Indexes for payloads associated with points.
   - name: Distributed
     description: Service distributed setup.
   - name: Snapshots
