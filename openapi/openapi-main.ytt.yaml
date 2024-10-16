@@ -233,17 +233,19 @@ servers:
       port:
         default: "6333"
 tags:
-  - name: collections
+  - name: Collections
     description: Searchable collections of points.
-  - name: points
+  - name: Points
     description: Float-point vectors with payload.
-  - name: cluster
+  - name: Search
+    description: Find points in a collection.
+  - name: Distributed
     description: Service distributed setup.
-  - name: snapshots
+  - name: Snapshots
     description: Storage and collections snapshots.
-  - name: service
+  - name: Service
     description: Qdrant service utilities.
-  - name: beta
+  - name: Beta
     description: Beta features, do not depend on these yet.
 
 paths:
@@ -619,7 +621,7 @@ paths:
   /collections/{collection_name}/facet:
     post:
       tags:
-        - points
+        - Points
       summary: Facet a payload key with a given filter.
       description: Count points that satisfy the given filter for each unique value of a payload key.
       operationId: facet
@@ -767,7 +769,7 @@ paths:
   /collections/{collection_name}/points/search/matrix/pairs:
     post:
       tags:
-        - points
+        - Search
       summary: Search points matrix distance pairs
       description: Compute distance matrix for sampled points with a pair based output format
       operationId: search_matrix_pairs
@@ -803,7 +805,7 @@ paths:
   /collections/{collection_name}/points/search/matrix/offsets:
     post:
       tags:
-        - points
+        - Search
       summary: Search points matrix distance offsets
       description: Compute distance matrix for sampled points with an offset based output format
       operationId: search_matrix_offsets
