@@ -1,0 +1,56 @@
+{
+  "name": "qdrant-ui-challenge",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "turbo vite.build",
+    "dev": "turbo vite.dev",
+    "lint": "tsc",
+    "preview": "turbo vite.preview",
+    "vite.build": "vite build",
+    "vite.dev": "vite --host",
+    "vite.preview": "vite preview"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,cjs}": [
+      "prettier --write"
+    ],
+    "*.{md,html,css,json,yml}": "prettier --write",
+    "package.json": "pnpm sort-package-json"
+  },
+  "dependencies": {
+    "@chakra-ui/icons": "^2.2.4",
+    "@chakra-ui/react": "^2.10.2",
+    "@emotion/react": "^11.13.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.27.0",
+    "tilg": "0.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.12.0",
+    "@total-typescript/ts-reset": "0.6.1",
+    "@types/node": "20.16.11",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react-swc": "3.7.1",
+    "autoprefixer": "10.4.20",
+    "eslint": "^9.12.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "lightningcss": "1.27.0",
+    "lint-staged": "15.2.10",
+    "postcss": "8.4.47",
+    "prettier": "3.3.3",
+    "prettier-plugin-packagejson": "2.5.3",
+    "prettier-plugin-tailwindcss": "0.6.8",
+    "sort-package-json": "2.10.1",
+    "tailwindcss": "3.4.13",
+    "turbo": "2.1.3",
+    "typescript": "5.6.3",
+    "typescript-eslint": "^8.9.0",
+    "vite": "5.4.9",
+    "vite-plugin-mkcert": "1.17.6",
+    "vite-tsconfig-paths": "5.0.1"
+  },
+  "packageManager": "npm@10.8.2"
+}
