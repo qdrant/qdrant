@@ -176,6 +176,17 @@ impl ChannelService {
             .all(|metadata| metadata.version >= version)
     }
 
+    /// Check whether the specified peer is running at least the given version
+    ///
+    /// If the version is not known for the peer, this returns `false`.
+    /// Peer versions are known since 1.9 and up.
+    pub fn peer_is_at_version(&self, peer_id: PeerId, version: Version) -> bool {
+        self.id_to_metadata
+            .read()
+            .get(&peer_id)
+            .map_or(false, |metadata| metadata.version >= version)
+    }
+
     /// Get the REST address for the current peer.
     pub fn current_rest_address(&self, this_peer_id: PeerId) -> CollectionResult<Url> {
         // Get local peer URI
