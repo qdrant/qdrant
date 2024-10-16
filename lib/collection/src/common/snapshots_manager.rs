@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use actix_web::HttpRequest;
 use common::tempfile_ext::MaybeTempPath;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
-use super::snapshot_stream::{SnapShotStreamCloudStrage, SnapShotStreamLocalFS, SnapshotStream};
+use super::snapshot_stream::{SnapShotStreamLocalFS, SnapshotStream};
 use crate::common::file_utils::move_file;
 use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
@@ -204,12 +203,11 @@ impl SnapshotStorageManager {
 
     pub async fn get_snapshot_stream(
         &self,
-        req: HttpRequest,
         snapshot_path: &Path,
     ) -> CollectionResult<SnapshotStream> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl.get_snapshot_stream(req, snapshot_path).await
+                storage_impl.get_snapshot_stream(snapshot_path).await
             }
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl.get_snapshot_stream(snapshot_path).await
@@ -398,13 +396,8 @@ impl SnapshotStorageLocalFS {
         Ok(MaybeTempPath::Persistent(snapshot_path.to_path_buf()))
     }
 
-    async fn get_snapshot_stream(
-        &self,
-        req: HttpRequest,
-        snapshot_path: &Path,
-    ) -> CollectionResult<SnapshotStream> {
+    async fn get_snapshot_stream(&self, snapshot_path: &Path) -> CollectionResult<SnapshotStream> {
         Ok(SnapshotStream::LocalFS(SnapShotStreamLocalFS {
-            req,
             snapshot_path: snapshot_path.to_path_buf(),
         }))
     }
@@ -496,8 +489,6 @@ impl SnapshotStorageCloud {
             }
             _ => CollectionError::service_error(format!("Failed to get {snapshot_path}: {e}")),
         })?;
-        Ok(SnapshotStream::CloudStorage(SnapShotStreamCloudStrage {
-            streamer: Box::pin(download.into_stream()),
-        }))
+        Ok(SnapshotStream::new_stream(download.into_stream(), None))
     }
 }

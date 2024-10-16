@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use collection::collection::Collection;
 use collection::common::sha_256::hash_file;
+use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
-use futures::Stream;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -44,7 +43,7 @@ pub async fn stream_shard_snapshot(
     access: Access,
     collection_name: String,
     shard_id: ShardId,
-) -> Result<impl Stream<Item = std::io::Result<Bytes>>, StorageError> {
+) -> Result<SnapshotStream, StorageError> {
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().whole())?;
     let collection = toc.get_collection(&collection_pass).await?;

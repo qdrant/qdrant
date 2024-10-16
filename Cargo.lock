@@ -4638,7 +4638,6 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
- "bytes",
  "cancel",
  "chrono",
  "clap 4.5.20",

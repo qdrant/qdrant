@@ -7,10 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
 use common::cpu::CpuBudget;
 use common::tar_ext::BuilderExt;
-use futures::{Future, Stream, TryStreamExt as _};
+use futures::{Future, TryStreamExt as _};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
@@ -24,6 +23,7 @@ use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::snapshot_stream::SnapshotStream;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
@@ -921,7 +921,7 @@ impl ShardHolder {
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
-    ) -> CollectionResult<impl Stream<Item = std::io::Result<Bytes>>> {
+    ) -> CollectionResult<SnapshotStream> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is cancelled
 
@@ -967,7 +967,10 @@ impl ShardHolder {
             CollectionResult::Ok(())
         });
 
-        Ok(FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()))
+        Ok(SnapshotStream::new_stream(
+            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
+            Some(snapshot_file_name),
+        ))
     }
 
     /// # Cancel safety
