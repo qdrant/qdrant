@@ -74,8 +74,8 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
     );
 
     let sparse_index_config = SparseIndexConfig::new(Some(full_scan_threshold), index_type, None);
-    let sparse_vector_index: SparseVectorIndex<I> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
+    let sparse_vector_index: SparseVectorIndex<I> = SparseVectorIndex::open(
+        SparseVectorIndexOpenArgs {
             config: sparse_index_config,
             id_tracker,
             vector_storage: vector_storage.clone(),
@@ -83,7 +83,9 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
             path: index_dir,
             stopped: &stopped,
             tick_progress: || (),
-        })?;
+        },
+        None,
+    )?;
 
     assert_eq!(
         sparse_vector_index.indexed_vector_count(),

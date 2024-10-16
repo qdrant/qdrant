@@ -1,6 +1,9 @@
 use std::cmp::max;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
+use rayon::prelude::*;
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -51,6 +54,30 @@ impl InvertedIndexBuilder {
             postings,
             vector_count,
         }
+    }
+
+    /// Consumes the builder and returns an InvertedIndexRam with multithreaded building
+    ///
+    /// Each posting list is sorted in parallel using Rayon
+    pub fn build_multithread(self, permit: Arc<CpuPermit>) -> InvertedIndexRam {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .thread_name(|idx| format!("sparse-index-builder-{idx}"))
+            .num_threads(permit.num_cpus as usize)
+            .build()
+            .unwrap();
+
+        pool.install(|| {
+            let postings: Vec<_> = self
+                .posting_builders
+                .into_par_iter()
+                .map(|posting_builder| posting_builder.build())
+                .collect();
+            let vector_count = self.vector_count;
+            InvertedIndexRam {
+                postings,
+                vector_count,
+            }
+        })
     }
 
     /// Creates an [InvertedIndexRam] from an iterator of (id, vector) pairs.

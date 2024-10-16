@@ -105,15 +105,18 @@ fn sparse_vector_index_search_benchmark_impl(
         SparseIndexConfig::new(Some(FULL_SCAN_THRESHOLD), SparseIndexType::Mmap, None);
     let pb = progress("Indexing (2/2)", vectors_len);
     let sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: sparse_index_config,
-            id_tracker: sparse_vector_index.id_tracker().clone(),
-            vector_storage: sparse_vector_index.vector_storage().clone(),
-            payload_index: sparse_vector_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || pb.inc(1),
-        })
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                config: sparse_index_config,
+                id_tracker: sparse_vector_index.id_tracker().clone(),
+                vector_storage: sparse_vector_index.vector_storage().clone(),
+                payload_index: sparse_vector_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || pb.inc(1),
+            },
+            None,
+        )
         .unwrap();
     pb.finish_and_clear();
     assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), vectors_len);

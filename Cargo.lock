@@ -6069,6 +6069,7 @@ dependencies = [
  "parking_lot",
  "pprof 0.13.0",
  "rand 0.8.5",
+ "rayon",
  "schemars",
  "serde",
  "serde_json",

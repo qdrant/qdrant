@@ -495,15 +495,18 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
 
-                create_sparse_vector_index(SparseVectorIndexOpenArgs {
-                    config: sparse_vector_config.index,
-                    id_tracker: id_tracker_arc.clone(),
-                    vector_storage: vector_storage_arc.clone(),
-                    payload_index: payload_index_arc.clone(),
-                    path: &vector_index_path,
-                    stopped,
-                    tick_progress: || (),
-                })?;
+                create_sparse_vector_index(
+                    SparseVectorIndexOpenArgs {
+                        config: sparse_vector_config.index,
+                        id_tracker: id_tracker_arc.clone(),
+                        vector_storage: vector_storage_arc.clone(),
+                        payload_index: payload_index_arc.clone(),
+                        path: &vector_index_path,
+                        stopped,
+                        tick_progress: || (),
+                    },
+                    Some(permit.clone()),
+                )?;
             }
 
             // We're done with CPU-intensive tasks, release CPU permit

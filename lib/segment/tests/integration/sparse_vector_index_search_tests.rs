@@ -208,15 +208,18 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: sparse_index_config,
-            id_tracker: sparse_vector_ram_index.id_tracker().clone(),
-            vector_storage: sparse_vector_ram_index.vector_storage().clone(),
-            payload_index: sparse_vector_ram_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                config: sparse_index_config,
+                id_tracker: sparse_vector_ram_index.id_tracker().clone(),
+                vector_storage: sparse_vector_ram_index.vector_storage().clone(),
+                payload_index: sparse_vector_ram_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
+            },
+            None,
+        )
         .unwrap();
 
     assert_eq!(
@@ -234,15 +237,18 @@ fn sparse_vector_index_consistent_with_storage() {
     let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexCompressedMmap<f32>> =
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: sparse_index_config,
-            id_tracker: sparse_vector_ram_index.id_tracker().clone(),
-            vector_storage: sparse_vector_ram_index.vector_storage().clone(),
-            payload_index: sparse_vector_ram_index.payload_index().clone(),
-            path: mmap_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                config: sparse_index_config,
+                id_tracker: sparse_vector_ram_index.id_tracker().clone(),
+                vector_storage: sparse_vector_ram_index.vector_storage().clone(),
+                payload_index: sparse_vector_ram_index.payload_index().clone(),
+                path: mmap_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
+            },
+            None,
+        )
         .unwrap();
 
     assert_eq!(
@@ -656,21 +662,24 @@ fn check_persistence<TInvertedIndex: InvertedIndex>(
         .unwrap();
 
     let open_index = || -> SparseVectorIndex<TInvertedIndex> {
-        SparseVectorIndex::open(SparseVectorIndexOpenArgs {
-            config: SparseIndexConfig {
-                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-                index_type: SparseIndexType::Mmap,
-                datatype: Some(VectorStorageDatatype::Float32),
+        SparseVectorIndex::open(
+            SparseVectorIndexOpenArgs {
+                config: SparseIndexConfig {
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::Mmap,
+                    datatype: Some(VectorStorageDatatype::Float32),
+                },
+                id_tracker: segment.id_tracker.clone(),
+                vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
+                    .vector_storage
+                    .clone(),
+                payload_index: segment.payload_index.clone(),
+                path: inverted_index_dir.path(),
+                stopped: &stopped,
+                tick_progress: || (),
             },
-            id_tracker: segment.id_tracker.clone(),
-            vector_storage: segment.vector_data[SPARSE_VECTOR_NAME]
-                .vector_storage
-                .clone(),
-            payload_index: segment.payload_index.clone(),
-            path: inverted_index_dir.path(),
-            stopped: &stopped,
-            tick_progress: || (),
-        })
+            None,
+        )
         .unwrap()
     };
 
