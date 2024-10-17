@@ -359,10 +359,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &is_stopped,
         );
         let search_result = search_context.plain_search(&ids);
-
-        if let Some(hardware_counter) = vector_query_context.hardware_counter() {
-            hardware_counter.apply_from(search_context.hardware_counter());
-        }
+        vector_query_context.apply_hardware_counter(search_context.hardware_counter());
         Ok(search_result)
     }
 
