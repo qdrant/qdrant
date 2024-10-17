@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::ext::OptionExt;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt, registry};
@@ -16,9 +17,15 @@ pub struct Config {
 
 impl Config {
     pub fn merge(&mut self, other: Self) {
-        self.log_level = other.log_level.or(self.log_level.take());
-        self.span_events = other.span_events.or(self.span_events.take());
-        self.color = other.color.or(self.color.take());
+        let Self {
+            log_level,
+            span_events,
+            color,
+        } = other;
+
+        self.log_level.replace_if_some(log_level);
+        self.span_events.replace_if_some(span_events);
+        self.color.replace_if_some(color);
     }
 }
 

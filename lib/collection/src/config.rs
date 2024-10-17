@@ -332,9 +332,9 @@ impl CollectionParams {
 
             if let Some(index) = index {
                 if let Some(existing_index) = &mut sparse_vector_params.index {
-                    existing_index.update_from_other(&index);
+                    existing_index.update_from_other(index);
                 } else {
-                    sparse_vector_params.index = Some(index);
+                    sparse_vector_params.index.replace(index);
                 }
             }
         }

@@ -12,6 +12,7 @@ use api::rest::{
     SearchGroupsRequestInternal, SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
 use common::defaults;
+use common::ext::OptionExt;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -1499,18 +1500,17 @@ impl Anonymize for SparseIndexParams {
 }
 
 impl SparseIndexParams {
-    pub fn update_from_other(&mut self, other: &SparseIndexParams) {
+    pub fn update_from_other(&mut self, other: SparseIndexParams) {
         let SparseIndexParams {
             full_scan_threshold,
             on_disk,
             datatype,
         } = other;
 
-        *self = SparseIndexParams {
-            full_scan_threshold: full_scan_threshold.or(self.full_scan_threshold),
-            on_disk: on_disk.or(self.on_disk),
-            datatype: datatype.or(self.datatype),
-        };
+        self.full_scan_threshold
+            .replace_if_some(full_scan_threshold);
+        self.on_disk.replace_if_some(on_disk);
+        self.datatype.replace_if_some(datatype);
     }
 }
 

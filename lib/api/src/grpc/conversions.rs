@@ -1211,15 +1211,17 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
 
-        let range = range.map(Into::into);
-        let datetime_range = datetime_range
-            .map(segment::types::RangeInterface::try_from)
-            .transpose()?;
+        let mut range = range.map(Into::into);
+        if range.is_none() {
+            range = datetime_range
+                .map(segment::types::RangeInterface::try_from)
+                .transpose()?;
+        }
 
         Ok(Self {
             key: json::json_path_from_proto(&key)?,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-            range: range.or(datetime_range),
+            range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,

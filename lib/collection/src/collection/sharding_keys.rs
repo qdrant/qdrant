@@ -45,7 +45,7 @@ impl Collection {
             self.update_runtime.clone(),
             self.search_runtime.clone(),
             self.optimizer_cpu_budget.clone(),
-            init_state.or(Some(ReplicaState::Active)),
+            Some(init_state.unwrap_or(ReplicaState::Active)),
         )
         .await
     }
