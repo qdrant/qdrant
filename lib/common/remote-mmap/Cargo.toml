@@ -1,0 +1,19 @@
+[package]
+name = "remote-mmap"
+version = "0.1.0"
+authors = [
+    "Andrey Vasnetsov <andrey@qdrant.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+memmap2 = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = "1.0.63"
