@@ -20,10 +20,25 @@ pub struct Config {
 
 impl Config {
     pub fn merge(&mut self, other: Self) {
-        self.enabled = other.enabled.or(self.enabled.take());
-        self.log_file = other.log_file.or(self.log_file.take());
-        self.log_level = other.log_level.or(self.log_level.take());
-        self.span_events = other.span_events.or(self.span_events.take());
+        let Self {
+            enabled,
+            log_file,
+            log_level,
+            span_events,
+        } = other;
+
+        if let Some(enabled) = enabled {
+            self.enabled.replace(enabled);
+        }
+        if let Some(log_file) = log_file {
+            self.log_file.replace(log_file);
+        }
+        if let Some(log_level) = log_level {
+            self.log_level.replace(log_level);
+        }
+        if let Some(span_events) = span_events {
+            self.span_events.replace(span_events);
+        }
     }
 }
 

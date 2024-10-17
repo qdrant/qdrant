@@ -16,9 +16,21 @@ pub struct Config {
 
 impl Config {
     pub fn merge(&mut self, other: Self) {
-        self.log_level = other.log_level.or(self.log_level.take());
-        self.span_events = other.span_events.or(self.span_events.take());
-        self.color = other.color.or(self.color.take());
+        let Self {
+            log_level,
+            span_events,
+            color,
+        } = other;
+
+        if let Some(log_level) = log_level {
+            self.log_level.replace(log_level);
+        }
+        if let Some(span_events) = span_events {
+            self.span_events.replace(span_events);
+        }
+        if let Some(color) = color {
+            self.color.replace(color);
+        }
     }
 }
 
