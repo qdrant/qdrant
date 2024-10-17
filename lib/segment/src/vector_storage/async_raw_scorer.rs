@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
@@ -200,6 +201,10 @@ where
         // and notify the user that they better use the default IO implementation.
 
         pq.into_vec()
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        self.query_scorer.hardware_counter()
     }
 }
 

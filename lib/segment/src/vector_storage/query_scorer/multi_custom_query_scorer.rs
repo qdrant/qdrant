@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
@@ -26,6 +27,8 @@ pub struct MultiCustomQueryScorer<
     input_query: PhantomData<TInputQuery>,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
+    dimension: usize,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -39,8 +42,10 @@ impl<
     > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
     pub fn new(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self {
+        let mut dim = 0;
         let query = query
             .transform(|vector| {
+                dim = vector.dim;
                 let slices = vector.multi_vectors();
                 let preprocessed: DenseVector = slices
                     .into_iter()
@@ -60,7 +65,30 @@ impl<
             input_query: PhantomData,
             metric: PhantomData,
             element: PhantomData,
+            dimension: dim,
+            hardware_counter: HardwareCounterCell::new(),
         }
+    }
+}
+
+impl<
+        'a,
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: MultiVectorStorage<TElement>,
+        TQuery: Query<TypedMultiDenseVector<TElement>>,
+        TInputQuery: Query<MultiDenseVectorInternal>,
+    > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+{
+    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
+        let mut counter = self.hardware_counter.clone();
+
+        // Calculate the dimension multiplier here to improve performance of measuring.
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(self.dimension * size_of::<TElement>());
+
+        counter
     }
 }
 
@@ -77,7 +105,12 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);
+        let cpu_counter = self.hardware_counter.cpu_counter();
+
+        let stored_vector_count = stored.vectors_count();
         self.query.score_by(|example| {
+            cpu_counter.incr_delta(example.vectors_count() * stored_vector_count);
+
             score_multi::<TElement, TMetric>(
                 self.vector_storage.multi_vector_config(),
                 TypedMultiDenseVectorRef::from(example),
@@ -88,7 +121,13 @@ impl<
 
     #[inline]
     fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
+        let cpu_counter = self.hardware_counter.cpu_counter();
+
+        let against_vector_count = against.vectors_count();
+
         self.query.score_by(|example| {
+            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
+
             score_multi::<TElement, TMetric>(
                 self.vector_storage.multi_vector_config(),
                 TypedMultiDenseVectorRef::from(example),
@@ -99,5 +138,9 @@ impl<
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter_finalized()
     }
 }

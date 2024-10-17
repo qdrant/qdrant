@@ -207,9 +207,21 @@ fn sparse_index_discover_test() {
 
         // do regular nearest search
         let (sparse_query, dense_query) = random_nearest_query(&mut rnd, dim);
+
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+        let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
         let sparse_search_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &Default::default())
+            .search(&[&sparse_query], None, top, None, &vector_context)
             .unwrap();
+        assert!(
+            vector_context
+                .hardware_counter()
+                .unwrap()
+                .cpu_counter()
+                .get()
+                > 0
+        );
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index

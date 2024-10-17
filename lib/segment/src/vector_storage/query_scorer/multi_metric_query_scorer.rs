@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
@@ -21,6 +22,7 @@ pub struct MultiMetricQueryScorer<
     vector_storage: &'a TVectorStorage,
     query: TypedMultiDenseVector<TElement>,
     metric: PhantomData<TMetric>,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -41,6 +43,7 @@ impl<
             query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
             vector_storage,
             metric: PhantomData,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 
@@ -49,11 +52,35 @@ impl<
         multi_dense_a: TypedMultiDenseVectorRef<TElement>,
         multi_dense_b: TypedMultiDenseVectorRef<TElement>,
     ) -> ScoreType {
+        self.hardware_counter
+            .cpu_counter()
+            // Calculate the amount of comparisons needed for multi vector scoring.
+            .incr_delta(multi_dense_a.vectors_count() * multi_dense_b.vectors_count());
+
         score_multi::<TElement, TMetric>(
             self.vector_storage.multi_vector_config(),
             multi_dense_a,
             multi_dense_b,
         )
+    }
+}
+
+impl<
+        'a,
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: MultiVectorStorage<TElement>,
+    > MultiMetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
+{
+    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
+        let mut counter = self.hardware_counter.clone();
+
+        // Calculate the dimension multiplier here to improve performance of measuring.
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(self.query.dim * size_of::<TElement>());
+
+        counter
     }
 }
 
@@ -85,5 +112,9 @@ impl<
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
         self.score_multi(v1, v2)
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter_finalized()
     }
 }

@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -83,6 +84,8 @@ pub trait RawScorer {
     ) -> Vec<ScoredPointOffset>;
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
+
+    fn hardware_counter(&self) -> HardwareCounterCell;
 }
 
 pub struct RawScorerImpl<'a, TVector: ?Sized, TQueryScorer>
@@ -920,6 +923,10 @@ where
                 }
             });
         peek_top_largest_iterable(scores, top)
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        self.query_scorer.hardware_counter()
     }
 }
 
