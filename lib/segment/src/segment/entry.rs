@@ -59,7 +59,7 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        query_context: SegmentQueryContext,
+        query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];

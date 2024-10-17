@@ -9,7 +9,7 @@ use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorStructInternal};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
@@ -257,11 +257,13 @@ impl SegmentsSearcher {
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
+                            let segment_query_context =
+                                query_context_arc_segment.get_segment_query_context();
                             search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
-                                query_context_arc_segment,
+                                segment_query_context,
                             )
                         }
                     });
@@ -305,11 +307,13 @@ impl SegmentsSearcher {
                             .collect(),
                     });
                     res.push(runtime_handle.spawn_blocking(move || {
+                        let segment_query_context =
+                            query_context_arc_segment.get_segment_query_context();
                         search_in_segment(
                             segment,
                             partial_batch_request,
                             false,
-                            query_context_arc_segment,
+                            segment_query_context,
                         )
                     }))
                 }
@@ -543,7 +547,7 @@ fn search_in_segment(
     segment: LockedSegment,
     request: Arc<CoreSearchRequestBatch>,
     use_sampling: bool,
-    query_context: Arc<QueryContext>,
+    segment_query_context: SegmentQueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
 
@@ -582,7 +586,7 @@ fn search_in_segment(
                     &vectors_batch,
                     &prev_params,
                     use_sampling,
-                    &query_context,
+                    &segment_query_context,
                 )?;
                 further_results.append(&mut further);
                 result.append(&mut res);
@@ -601,7 +605,7 @@ fn search_in_segment(
             &vectors_batch,
             &prev_params,
             use_sampling,
-            &query_context,
+            &segment_query_context,
         )?;
         further_results.append(&mut further);
         result.append(&mut res);
@@ -615,7 +619,7 @@ fn execute_batch_search(
     vectors_batch: &[QueryVector],
     search_params: &BatchSearchParams,
     use_sampling: bool,
-    query_context: &QueryContext,
+    segment_query_context: &SegmentQueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
     let read_segment = locked_segment.read();
@@ -632,14 +636,13 @@ fn execute_batch_search(
             search_params.top,
             ef_limit,
             segment_points,
-            query_context.available_point_count(),
+            segment_query_context.available_point_count(),
         )
     } else {
         search_params.top
     };
 
     let vectors_batch = &vectors_batch.iter().collect_vec();
-    let segment_query_context = query_context.get_segment_query_context();
     let res = read_segment.search_batch(
         search_params.vector_name,
         vectors_batch,
