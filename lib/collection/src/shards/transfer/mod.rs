@@ -129,6 +129,18 @@ impl ShardTransferMethod {
     pub fn is_resharding(&self) -> bool {
         matches!(self, Self::ReshardingStreamRecords)
     }
+
+    pub fn can_fallback(self) -> bool {
+        match self {
+            Self::StreamRecords => true,
+            // WAL delta needs to fall back if diff cannot be resolved
+            Self::WalDelta => true,
+            // Snapshot includes index, other methods don't so falling back may be too expensive
+            Self::Snapshot => false,
+            // Special method, other methods are not compatible
+            Self::ReshardingStreamRecords => false,
+        }
+    }
 }
 
 /// Interface to consensus for shard transfer operations.
