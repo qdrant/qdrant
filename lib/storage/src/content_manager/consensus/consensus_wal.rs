@@ -35,7 +35,7 @@ impl ConsensusOpWal {
         let first_entry = self
             .first_entry()
             .map_err(consensus_manager::raft_error_other)?
-            .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?;
+            .ok_or_else(|| raft::Error::Store(raft::StorageError::Unavailable))?;
         if id < first_entry.index {
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
@@ -44,7 +44,7 @@ impl ConsensusOpWal {
         <RaftEntry as prost_for_raft::Message>::decode(
             self.0
                 .entry(id - offset)
-                .ok_or(raft::Error::Store(raft::StorageError::Unavailable))?
+                .ok_or_else(|| raft::Error::Store(raft::StorageError::Unavailable))?
                 .as_ref(),
         )
         .map_err(consensus_manager::raft_error_other)

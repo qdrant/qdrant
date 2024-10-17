@@ -468,7 +468,7 @@ impl SnapshotStorageCloud {
             .prefix(
                 snapshot_path
                     .file_stem()
-                    .ok_or(CollectionError::bad_request("Invalid snapshot path"))?,
+                    .ok_or_else(|| CollectionError::bad_request("Invalid snapshot path"))?,
             )
             .suffix(".snapshot")
             .tempfile_in(temp_dir)?

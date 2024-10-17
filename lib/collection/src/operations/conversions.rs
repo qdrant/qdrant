@@ -1141,7 +1141,7 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
     fn try_from(value: api::grpc::qdrant::TargetVector) -> Result<Self, Self::Error> {
         value
             .target
-            .ok_or(Status::invalid_argument("Target vector is malformed"))
+            .ok_or_else(|| Status::invalid_argument("Target vector is malformed"))
             .and_then(|target| match target {
                 api::grpc::qdrant::target_vector::Target::Single(vector_example) => {
                     Ok(vector_example.try_into()?)
@@ -1228,7 +1228,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                 })
             })
             .transpose()?
-            .ok_or(Status::invalid_argument("Query is not specified"))?;
+            .ok_or_else(|| Status::invalid_argument("Query is not specified"))?;
 
         Ok(Self {
             query,
@@ -1337,9 +1337,11 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
     fn try_from(value: api::grpc::qdrant::VectorExample) -> Result<Self, Self::Error> {
         value
             .example
-            .ok_or(Status::invalid_argument(
-                "Vector example, which can be id or bare vector, is malformed",
-            ))
+            .ok_or_else(|| {
+                Status::invalid_argument(
+                    "Vector example, which can be id or bare vector, is malformed",
+                )
+            })
             .and_then(|example| match example {
                 api::grpc::qdrant::vector_example::Example::Id(id) => {
                     Ok(Self::PointId(id.try_into()?))
@@ -1688,7 +1690,7 @@ impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
             shard_key: op
                 .shard_key
                 .and_then(convert_shard_key_from_grpc)
-                .ok_or(Status::invalid_argument("Shard key is not specified"))?,
+                .ok_or_else(|| Status::invalid_argument("Shard key is not specified"))?,
             shards_number: op
                 .shards_number
                 .map(NonZeroU32::try_from)
@@ -1721,7 +1723,7 @@ impl TryFrom<api::grpc::qdrant::DeleteShardKey> for DropShardingKey {
             shard_key: op
                 .shard_key
                 .and_then(convert_shard_key_from_grpc)
-                .ok_or(Status::invalid_argument("Shard key is not specified"))?,
+                .ok_or_else(|| Status::invalid_argument("Shard key is not specified"))?,
         })
     }
 }

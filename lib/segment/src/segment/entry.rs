@@ -177,11 +177,11 @@ impl SegmentEntry for Segment {
             }),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    let vector_data = segment.vector_data.get(vector_name).ok_or(
+                    let vector_data = segment.vector_data.get(vector_name).ok_or_else(|| {
                         OperationError::VectorNameNotExists {
                             received_name: vector_name.to_string(),
-                        },
-                    )?;
+                        }
+                    })?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     let is_deleted = vector_storage.delete_vector(internal_id)?;
                     Ok((is_deleted, Some(internal_id)))
