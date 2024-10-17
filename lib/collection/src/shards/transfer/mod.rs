@@ -126,7 +126,7 @@ pub enum ShardTransferMethod {
 }
 
 impl ShardTransferMethod {
-    pub fn is_resharding(&self) -> bool {
+    pub fn is_resharding(self) -> bool {
         matches!(self, Self::ReshardingStreamRecords)
     }
 

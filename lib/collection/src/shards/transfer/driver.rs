@@ -141,8 +141,15 @@ pub async fn transfer_shard_fallback_default(
     collection_id: &CollectionId,
     fallback_method: ShardTransferMethod,
 ) -> CollectionResult<bool> {
-    // Do not attempt to fall back to the same method
     let old_method = transfer_config.method;
+
+    // Falling back must be supported
+    if !old_method.unwrap_or_default().can_fallback() {
+        log::debug!("Failed shard transfer fallback, current method does not allow falling back");
+        return Ok(false);
+    }
+
+    // Do not attempt to fall back to the same method
     if old_method.map_or(false, |method| method == fallback_method) {
         log::warn!("Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}");
         return Ok(false);
