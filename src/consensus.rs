@@ -243,6 +243,7 @@ impl Consensus {
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
+        state_ref.compact_wal(config.compact_wal_entries)?;
 
         let broker = RaftMessageBroker::new(
             runtime.clone(),
@@ -815,17 +816,21 @@ impl Consensus {
         self.store().record_consensus_working();
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
-        let (light_rd, role_change) = self.process_ready(ready)?;
-        if let Some(light_ready) = light_rd {
-            let result = self.process_light_ready(light_ready)?;
-            if let Some(role_change) = role_change {
-                self.process_role_change(role_change);
-            }
-            Ok(result)
-        } else {
+
+        let (Some(light_ready), role_change) = self.process_ready(ready)? else {
             // No light ready, so we need to stop consensus.
-            Ok(true)
+            return Ok(true);
+        };
+
+        let result = self.process_light_ready(light_ready)?;
+
+        if let Some(role_change) = role_change {
+            self.process_role_change(role_change);
         }
+
+        self.store().compact_wal(self.config.compact_wal_entries)?;
+
+        Ok(result)
     }
 
     fn process_role_change(&self, role_change: StateRole) {
