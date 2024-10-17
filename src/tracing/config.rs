@@ -25,7 +25,10 @@ impl LoggerConfig {
             );
         }
 
-        logger_config.default.log_level = logger_config.default.log_level.take().or(log_level);
+        if logger_config.default.log_level.is_none() {
+            logger_config.default.log_level = log_level;
+        }
+
         logger_config
     }
 

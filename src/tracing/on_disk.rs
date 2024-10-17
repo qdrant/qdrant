@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::{fs, io};
 
 use anyhow::Context as _;
+use common::ext::OptionExt;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt, registry};
@@ -20,10 +21,17 @@ pub struct Config {
 
 impl Config {
     pub fn merge(&mut self, other: Self) {
-        self.enabled = other.enabled.or(self.enabled.take());
-        self.log_file = other.log_file.or(self.log_file.take());
-        self.log_level = other.log_level.or(self.log_level.take());
-        self.span_events = other.span_events.or(self.span_events.take());
+        let Self {
+            enabled,
+            log_file,
+            log_level,
+            span_events,
+        } = other;
+
+        self.enabled.replace_if_some(enabled);
+        self.log_file.replace_if_some(log_file);
+        self.log_level.replace_if_some(log_level);
+        self.span_events.replace_if_some(span_events);
     }
 }
 
