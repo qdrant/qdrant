@@ -236,7 +236,7 @@ impl Collections for CollectionsService {
             self.dispatcher.as_ref(),
             collection_name,
             operation
-                .ok_or(Status::new(tonic::Code::InvalidArgument, "empty operation"))?
+                .ok_or_else(|| Status::new(tonic::Code::InvalidArgument, "empty operation"))?
                 .try_into()?,
             access,
             timeout.map(std::time::Duration::from_secs),

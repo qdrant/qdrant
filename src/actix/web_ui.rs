@@ -18,7 +18,7 @@ pub fn web_ui_folder(settings: &Settings) -> Option<String> {
             .service
             .static_content_dir
             .clone()
-            .unwrap_or(DEFAULT_STATIC_DIR.to_string());
+            .unwrap_or_else(|| DEFAULT_STATIC_DIR.to_string());
         let static_folder_path = Path::new(&static_folder);
         if !static_folder_path.exists() || !static_folder_path.is_dir() {
             // enabled BUT folder does not exist

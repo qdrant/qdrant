@@ -300,7 +300,7 @@ impl VectorIndex for PlainIndex {
                 let filtered_ids_vec = payload_index.query_points(filter);
                 let deleted_points = query_context
                     .deleted_points()
-                    .unwrap_or(id_tracker.deleted_point_bitslice());
+                    .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
@@ -322,7 +322,7 @@ impl VectorIndex for PlainIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let deleted_points = query_context
                     .deleted_points()
-                    .unwrap_or(id_tracker.deleted_point_bitslice());
+                    .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {

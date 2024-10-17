@@ -188,7 +188,7 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .map_err(|err| WalError::TruncateWalError(format!("{err:?}")))?;
 
         // Acknowledge index should not decrease
-        let minimal_first_index = self.first_index.unwrap_or(self.wal.first_index());
+        let minimal_first_index = self.first_index.unwrap_or_else(|| self.wal.first_index());
         let new_first_index = Some(
             until_index
                 .max(minimal_first_index)

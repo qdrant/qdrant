@@ -516,7 +516,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_points = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
 
         let raw_scorer = Self::construct_search_scorer(
             vector,
@@ -576,7 +576,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let deleted_points = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
 
         let is_stopped = vector_query_context.is_stopped();
 

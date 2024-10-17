@@ -544,7 +544,7 @@ pub async fn update_batch(
     for op in operations {
         let operation = op
             .operation
-            .ok_or(Status::invalid_argument("Operation is missing"))?;
+            .ok_or_else(|| Status::invalid_argument("Operation is missing"))?;
         let collection_name = collection_name.clone();
         let ordering = ordering.clone();
         let result = match operation {
