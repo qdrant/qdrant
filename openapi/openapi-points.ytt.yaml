@@ -4,7 +4,7 @@ paths:
   /collections/{collection_name}/points/{id}:
     get:
       tags:
-        - points
+        - Points
       summary: Get point
       description: Retrieve full information of single point by id
       operationId: get_point
@@ -32,7 +32,7 @@ paths:
   /collections/{collection_name}/points:
     post:
       tags:
-        - points
+        - Points
       summary: Get points
       description: Retrieve multiple points by specified IDs
       operationId: get_points
@@ -67,7 +67,7 @@ paths:
 
     put:
       tags:
-        - points
+        - Points
       summary: Upsert points
       description: Perform insert + updates on points. If point with given ID already exists - it will be overwritten.
       operationId: upsert_points
@@ -102,7 +102,7 @@ paths:
   /collections/{collection_name}/points/delete:
     post:
       tags:
-        - points
+        - Points
       summary: Delete points
       description: Delete points
       operationId: delete_points
@@ -137,7 +137,7 @@ paths:
   /collections/{collection_name}/points/vectors:
     put:
       tags:
-        - points
+        - Points
       summary: Update vectors
       description: Update specified named vectors on points, keep unspecified vectors intact.
       operationId: update_vectors
@@ -172,7 +172,7 @@ paths:
   /collections/{collection_name}/points/vectors/delete:
     post:
       tags:
-        - points
+        - Points
       summary: Delete vectors
       description: Delete named vectors from the given points.
       operationId: delete_vectors
@@ -207,7 +207,7 @@ paths:
   /collections/{collection_name}/points/payload:
     post:
       tags:
-        - points
+        - Points
       summary: Set payload
       description: Set payload values for points
       operationId: set_payload
@@ -240,7 +240,7 @@ paths:
       responses: #@ response(reference("UpdateResult"))
     put:
       tags:
-        - points
+        - Points
       summary: Overwrite payload
       description: Replace full payload of points with new one
       operationId: overwrite_payload
@@ -275,7 +275,7 @@ paths:
   /collections/{collection_name}/points/payload/delete:
     post:
       tags:
-        - points
+        - Points
       summary: Delete payload
       description: Delete specified key payload for points
       operationId: delete_payload
@@ -310,7 +310,7 @@ paths:
   /collections/{collection_name}/points/payload/clear:
     post:
       tags:
-        - points
+        - Points
       summary: Clear payload
       description: Remove all payload for specified points
       operationId: clear_payload
@@ -344,7 +344,7 @@ paths:
   /collections/{collection_name}/points/batch:
     post:
       tags:
-        - points
+        - Points
       summary: Batch update points
       description: Apply a series of update operations for points, vectors and payloads
       operationId: batch_update

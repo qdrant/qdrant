@@ -4,7 +4,7 @@ paths:
   /collections:
     get:
       tags:
-        - collections
+        - Collections
       summary: List collections
       description: Get list name of all existing collections
       operationId: get_collections
@@ -13,7 +13,7 @@ paths:
   /collections/{collection_name}:
     get:
       tags:
-        - collections
+        - Collections
       summary: Collection info
       description: Get detailed information about specified existing collection
       operationId: get_collection
@@ -28,7 +28,7 @@ paths:
 
     put:
       tags:
-        - collections
+        - Collections
       summary: Create collection
       description: Create new collection with given parameters
       operationId: create_collection
@@ -57,7 +57,7 @@ paths:
 
     patch:
       tags:
-        - collections
+        - Collections
       summary: Update collection parameters
       description: Update parameters of the existing collection
       operationId: update_collection
@@ -86,7 +86,7 @@ paths:
 
     delete:
       tags:
-        - collections
+        - Collections
       summary: Delete collection
       description: Drop collection and all associated data
       operationId: delete_collection
@@ -109,7 +109,7 @@ paths:
   /collections/aliases:
     post:
       tags:
-        - collections
+        - Aliases
       summary: Update aliases of the collections
       operationId: update_aliases
       requestBody:
@@ -131,7 +131,7 @@ paths:
   /collections/{collection_name}/index:
     put:
       tags:
-        - collections
+        - Indexes
       summary: Create index for field in collection
       description: Create index for field in collection
       operationId: create_field_index
@@ -166,7 +166,7 @@ paths:
   /collections/{collection_name}/exists:
     get:
       tags:
-        - collections
+        - Collections
       summary: Check the existence of a collection
       description: Returns "true" if the given collection name exists, and "false" otherwise
       operationId: collection_exists
@@ -182,7 +182,7 @@ paths:
   /collections/{collection_name}/index/{field_name}:
     delete:
       tags:
-        - collections
+        - Indexes
       summary: Delete index for field in collection
       description: Delete field index for collection
       operationId: delete_field_index
@@ -216,8 +216,7 @@ paths:
   /collections/{collection_name}/cluster:
     get:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Collection cluster info
       description: Get cluster information for a collection
       operationId: collection_cluster_info
@@ -232,8 +231,7 @@ paths:
 
     post:
       tags:
-        - collections
-        - cluster
+        - Distributed
       summary: Update collection cluster setup
       operationId: update_collection_cluster
       requestBody:
@@ -261,7 +259,7 @@ paths:
   /collections/{collection_name}/aliases:
     get:
       tags:
-        - collections
+        - Aliases
       summary: List aliases for collection
       description: Get list of all aliases for a collection
       operationId: get_collection_aliases
@@ -277,7 +275,7 @@ paths:
   /aliases:
     get:
       tags:
-        - collections
+        - Aliases
       summary: List collections aliases
       description: Get list of all existing collections aliases
       operationId: get_collections_aliases
