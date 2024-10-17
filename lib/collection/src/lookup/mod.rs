@@ -42,7 +42,7 @@ where
 {
     let collection = collection_by_name(request.collection_name.clone())
         .await
-        .ok_or(CollectionError::NotFound {
+        .ok_or_else(|| CollectionError::NotFound {
             what: format!("Collection {}", request.collection_name),
         })?;
 
