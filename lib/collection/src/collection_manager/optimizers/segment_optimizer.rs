@@ -86,7 +86,7 @@ pub trait SegmentOptimizer {
             vector_data: collection_params.to_base_vector_data()?,
             sparse_vector_data: collection_params.to_sparse_vector_data()?,
             payload_storage_type: if collection_params.on_disk_payload {
-                PayloadStorageType::OnDisk
+                PayloadStorageType::Mmap
             } else {
                 PayloadStorageType::InMemory
             },
@@ -297,7 +297,7 @@ pub trait SegmentOptimizer {
             vector_data,
             sparse_vector_data,
             payload_storage_type: if collection_params.on_disk_payload {
-                PayloadStorageType::OnDisk
+                PayloadStorageType::Mmap
             } else {
                 PayloadStorageType::InMemory
             },
