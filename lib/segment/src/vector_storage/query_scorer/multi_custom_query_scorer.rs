@@ -84,7 +84,9 @@ impl<
         let mut counter = self.hardware_counter.clone();
 
         // Calculate the dimension multiplier here to improve performance of measuring.
-        counter.cpu_counter_mut().multiplied_mut(self.dimension);
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(self.dimension * size_of::<TElement>());
 
         counter
     }

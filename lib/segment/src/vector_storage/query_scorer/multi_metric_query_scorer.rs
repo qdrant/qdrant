@@ -52,7 +52,6 @@ impl<
         multi_dense_a: TypedMultiDenseVectorRef<TElement>,
         multi_dense_b: TypedMultiDenseVectorRef<TElement>,
     ) -> ScoreType {
-        println!("Score multi");
         self.hardware_counter
             .cpu_counter()
             // Calculate the amount of comparisons needed for multi vector scoring.
@@ -77,7 +76,9 @@ impl<
         let mut counter = self.hardware_counter.clone();
 
         // Calculate the dimension multiplier here to improve performance of measuring.
-        counter.cpu_counter_mut().multiplied_mut(self.query.dim);
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(self.query.dim * size_of::<TElement>());
 
         counter
     }
