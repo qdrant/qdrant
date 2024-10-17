@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::{fs, io};
 
 use anyhow::Context as _;
+use common::ext::OptionExt;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt, registry};
@@ -27,18 +28,10 @@ impl Config {
             span_events,
         } = other;
 
-        if let Some(enabled) = enabled {
-            self.enabled.replace(enabled);
-        }
-        if let Some(log_file) = log_file {
-            self.log_file.replace(log_file);
-        }
-        if let Some(log_level) = log_level {
-            self.log_level.replace(log_level);
-        }
-        if let Some(span_events) = span_events {
-            self.span_events.replace(span_events);
-        }
+        self.enabled.replace_if_some(enabled);
+        self.log_file.replace_if_some(log_file);
+        self.log_level.replace_if_some(log_level);
+        self.span_events.replace_if_some(span_events);
     }
 }
 

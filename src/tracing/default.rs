@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::ext::OptionExt;
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt, registry};
@@ -22,15 +23,9 @@ impl Config {
             color,
         } = other;
 
-        if let Some(log_level) = log_level {
-            self.log_level.replace(log_level);
-        }
-        if let Some(span_events) = span_events {
-            self.span_events.replace(span_events);
-        }
-        if let Some(color) = color {
-            self.color.replace(color);
-        }
+        self.log_level.replace_if_some(log_level);
+        self.span_events.replace_if_some(span_events);
+        self.color.replace_if_some(color);
     }
 }
 
