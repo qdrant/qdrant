@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::defaults;
 use parking_lot::Mutex;
+use semver::Version;
 use tempfile::TempPath;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -191,31 +192,46 @@ pub(super) async fn transfer_snapshot(
         "Local shard must be a queue proxy",
     );
 
-    // Create shard snapshot
-    log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-    let snapshot_description = shard_holder_read
-        .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-        .await?;
+    // The ability to read streaming snapshot format is introduced in 1.12 (#5179).
+    let use_streaming_endpoint =
+        channel_service.peer_is_at_version(remote_peer_id, Version::new(1, 12, 0));
 
-    // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-    let snapshot_temp_path = shard_holder_read
-        .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
-        .await
-        .map(TempPath::from_path)
-        .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
-            ))
-        })?;
-    let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+    let mut snapshot_temp_paths = Vec::new();
+    let mut shard_download_url = local_rest_address;
+    if use_streaming_endpoint {
+        log::trace!("Using streaming endpoint for shard snapshot transfer");
+        shard_download_url.set_path(&format!(
+            "/collections/{collection_id}/shards/{shard_id}/snapshot",
+        ));
+    } else {
+        // Create shard snapshot
+        log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
+        let snapshot_description = shard_holder_read
+            .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
+            .await?;
+
+        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
+        let snapshot_temp_path = shard_holder_read
+            .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
+            .await
+            .map(TempPath::from_path)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
+                ))
+            })?;
+        let snapshot_checksum_temp_path =
+            TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+        snapshot_temp_paths.push(snapshot_temp_path);
+        snapshot_temp_paths.push(snapshot_checksum_temp_path);
+
+        shard_download_url.set_path(&format!(
+            "/collections/{collection_id}/shards/{shard_id}/snapshots/{}",
+            &snapshot_description.name,
+        ));
+    };
 
     // Recover shard snapshot on remote
-    let mut shard_download_url = local_rest_address;
-    shard_download_url.set_path(&format!(
-        "/collections/{collection_id}/shards/{shard_id}/snapshots/{}",
-        &snapshot_description.name,
-    ));
-
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
     remote_shard
         .recover_shard_snapshot_from_url(
@@ -233,11 +249,13 @@ pub(super) async fn transfer_snapshot(
             ))
         })?;
 
-    if let Err(err) = snapshot_temp_path.close() {
-        log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
-    }
-    if let Err(err) = snapshot_checksum_temp_path.close() {
-        log::warn!("Failed to delete shard transfer snapshot checksum file after recovery, file may be left behind: {err}");
+    for snapshot_temp_path in snapshot_temp_paths {
+        if let Err(err) = snapshot_temp_path.close() {
+            log::warn!(
+                "Failed to delete shard transfer snapshot after recovery, \
+                 snapshot file may be left behind: {err}"
+            );
+        }
     }
 
     // Set shard state to Partial
