@@ -10,6 +10,7 @@ use super::*;
 use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use crate::entry::entry_point::SegmentEntry;
 use crate::segment_constructor::{build_segment, load_segment};
@@ -64,6 +65,9 @@ fn test_search_batch_equivalence_single() {
         .unwrap();
     eprintln!("search_result = {search_result:#?}");
 
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+
     let search_batch_result = segment
         .search_batch(
             DEFAULT_VECTOR_NAME,
@@ -73,7 +77,7 @@ fn test_search_batch_equivalence_single() {
             None,
             10,
             None,
-            Default::default(),
+            &segment_query_context,
         )
         .unwrap();
     eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -724,6 +728,8 @@ fn test_vector_compatibility_checks() {
             )
             .err()
             .unwrap();
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
         segment
             .search_batch(
                 vector_name,
@@ -736,7 +742,7 @@ fn test_vector_compatibility_checks() {
                 None,
                 1,
                 None,
-                Default::default(),
+                &segment_query_context,
             )
             .err()
             .unwrap();

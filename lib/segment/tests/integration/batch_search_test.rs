@@ -5,6 +5,7 @@ use std::sync::Arc;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -112,6 +113,9 @@ fn test_batch_and_single_request_equivalency() {
             )
             .unwrap();
 
+        let query_context = QueryContext::default();
+        let segment_query_context = query_context.get_segment_query_context();
+
         let batch_res = segment
             .search_batch(
                 DEFAULT_VECTOR_NAME,
@@ -121,7 +125,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                Default::default(),
+                &segment_query_context,
             )
             .unwrap();
 

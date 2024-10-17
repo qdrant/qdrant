@@ -1,6 +1,3 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -23,6 +20,9 @@ use segment::types::{
     VectorStorageType,
 };
 use tempfile::Builder;
+
+#[cfg(not(target_os = "windows"))]
+mod prof;
 
 const NUM_POINTS: usize = 10_000;
 const NUM_VECTORS_PER_POINT: usize = 16;

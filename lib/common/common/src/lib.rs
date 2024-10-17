@@ -1,3 +1,4 @@
+pub mod counter;
 pub mod cpu;
 pub mod defaults;
 pub mod disk;

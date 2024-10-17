@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
 use common::types::TelemetryDetail;
@@ -6,7 +6,8 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, VectorElementType};
+use segment::data_types::query_context::QueryContext;
+use segment::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -14,8 +15,9 @@ use segment::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs
 use segment::index::VectorIndex;
 use segment::segment_constructor::{build_segment, create_sparse_vector_index_test};
 use segment::types::{
-    Distance, Indexes, SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    Condition, Distance, ExtendedPointId, Filter, HasIdCondition, Indexes, PointIdType,
+    SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+    VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
@@ -225,4 +227,94 @@ fn sparse_index_discover_test() {
             dense_search_result[0].iter().map(|r| r.idx).collect_vec(),
         );
     }
+}
+
+#[test]
+fn sparse_index_hardware_measurement_test() {
+    let stopped = AtomicBool::new(false);
+
+    let dim = 8;
+    let num_vectors: u64 = 5_000;
+
+    let mut rnd = StdRng::seed_from_u64(42);
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let index_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+
+    let sparse_config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: HashMap::from([(
+            SPARSE_VECTOR_NAME.to_owned(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig {
+                    full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                    index_type: SparseIndexType::MutableRam,
+                    datatype: Some(VectorStorageDatatype::Float32),
+                },
+            },
+        )]),
+        payload_storage_type: Default::default(),
+    };
+
+    let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
+
+    for n in 0..num_vectors {
+        let (sparse_vector, _) = random_named_vector(&mut rnd, dim);
+
+        let idx = n.into();
+        sparse_segment
+            .upsert_point(n as SeqNumberType, idx, sparse_vector)
+            .unwrap();
+    }
+    let payload_index_ptr = sparse_segment.payload_index.clone();
+
+    let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
+    let sparse_index = create_sparse_vector_index_test(SparseVectorIndexOpenArgs {
+        config: SparseIndexConfig {
+            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+            index_type: SparseIndexType::ImmutableRam,
+            datatype: Some(VectorStorageDatatype::Float32),
+        },
+        id_tracker: sparse_segment.id_tracker.clone(),
+        vector_storage: vector_storage.clone(),
+        payload_index: payload_index_ptr.clone(),
+        path: index_dir.path(),
+        stopped: &stopped,
+        tick_progress: || (),
+    })
+    .unwrap();
+
+    let query_vec = QueryVector::Nearest(VectorInternal::Sparse(
+        SparseVector::new(vec![0, 1, 2], vec![42.0, 42.42, 42.4242]).unwrap(),
+    ));
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
+    assert!(vector_context.hardware_counter().is_some());
+    assert_eq!(
+        vector_context
+            .hardware_counter()
+            .unwrap()
+            .cpu_counter()
+            .get(),
+        0
+    );
+
+    // Some filter so we do plain sparse search
+    let ids: HashSet<PointIdType> = (0..3).map(ExtendedPointId::NumId).collect();
+    let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
+
+    sparse_index
+        .search(&[&query_vec], Some(&filter), 1, None, &vector_context)
+        .unwrap();
+
+    assert!(
+        vector_context
+            .hardware_counter()
+            .unwrap()
+            .cpu_counter()
+            .get()
+            > 0
+    );
 }
