@@ -503,18 +503,12 @@ where
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
-    let new_point_ids = ids
-        .iter()
-        .cloned()
-        .filter(|x| !(updated_points.contains(x)));
+    let new_point_ids = ids.iter().cloned().filter(|x| !updated_points.contains(x));
 
     {
-        let default_write_segment =
-            segments
-                .smallest_appendable_segment()
-                .ok_or(CollectionError::service_error(
-                    "No appendable segments exists, expected at least one",
-                ))?;
+        let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
+            CollectionError::service_error("No appendable segments exists, expected at least one")
+        })?;
 
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
