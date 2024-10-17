@@ -9,7 +9,7 @@ use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use segment::common::operation_error::check_process_stopped;
+use segment::common::operation_error::{check_process_stopped, OperationResult};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -376,13 +376,17 @@ pub trait SegmentOptimizer {
         &self,
         segments: &LockedSegmentHolder,
         proxy_ids: &[SegmentId],
-        temp_segment: &LockedSegment,
-    ) {
+        temp_segment: LockedSegment,
+    ) -> OperationResult<()> {
         self.unwrap_proxy(segments, proxy_ids);
         if temp_segment.get().read().available_point_count() > 0 {
             let mut write_segments = segments.write();
-            write_segments.add_new_locked(temp_segment.clone());
+            write_segments.add_new_locked(temp_segment);
+        } else {
+            // Temp segment is already removed from proxy, so nobody could write to it in between
+            temp_segment.drop_data()?;
         }
+        Ok(())
     }
 
     /// Function to wrap slow part of optimization. Performs proxy rollback in case of cancellation.
@@ -600,9 +604,10 @@ pub trait SegmentOptimizer {
             proxy_ids
         };
 
-        check_process_stopped(stopped).inspect_err(|_| {
-            self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
-        })?;
+        if let Err(e) = check_process_stopped(stopped) {
+            self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
+            return Err(CollectionError::from(e));
+        }
 
         // ---- SLOW PART -----
 
@@ -617,7 +622,8 @@ pub trait SegmentOptimizer {
             Ok(segment) => segment,
             Err(error) => {
                 if matches!(error, CollectionError::Cancelled { .. }) {
-                    self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
+                    self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
+                    return Err(error);
                 }
                 return Err(error);
             }
@@ -637,8 +643,10 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        check_process_stopped(stopped)
-            .inspect_err(|_| self.handle_cancellation(&segments, &proxy_ids, &tmp_segment))?;
+        if let Err(e) = check_process_stopped(stopped) {
+            self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
+            return Err(CollectionError::from(e));
+        }
 
         {
             // This block locks all operations with collection. It should be fast
