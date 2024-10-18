@@ -28,6 +28,7 @@ use crate::index::sparse_index::sparse_vector_index::{
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
+use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
@@ -322,6 +323,7 @@ pub(crate) fn open_segment_db(
 pub(crate) fn create_payload_storage(
     database: Arc<RwLock<DB>>,
     config: &SegmentConfig,
+    path: &Path,
 ) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
         PayloadStorageType::InMemory => {
@@ -329,6 +331,9 @@ pub(crate) fn create_payload_storage(
         }
         PayloadStorageType::OnDisk => {
             PayloadStorageEnum::from(OnDiskPayloadStorage::open(database)?)
+        }
+        PayloadStorageType::Mmap => {
+            PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(path)?)
         }
     };
     Ok(payload_storage)
@@ -462,7 +467,11 @@ fn create_segment(
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
     let database = open_segment_db(segment_path, config)?;
-    let payload_storage = sp(create_payload_storage(database.clone(), config)?);
+    let payload_storage = sp(create_payload_storage(
+        database.clone(),
+        config,
+        segment_path,
+    )?);
 
     let appendable_flag = config.is_appendable();
 
