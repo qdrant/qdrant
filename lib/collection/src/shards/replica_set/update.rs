@@ -336,7 +336,7 @@ impl ShardReplicaSet {
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
             format!("Failed peer: {peer_id}, error: {collection_error}")
         } else {
-            "".to_string()
+            String::new()
         };
 
         if !failures.is_empty() {
@@ -397,25 +397,25 @@ impl ShardReplicaSet {
             }
         }
 
+        // Successes must have applied to at least one active replica
         if !successes
             .iter()
             .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
-                 Consistency of this update is not guaranteed. Please retry. {failure_error}"
+                 Consistency of this update is not guaranteed. Please retry. {failure_error}",
             )));
         }
 
         let is_any_operation_rejected = successes
             .iter()
             .any(|(_, res)| matches!(res.status, UpdateStatus::ClockRejected));
-
         if is_any_operation_rejected {
             return Ok(None);
         }
 
-        // there are enough successes, return the first one
+        // There are enough successes, return the first one
         let (_, res) = successes
             .into_iter()
             .next()
