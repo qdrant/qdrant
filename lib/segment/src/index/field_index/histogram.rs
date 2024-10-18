@@ -654,9 +654,6 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
                 }
             }
             (Some((left_border, left_border_count)), Some((right_border, right_border_count))) => {
-                if left_border_count.right != right_border_count.left {
-                    eprintln!("error");
-                }
                 assert_eq!(left_border_count.right, right_border_count.left);
                 let new_count = left_border_count.right + 1;
 
