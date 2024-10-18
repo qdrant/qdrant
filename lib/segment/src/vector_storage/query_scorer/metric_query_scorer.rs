@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -63,5 +64,10 @@ impl<
         let v1 = self.vector_storage.get_dense(point_a);
         let v2 = self.vector_storage.get_dense(point_b);
         TMetric::similarity(v1, v2)
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        // TODO: implement!
+        HardwareCounterCell::new()
     }
 }

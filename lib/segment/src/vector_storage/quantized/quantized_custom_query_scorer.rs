@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use itertools::Itertools;
 
@@ -146,5 +147,10 @@ where
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        // TODO: implement!
+        HardwareCounterCell::new()
     }
 }

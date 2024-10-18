@@ -164,6 +164,12 @@ impl VectorQueryContext<'_> {
         self.hardware_counter
     }
 
+    pub fn apply_hardware_counter(&self, other: &HardwareCounterCell) {
+        if let Some(hardware_counter) = self.hardware_counter {
+            hardware_counter.apply_from(other);
+        }
+    }
+
     pub fn available_point_count(&self) -> usize {
         self.available_point_count
     }
