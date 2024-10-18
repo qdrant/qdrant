@@ -393,11 +393,12 @@ pub(crate) fn create_vector_index(
 pub fn create_sparse_vector_index_test(
     args: SparseVectorIndexOpenArgs<impl FnMut()>,
 ) -> OperationResult<VectorIndexEnum> {
-    create_sparse_vector_index(args)
+    create_sparse_vector_index(args, None)
 }
 
 pub(crate) fn create_sparse_vector_index(
     args: SparseVectorIndexOpenArgs<impl FnMut()>,
+    permit: Option<Arc<CpuPermit>>,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match (
         args.config.index_type,
@@ -411,35 +412,35 @@ pub(crate) fn create_sparse_vector_index(
         }
 
         (SparseIndexType::MutableRam, _, _) => {
-            VectorIndexEnum::SparseRam(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseRam(SparseVectorIndex::open(args, permit)?)
         }
 
         // Non-compressed
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, false) => {
-            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float32, false) => {
-            VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseMmap(SparseVectorIndex::open(args, permit)?)
         }
 
         // Compressed
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float32, true) => {
-            VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamF32(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float32, true) => {
-            VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapF32(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Float16, true) => {
-            VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamF16(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Float16, true) => {
-            VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapF16(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::ImmutableRam, VectorStorageDatatype::Uint8, true) => {
-            VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedImmutableRamU8(SparseVectorIndex::open(args, permit)?)
         }
         (SparseIndexType::Mmap, VectorStorageDatatype::Uint8, true) => {
-            VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args)?)
+            VectorIndexEnum::SparseCompressedMmapU8(SparseVectorIndex::open(args, permit)?)
         }
     };
 
@@ -567,15 +568,18 @@ fn create_segment(
             );
         }
 
-        let vector_index = sp(create_sparse_vector_index(SparseVectorIndexOpenArgs {
-            config: sparse_vector_config.index,
-            id_tracker: id_tracker.clone(),
-            vector_storage: vector_storage.clone(),
-            payload_index: payload_index.clone(),
-            path: &vector_index_path,
-            stopped,
-            tick_progress: || (),
-        })?);
+        let vector_index = sp(create_sparse_vector_index(
+            SparseVectorIndexOpenArgs {
+                config: sparse_vector_config.index,
+                id_tracker: id_tracker.clone(),
+                vector_storage: vector_storage.clone(),
+                payload_index: payload_index.clone(),
+                path: &vector_index_path,
+                stopped,
+                tick_progress: || (),
+            },
+            None,
+        )?);
 
         check_process_stopped(stopped)?;
 
