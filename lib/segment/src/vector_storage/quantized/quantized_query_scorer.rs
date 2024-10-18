@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use itertools::Itertools;
 
@@ -100,5 +101,10 @@ where
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.quantized_data.score_internal(point_a, point_b)
+    }
+
+    fn hardware_counter(&self) -> HardwareCounterCell {
+        // TODO: implement!
+        HardwareCounterCell::new()
     }
 }

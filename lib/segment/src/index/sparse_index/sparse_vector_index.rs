@@ -306,9 +306,15 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                Ok(raw_scorer.peek_top_iter(&mut filtered_points, top))
+                let res = raw_scorer.peek_top_iter(&mut filtered_points, top);
+                vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
+                Ok(res)
             }
-            None => Ok(raw_scorer.peek_top_all(top)),
+            None => {
+                let res = raw_scorer.peek_top_all(top);
+                vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
+                Ok(res)
+            }
         }
     }
 
@@ -353,10 +359,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &is_stopped,
         );
         let search_result = search_context.plain_search(&ids);
-
-        if let Some(hardware_counter) = vector_query_context.hardware_counter() {
-            hardware_counter.apply_from(search_context.hardware_counter());
-        }
+        vector_query_context.apply_hardware_counter(search_context.hardware_counter());
         Ok(search_result)
     }
 
@@ -398,9 +401,15 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
-                search_context.search(&matches_filter_condition)
+                let res = search_context.search(&matches_filter_condition);
+                vector_query_context.apply_hardware_counter(search_context.hardware_counter());
+                res
             }
-            None => search_context.search(&not_deleted_condition),
+            None => {
+                let res = search_context.search(&not_deleted_condition);
+                vector_query_context.apply_hardware_counter(search_context.hardware_counter());
+                res
+            }
         }
     }
 
