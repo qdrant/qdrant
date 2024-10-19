@@ -104,6 +104,9 @@ pub struct ConsensusConfig {
     #[validate(range(min = 1))]
     #[serde(default = "default_message_timeout_tics")]
     pub message_timeout_ticks: u64,
+    #[allow(dead_code)] // `schema_generator` complains about this 🙄
+    #[serde(default)]
+    pub compact_wal_entries: u64, // compact WAL when it grows to enough applied entries
 }
 
 impl Default for ConsensusConfig {
@@ -113,6 +116,7 @@ impl Default for ConsensusConfig {
             tick_period_ms: default_tick_period_ms(),
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
             message_timeout_ticks: default_message_timeout_tics(),
+            compact_wal_entries: 0,
         }
     }
 }

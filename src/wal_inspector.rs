@@ -30,7 +30,10 @@ fn print_consensus_wal(wal_path: &Path) {
     println!("First entry: {first_index:?}");
     let last_index = wal.last_entry().unwrap();
     println!("Last entry: {last_index:?}");
-    println!("Offset of first entry: {:?}", wal.index_offset().unwrap());
+    println!(
+        "Offset of first entry: {:?}",
+        wal.index_offset().unwrap().wal_to_raft_offset
+    );
     let entries = wal
         .entries(
             first_index.map(|f| f.index).unwrap_or(1),
