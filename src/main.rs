@@ -119,6 +119,9 @@ struct Args {
     /// Run stacktrace collector. Used for debugging.
     #[arg(long, action, default_value_t = false)]
     stacktrace: bool,
+
+    #[arg(long, action, default_value_t = false)]
+    reinit: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -172,8 +175,11 @@ fn main() -> anyhow::Result<()> {
     settings.validate_and_warn();
 
     // Saved state of the consensus.
-    let persistent_consensus_state =
-        Persistent::load_or_init(&settings.storage.storage_path, args.bootstrap.is_none())?;
+    let persistent_consensus_state = Persistent::load_or_init(
+        &settings.storage.storage_path,
+        args.bootstrap.is_none(),
+        args.reinit,
+    )?;
 
     let is_distributed_deployment = settings.cluster.enabled;
 

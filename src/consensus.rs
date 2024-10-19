@@ -1380,7 +1380,7 @@ mod tests {
         let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
-            Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
+            Persistent::load_or_init(&settings.storage.storage_path, true, false).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
