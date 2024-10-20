@@ -120,6 +120,14 @@ struct Args {
     #[arg(long, action, default_value_t = false)]
     stacktrace: bool,
 
+    /// Reinit consensus state.
+    /// When enabled, the service will assume the consensus should be reinitialized.
+    /// The exact behavior depends on if this current node has bootstrap URI or not.
+    /// If it has - it'll remove current consensus state and consensus WAL (while keeping peer ID)
+    ///             and will try to receive state from the bootstrap peer.
+    /// If it doesn't have - it'll remove other peers from voters promote
+    ///             the current peer to the leader and the single member of the cluster.
+    ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
 }
@@ -339,6 +347,7 @@ fn main() -> anyhow::Result<()> {
             tonic_telemetry_collector,
             toc_arc.clone(),
             runtime_handle.clone(),
+            args.reinit,
         )
         .expect("Can't initialize consensus");
 

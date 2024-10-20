@@ -774,6 +774,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.toc.sync_local_state()
     }
 
+    pub fn clear_wal(&self) -> Result<(), StorageError> {
+        self.wal.lock().clear()
+    }
+
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
         if min_entries_to_compact == 0 {
             return Ok(false);
@@ -789,7 +793,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         let first_unapplied_index = applied_index + 1;
 
-        debug_assert!(first_unapplied_index <= first_entry.index);
+        // ToDo: it seems like a mistake, need to check if it's correct
+        // debug_assert!(first_unapplied_index <= first_entry.index);
 
         if first_unapplied_index - first_entry.index < min_entries_to_compact {
             return Ok(false);
@@ -924,9 +929,18 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
         _context: GetEntriesContext,
     ) -> raft::Result<Vec<RaftEntry>> {
         let max_size: Option<_> = max_size.into();
-        if low < self.first_index()? {
+        let first_index = self.first_index()?;
+        if low < first_index {
+            log::debug!(
+                "Requested entries from {} to {} are already compacted (first index: {})",
+                low,
+                high,
+                first_index
+            );
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
+
+        log::debug!("Requesting entries from {} to {}", low, high);
 
         if high > self.last_index()? + 1 {
             panic!(

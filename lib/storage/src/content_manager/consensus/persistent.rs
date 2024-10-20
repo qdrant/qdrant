@@ -113,6 +113,7 @@ impl Persistent {
                 // so we can accept consensus operations.
                 state.state.conf_state.voters = vec![state.this_peer_id];
                 state.state.conf_state.learners = vec![];
+                state.state.hard_state.vote = state.this_peer_id;
                 state.save()?;
                 state
             } else {
