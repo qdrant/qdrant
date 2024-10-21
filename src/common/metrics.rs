@@ -281,34 +281,34 @@ impl MetricsProvider for GrpcTelemetry {
 impl MetricsProvider for MemoryTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         metrics.push(metric_family(
-            "memory_active",
+            "memory_active_bytes",
             "Total number of bytes in active pages allocated by the application",
             MetricType::GAUGE,
-            vec![gauge(self.active as f64, &[])],
+            vec![gauge(self.active_bytes as f64, &[])],
         ));
         metrics.push(metric_family(
-            "memory_allocated",
+            "memory_allocated_bytes",
             "Total number of bytes allocated by the application",
             MetricType::GAUGE,
-            vec![gauge(self.allocated as f64, &[])],
+            vec![gauge(self.allocated_bytes as f64, &[])],
         ));
         metrics.push(metric_family(
-            "memory_metadata",
+            "memory_metadata_bytes",
             "Total number of bytes dedicated to metadata",
             MetricType::GAUGE,
-            vec![gauge(self.metadata as f64, &[])],
+            vec![gauge(self.metadata_bytes as f64, &[])],
         ));
         metrics.push(metric_family(
-            "memory_resident",
+            "memory_resident_bytes",
             "Maximum number of bytes in physically resident data pages mapped",
             MetricType::GAUGE,
-            vec![gauge(self.resident as f64, &[])],
+            vec![gauge(self.resident_bytes as f64, &[])],
         ));
         metrics.push(metric_family(
-            "memory_retained",
+            "memory_retained_bytes",
             "Total number of bytes in virtual memory mappings",
             MetricType::GAUGE,
-            vec![gauge(self.retained as f64, &[])],
+            vec![gauge(self.retained_bytes as f64, &[])],
         ));
     }
 }

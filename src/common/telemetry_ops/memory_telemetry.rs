@@ -10,15 +10,15 @@ use tikv_jemalloc_ctl::{epoch, stats};
 #[derive(Debug, Clone, Default, JsonSchema, Serialize)]
 pub struct MemoryTelemetry {
     /// Total number of bytes in active pages allocated by the application
-    pub active: usize,
+    pub active_bytes: usize,
     /// Total number of bytes allocated by the application
-    pub allocated: usize,
+    pub allocated_bytes: usize,
     /// Total number of bytes dedicated to metadata
-    pub metadata: usize,
+    pub metadata_bytes: usize,
     /// Maximum number of bytes in physically resident data pages mapped
-    pub resident: usize,
+    pub resident_bytes: usize,
     /// Total number of bytes in virtual memory mappings
-    pub retained: usize,
+    pub retained_bytes: usize,
 }
 
 impl MemoryTelemetry {
@@ -29,11 +29,11 @@ impl MemoryTelemetry {
     pub fn collect() -> MemoryTelemetry {
         if epoch::advance().is_ok() {
             MemoryTelemetry {
-                active: stats::active::read().unwrap_or_default(),
-                allocated: stats::allocated::read().unwrap_or_default(),
-                metadata: stats::metadata::read().unwrap_or_default(),
-                resident: stats::resident::read().unwrap_or_default(),
-                retained: stats::retained::read().unwrap_or_default(),
+                active_bytes: stats::active::read().unwrap_or_default(),
+                allocated_bytes: stats::allocated::read().unwrap_or_default(),
+                metadata_bytes: stats::metadata::read().unwrap_or_default(),
+                resident_bytes: stats::resident::read().unwrap_or_default(),
+                retained_bytes: stats::retained::read().unwrap_or_default(),
             }
         } else {
             log::info!("Failed to advance Jemalloc stats epoch");
@@ -50,11 +50,11 @@ impl MemoryTelemetry {
 impl Anonymize for MemoryTelemetry {
     fn anonymize(&self) -> Self {
         MemoryTelemetry {
-            active: self.active,
-            allocated: self.allocated,
-            metadata: self.metadata,
-            resident: self.resident,
-            retained: self.retained,
+            active_bytes: self.active_bytes,
+            allocated_bytes: self.allocated_bytes,
+            metadata_bytes: self.metadata_bytes,
+            resident_bytes: self.resident_bytes,
+            retained_bytes: self.retained_bytes,
         }
     }
 }
