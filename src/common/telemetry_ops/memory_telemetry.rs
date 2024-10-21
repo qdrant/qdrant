@@ -9,10 +9,15 @@ use tikv_jemalloc_ctl::{epoch, stats};
 
 #[derive(Debug, Clone, Default, JsonSchema, Serialize)]
 pub struct MemoryTelemetry {
+    /// Total number of bytes in active pages allocated by the application
     pub active: usize,
+    /// Total number of bytes allocated by the application
     pub allocated: usize,
+    /// Total number of bytes dedicated to metadata
     pub metadata: usize,
+    /// Maximum number of bytes in physically resident data pages mapped
     pub resident: usize,
+    /// Total number of bytes in virtual memory mappings
     pub retained: usize,
 }
 
@@ -22,13 +27,17 @@ impl MemoryTelemetry {
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
     pub fn collect() -> MemoryTelemetry {
-        epoch::advance().expect("failed to advance epoch");
-        MemoryTelemetry {
-            active: stats::active::read().expect("failed to read active"),
-            allocated: stats::allocated::read().expect("failed to read allocated"),
-            metadata: stats::metadata::read().expect("failed to read metadata"),
-            resident: stats::resident::read().expect("failed to read resident"),
-            retained: stats::retained::read().expect("failed to read retained"),
+        if epoch::advance().is_ok() {
+            MemoryTelemetry {
+                active: stats::active::read().unwrap_or_default(),
+                allocated: stats::allocated::read().unwrap_or_default(),
+                metadata: stats::metadata::read().unwrap_or_default(),
+                resident: stats::resident::read().unwrap_or_default(),
+                retained: stats::retained::read().unwrap_or_default(),
+            }
+        } else {
+            log::info!("Failed to advance Jemalloc stats epoch");
+            MemoryTelemetry::default()
         }
     }
 
