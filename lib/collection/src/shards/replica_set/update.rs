@@ -342,15 +342,8 @@ impl ShardReplicaSet {
         if !failures.is_empty() {
             // If there aren't enough successes, report error to user
             if successes.len() < minimal_success_count {
-                return Err(CollectionError::service_error(if successes.is_empty() {
-                    format!("Failed to apply operation. {failure_error}")
-                } else {
-                    format!(
-                        "Failed to apply operation, {} of required {minimal_success_count} applied. \
-                        Consistency of this update is not guaranteed. Please retry. {failure_error}",
-                        successes.len(),
-                    )
-                }));
+                let (_peer_id, err) = failures.into_iter().next().unwrap();
+                return Err(err);
             }
 
             // If there are enough successes, deactivate failed replicas
