@@ -231,4 +231,22 @@ impl Shard {
             ))),
         }
     }
+
+    pub fn wal_version(&self) -> CollectionResult<Option<u64>> {
+        match self {
+            Self::Local(local_shard) => local_shard.wal.wal_version().map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Cannot get WAL version on {}: {err}",
+                    self.variant_name(),
+                ))
+            }),
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                Err(CollectionError::service_error(format!(
+                    "Cannot get WAL version on {}",
+                    self.variant_name(),
+                )))
+            }
+        }
+    }
 }
