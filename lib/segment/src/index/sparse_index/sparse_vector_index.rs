@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
@@ -94,7 +95,10 @@ pub struct SparseVectorIndexOpenArgs<'a, F: FnMut()> {
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Open a sparse vector index at a given path
-    pub fn open<F: FnMut()>(args: SparseVectorIndexOpenArgs<F>) -> OperationResult<Self> {
+    pub fn open<F: FnMut()>(
+        args: SparseVectorIndexOpenArgs<F>,
+        permit: Option<Arc<CpuPermit>>,
+    ) -> OperationResult<Self> {
         let SparseVectorIndexOpenArgs {
             config,
             id_tracker,
@@ -115,6 +119,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 vector_storage.clone(),
                 path,
                 stopped,
+                permit,
                 tick_progress,
             )?;
             (config, inverted_index, indices_tracker)
@@ -134,6 +139,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     vector_storage.clone(),
                     path,
                     stopped,
+                    permit,
                     tick_progress,
                 )?;
 
@@ -200,6 +206,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         path: &Path,
         stopped: &AtomicBool,
+        permit: Option<Arc<CpuPermit>>,
         mut tick_progress: impl FnMut(),
     ) -> OperationResult<(TInvertedIndex, IndicesTracker)> {
         let borrowed_vector_storage = vector_storage.borrow();
@@ -234,8 +241,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             }
             tick_progress();
         }
+        let index = if let Some(permit) = permit {
+            ram_index_builder.build_multithread(permit)
+        } else {
+            ram_index_builder.build()
+        };
         Ok((
-            TInvertedIndex::from_ram_index(Cow::Owned(ram_index_builder.build()), path)?,
+            TInvertedIndex::from_ram_index(Cow::Owned(index), path)?,
             indices_tracker,
         ))
     }
