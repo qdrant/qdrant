@@ -86,6 +86,19 @@ pub(super) async fn transfer_wal_delta(
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
 
+    let shard_holder_read = shard_holder.read().await;
+
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
+        )));
+    };
+
+    // Store current WAL version
+    // If we resolve no diff, we still need to queue/forward updates from this version onwards
+    let current_wal_version = replica_set.wal_version().await?;
+
     // Ask remote shard on failed node for recovery point
     let recovery_point = remote_shard
         .shard_recovery_point(collection_id, shard_id)
@@ -96,39 +109,29 @@ pub(super) async fn transfer_wal_delta(
             ))
         })?;
 
-    let shard_holder_read = shard_holder.read().await;
-
-    let transferring_shard = shard_holder_read.get_shard(&shard_id);
-    let Some(replica_set) = transferring_shard else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} cannot be queue proxied because it does not exist"
-        )));
-    };
-
     // Resolve WAL delta, get the version to start the diff from
     let wal_delta_version = replica_set
         .resolve_wal_delta(recovery_point)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
-        })?;
+        })?
+        // If diff is empty, we still need to queue/forward new updates starting from this version
+        .or_else(|| {
+            log::trace!("Shard is up-to-date as WAL diff has zero records, queueing just newly incoming updates (version: {current_wal_version:?})");
+            current_wal_version
+        });
 
-    if let Some(wal_delta_version) = wal_delta_version {
-        // Queue proxy local shard
-        replica_set
-            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version), progress)
-            .await?;
-
-        debug_assert!(
-            replica_set.is_queue_proxy().await,
-            "Local shard must be a queue proxy",
-        );
-
-        log::trace!("Transfer WAL diff by transferring all current queue proxy updates");
-        replica_set.queue_proxy_flush().await?;
-    } else {
-        log::trace!("Shard is already up-to-date as WAL diff if zero records");
-    }
+    // Queue proxy local shard, start flushing updates to remote
+    replica_set
+        .queue_proxify_local(remote_shard.clone(), wal_delta_version, progress)
+        .await?;
+    debug_assert!(
+        replica_set.is_queue_proxy().await,
+        "Local shard must be a queue proxy",
+    );
+    log::trace!("Transfer WAL diff by transferring all current queue proxy updates");
+    replica_set.queue_proxy_flush().await?;
 
     // Set shard state to Partial
     log::trace!("Shard {shard_id} diff transferred to {remote_peer_id} for diff transfer, switching into next stage through consensus");

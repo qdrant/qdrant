@@ -123,6 +123,15 @@ impl RecoverableWal {
         )
     }
 
+    pub fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
+        let wal = self.wal.lock();
+        if wal.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(wal.last_index()))
+        }
+    }
+
     /// Append records to this WAL from `other`, starting at operation `append_from` in `other`.
     #[cfg(test)]
     pub async fn append_from(&self, other: &Self, append_from: u64) -> crate::wal::Result<()> {

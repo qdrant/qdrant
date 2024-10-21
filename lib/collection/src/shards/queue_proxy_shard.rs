@@ -433,6 +433,10 @@ impl Inner {
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
+            debug_assert!(
+                batch.len() <= items_left as usize,
+                "batch cannot be larger than items_left",
+            );
             (items_left, items_total, batch)
         };
 
