@@ -4,8 +4,7 @@ paths:
   /collections/{collection_name}/shards/{shard_id}/snapshots/upload:
     post:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Recover shard from an uploaded snapshot
       description: Recover shard of a local collection from an uploaded snapshot. This will overwrite any data, stored on this node, for the collection shard.
       operationId: recover_shard_from_uploaded_snapshot
@@ -54,8 +53,7 @@ paths:
   /collections/{collection_name}/shards/{shard_id}/snapshots/recover:
     put:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Recover from a snapshot
       description: Recover shard of a local collection data from a snapshot. This will overwrite any data, stored in this shard, for the collection.
       operationId: recover_shard_from_snapshot
@@ -89,8 +87,7 @@ paths:
   /collections/{collection_name}/shards/{shard_id}/snapshots:
     get:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: List shards snapshots for a collection
       description: Get list of snapshots for a shard of a collection
       operationId: list_shard_snapshots
@@ -111,8 +108,7 @@ paths:
 
     post:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Create shard snapshot
       description: Create new snapshot of a shard for a collection
       operationId: create_shard_snapshot
@@ -140,8 +136,7 @@ paths:
   /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}:
     delete:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Delete shard snapshot
       description: Delete snapshot of a shard for a collection
       operationId: delete_shard_snapshot
@@ -173,8 +168,7 @@ paths:
       responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Download collection snapshot
       description: Download specified snapshot of a shard from a collection as a file
       operationId: get_shard_snapshot

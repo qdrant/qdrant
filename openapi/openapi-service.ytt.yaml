@@ -7,7 +7,7 @@ paths:
       description: Returns information about the running Qdrant instance like version and commit id
       operationId: root
       tags:
-        - service
+        - Service
       responses:
         "200":
           description: Qdrant server version information
@@ -24,7 +24,7 @@ paths:
       description: Collect telemetry data including app info, system info, collections info, cluster info, configs and statistics
       operationId: telemetry
       tags:
-        - service
+        - Service
       parameters:
         - name: anonymize
           in: query
@@ -40,7 +40,7 @@ paths:
       description: Collect metrics data including app info, collections info, cluster info and statistics
       operationId: metrics
       tags:
-        - service
+        - Service
       parameters:
         - name: anonymize
           in: query
@@ -74,7 +74,7 @@ paths:
       description: Set lock options. If write is locked, all write operations and collection creation are forbidden. Returns previous lock options
       operationId: post_locks
       tags:
-        - service
+        - Service
       requestBody:
         description: Lock options and optional error message
         content:
@@ -88,7 +88,7 @@ paths:
       description: Get lock options. If write is locked, all write operations and collection creation are forbidden
       operationId: get_locks
       tags:
-        - service
+        - Service
       responses: #@ response(reference("LocksOption"))
 
   /healthz:
@@ -97,7 +97,7 @@ paths:
       description: An endpoint for health checking used in Kubernetes.
       operationId: healthz
       tags:
-        - service
+        - Service
       responses:
         "200":
           description: Healthz response
@@ -115,7 +115,7 @@ paths:
       description: An endpoint for health checking used in Kubernetes.
       operationId: livez
       tags:
-        - service
+        - Service
       responses:
         "200":
           description: Healthz response
@@ -133,7 +133,7 @@ paths:
       description: An endpoint for health checking used in Kubernetes.
       operationId: readyz
       tags:
-        - service
+        - Service
       responses:
         "200":
           description: Healthz response
@@ -151,7 +151,7 @@ paths:
       description: Get a report of performance issues and configuration suggestions
       operationId: get_issues
       tags:
-        - beta
+        - Beta
       responses:
         "200":
           description: Successful response
@@ -166,7 +166,7 @@ paths:
       description: Removes all issues reported so far
       operationId: clear_issues
       tags:
-        - beta
+        - Beta
       responses:
         "200":
           description: Successful response
