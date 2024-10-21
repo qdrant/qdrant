@@ -4681,6 +4681,7 @@ dependencies = [
  "sys-info",
  "tempfile",
  "thiserror",
+ "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
  "tonic 0.11.0",
@@ -6403,6 +6404,17 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f21f216790c8df74ce3ab25b534e0718da5a1916719771d3fec23315c99e468b"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]
