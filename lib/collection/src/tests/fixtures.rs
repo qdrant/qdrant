@@ -48,6 +48,7 @@ pub fn create_collection_config() -> CollectionConfig {
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
+        comment: None,
     }
 }
 

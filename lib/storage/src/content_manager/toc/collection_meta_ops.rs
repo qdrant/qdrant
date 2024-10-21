@@ -127,6 +127,7 @@ impl TableOfContent {
             quantization_config,
             sparse_vectors,
             strict_mode_config: strict_mode,
+            comment,
         } = operation.update_collection;
         let collection = self
             .get_collection_unchecked(&operation.collection_name)
@@ -164,6 +165,9 @@ impl TableOfContent {
         }
         if let Some(strict_mode) = strict_mode {
             collection.update_strict_mode_config(strict_mode).await?;
+        }
+        if let Some(comment) = comment {
+            collection.update_comment(comment).await?;
         }
 
         // Recreate optimizers

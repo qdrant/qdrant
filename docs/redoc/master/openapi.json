@@ -6118,6 +6118,11 @@
                 "nullable": true
               }
             ]
+          },
+          "comment": {
+            "description": "Collection-level-metadata for simple description, data title etc",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8694,6 +8699,12 @@
                 "nullable": true
               }
             ]
+          },
+          "comment": {
+            "description": "Collection-level-metadata for simple description, data title etc",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8920,6 +8931,12 @@
                 "nullable": true
               }
             ]
+          },
+          "comment": {
+            "description": "Collection-level-metadata for simple description, data title etc",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },

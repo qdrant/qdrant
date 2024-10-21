@@ -592,6 +592,7 @@ mod tests {
             hnsw_config: Default::default(),
             quantization_config: None,
             strict_mode_config: None,
+            comment: None,
         };
 
         let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
