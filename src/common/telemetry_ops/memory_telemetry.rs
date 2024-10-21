@@ -1,6 +1,10 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
 #[derive(Debug, Clone, Default, JsonSchema, Serialize)]
@@ -13,6 +17,10 @@ pub struct MemoryTelemetry {
 }
 
 impl MemoryTelemetry {
+    #[cfg(all(
+        not(target_env = "msvc"),
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
     pub fn collect() -> MemoryTelemetry {
         epoch::advance().expect("failed to advance epoch");
         MemoryTelemetry {
@@ -22,6 +30,11 @@ impl MemoryTelemetry {
             resident: stats::resident::read().expect("failed to read resident"),
             retained: stats::retained::read().expect("failed to read retained"),
         }
+    }
+
+    #[cfg(target_env = "msvc")]
+    pub fn collect() -> MemoryTelemetry {
+        MemoryTelemetry::default()
     }
 }
 
