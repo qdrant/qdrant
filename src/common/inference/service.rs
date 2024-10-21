@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
-use api::rest::Document;
+use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ struct InferenceRequest {
 
 #[derive(Debug, Serialize)]
 struct InferenceInput {
-    data: String,
+    data: Value,
     data_type: String,
     model: String,
     options: Option<HashMap<String, Value>>,
@@ -52,29 +52,68 @@ struct InferenceResponse {
     embeddings: Vec<VectorPersisted>,
 }
 
-impl From<Document> for InferenceInput {
-    fn from(doc: Document) -> Self {
-        let Document {
-            text,
-            model,
-            options,
-        } = doc;
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub enum InferenceData {
+    Document(Document),
+    Image(Image),
+    Object(InferenceObject),
+}
 
-        InferenceInput {
-            data: text,
-            data_type: DOCUMENT_DATA_TYPE.to_string(), // Always "text" for Document
-            model: model.unwrap_or_default(),
-            options,
+impl From<InferenceData> for InferenceInput {
+    fn from(value: InferenceData) -> Self {
+        match value {
+            InferenceData::Document(doc) => {
+                let Document {
+                    text,
+                    model,
+                    options,
+                } = doc;
+                InferenceInput {
+                    data: Value::String(text),
+                    data_type: DOCUMENT_DATA_TYPE.to_string(),
+                    model: model.unwrap_or_default(),
+                    options,
+                }
+            }
+            InferenceData::Image(img) => {
+                let Image {
+                    image,
+                    model,
+                    options,
+                } = img;
+
+                InferenceInput {
+                    data: Value::String(image),
+                    data_type: IMAGE_DATA_TYPE.to_string(),
+                    model: model.unwrap_or_default(),
+                    options,
+                }
+            }
+            InferenceData::Object(obj) => {
+                let InferenceObject {
+                    object,
+                    model,
+                    options,
+                } = obj;
+
+                InferenceInput {
+                    data: Value::String(object.to_string()),
+                    data_type: DOCUMENT_DATA_TYPE.to_string(),
+                    model: model.unwrap_or_default(),
+                    options,
+                }
+            }
         }
     }
 }
 
+#[derive(Clone)]
 pub struct InferenceService {
     config: InferenceConfig,
     client: Client,
 }
 
-static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
+static INFERENCE_SERVICE: RwLock<Option<InferenceService>> = RwLock::new(None);
 
 impl InferenceService {
     pub fn new(config: InferenceConfig) -> Self {
@@ -91,11 +130,11 @@ impl InferenceService {
         let mut inference_service = INFERENCE_SERVICE
             .write()
             .map_err(|_| StorageError::service_error("Failed to acquire write lock"))?;
-        *inference_service = Some(Arc::new(Self::new(config)));
+        *inference_service = Some(Self::new(config));
         Ok(())
     }
 
-    pub fn global() -> RwLockReadGuard<'static, Option<Arc<InferenceService>>> {
+    pub fn global() -> RwLockReadGuard<'static, Option<InferenceService>> {
         INFERENCE_SERVICE.read().unwrap()
     }
 
@@ -117,7 +156,8 @@ impl InferenceService {
         }
     }
 
-    pub async fn infer(&self, document: &Document) -> Result<Vec<VectorPersisted>, StorageError> {
+    pub async fn infer(&self, data: InferenceData) -> Result<Vec<VectorPersisted>, StorageError> {
+        let input: InferenceInput = data.into();
         let url = self
             .config
             .address
@@ -125,9 +165,9 @@ impl InferenceService {
             .ok_or_else(|| StorageError::inference_error("Inference URL is not configured"))?;
 
         let request = InferenceRequest {
-            inputs: vec![InferenceInput::from(document.clone())],
-            inference: InferenceType::Document,
-            token: Option::from("todo: token will be here".to_string()),
+            inputs: vec![input],
+            inference: InferenceType::Document, // todo: add 'query|document' parameter
+            token: Some("todo: token will be here".to_string()),
         };
 
         let response = self
