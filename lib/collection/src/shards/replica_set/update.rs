@@ -326,12 +326,11 @@ impl ShardReplicaSet {
         // 1. there are some failures, but enough successes for the operation to be accepted
         //
         // Notify user about potential consistency problems if:
-        // 1. there are some failures, and some but not enough successes for the operation to be accepted
-        // 2. there are some failures and enough successes, but we fail to deactivate the failed replicas
-        // 3. successes were not applied to any Active or Resharding replica
+        // 1. there are some failures and enough successes, but we fail to deactivate the failed replicas
+        // 2. successes were not applied to any Active or Resharding replica
         //
         // Notify user with operation error if:
-        // 1. there are no successes
+        // 1. there are not enough successes for the operation to be accepted
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
             format!("Failed peer: {peer_id}, error: {collection_error}")
