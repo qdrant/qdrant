@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
 use itertools::Itertools;
 use schemars::JsonSchema;
@@ -56,12 +57,14 @@ fn score_vectors<T: Ord + Eq>(
     self_values: &[DimWeight],
     other_indices: &[T],
     other_values: &[DimWeight],
+    hardware_counter: &HardwareCounterCell,
 ) -> Option<ScoreType> {
     let mut score = 0.0;
     // track whether there is any overlap
     let mut overlap = false;
     let mut i = 0;
     let mut j = 0;
+    let mut cpu_counter = 0usize;
     while i < self_indices.len() && j < other_indices.len() {
         match self_indices[i].cmp(&other_indices[j]) {
             std::cmp::Ordering::Less => i += 1,
@@ -71,10 +74,12 @@ fn score_vectors<T: Ord + Eq>(
                 score += self_values[i] * other_values[j];
                 i += 1;
                 j += 1;
+                cpu_counter += 1;
             }
         }
     }
     if overlap {
+        hardware_counter.cpu_counter().incr_delta(cpu_counter);
         Some(score)
     } else {
         None
@@ -101,10 +106,37 @@ impl RemappedSparseVector {
     /// Warning: Expects both vectors to be sorted by indices.
     ///
     /// Return None if the vectors do not overlap.
+    pub fn score_measured(
+        &self,
+        other: &RemappedSparseVector,
+        hardware_counter: &HardwareCounterCell,
+    ) -> Option<ScoreType> {
+        debug_assert!(self.is_sorted());
+        debug_assert!(other.is_sorted());
+        score_vectors(
+            &self.indices,
+            &self.values,
+            &other.indices,
+            &other.values,
+            hardware_counter,
+        )
+    }
+
+    /// Score this vector against another vector using dot product.
+    /// Warning: Expects both vectors to be sorted by indices.
+    ///
+    /// Return None if the vectors do not overlap.
     pub fn score(&self, other: &RemappedSparseVector) -> Option<ScoreType> {
         debug_assert!(self.is_sorted());
         debug_assert!(other.is_sorted());
-        score_vectors(&self.indices, &self.values, &other.indices, &other.values)
+        let hardware_counter = HardwareCounterCell::new();
+        score_vectors(
+            &self.indices,
+            &self.values,
+            &other.indices,
+            &other.values,
+            &hardware_counter,
+        )
     }
 }
 
@@ -136,10 +168,20 @@ impl SparseVector {
     /// Warning: Expects both vectors to be sorted by indices.
     ///
     /// Return None if the vectors do not overlap.
-    pub fn score(&self, other: &SparseVector) -> Option<ScoreType> {
+    pub fn score_measured(
+        &self,
+        other: &SparseVector,
+        hardware_counter: &HardwareCounterCell,
+    ) -> Option<ScoreType> {
         debug_assert!(self.is_sorted());
         debug_assert!(other.is_sorted());
-        score_vectors(&self.indices, &self.values, &other.indices, &other.values)
+        score_vectors(
+            &self.indices,
+            &self.values,
+            &other.indices,
+            &other.values,
+            hardware_counter,
+        )
     }
 
     /// Construct a new vector that is the result of performing all indices-wise operations.
