@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use api::rest::{Batch, BatchVectorStruct, PointStruct, PointVectors, Vector, VectorStruct};
 use collection::operations::point_ops::{
@@ -13,13 +12,8 @@ use storage::content_manager::errors::StorageError;
 use crate::common::inference::service::{InferenceData, InferenceService};
 
 pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted>, StorageError> {
-    let inference_service = {
-        let guard = InferenceService::global();
-        guard.clone()
-    };
-
     let results: Vec<Result<VectorPersisted, StorageError>> = stream::iter(vectors)
-        .then(|vec| convert_single_vector(vec, &inference_service))
+        .then(convert_single_vector)
         .collect()
         .await;
 
@@ -30,10 +24,6 @@ pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
 ) -> Result<Vec<PointStructPersisted>, StorageError> {
     let mut converted_points: Vec<PointStructPersisted> = Vec::new();
-    let inference_service = {
-        let guard = InferenceService::global();
-        guard.clone()
-    };
     for point_struct in point_structs {
         let PointStruct {
             id,
@@ -47,112 +37,41 @@ pub async fn convert_point_struct(
             VectorStruct::Named(named) => {
                 let mut named_vectors = HashMap::new();
                 for (name, vector) in named {
-                    let converted_vector = match vector {
-                        Vector::Dense(dense) => Ok(VectorPersisted::Dense(dense)),
-                        Vector::Sparse(sparse) => Ok(VectorPersisted::Sparse(sparse)),
-                        Vector::MultiDense(multi) => Ok(VectorPersisted::MultiDense(multi)),
-                        Vector::Document(doc) => match &inference_service {
-                            Some(ref service) => {
-                                let vector = service
-                                    .infer(InferenceData::Document(doc))
-                                    .await
-                                    .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                                vector.into_iter().next().ok_or_else(|| {
-                                    StorageError::inference_error(
-                                        "Inference service returned empty vector",
-                                    )
-                                })
-                            }
-                            None => Err(StorageError::inference_error(
-                                "InferenceService not initialized",
-                            )),
-                        },
-                        Vector::Image(_) => Err(StorageError::inference_error(
-                            "Inference for Image is not implemented",
-                        )),
-                        Vector::Object(obj) => match &inference_service {
-                            Some(ref service) => {
-                                let vector = service
-                                    .infer(InferenceData::Object(obj))
-                                    .await
-                                    .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                                vector.into_iter().next().ok_or_else(|| {
-                                    StorageError::inference_error(
-                                        "Inference service returned empty vector for object",
-                                    )
-                                })
-                            }
-                            None => Err(StorageError::inference_error(
-                                "InferenceService not initialized for object processing",
-                            )),
-                        },
-                    }?;
+                    let converted_vector = convert_single_vector(vector).await?;
                     named_vectors.insert(name, converted_vector);
                 }
                 VectorStructPersisted::Named(named_vectors)
             }
-            VectorStruct::Document(doc) => match &inference_service {
-                Some(ref service) => {
-                    let vector = service
-                        .infer(InferenceData::Document(doc))
-                        .await
-                        .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                    let res = vector.into_iter().next().ok_or_else(|| {
-                        StorageError::inference_error("Inference service returned empty vector")
-                    })?;
-                    match res {
-                        VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
-                        VectorPersisted::Sparse(res) => {
-                            return Err(StorageError::bad_request("Sparse vector should be named"));
-                        }
-                        VectorPersisted::MultiDense(multi) => {
-                            VectorStructPersisted::MultiDense(multi)
-                        }
-                    }
-                }
-                None => {
-                    return Err(StorageError::inference_error(
-                        "InferenceService not initialized",
-                    ))
-                }
-            },
-            VectorStruct::Image(img) => {
-                let vector = convert_single_vector(Vector::Image(img), &inference_service).await?;
+            VectorStruct::Document(doc) => {
+                let vector = convert_single_vector(Vector::Document(doc)).await?;
                 match vector {
                     VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
-                    VectorPersisted::Sparse(vector) => {
+                    VectorPersisted::Sparse(_) => {
                         return Err(StorageError::bad_request("Sparse vector should be named"));
                     }
                     VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
             }
-            VectorStruct::Object(obj) => match &inference_service {
-                Some(ref service) => {
-                    let vector = service
-                        .infer(InferenceData::Object(obj))
-                        .await
-                        .map_err(|e| StorageError::inference_error(e.to_string()))?;
-                    let res = vector.into_iter().next().ok_or_else(|| {
-                        StorageError::inference_error(
-                            "Inference service returned empty vector for object",
-                        )
-                    })?;
-                    match res {
-                        VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
-                        VectorPersisted::Sparse(res) => {
-                            return Err(StorageError::bad_request("Sparse vector should be named"));
-                        }
-                        VectorPersisted::MultiDense(multi) => {
-                            VectorStructPersisted::MultiDense(multi)
-                        }
+            VectorStruct::Image(img) => {
+                let vector = convert_single_vector(Vector::Image(img)).await?;
+                match vector {
+                    VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
+                    VectorPersisted::Sparse(_) => {
+                        return Err(StorageError::bad_request("Sparse vector should be named"));
                     }
+                    VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
-                None => {
-                    return Err(StorageError::inference_error(
-                        "InferenceService not initialized for object processing",
-                    ))
+            }
+            VectorStruct::Object(obj) => {
+                let vector = convert_single_vector(Vector::Object(obj)).await?;
+                match vector {
+                    VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
+                    VectorPersisted::Sparse(_) => {
+                        return Err(StorageError::bad_request("Sparse vector should be named"));
+                    }
+                    VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
-            },
+            }
         };
         let converted = PointStructPersisted {
             id,
@@ -225,26 +144,7 @@ pub async fn convert_point_vectors(
                 let mut converted = HashMap::new();
 
                 for (name, vec) in named {
-                    let converted_vec = match vec {
-                        Vector::Dense(dense) => VectorPersisted::Dense(dense),
-                        Vector::Sparse(sparse) => VectorPersisted::Sparse(sparse),
-                        Vector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
-                        Vector::Document(_) => {
-                            return Err(StorageError::inference_error(
-                                "Document processing is not supported for named vectors.",
-                            ))
-                        }
-                        Vector::Image(_) => {
-                            return Err(StorageError::inference_error(
-                                "Image processing is not supported for named vectors.",
-                            ))
-                        }
-                        Vector::Object(_) => {
-                            return Err(StorageError::inference_error(
-                                "Object processing is not supported for named vectors.",
-                            ))
-                        }
-                    };
+                    let converted_vec = convert_single_vector(vec).await?;
                     converted.insert(name, converted_vec);
                 }
 
@@ -278,30 +178,30 @@ pub async fn convert_point_vectors(
     Ok(converted_point_vectors)
 }
 
-async fn convert_single_vector(
-    vector: Vector,
-    inference_service: &Option<Arc<InferenceService>>,
-) -> Result<VectorPersisted, StorageError> {
+async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, StorageError> {
+    let inference_service = InferenceService::global().clone();
     match vector {
         Vector::Dense(dense) => Ok(VectorPersisted::Dense(dense)),
         Vector::Sparse(sparse) => Ok(VectorPersisted::Sparse(sparse)),
         Vector::MultiDense(multi) => Ok(VectorPersisted::MultiDense(multi)),
         Vector::Document(doc) => match inference_service {
-            Some(ref service) => {
+            Some(service) => {
                 let vector = service
                     .infer(InferenceData::Document(doc))
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
-                    StorageError::inference_error("Inference service returned empty vector")
+                    StorageError::inference_error(
+                        "Inference service returned empty vector for document",
+                    )
                 })
             }
             None => Err(StorageError::inference_error(
-                "InferenceService not initialized",
+                "InferenceService not initialized for document processing",
             )),
         },
         Vector::Image(img) => match inference_service {
-            Some(ref service) => {
+            Some(service) => {
                 let vector = service
                     .infer(InferenceData::Image(img))
                     .await
@@ -317,7 +217,7 @@ async fn convert_single_vector(
             )),
         },
         Vector::Object(obj) => match inference_service {
-            Some(ref service) => {
+            Some(service) => {
                 let vector = service
                     .infer(InferenceData::Object(obj))
                     .await

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
 use api::rest::{Document, Image, InferenceObject};
@@ -107,12 +107,13 @@ impl From<InferenceData> for InferenceInput {
     }
 }
 
+#[derive(Clone)]
 pub struct InferenceService {
     config: InferenceConfig,
     client: Client,
 }
 
-static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
+static INFERENCE_SERVICE: RwLock<Option<InferenceService>> = RwLock::new(None);
 
 impl InferenceService {
     pub fn new(config: InferenceConfig) -> Self {
@@ -129,11 +130,11 @@ impl InferenceService {
         let mut inference_service = INFERENCE_SERVICE
             .write()
             .map_err(|_| StorageError::service_error("Failed to acquire write lock"))?;
-        *inference_service = Some(Arc::new(Self::new(config)));
+        *inference_service = Some(Self::new(config));
         Ok(())
     }
 
-    pub fn global() -> RwLockReadGuard<'static, Option<Arc<InferenceService>>> {
+    pub fn global() -> RwLockReadGuard<'static, Option<InferenceService>> {
         INFERENCE_SERVICE.read().unwrap()
     }
 
