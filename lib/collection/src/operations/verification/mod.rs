@@ -416,6 +416,7 @@ mod test {
             hnsw_config: Default::default(),
             quantization_config: Default::default(),
             strict_mode_config: Some(strict_mode_config.clone()),
+            comment: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
