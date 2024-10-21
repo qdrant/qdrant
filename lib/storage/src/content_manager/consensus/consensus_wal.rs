@@ -227,6 +227,7 @@ impl ConsensusOpWal {
             buf.clear();
             new_entry.encode(&mut buf)?;
 
+            #[cfg_attr(not(debug_assertions), expect(unused_variables))]
             let new_entry_wal_index = self.wal.append(&buf)?;
 
             #[cfg(debug_assertions)]
