@@ -216,8 +216,10 @@ impl Shard {
         // Resolve WAL delta and report
         match wal.resolve_wal_delta(recovery_point).await {
             Ok(Some(version)) => {
-                let size = wal.wal.lock().last_index().saturating_sub(version);
-                log::debug!("Resolved WAL delta from {version}, which counts {size} records");
+                log::debug!(
+                    "Resolved WAL delta from {version}, which counts {} records",
+                    wal.wal.lock().last_index().saturating_sub(version),
+                );
                 Ok(Some(version))
             }
 
