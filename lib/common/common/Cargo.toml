@@ -34,7 +34,7 @@ log = { workspace = true }
 
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
-criterion = "0.5"
+criterion = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = { workspace = true }

@@ -21,7 +21,7 @@ testing = ["common/testing", "sparse/testing"]
 cc = "1.1"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
 env_logger = "0.11"
 indicatif = { workspace = true }
