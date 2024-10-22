@@ -19,6 +19,8 @@ pub struct MetricQueryScorer<
     vector_storage: &'a TVectorStorage,
     query: TypedDenseVector<TElement>,
     metric: PhantomData<TMetric>,
+    hardware_counter: HardwareCounterCell,
+    dim: usize,
 }
 
 impl<
@@ -32,6 +34,7 @@ impl<
         query: TypedDenseVector<VectorElementType>,
         vector_storage: &'a TVectorStorage,
     ) -> Self {
+        let dim = query.len();
         let preprocessed_vector = TMetric::preprocess(query);
         Self {
             query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
@@ -39,7 +42,20 @@ impl<
             ))),
             vector_storage,
             metric: PhantomData,
+            hardware_counter: HardwareCounterCell::new(),
+            dim,
         }
+    }
+
+    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
+        let mut counter = self.hardware_counter.clone();
+
+        // Calculate the dimension multiplier here to improve performance of measuring.
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(self.dim * size_of::<TElement>());
+
+        counter
     }
 }
 
@@ -52,22 +68,24 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+        self.hardware_counter.cpu_counter().incr();
         TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
     }
 
     #[inline]
     fn score(&self, v2: &[TElement]) -> ScoreType {
+        self.hardware_counter.cpu_counter().incr();
         TMetric::similarity(&self.query, v2)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.hardware_counter.cpu_counter().incr();
         let v1 = self.vector_storage.get_dense(point_a);
         let v2 = self.vector_storage.get_dense(point_b);
         TMetric::similarity(v1, v2)
     }
 
     fn hardware_counter(&self) -> HardwareCounterCell {
-        // TODO: implement!
-        HardwareCounterCell::new()
+        self.hardware_counter_finalized()
     }
 }
