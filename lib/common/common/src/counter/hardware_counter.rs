@@ -6,6 +6,7 @@ use crate::counter::counter_cell::CounterCell;
 ///
 /// To ensure we don't miss consuming measurements, this struct will cause a panic on drop in tests and debug mode
 /// if it still holds values and checking is not disabled using eg. `unchecked()`.
+/// In release mode it'll only log a warning in this case.
 #[derive(Debug)]
 pub struct HardwareCounterCell {
     cpu_counter: CounterCell,
@@ -88,14 +89,6 @@ impl HardwareCounterCell {
         new_counter
     }
 
-    /// Drops the hardware counter controlled and discards all values if any.
-    /// Since we only chechk in tests+debug mode for correct consumption of the values,
-    /// this is a no-op in release mode.
-    pub fn drop_and_discard_results(self) {
-        #[cfg(any(debug_assertions, test))]
-        self.clear();
-    }
-
     /// Sets the status of this hardware counter to consumed to not panic on drop in debug build or tests.
     /// This is currently equal to calling `.clear()` should be preferred if the goal is to prevent
     /// panics in tests eg. after manually 'consuming' the counted values.
@@ -113,11 +106,14 @@ impl Default for HardwareCounterCell {
     }
 }
 
-#[cfg(any(debug_assertions, test))] // We want this to fail in both, release and debug tests
 impl Drop for HardwareCounterCell {
     fn drop(&mut self) {
         if self.checked.get() && self.has_values() {
+            #[cfg(any(debug_assertions, test))] // We want this to fail in both, release and debug tests
             panic!("Checked HardwareCounterCell dropped without consuming all values!");
+
+            #[cfg(not(any(debug_assertions, test)))]
+            log::warn!("Hardware measurements not processed!")
         }
     }
 }
