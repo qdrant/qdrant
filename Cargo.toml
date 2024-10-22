@@ -154,6 +154,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 atomicwrites = "0.4.4"
 bytes = "1.7.2"
 chrono = { version = "0.4.38", features = ["serde"] }
+criterion = "0.5.1"
 data-encoding = "2.6.0"
 delegate = "0.13.1"
 fnv = "1.0"
