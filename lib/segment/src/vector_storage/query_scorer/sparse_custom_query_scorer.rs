@@ -47,17 +47,17 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
             .get_sparse(idx)
             .expect("Failed to get sparse vector");
         self.query.score_by(|example| {
-            stored
-                .score_measured(example, &self.hardware_counter)
-                .unwrap_or(0.0)
+            let cpu_units = example.indices.len() + stored.indices.len();
+            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
+            stored.score(example).unwrap_or(0.0)
         })
     }
 
     fn score(&self, v: &SparseVector) -> ScoreType {
         self.query.score_by(|example| {
-            example
-                .score_measured(v, &self.hardware_counter)
-                .unwrap_or(0.0)
+            let cpu_units = v.indices.len() + example.indices.len();
+            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
+            example.score(v).unwrap_or(0.0)
         })
     }
 
