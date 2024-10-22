@@ -13,6 +13,7 @@ pub struct SparseCustomQueryScorer<
 > {
     vector_storage: &'a TVectorStorage,
     query: TQuery,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -31,6 +32,7 @@ impl<
         Self {
             vector_storage,
             query,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 }
@@ -44,13 +46,19 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
             .vector_storage
             .get_sparse(idx)
             .expect("Failed to get sparse vector");
-        self.query
-            .score_by(|example| stored.score(example).unwrap_or(0.0))
+        self.query.score_by(|example| {
+            let cpu_units = example.indices.len() + stored.indices.len();
+            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
+            stored.score(example).unwrap_or(0.0)
+        })
     }
 
     fn score(&self, v: &SparseVector) -> ScoreType {
-        self.query
-            .score_by(|example| example.score(v).unwrap_or(0.0))
+        self.query.score_by(|example| {
+            let cpu_units = v.indices.len() + example.indices.len();
+            self.hardware_counter.cpu_counter().incr_delta(cpu_units);
+            example.score(v).unwrap_or(0.0)
+        })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
@@ -58,7 +66,6 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
     }
 
     fn hardware_counter(&self) -> HardwareCounterCell {
-        // TODO: implement!
-        HardwareCounterCell::new()
+        self.hardware_counter.clone()
     }
 }
