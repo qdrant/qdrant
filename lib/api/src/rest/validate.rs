@@ -70,16 +70,7 @@ impl Validate for VectorInput {
                 errors.add("image", err);
                 Err(errors)
             }
-            VectorInput::Object(_) => {
-                let mut errors = ValidationErrors::default();
-                let mut err = ValidationError::new("not_supported_inference");
-                err.add_param(
-                    Cow::from("message"),
-                    &"Object inference is not implemented, please use vectors instead",
-                );
-                errors.add("object", err);
-                Err(errors)
-            }
+            VectorInput::Object(_) => Ok(()),
         }
     }
 }
