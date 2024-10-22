@@ -33,7 +33,7 @@ parking_lot = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = { workspace = true }
 dataset = { path = "../common/dataset" }
 generic-tests = { workspace = true }
 indicatif = { workspace = true }
