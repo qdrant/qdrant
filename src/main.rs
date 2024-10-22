@@ -137,13 +137,6 @@ fn main() -> anyhow::Result<()> {
 
     let settings = Settings::new(args.config_path)?;
 
-    // Inference Service initialization
-    if let Some(inference_config) = settings.inference.clone() {
-        let _ = InferenceService::init(inference_config);
-    } else {
-        log::info!("Inference service is not configured.");
-    }
-
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
@@ -421,6 +414,22 @@ fn main() -> anyhow::Result<()> {
         }
         ok => ok,
     };
+
+    //
+    // Inference Service
+    //
+    if let Some(inference_config) = settings.inference.clone() {
+        match InferenceService::init(inference_config) {
+            Ok(_) => {
+                log::info!("Inference service is configured.");
+            }
+            Err(err) => {
+                log::error!("{err}");
+            }
+        }
+    } else {
+        log::info!("Inference service is not configured.");
+    }
 
     //
     // REST API server
