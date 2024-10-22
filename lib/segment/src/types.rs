@@ -317,7 +317,6 @@ pub struct VectorDataInfo {
     pub num_vectors: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
-    pub size_bytes: usize,
 }
 
 /// Aggregated information about segment
