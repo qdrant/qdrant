@@ -310,7 +310,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 } else {
                     new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice())
                 }?;
+
+                // We don't need to process measurements for building HNSW indices.
                 raw_scorer.set_hardware_counter_checked(false);
+
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
@@ -463,6 +466,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 ),
                 None => new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice()),
             }?;
+            // We don't need to process measurements for building HNSW indices.
             raw_scorer.set_hardware_counter_checked(false);
 
             let block_condition_checker = BuildConditionChecker {

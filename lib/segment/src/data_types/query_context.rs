@@ -174,7 +174,7 @@ impl VectorQueryContext<'_> {
             hardware_counter.apply_from(other);
         } else {
             // If we don't specify a hardware counter reference when initiating a new VectorQueryContext,
-            // we don't want it's result and need to discard the results in order to not panic in tests/debug mode.
+            // we don't want it's result and need to discard the results here in order to not panic in tests/debug mode.
             other.discard_results();
         }
     }

@@ -3,6 +3,9 @@ use std::cell::Cell;
 use crate::counter::counter_cell::CounterCell;
 
 /// Collection of different types of hardware measurements.
+///
+/// To ensure we don't miss consuming measurements, this struct will cause a panic on drop in tests and debug mode
+/// if it still holds values and checking is not disabled using eg. `unchecked()`.
 #[derive(Debug)]
 pub struct HardwareCounterCell {
     cpu_counter: CounterCell,
@@ -52,17 +55,6 @@ impl HardwareCounterCell {
         self.cpu_counter.incr_delta(cpu_counter.get());
 
         other.cpu_counter.set(0);
-    }
-
-    /// Sets the currents counter values to the ones in `other`.
-    /// This consumes `other`, leaving it with zeroed metrics.
-    pub fn set_from(&self, other: &HardwareCounterCell) {
-        let HardwareCounterCell {
-            cpu_counter,
-            checked: _,
-        } = other;
-
-        self.cpu_counter.set(cpu_counter.get());
     }
 
     /// Returns `true` if at least one metric has non-consumed values.
