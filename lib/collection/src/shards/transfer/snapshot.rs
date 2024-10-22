@@ -261,11 +261,7 @@ pub(super) async fn transfer_snapshot(
     // Set shard state to Partial
     log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
     consensus
-        .snapshot_recovered_switch_to_partial_confirm_remote(
-            &transfer_config,
-            collection_id,
-            &remote_shard,
-        )
+        .recovered_switch_to_partial_confirm_remote(&transfer_config, collection_id, &remote_shard)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(

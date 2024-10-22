@@ -145,25 +145,26 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// Returns `(commit, term)`.
     fn consensus_commit_term(&self) -> (u64, u64);
 
-    /// After snapshot recovery, propose to switch shard to `Partial`
+    /// After snapshot or WAL delta recovery, propose to switch shard to `Partial`
     ///
-    /// This is called after shard snapshot recovery has been completed on the remote. It submits a
-    /// proposal to consensus to switch the shard state from `PartialSnapshot` to `Partial`.
+    /// This is called after shard snapshot or WAL delta recovery has been completed on the remote.
+    /// It submits a proposal to consensus to switch the shard state from `Recovery` to `Partial`.
     ///
     /// # Warning
     ///
     /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
     /// will actually apply the operation across the cluster.
-    fn snapshot_recovered_switch_to_partial(
+    fn recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
         collection_id: CollectionId,
     ) -> CollectionResult<()>;
 
-    /// After snapshot recovery, propose to switch shard to `Partial` and confirm on remote shard
+    /// After snapshot or WAL delta recovery, propose to switch shard to `Partial` and confirm on
+    /// remote shard
     ///
-    /// This is called after shard snapshot recovery has been completed on the remote. It submits a
-    /// proposal to consensus to switch the shard state from `PartialSnapshot` to `Partial`.
+    /// This is called after shard snapshot or WAL delta recovery has been completed on the remote.
+    /// It submits a proposal to consensus to switch the shard state from `Recovery` to `Partial`.
     ///
     /// This method also confirms consensus applied the operation before returning by asserting the
     /// change is propagated on a remote shard. For the next stage only the remote needs to be in
@@ -174,15 +175,15 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    async fn snapshot_recovered_switch_to_partial_confirm_remote(
+    async fn recovered_switch_to_partial_confirm_remote(
         &self,
         transfer_config: &ShardTransfer,
         collection_id: &CollectionId,
         remote_shard: &RemoteShard,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
-            "`snapshot_recovered_switch_to_partial_confirm_remote` exit without attempting any work, \
-             this is a programming error"
+            "`recovered_switch_to_partial_confirm_remote` exit without attempting any work, \
+             this is a programming error",
         ));
 
         for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
@@ -190,11 +191,10 @@ pub trait ShardTransferConsensus: Send + Sync {
                 sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
             }
 
-            result = self
-                .snapshot_recovered_switch_to_partial(transfer_config, collection_id.to_string());
+            result = self.recovered_switch_to_partial(transfer_config, collection_id.to_string());
 
             if let Err(err) = &result {
-                log::error!("Failed to propose snapshot recovered operation to consensus: {err}");
+                log::error!("Failed to propose recovered operation to consensus: {err}");
                 continue;
             }
 
@@ -213,9 +213,7 @@ pub trait ShardTransferConsensus: Send + Sync {
             match &result {
                 Ok(()) => break,
                 Err(err) => {
-                    log::error!(
-                        "Failed to confirm snapshot recovered operation on consensus: {err}"
-                    );
+                    log::error!("Failed to confirm recovered operation on consensus: {err}");
                     continue;
                 }
             }
@@ -223,9 +221,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
         result.map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to confirm snapshot recovered operation on consensus \
-                 after {CONSENSUS_CONFIRM_RETRIES} retries: \
-                 {err}"
+                "Failed to confirm recovered operation on consensus after {CONSENSUS_CONFIRM_RETRIES} retries: {err}",
             ))
         })
     }
