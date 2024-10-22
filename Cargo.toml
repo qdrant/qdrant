@@ -168,6 +168,7 @@ log = "0.4.22"
 memmap2 = "0.9.5"
 nix = { version = "0.29", features = ["fs"]}
 num-traits = "0.2.19"
+ordered-float = "4.4"
 rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 ph = "0.8.4"
