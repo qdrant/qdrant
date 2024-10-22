@@ -449,7 +449,7 @@ impl SegmentEntry for Segment {
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
-        let vector_data_info = self
+        let vector_data_info: HashMap<_, _> = self
             .vector_data
             .iter()
             .map(|(key, vector_data)| {
@@ -465,6 +465,7 @@ impl SegmentEntry for Segment {
                         0
                     },
                     num_deleted_vectors: vector_storage.deleted_vector_count(),
+                    size_bytes: vector_storage.available_size_in_bytes(),
                 };
                 (key.to_string(), vector_data_info)
             })
@@ -479,14 +480,19 @@ impl SegmentEntry for Segment {
             0
         };
 
+        let total_vector_size_bytes = vector_data_info
+            .iter()
+            .map(|(_, vector_data)| vector_data.size_bytes)
+            .sum();
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
-            ram_usage_bytes: 0,  // ToDo: Implement
-            disk_usage_bytes: 0, // ToDo: Implement
+            ram_usage_bytes: 0, // ToDo: Implement
+            disk_usage_bytes: total_vector_size_bytes,
             is_appendable: self.appendable_flag,
             index_schema: schema,
             vector_data: vector_data_info,

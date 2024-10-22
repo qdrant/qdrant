@@ -100,6 +100,7 @@ impl Anonymize for VectorDataInfo {
             num_vectors: self.num_vectors.anonymize(),
             num_indexed_vectors: self.num_indexed_vectors.anonymize(),
             num_deleted_vectors: self.num_deleted_vectors.anonymize(),
+            size_bytes: self.size_bytes.anonymize(),
         }
     }
 }
