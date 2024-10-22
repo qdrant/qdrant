@@ -127,6 +127,12 @@ impl InferenceService {
     }
 
     pub fn init(config: InferenceConfig) -> Result<(), StorageError> {
+        if config.token.is_none() {
+            return Err(StorageError::inference_error(
+                "Inference Service Error: token is required",
+            ));
+        }
+
         let mut inference_service = INFERENCE_SERVICE
             .write()
             .map_err(|_| StorageError::service_error("Failed to acquire write lock"))?;
@@ -167,7 +173,7 @@ impl InferenceService {
         let request = InferenceRequest {
             inputs: vec![input],
             inference: InferenceType::Document, // todo: add 'query|document' parameter
-            token: Some("todo: token will be here".to_string()),
+            token: self.config.token.clone(),
         };
 
         let response = self

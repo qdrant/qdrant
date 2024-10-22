@@ -3,6 +3,7 @@ log_level: DEBUG
 inference:
   address: "http://localhost:2114/api/v1/infer"
   timeout: 10
+  token: "98eb568c-dea5-4347-a3a5-583478983bb9"
 
 service:
   host: 127.0.0.1

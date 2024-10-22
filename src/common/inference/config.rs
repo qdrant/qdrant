@@ -5,6 +5,7 @@ pub struct InferenceConfig {
     pub address: Option<String>,
     #[serde(default = "default_inference_timeout")]
     pub timeout: u64,
+    pub token: Option<String>,
 }
 
 fn default_inference_timeout() -> u64 {
@@ -16,6 +17,7 @@ impl InferenceConfig {
         Self {
             address,
             timeout: default_inference_timeout(),
+            token: None,
         }
     }
 }
