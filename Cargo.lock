@@ -3684,7 +3684,7 @@ dependencies = [
 [[package]]
 name = "mmap-payload-storage"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#406028069ef7afb6877641f64855265bb77e8615"
+source = "git+https://github.com/qdrant/mmap-payload-storage#e8037e1ca6416758e4a1f2cc33f1d21614100513"
 dependencies = [
  "bitvec",
  "ciborium",
@@ -4503,7 +4503,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18bec9b0adc4eba778b33684b7ba3e7137789434769ee3ce3930463ef904cfca"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.82",
