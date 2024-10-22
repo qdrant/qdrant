@@ -86,19 +86,6 @@ pub(super) async fn transfer_wal_delta(
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
 
-    let shard_holder_read = shard_holder.read().await;
-
-    let transferring_shard = shard_holder_read.get_shard(&shard_id);
-    let Some(replica_set) = transferring_shard else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} cannot be queue proxied because it does not exist"
-        )));
-    };
-
-    // Store current WAL version
-    // If we resolve no diff, we still need to queue/forward updates from this version onwards
-    let current_wal_version = replica_set.wal_version().await?;
-
     // Ask remote shard on failed node for recovery point
     let recovery_point = remote_shard
         .shard_recovery_point(collection_id, shard_id)
@@ -109,7 +96,17 @@ pub(super) async fn transfer_wal_delta(
             ))
         })?;
 
+    let shard_holder_read = shard_holder.read().await;
+
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
+        )));
+    };
+
     // Resolve WAL delta, get the version to start the diff from
+    let current_wal_version = replica_set.wal_version().await?;
     let wal_delta_version = replica_set
         .resolve_wal_delta(recovery_point)
         .await
