@@ -24,11 +24,10 @@ use crate::shards::{await_consensus_sync, CollectionId};
 /// Before this function, this has happened:
 ///
 /// - The existing shard is kept on the remote
-/// - Set the remote shard state to `PartialSnapshot`
-///   In `PartialSnapshot` state, the remote shard will ignore all operations by default and other
-///   nodes will prevent sending operations to it. Only operations that are forced will be
-///   accepted. This is critical not to mess with the order of operations while recovery is
-///   happening.
+/// - Set the remote shard state to `Recovery`
+///   In `Recovery` state, the remote shard will ignore all operations by default and other nodes
+///   will prevent sending operations to it. Only operations that are forced will be accepted. This
+///   is critical not to mess with the order of operations while recovery is happening.
 ///
 /// During this function, this happens in order:
 ///
@@ -36,7 +35,8 @@ use crate::shards::{await_consensus_sync, CollectionId};
 ///   We use the recovery point to try and resolve a WAL delta to transfer to the remote.
 /// - Resolve WAL delta locally
 ///   Find a point in our current WAL to transfer all operations from to the remote. If we cannot
-///   resolve a WAL delta, the transfer is aborted.
+///   resolve a WAL delta, the transfer is aborted. If the resolved delta is empty, we start from
+///   our last WAL entry to ensure the remote does not miss any new updates.
 /// - Queue proxy local shard
 ///   We queue all operations from the WAL delta point for the remote.
 /// - Transfer queued updates to remote, transform into forward proxy
@@ -47,9 +47,9 @@ use crate::shards::{await_consensus_sync, CollectionId};
 ///   forward proxy right now so that we can catch any errors as early as possible. The forward
 ///   proxy shard we end up with will not error again once we un-proxify.
 /// - Set shard state to `Partial`
-///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
-///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
-///   `Partial` state.
+///   After recovery, we set the shard state from `Recovery` to `Partial`. We propose an operation
+///   to consensus for this. Our logic explicitly confirms that the remote reaches the `Partial`
+///   state.
 /// - Wait for Partial state in our replica set
 ///   Wait for the remote shard to be set to `Partial` in our local replica set. That way we
 ///   confirm consensus has also propagated on this node.
@@ -113,9 +113,10 @@ pub(super) async fn transfer_wal_delta(
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
         })?
-        // If diff is empty, we still need to queue/forward new updates starting from this version
+        // If diff is empty, queue and forward from our version to prevent losing new updates
+        // See: <https://github.com/qdrant/qdrant/pull/5271>
         .or_else(|| {
-            log::trace!("Shard is up-to-date as WAL diff has zero records, queueing just newly incoming updates (version: {current_wal_version:?})");
+            log::trace!("Remote shard is up-to-date and WAL diff is empty, queueing newly incoming updates (version: {current_wal_version:?})");
             current_wal_version
         });
 
