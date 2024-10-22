@@ -78,6 +78,11 @@ fn score_vectors<T: Ord + Eq>(
             }
         }
     }
+
+    hardware_counter
+        .cpu_counter()
+        .incr_delta(self_indices.len() + other_indices.len());
+
     if overlap {
         hardware_counter.cpu_counter().incr_delta(cpu_counter);
         Some(score)
