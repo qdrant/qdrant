@@ -25,7 +25,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-ordered-float = "4.4"
+ordered-float = { workspace = true }
 rand = { workspace = true }
 validator = { workspace = true }
 itertools = { workspace = true }

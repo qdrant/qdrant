@@ -17,7 +17,7 @@ testing = []
 
 [dependencies]
 num_cpus = "1.16"
-ordered-float = "4.4"
+ordered-float = { workspace = true }
 ph = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
