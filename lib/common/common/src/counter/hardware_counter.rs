@@ -25,7 +25,7 @@ impl HardwareCounterCell {
         }
     }
 
-    /// Don't check wether counter got full consumed on dropping.
+    /// Don't check whether counter got fully consumed on drop.
     pub fn unchecked(mut self) -> Self {
         *self.checked.get_mut() = false;
         self

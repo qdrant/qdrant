@@ -311,7 +311,7 @@ impl ProxySegment {
             &segment_query_context,
         )?;
 
-        // TODO: propagate this value to callers instead.
+        // This function is only for testing and no measurements are needed.
         segment_query_context.hardware_counter().discard_results();
 
         Ok(result.into_iter().next().unwrap())

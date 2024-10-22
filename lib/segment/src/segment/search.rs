@@ -112,7 +112,8 @@ impl Segment {
             &segment_query_context,
         )?;
 
-        segment_query_context.hardware_counter().discard_results(); // TODO: Propagate results instead of discarding!
+        // This function is only for testing and no measurements are needed.
+        segment_query_context.hardware_counter().discard_results();
 
         Ok(result.into_iter().next().unwrap())
     }
