@@ -127,9 +127,9 @@ impl InferenceService {
     }
 
     pub fn init(config: InferenceConfig) -> Result<(), StorageError> {
-        if config.billing_id.is_none() {
+        if config.token.is_none() {
             return Err(StorageError::inference_error(
-                "Inference Service Error: BillingID is required",
+                "Inference Service Error: token is required",
             ));
         }
 
@@ -173,7 +173,7 @@ impl InferenceService {
         let request = InferenceRequest {
             inputs: vec![input],
             inference: InferenceType::Document, // todo: add 'query|document' parameter
-            token: self.config.billing_id.clone(),
+            token: self.config.token.clone(),
         };
 
         let response = self
