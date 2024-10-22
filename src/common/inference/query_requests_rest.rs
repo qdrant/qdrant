@@ -282,7 +282,7 @@ async fn process_inference_input<T: std::fmt::Debug>(
         })?;
 
     if vectors.is_empty() {
-        /// log the content too in case of empty vector
+        // log the content too in case of empty vector
         if let Some(content) = debug_content {
             warn!("Empty vector array for {input_type}. Content: {content:?}");
         } else {
