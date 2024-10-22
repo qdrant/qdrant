@@ -206,6 +206,10 @@ where
     fn hardware_counter(&self) -> HardwareCounterCell {
         self.query_scorer.hardware_counter()
     }
+
+    fn set_hardware_counter_checked(&self, checked: bool) {
+        self.query_scorer.set_hardware_counter_checked(checked);
+    }
 }
 
 struct AsyncRawScorerBuilder<'a> {

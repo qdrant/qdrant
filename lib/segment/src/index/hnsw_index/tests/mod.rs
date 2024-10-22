@@ -43,6 +43,8 @@ where
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+        raw_scorer.set_hardware_counter_checked(false);
+
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);

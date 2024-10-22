@@ -311,6 +311,9 @@ impl ProxySegment {
             &segment_query_context,
         )?;
 
+        // TODO: propagate this value to callers instead.
+        segment_query_context.hardware_counter().discard_results();
+
         Ok(result.into_iter().next().unwrap())
     }
 }
@@ -1261,7 +1264,9 @@ mod tests {
         eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
-        assert_eq!(search_result, search_batch_result[0].clone())
+        assert_eq!(search_result, search_batch_result[0].clone());
+        assert!(segment_query_context.hardware_counter().cpu_counter().get() > 0);
+        segment_query_context.hardware_counter().discard_results();
     }
 
     #[test]
@@ -1314,6 +1319,8 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
+
+        segment_query_context.hardware_counter().discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -1381,6 +1388,8 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
+
+        segment_query_context.hardware_counter().discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 

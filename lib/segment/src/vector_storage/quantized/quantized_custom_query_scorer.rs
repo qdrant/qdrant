@@ -151,6 +151,10 @@ where
 
     fn hardware_counter(&self) -> HardwareCounterCell {
         // TODO: implement!
-        HardwareCounterCell::new()
+        HardwareCounterCell::new().unchecked()
+    }
+
+    fn set_hardware_counter_checked(&self, _checked: bool) {
+        // TODO: implement
     }
 }

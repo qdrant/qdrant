@@ -259,6 +259,9 @@ impl SegmentsSearcher {
                         move || {
                             let segment_query_context =
                                 query_context_arc_segment.get_segment_query_context();
+
+                            segment_query_context.hardware_counter().set_checked(false); // TODO: propagate measurements instead of discarding!
+
                             search_in_segment(
                                 segment,
                                 batch_request,
@@ -309,6 +312,7 @@ impl SegmentsSearcher {
                     res.push(runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
+                        segment_query_context.hardware_counter().set_checked(false); // TODO: propagate measurements instead of discarding!
                         search_in_segment(
                             segment,
                             partial_batch_request,

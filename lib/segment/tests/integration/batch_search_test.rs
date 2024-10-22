@@ -115,6 +115,7 @@ fn test_batch_and_single_request_equivalency() {
 
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
+        segment_query_context.hardware_counter().set_checked(false);
 
         let batch_res = segment
             .search_batch(

@@ -66,6 +66,10 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
     }
 
     fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.clone()
+        self.hardware_counter.take()
+    }
+
+    fn set_hardware_counter_checked(&self, checked: bool) {
+        self.hardware_counter.set_checked(checked);
     }
 }

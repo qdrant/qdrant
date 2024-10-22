@@ -107,4 +107,8 @@ where
         // TODO: implement!
         HardwareCounterCell::new()
     }
+
+    fn set_hardware_counter_checked(&self, _checked: bool) {
+        // TODO: implement!
+    }
 }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -83,7 +84,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::default(),
+            hardware_counter: Rc::new(HardwareCounterCell::new()),
         }
     }
 }
@@ -99,7 +100,7 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
-    hardware_counter: HardwareCounterCell,
+    hardware_counter: Rc<HardwareCounterCell>,
 }
 
 impl<'a> SegmentQueryContext<'a> {
@@ -121,6 +122,10 @@ impl<'a> SegmentQueryContext<'a> {
     pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
         self.deleted_points = Some(deleted_points);
         self
+    }
+
+    pub fn hardware_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
     }
 }
 
@@ -167,6 +172,10 @@ impl VectorQueryContext<'_> {
     pub fn apply_hardware_counter(&self, other: &HardwareCounterCell) {
         if let Some(hardware_counter) = self.hardware_counter {
             hardware_counter.apply_from(other);
+        } else {
+            // If we don't specify a hardware counter reference when initiating a new VectorQueryContext,
+            // we don't want it's result and need to discard the results in order to not panic in tests/debug mode.
+            other.discard_results();
         }
     }
 

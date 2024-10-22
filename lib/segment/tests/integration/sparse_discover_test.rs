@@ -6,7 +6,7 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{QueryContext, VectorQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -183,14 +183,15 @@ fn sparse_index_discover_test() {
         // do discovery search
         let (sparse_query, dense_query) = random_discovery_query(&mut rnd, dim);
 
+        let vec_context = VectorQueryContext::default();
         let sparse_discovery_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &Default::default())
+            .search(&[&sparse_query], None, top, None, &vec_context)
             .unwrap();
 
         let dense_discovery_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &Default::default())
+            .search(&[&dense_query], None, top, None, &vec_context)
             .unwrap();
 
         // check id only because scores can be epsilon-size different
@@ -222,6 +223,7 @@ fn sparse_index_discover_test() {
                 .get()
                 > 0
         );
+        vector_context.hardware_counter().unwrap().discard_results();
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
@@ -329,4 +331,5 @@ fn sparse_index_hardware_measurement_test() {
             .get()
             > 0
     );
+    vector_context.hardware_counter().unwrap().discard_results();
 }

@@ -112,6 +112,8 @@ impl Segment {
             &segment_query_context,
         )?;
 
+        segment_query_context.hardware_counter().discard_results(); // TODO: Propagate results instead of discarding!
+
         Ok(result.into_iter().next().unwrap())
     }
 }
