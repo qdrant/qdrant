@@ -9,6 +9,13 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+# Disable tests for the library.
+# Functionality is tested in segment crate.
+# Whithout this line, cargo will try to run tests for the library
+# even if gpu feature is disabled.
+[lib]
+test = false
+
 [dependencies]
 log = "0.4"
 rand = "0.8.5"
