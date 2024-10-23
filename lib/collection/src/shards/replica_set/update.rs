@@ -427,6 +427,7 @@ impl ShardReplicaSet {
             // The replica on the peer may still be active for some time if its consensus is slow.
             // The peer may respond to read requests until it switches to recovery state too. We
             // must keep sending updates to prevent those reads being stale.
+            // See: <https://github.com/qdrant/qdrant/pull/5298>
             Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => true,
             Some(ReplicaState::Resharding) => true,
             Some(ReplicaState::Dead) | None => false,
