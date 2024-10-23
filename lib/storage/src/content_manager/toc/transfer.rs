@@ -27,7 +27,7 @@ impl ShardTransferConsensus for TocDispatcher {
         (state.commit, state.term)
     }
 
-    fn snapshot_recovered_switch_to_partial(
+    fn recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
         collection_id: CollectionId,
