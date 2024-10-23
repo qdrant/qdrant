@@ -34,6 +34,9 @@ async fn download_file(
         .suffix(".download")
         .tempfile_in(dir_path)?
         .into_parts();
+
+    log::debug!("Downloading snapshot from {url} to {temp_path:?}");
+
     let mut file = File::from_std(file);
 
     let response = client.get(url.clone()).send().await?;
