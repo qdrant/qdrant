@@ -249,16 +249,12 @@ impl Instance {
 
         #[cfg(target_os = "macos")]
         {
-            extensions_list.push(
-                if let Ok(ext) = vk::KhrPortabilityEnumerationFn::name().to_str() {
-                    extensions_list.push(ext.to_string());
-                },
-            );
-            extensions_list.push(
-                if let Ok(ext) = vk::KhrGetPhysicalDeviceProperties2Fn::name().to_str() {
-                    extensions_list.push(ext.to_string());
-                },
-            );
+            if let Ok(ext) = vk::KhrPortabilityEnumerationFn::name().to_str() {
+                extensions_list.push(ext.to_string());
+            }
+            if let Ok(ext) = vk::KhrGetPhysicalDeviceProperties2Fn::name().to_str() {
+                extensions_list.push(ext.to_string());
+            }
         }
         extensions_list
     }
