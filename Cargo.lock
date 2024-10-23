@@ -6135,6 +6135,7 @@ dependencies = [
  "serde_cbor",
  "serde_json",
  "strum",
+ "tap",
  "tar",
  "tempfile",
  "thiserror",
