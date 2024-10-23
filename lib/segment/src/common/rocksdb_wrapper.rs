@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -21,10 +22,19 @@ pub const DB_VERSIONS_CF: &str = "version";
 /// If there is no Column Family specified, key-value pair is associated with Column Family "default".
 pub const DB_DEFAULT_CF: &str = "default";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DatabaseColumnWrapper {
     database: Arc<RwLock<DB>>,
     column_name: String,
+    write_options: Arc<WriteOptions>,
+}
+
+impl Debug for DatabaseColumnWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseColumnWrapper")
+            .field("column_name", &self.column_name)
+            .finish()
+    }
 }
 
 pub struct DatabaseColumnIterator<'a> {
@@ -101,9 +111,11 @@ pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb:
 
 impl DatabaseColumnWrapper {
     pub fn new(database: Arc<RwLock<DB>>, column_name: &str) -> Self {
+        let write_options = Arc::new(Self::make_write_options());
         Self {
             database,
             column_name: column_name.to_string(),
+            write_options,
         }
     }
 
@@ -114,7 +126,7 @@ impl DatabaseColumnWrapper {
     {
         let db = self.database.read();
         let cf_handle = self.get_column_family(&db)?;
-        db.put_cf_opt(cf_handle, key, value, &Self::get_write_options())
+        db.put_cf_opt(cf_handle, key, value, &self.write_options)
             .map_err(|err| OperationError::service_error(format!("RocksDB put_cf error: {err}")))?;
         Ok(())
     }
@@ -161,7 +173,7 @@ impl DatabaseColumnWrapper {
     {
         let db = self.database.read();
         let cf_handle = self.get_column_family(&db)?;
-        db.delete_cf_opt(cf_handle, key, &Self::get_write_options())
+        db.delete_cf_opt(cf_handle, key, &self.write_options)
             .map_err(|err| {
                 OperationError::service_error(format!("RocksDB delete_cf error: {err}"))
             })?;
@@ -230,7 +242,7 @@ impl DatabaseColumnWrapper {
         Ok(db.cf_handle(&self.column_name).is_some())
     }
 
-    fn get_write_options() -> WriteOptions {
+    fn make_write_options() -> WriteOptions {
         let mut write_options = WriteOptions::default();
         write_options.set_sync(false);
         // RocksDB WAL is required for durability even if data is flushed
