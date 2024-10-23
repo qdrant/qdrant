@@ -268,7 +268,7 @@ async fn process_inference_input<T: std::fmt::Debug>(
         ))
     })?;
 
-    info!("Starting inference processing for {input_type}");
+    debug!("Starting inference processing for {input_type}");
 
     let vectors = service
         .infer(data, InferenceType::Query)
