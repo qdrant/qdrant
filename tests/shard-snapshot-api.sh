@@ -613,7 +613,7 @@ function points-count {
 }
 
 function concurrent {
-	declare PARALLEL ; PARALLEL="$(or-default "$1" 2)"
+	declare PARALLEL ; PARALLEL="$(or-default "$1" 10)"
 	declare CMD=( "${@:2}" )
 
 	declare -A JOBS

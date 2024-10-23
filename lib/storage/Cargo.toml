@@ -32,6 +32,7 @@ tonic = { workspace = true }
 http = "0.2"
 parking_lot = { workspace = true }
 strum = { workspace = true }
+tap = { workspace = true }
 tar = { workspace = true }
 chrono = { workspace = true }
 validator = { workspace = true }

@@ -1,27 +1,22 @@
+use std::ffi::OsString;
 use std::path::Path;
 
 use common::tempfile_ext::MaybeTempPath;
 use futures::StreamExt;
 use reqwest;
+use tap::Tap;
 use tempfile::TempPath;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use url::Url;
-use uuid::Uuid;
 
 use crate::StorageError;
 
-fn random_name() -> String {
-    format!("{}.snapshot", Uuid::new_v4())
-}
-
-fn snapshot_name(url: &Url) -> String {
-    let path = Path::new(url.path());
-
-    path.file_name()
-        .and_then(|x| x.to_str())
-        .map(|x| x.to_string())
-        .unwrap_or_else(random_name)
+fn snapshot_prefix(url: &Url) -> OsString {
+    Path::new(url.path())
+        .file_name()
+        .map(|x| OsString::from(x).tap_mut(|x| x.push("-")))
+        .unwrap_or_default()
 }
 
 /// Download a remote file from `url` to `path`
@@ -32,10 +27,17 @@ fn snapshot_name(url: &Url) -> String {
 async fn download_file(
     client: &reqwest::Client,
     url: &Url,
-    path: &Path,
+    dir_path: &Path,
 ) -> Result<TempPath, StorageError> {
-    let temp_path = TempPath::from_path(path);
-    let mut file = File::create(path).await?;
+    let (file, temp_path) = tempfile::Builder::new()
+        .prefix(&snapshot_prefix(url))
+        .suffix(".download")
+        .tempfile_in(dir_path)?
+        .into_parts();
+
+    log::debug!("Downloading snapshot from {url} to {temp_path:?}");
+
+    let mut file = File::from_std(file);
 
     let response = client.get(url.clone()).send().await?;
 
@@ -82,12 +84,9 @@ pub async fn download_snapshot(
             }
             Ok(MaybeTempPath::Persistent(local_path))
         }
-        "http" | "https" => {
-            let download_to = snapshots_dir.join(snapshot_name(&url));
-
-            let temp_path = download_file(client, &url, &download_to).await?;
-            Ok(MaybeTempPath::Temporary(temp_path))
-        }
+        "http" | "https" => Ok(MaybeTempPath::Temporary(
+            download_file(client, &url, snapshots_dir).await?,
+        )),
         _ => Err(StorageError::bad_request(format!(
             "URL {} with schema {} is not supported",
             url,
