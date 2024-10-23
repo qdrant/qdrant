@@ -314,7 +314,7 @@ impl Context {
         let command_buffer_begin_info =
             vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::default());
         //.inheritance_info(..);
-        
+
         let begin_result = unsafe {
             self.device
                 .vk_device
