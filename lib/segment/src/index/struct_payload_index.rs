@@ -38,8 +38,9 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
     IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, VectorName,
 };
+use crate::vector_storage::VectorStorageEnum;
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 #[derive(Debug)]
@@ -48,6 +49,9 @@ pub struct StructPayloadIndex {
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Used for `has_id` condition and estimating cardinality
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    /// Vector storages for each field, used for `has_vector` condition
+    #[allow(dead_code)]
+    vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
     config: PayloadConfig,
@@ -142,6 +146,7 @@ impl StructPayloadIndex {
     pub fn open(
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
         is_appendable: bool,
     ) -> OperationResult<Self> {
@@ -159,6 +164,7 @@ impl StructPayloadIndex {
         let mut index = StructPayloadIndex {
             payload,
             id_tracker,
+            vector_storages,
             field_indexes: Default::default(),
             config,
             path: path.to_owned(),

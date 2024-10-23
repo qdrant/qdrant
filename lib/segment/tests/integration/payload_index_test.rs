@@ -1082,8 +1082,14 @@ fn test_update_payload_index_type() {
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(point_num)));
 
-    let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
+    let mut index = StructPayloadIndex::open(
+        wrapped_payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        true,
+    )
+    .unwrap();
 
     let field = JsonPath::new("field");
 

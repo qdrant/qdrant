@@ -243,7 +243,14 @@ pub fn create_struct_payload_index(
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        path,
+        true,
+    )
+    .unwrap();
 
     index
         .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
