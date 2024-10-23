@@ -449,7 +449,7 @@ impl SegmentEntry for Segment {
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
-        let mut vectors_size_bytes: u64 = 0;
+        let mut vectors_size_bytes: usize = 0;
 
         let vector_data_info: HashMap<_, _> = self
             .vector_data
@@ -460,7 +460,7 @@ impl SegmentEntry for Segment {
                 let vector_index = vector_data.vector_index.borrow();
                 let is_indexed = vector_index.is_index();
 
-                vectors_size_bytes += vector_storage.size_in_bytes();
+                vectors_size_bytes += vector_storage.size_in_bytes() as u64;
 
                 let vector_data_info = VectorDataInfo {
                     num_vectors,
