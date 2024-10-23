@@ -301,7 +301,7 @@ async fn process_inference_input<T: std::fmt::Debug>(
         );
     }
 
-    info!(
+    debug!(
         "Successfully processed {input_type} inference. Vector count: {count}",
         count = vectors.len()
     );
