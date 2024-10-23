@@ -203,7 +203,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Image(img) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Image(img), InferenceType::Document)
+                    .infer(InferenceData::Image(img), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
@@ -219,7 +219,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Object(obj) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Object(obj), InferenceType::Document)
+                    .infer(InferenceData::Object(obj), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {

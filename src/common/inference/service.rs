@@ -21,8 +21,8 @@ const AUDIO_DATA_TYPE: &str = "audio";
 #[serde(rename_all = "lowercase")]
 pub enum InferenceType {
     #[default]
-    Document,
-    Query,
+    Update,
+    Search,
 }
 
 impl Display for InferenceType {

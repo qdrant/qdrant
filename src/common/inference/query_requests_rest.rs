@@ -6,7 +6,7 @@ use collection::operations::universal_query::collection_query::{
 };
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use futures_util::future::try_join_all;
-use log::{error, info, warn};
+use log::{debug, error, warn};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
@@ -271,7 +271,7 @@ async fn process_inference_input<T: std::fmt::Debug>(
     debug!("Starting inference processing for {input_type}");
 
     let vectors = service
-        .infer(data, InferenceType::Query)
+        .infer(data, InferenceType::Search)
         .await
         .map_err(|e| {
             error!(
