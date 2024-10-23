@@ -460,7 +460,7 @@ impl SegmentEntry for Segment {
                 let vector_index = vector_data.vector_index.borrow();
                 let is_indexed = vector_index.is_index();
 
-                vectors_size_bytes += vector_storage.size_in_bytes() as u64;
+                vectors_size_bytes += vector_storage.size_in_bytes();
 
                 let vector_data_info = VectorDataInfo {
                     num_vectors,
