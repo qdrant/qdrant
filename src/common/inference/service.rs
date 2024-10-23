@@ -19,10 +19,10 @@ const AUDIO_DATA_TYPE: &str = "audio";
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
-enum InferenceType {
+pub enum InferenceType {
     #[default]
-    Document,
-    Query,
+    Update,
+    Search,
 }
 
 impl Display for InferenceType {
@@ -162,7 +162,11 @@ impl InferenceService {
         }
     }
 
-    pub async fn infer(&self, data: InferenceData) -> Result<Vec<VectorPersisted>, StorageError> {
+    pub async fn infer(
+        &self,
+        data: InferenceData,
+        inference_type: InferenceType,
+    ) -> Result<Vec<VectorPersisted>, StorageError> {
         let input: InferenceInput = data.into();
         let url = self
             .config
@@ -172,7 +176,7 @@ impl InferenceService {
 
         let request = InferenceRequest {
             inputs: vec![input],
-            inference: InferenceType::Document, // todo: add 'query|document' parameter
+            inference: inference_type,
             token: self.config.token.clone(),
         };
 

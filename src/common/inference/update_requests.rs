@@ -9,7 +9,7 @@ use collection::operations::vector_ops::PointVectorsPersisted;
 use futures::stream::{self, StreamExt};
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::service::{InferenceData, InferenceService};
+use crate::common::inference::service::{InferenceData, InferenceService, InferenceType};
 
 pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted>, StorageError> {
     let results: Vec<Result<VectorPersisted, StorageError>> = stream::iter(vectors)
@@ -187,7 +187,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Document(doc) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Document(doc))
+                    .infer(InferenceData::Document(doc), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
@@ -203,7 +203,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Image(img) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Image(img))
+                    .infer(InferenceData::Image(img), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
@@ -219,7 +219,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Object(obj) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Object(obj))
+                    .infer(InferenceData::Object(obj), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
