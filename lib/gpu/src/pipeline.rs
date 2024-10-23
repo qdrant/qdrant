@@ -81,7 +81,7 @@ impl Pipeline {
         };
 
         // Initialize the shader stage create info.
-        // It contains the shader module, entry point, mark the stage as compute ect.
+        // It contains the shader module, entry point, mark the stage as compute etc.
         let mut vk_pipeline_shader_stage_create_info_builder =
             vk::PipelineShaderStageCreateInfo::builder()
                 .stage(vk::ShaderStageFlags::COMPUTE)

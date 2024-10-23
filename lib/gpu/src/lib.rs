@@ -46,7 +46,7 @@ pub enum GpuError {
     /// Warning. This error doesn't handle shader out of bounds access.
     OutOfBounds(String),
 
-    /// Some of requiered hardware features are not supported by the GPU.
+    /// Some of required hardware features are not supported by the GPU.
     NotSupported(String),
 
     /// A fence or query has not yet completed.

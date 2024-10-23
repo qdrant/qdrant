@@ -180,7 +180,7 @@ impl Buffer {
 
         if data.len() + offset > self.size {
             return Err(GpuError::OutOfBounds(
-                "Out of bounds while dowloading from GPU".to_string(),
+                "Out of bounds while downloading from GPU".to_string(),
             ));
         }
 

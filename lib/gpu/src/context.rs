@@ -22,7 +22,7 @@ pub struct Context {
     // GPU execution handler.
     pub vk_queue: vk::Queue,
 
-    // Vulkan queue family index which describes the gpu sheduler.
+    // Vulkan queue family index which describes the gpu scheduler.
     pub vk_queue_family_index: usize,
 
     // Command buffer is created using command pool.
@@ -31,7 +31,7 @@ pub struct Context {
     // Command buffer is used to record commands to execute.
     pub vk_command_buffer: vk::CommandBuffer,
 
-    // Syncronization fence to wait for GPU execution.
+    // Synchronization fence to wait for GPU execution.
     pub vk_fence: vk::Fence,
 
     // Resources used in the context.
@@ -352,7 +352,7 @@ impl Drop for Context {
                 // Vulkan API cannot stop GPU execution.
                 // This sutiation may appear if shader has infinite loop, etc.
                 // There is no good way to handle this error.
-                // So just log it and ignore resouces deallocation.
+                // So just log it and ignore resources deallocation.
                 // This approach may cause memory leaks and used gpu kernels,
                 // but it's better than potential segfault.
                 log::error!("Failed to wait for GPU context to finish");

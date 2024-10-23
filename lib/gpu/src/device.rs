@@ -54,7 +54,7 @@ pub struct Device {
 // GPU execution queue.
 #[derive(Clone)]
 pub struct Queue {
-    // Native Vulkan queue hander.
+    // Native Vulkan queue handler.
     pub vk_queue: vk::Queue,
 
     // Queue family index for the native Vulkan queue.
@@ -150,7 +150,7 @@ impl Device {
                 &mut props2,
             );
             log::info!(
-                "Choosed GPU device: {:?}",
+                "Chosen GPU device: {:?}",
                 ::std::ffi::CStr::from_ptr(props.device_name.as_ptr())
             );
 
