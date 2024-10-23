@@ -9,18 +9,19 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
-# Disable tests for the library.
-# Functionality is tested in segment crate.
-# Without this line, cargo will try to run tests for the library
-# even if gpu feature is disabled.
-[lib]
-test = false
+[features]
+gpu = [
+    "dep:ash",
+    "dep:gpu-allocator",
+    "dep:shaderc",
+]
 
 [dependencies]
+ash = { version = "0.37.0", optional = true, default-features = false, features = ["loaded", "debug"] }
+gpu-allocator = { version = "0.21.0", optional = true }
+shaderc = { version = "0.8.3", optional = true, features = ["build-from-source"]}
+
 log = "0.4"
 rand = "0.8.5"
-ash = { version = "0.37.0", default-features = false, features = ["loaded", "debug"] }
-gpu-allocator = "0.21.0"
-shaderc = { version = "0.8.3", features = ["build-from-source"]}
-parking_lot = { version = "0.12.3" }
+parking_lot = { workspace = true }
 memory = { path = "../common/memory" }

@@ -1,3 +1,5 @@
+#![cfg(feature = "gpu")]
+
 pub mod allocation_callbacks;
 pub use allocation_callbacks::*;
 
@@ -31,6 +33,9 @@ pub use pipeline_builder::*;
 pub mod shader;
 use ash::vk;
 pub use shader::*;
+
+#[cfg(test)]
+mod basic_test;
 
 /// A trait for GPU resources.
 /// It's used keep GPU resources alive while they are in use by the GPU context.
