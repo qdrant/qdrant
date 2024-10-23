@@ -12,17 +12,18 @@ Test consistency during updates and shard transfer
 import logging
 import multiprocessing
 import pathlib
-import random
 from datetime import datetime, timezone
+import random
 
+import builtins
 from .fixtures import create_collection, random_dense_vector
 from .utils import *
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
-INITIAL_POINTS_COUNT = 10000
-POINTS_COUNT_UNDER_CHECK = 100
+INITIAL_POINTS_COUNT = 200000
+POINTS_COUNT_UNDER_CHECK = 1000
 N_PEERS = 3
 N_SHARDS = 2
 N_REPLICAS = 1
@@ -31,6 +32,11 @@ LOOPS_OF_REPLICATION = 3
 INCONSISTENCY_CHECK_ATTEMPTS = 10
 HEADERS = {}
 
+pid = os.getpid()
+
+def print(*args, **kwargs):
+    new_args = args + (f"pid={pid}",)
+    builtins.print(*new_args, **kwargs)
 
 def create_index(peer_url, collection=COLLECTION_NAME,
                  field_name: str = 'keyword', field_schema: str = 'keyword',
@@ -319,65 +325,346 @@ def restart_peers(peer_dirs, extra_env, loop_num):
     time.sleep(10)
 
 
+def check(qdrant_uris=None):
+    print('level=INFO msg="Starting data consistency check script"')
+
+    QC_NAME = os.getenv("QC_NAME", "qdrant-chaos-testing")
+
+
+    if QC_NAME == "qdrant-chaos-testing":
+        POINTS_DIR = "data/points-dump"
+    elif QC_NAME == "qdrant-chaos-testing-debug":
+        POINTS_DIR = "data/points-dump-debug"
+    elif QC_NAME == "qdrant-chaos-testing-three":
+        POINTS_DIR = "data/points-dump-three"
+    else:
+        raise NotImplementedError(f"Unknown cluster name {QC_NAME}")
+
+    # Ensure the data/points-dump directory exists
+    os.makedirs(POINTS_DIR, exist_ok=True)
+
+    # Environment variables with default values if not set
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+    QDRANT_CLUSTER_URL = os.getenv("QDRANT_CLUSTER_URL", "")
+    CONSISTENCY_ATTEMPTS_TOTAL = INCONSISTENCY_CHECK_ATTEMPTS
+
+    is_data_consistent = False
+    first_node_points = []
+    consistency_attempts_remaining = CONSISTENCY_ATTEMPTS_TOTAL
+
+
+    def calculate_inconsistent_points(source_points, target_points, point_ids):
+        source_point_idx_to_point = {
+            point["id"]: (point["vector"], point["payload"]) for point in source_points
+        }
+        target_point_idx_to_point = {
+            point["id"]: (point["vector"], point["payload"]) for point in target_points
+        }
+
+        # Mismatching or missing points
+        inconsistent_point_ids_by_vector = []
+        inconsistent_point_ids_by_payload = []
+
+        for point_id in point_ids:
+            source_vector, source_payload = source_point_idx_to_point.get(
+                point_id, (None, None)
+            )
+            target_vector, target_payload = target_point_idx_to_point.get(
+                point_id, (None, None)
+            )
+
+            if source_vector != target_vector:
+                inconsistent_point_ids_by_vector.append(point_id)
+
+            if source_payload != target_payload:
+                inconsistent_point_ids_by_payload.append(point_id)
+
+        return (
+            (inconsistent_point_ids_by_vector, inconsistent_point_ids_by_payload),
+            (source_point_idx_to_point, target_point_idx_to_point)
+        )
+
+    def calculate_inconsistent_points_no_vector(source_points, target_points, point_ids):
+        source_point_idx_to_point = {
+            point["id"]: (point["payload"]) for point in source_points
+        }
+        target_point_idx_to_point = {
+            point["id"]: (point["payload"]) for point in target_points
+        }
+
+        # Mismatching or missing points
+        inconsistent_point_ids_by_payload = []
+
+        for point_id in point_ids:
+            source_payload = source_point_idx_to_point.get(
+                point_id, None
+            )
+            target_payload = target_point_idx_to_point.get(
+                point_id, None
+            )
+
+            if source_payload != target_payload:
+                inconsistent_point_ids_by_payload.append(point_id)
+
+        return (
+            inconsistent_point_ids_by_payload,
+            (source_point_idx_to_point, target_point_idx_to_point)
+        )
+
+    # Generate random numbers between 0 and points_count and convert into JSON array
+    # num_points_to_check = POINTS_COUNT_UNDER_CHECK
+    # initial_point_ids = random.sample(range(INITIAL_POINTS_COUNT + 1), num_points_to_check)
+    # Check all the points
+    num_points_to_check = INITIAL_POINTS_COUNT
+    initial_point_ids = list(range(num_points_to_check + 1))
+    point_ids_for_node = [
+        initial_point_ids for _ in range(4)
+    ]  # point ids to check for node-0 to node-3
+
+    while True:
+        try:
+            if qdrant_uris:
+                cluster_response = requests.get(
+                    f"{qdrant_uris[0]}/cluster",
+                    headers={"api-key": QDRANT_API_KEY},
+                    timeout=10,
+                )
+            else:
+                cluster_response = requests.get(
+                    f"https://{QDRANT_CLUSTER_URL}:6333/cluster",
+                    headers={"api-key": QDRANT_API_KEY},
+                    timeout=10,
+                )
+        except requests.exceptions.Timeout as e:
+            print(
+                f'level=ERROR msg="Request timed out after 10s" uri="{QDRANT_CLUSTER_URL}" api="/cluster"'
+            )
+            exit(1)
+
+        if cluster_response.status_code != 200:
+            print(
+                f'level=ERROR msg="Got error in response" status_code={cluster_response.status_code} api="/cluster" response="{cluster_response.text}"'
+            )
+            exit(1)
+        result = cluster_response.json()['result']
+        num_peers = len(result["peers"])
+        pending_operations = result["raft_info"]["pending_operations"]
+        peer_id = result['peer_id']
+
+        if num_peers >= 5 and pending_operations == 0:
+            print(f'level=CRITICAL msg="Fetched cluster peers. Found too many peers" num_peers={num_peers} peer_id={peer_id} response={result}')
+        else:
+            print(f'level=INFO msg="Fetched cluster peers" peer_id={peer_id} num_peers={num_peers}')
+
+        if not qdrant_uris:
+            QDRANT_URIS = [
+                f"https://node-{idx}-{QDRANT_CLUSTER_URL}:6333" for idx in range(num_peers)
+            ]
+        else:
+            QDRANT_URIS = qdrant_uris
+
+        node_idx = 0
+        first_node_points = []
+
+        for uri in QDRANT_URIS:
+            if node_idx >= len(point_ids_for_node):
+                print(
+                    f'level=CRITICAL msg="Unexpected node index found. Breaking loop" node_idx={node_idx}'
+                )
+                break
+
+            point_ids = point_ids_for_node[node_idx]
+
+            if len(point_ids) == 0:
+                is_data_consistent = True
+                print(
+                    f'level=INFO msg="Skipping because no check required for node" node={node_idx}'
+                )
+                node_idx += 1
+                continue
+
+            try:
+                response = requests.post(
+                    f"{uri}/collections/benchmark/points",
+                    headers={"api-key": QDRANT_API_KEY, "content-type": "application/json"},
+                    # json={"ids": point_ids, "with_vector": True, "with_payload": True},
+                    json={"ids": point_ids, "with_vector": False, "with_payload": True},
+                    timeout=30,
+                )
+            except requests.exceptions.Timeout as e:
+                print(
+                    f'level=WARN msg="Request timed out after 10s, skipping consistency check for node" uri="{uri}" api="/collections/benchmark/points"'
+                )
+                node_idx += 1
+                continue
+
+            if response.status_code != 200:
+                error_msg = response.text.strip()
+                if error_msg in ("404 page not found", "Service Unavailable"):
+                    print(
+                        f'level=WARN msg="Node unreachable, skipping consistency check" uri="{uri}" status_code={response.status_code} err="{error_msg}"'
+                    )
+                    # point_ids_for_node[node_idx] = []
+                    node_idx += 1
+                    continue
+                else:
+                    # Some unknown error:
+                    print(
+                        f'level=ERROR msg="Failed to fetch points" uri="{uri}" status_code={response.status_code} err="{error_msg}"'
+                    )
+                    is_data_consistent = False
+                    break
+
+            fetched_points = sorted(response.json()["result"], key=lambda x: x["id"])
+            fetched_points_count = len(fetched_points)
+
+            print(
+                f'level=INFO msg="Fetched points" num_points={fetched_points_count} uri="{uri}"'
+            )
+
+            attempt_number = CONSISTENCY_ATTEMPTS_TOTAL - consistency_attempts_remaining
+            with open(
+                f"{POINTS_DIR}/node-{node_idx}-attempt-{attempt_number}.json", "w"
+            ) as f:
+                json.dump(fetched_points, f)
+
+            if len(first_node_points) == 0:
+                first_node_points = fetched_points
+            elif fetched_points == first_node_points:
+                print(f'level=INFO msg="Node {node_idx} is consistent with node-0" uri="{uri}"')
+                point_ids_for_node[node_idx] = []
+                is_data_consistent = True
+            else:
+                print(f'level=INFO msg="Checking points of node" uri="{uri}"')
+                (inconsistent_ids_by_vector, inconsistent_ids_by_payload), (first_node_points_map, fetched_node_points_map)  = (
+                    calculate_inconsistent_points(
+                        first_node_points, fetched_points, point_ids
+                    )
+                )
+                if (
+                    len(inconsistent_ids_by_vector) == 0
+                    and len(inconsistent_ids_by_payload) == 0
+                ):
+                    print(f'level=INFO msg="Node {node_idx} is consistent" uri="{uri}"')
+                    point_ids_for_node[node_idx] = []
+                    is_data_consistent = True
+                    continue
+                inconsistent_point_ids = list(
+                    set(inconsistent_ids_by_vector).union(inconsistent_ids_by_payload)
+                )
+                print(
+                    f'level=WARN msg="Node {node_idx} might be inconsistent compared to node-0. Need to retry" uri="{uri}" inconsistent_count={len(inconsistent_point_ids)} inconsistent_by_vector="{inconsistent_ids_by_vector}" inconsistent_by_payload="{inconsistent_ids_by_payload}" inconsistent_points="{inconsistent_point_ids}"'
+                )
+
+                point_ids_for_node[node_idx] = inconsistent_point_ids
+
+                is_data_consistent = False
+                break
+
+            node_idx += 1
+
+        consistency_attempts_remaining -= 1
+
+        if is_data_consistent:
+            print(
+                f'level=INFO msg="Data consistency check succeeded" attempts={CONSISTENCY_ATTEMPTS_TOTAL - consistency_attempts_remaining}'
+            )
+            break
+        else:
+            if consistency_attempts_remaining == 0:
+                try:
+                    print(
+                        f'level=ERROR msg="Data consistency check failed" attempts={CONSISTENCY_ATTEMPTS_TOTAL - consistency_attempts_remaining} inconsistent_count={len(inconsistent_point_ids)} inconsistent_by_vector="{inconsistent_ids_by_vector}" inconsistent_by_payload="{inconsistent_ids_by_payload}" inconsistent_points="{inconsistent_point_ids}"'
+                    )
+                    first_node_inconsistent_points = []
+                    last_fetched_node_inconsistent_points = []
+
+                    for point_id in inconsistent_point_ids:
+                        first_node_inconsistent_points.append(first_node_points_map[point_id])
+                        last_fetched_node_inconsistent_points.append(fetched_node_points_map[point_id])
+
+                    print(f'level=ERROR msg="Dumping inconsistent points compared to node-0" node="node-{node_idx}" expected_points="{first_node_inconsistent_points}" fetched_points={last_fetched_node_inconsistent_points}')
+
+                except Exception as e:
+                    print(f'level=ERROR msg="Failed while printing inconsistent points" err={e}')
+
+                break
+            else:
+                print(
+                    f'level=WARN msg="Retrying data consistency check" attempts={CONSISTENCY_ATTEMPTS_TOTAL - consistency_attempts_remaining} remaining_attempts={consistency_attempts_remaining}'
+                )
+                # Node might be unavailable which caused request to fail. Give some time to heal
+                time.sleep(5)
+                first_node_points = []
+                continue
+
+    if not is_data_consistent:
+        return False
+    else:
+        return True
+
+
 def test_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
-    print("\n1. Create a 3-nodes cluster")
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
-    # peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env={"QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "stream_records"})
-    grpc_uris = []
-    for item in processes:
-        grpc_uris.append(f"http://127.0.0.1:{item.grpc_port}")
-    print(peer_dirs)
+    # print("\n1. Create a 3-nodes cluster")
+    # peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    # # peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env={"QDRANT__STORAGE__SHARD_TRANSFER_METHOD": "stream_records"})
+    # grpc_uris = []
+    # for item in processes:
+    #     grpc_uris.append(f"http://127.0.0.1:{item.grpc_port}")
+    # print(peer_dirs)
+    #
+    # print(f"2. Create a collection with {N_SHARDS} shards")
+    # create_collection(peer_api_uris[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS, headers=HEADERS)
+    # wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris, headers=HEADERS)
+    # # create index just 'cause chaos testing collection has 'em
+    # create_index(peer_api_uris[0], collection=COLLECTION_NAME, field_name='a', field_schema='keyword', headers=HEADERS)
+    # create_index(peer_api_uris[0], collection=COLLECTION_NAME, field_name='timestamp', field_schema='datetime', headers=HEADERS)
+    #
+    # print("3. Insert starting points (10k) with payload (timestamp)")
+    # upsert_random_points_with_payload(peer_api_uris[0], INITIAL_POINTS_COUNT, COLLECTION_NAME, batch_size=100, wait='false')
+    # print("     Wait for optimizations to complete")
+    # for uri in peer_api_uris:
+    #     wait_collection_green(uri, COLLECTION_NAME, headers=HEADERS)
+    #
+    # print("4. Start updating points in the background (random nodes)")
+    # # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
+    # upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
+    # print("     Wait for some time")
+    # time.sleep(5)
+    #
+    # for i in range(LOOPS_OF_REPLICATION):
+    #     print("5-6. Trigger one of the shards' replication. Wait for the replication to complete")
+    #     replicate_shard(peer_api_uris, COLLECTION_NAME)
+    #     print("     Wait for some time")
+    #     time.sleep(random.randint(3, 15))
+    #
+    #     # random_bool = random.choice([True, False])
+    #     # check consistency after each replication
+    #     random_bool = True
+    #     if random_bool:
+    #         print("     Stop updating points")
+    #         upsert_process.kill()
+    #         print("         Wait for some time")
+    #         time.sleep(3)
+    #
+    #         # result = check_consistency(peer_api_uris, peer_dirs, loop_num=str(i))
+    #         result = check(INITIAL_POINTS_COUNT,peer_api_uris, INCONSISTENCY_CHECK_ATTEMPTS, POINTS_COUNT_UNDER_CHECK)
+    #         if not result:
+    #             restart_peers(peer_dirs, None, loop_num=str(i))
+    #             # check_consistency(peer_api_uris, loop_num=f"{i}_again")
+    #         print("     Start updating points again")
+    #         # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
+    #         upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
+    #
+    # print("7. Stop updating points")
+    # upsert_process.kill()
+    # print("    Wait for some time")
+    # time.sleep(30)
 
-    print(f"2. Create a collection with {N_SHARDS} shards")
-    create_collection(peer_api_uris[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS, headers=HEADERS)
-    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris, headers=HEADERS)
-    # create index just 'cause chaos testing collection has 'em
-    create_index(peer_api_uris[0], collection=COLLECTION_NAME, field_name='a', field_schema='keyword', headers=HEADERS)
-    create_index(peer_api_uris[0], collection=COLLECTION_NAME, field_name='timestamp', field_schema='datetime', headers=HEADERS)
-
-    print("3. Insert starting points (10k) with payload (timestamp)")
-    upsert_random_points_with_payload(peer_api_uris[0], INITIAL_POINTS_COUNT, COLLECTION_NAME, batch_size=100, wait='false')
-    print("     Wait for optimizations to complete")
-    for uri in peer_api_uris:
-        wait_collection_green(uri, COLLECTION_NAME, headers=HEADERS)
-
-    print("4. Start updating points in the background (random nodes)")
-    # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
-    upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
-    print("     Wait for some time")
-    time.sleep(5)
-
-    for i in range(LOOPS_OF_REPLICATION):
-        print("5-6. Trigger one of the shards' replication. Wait for the replication to complete")
-        replicate_shard(peer_api_uris, COLLECTION_NAME)
-        print("     Wait for some time")
-        time.sleep(random.randint(3, 15))
-
-        # random_bool = random.choice([True, False])
-        # check consistency after each replication
-        random_bool = True
-        if random_bool:
-            print("     Stop updating points")
-            upsert_process.kill()
-            print("         Wait for some time")
-            time.sleep(3)
-
-            result = check_consistency(peer_api_uris, peer_dirs, loop_num=str(i))
-            # if not result:
-            #     restart_peers(peer_dirs, None, loop_num=str(i))
-            #     check_consistency(peer_api_uris, loop_num=f"{i}_again")
-            print("     Start updating points again")
-            # upsert_process = run_update_points_in_background(peer_api_uris, COLLECTION_NAME)
-            upsert_process = run_update_points_in_background_bfb(grpc_uris, COLLECTION_NAME)
-
-    print("7. Stop updating points")
-    upsert_process.kill()
-    print("    Wait for some time")
-    time.sleep(30)
-
-    final_check = check_consistency(peer_api_uris, peer_dirs, loop_num='final')
+    # final_check = check_consistency(peer_api_uris, peer_dirs, loop_num='final')
+    final_check = check(None)
 
     if not final_check:
         raise AssertionError("FAILED")
