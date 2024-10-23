@@ -187,7 +187,7 @@ async fn convert_single_vector(vector: Vector) -> Result<VectorPersisted, Storag
         Vector::Document(doc) => match inference_service {
             Some(service) => {
                 let vector = service
-                    .infer(InferenceData::Document(doc), InferenceType::Document)
+                    .infer(InferenceData::Document(doc), InferenceType::Update)
                     .await
                     .map_err(|e| StorageError::inference_error(e.to_string()))?;
                 vector.into_iter().next().ok_or_else(|| {
