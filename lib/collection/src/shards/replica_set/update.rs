@@ -203,16 +203,16 @@ impl ShardReplicaSet {
 
         let this_peer_id = self.this_peer_id();
 
-        // target all remote peers that can receive updates
-        let active_remote_shards: Vec<_> = remotes
+        // Target all remote peers that can receive updates
+        let updatable_remote_shards: Vec<_> = remotes
             .iter()
-            .filter(|rs| self.peer_is_active_or_pending(&rs.peer_id))
+            .filter(|rs| self.is_peer_updatable(&rs.peer_id))
             .collect();
 
-        // local is defined AND the peer itself can receive updates
-        let local_is_updatable = local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
+        // Local is defined and can receive updates
+        let local_is_updatable = local.is_some() && self.is_peer_updatable(&this_peer_id);
 
-        if active_remote_shards.is_empty() && !local_is_updatable {
+        if updatable_remote_shards.is_empty() && !local_is_updatable {
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {this_peer_id} has no active replica",
                 self.shard_id,
@@ -223,10 +223,10 @@ impl ShardReplicaSet {
         let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
         let operation = OperationWithClockTag::new(operation, Some(clock_tag));
 
-        let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
+        let mut update_futures = Vec::with_capacity(updatable_remote_shards.len() + 1);
 
         if let Some(local) = local.deref() {
-            if self.peer_is_active_or_pending(&this_peer_id) {
+            if self.is_peer_updatable(&this_peer_id) {
                 let local_wait = if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
                     false
                 } else {
@@ -248,7 +248,7 @@ impl ShardReplicaSet {
             }
         }
 
-        for remote in active_remote_shards {
+        for remote in updatable_remote_shards {
             let operation = operation.clone();
 
             let remote_update = async move {
@@ -414,7 +414,10 @@ impl ShardReplicaSet {
         Ok(Some(res))
     }
 
-    fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
+    /// Whether to send updates to the given peer
+    ///
+    /// A peer in dead state, or a locally disabled peer, will not accept updates.
+    fn is_peer_updatable(&self, peer_id: &PeerId) -> bool {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
