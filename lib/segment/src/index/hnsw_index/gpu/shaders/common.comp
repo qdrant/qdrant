@@ -1,0 +1,20 @@
+#ifndef COMMON_HEADER
+#define COMMON_HEADER
+
+#define SUBGROUP_ID (gl_GlobalInvocationID.x / SUBGROUP_SIZE)
+
+#define CONCAT(a, b) a##_##b
+
+const float positive_infinity = 1.0 / 0.0;
+const float negative_infinity = -1.0 / 0.0;
+#define UINT_MAX 0xffffffff
+
+#define POINT_ID uint
+const POINT_ID INVALID_POINT_ID = UINT_MAX;
+
+struct ScoredPoint {
+    POINT_ID id;
+    float score;
+};
+
+#endif

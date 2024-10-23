@@ -37,7 +37,7 @@ tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
-gpu = ["gpu/gpu"]
+gpu = ["gpu/gpu", "segment/gpu"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"

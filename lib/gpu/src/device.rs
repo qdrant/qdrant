@@ -82,15 +82,15 @@ impl Device {
                 .get_physical_device_queue_family_properties(vk_physical_device.vk_physical_device)
         };
 
-        let max_queue_priorities_count = vk_queue_families
+        let max_queue_priorities_counts: Vec<Vec<f32>> = vk_queue_families
             .iter()
-            .map(|vk_queue_family| vk_queue_family.queue_count as usize)
-            .max()
-            .ok_or_else(|| GpuError::Other("No queue families found".to_string()))?;
-        let queue_priorities = vec![0.; max_queue_priorities_count];
+            .map(|vk_queue_family| vec![0.; vk_queue_family.queue_count as usize])
+            .collect();
 
-        let queue_create_infos: Vec<vk::DeviceQueueCreateInfo> = (0..vk_queue_families.len())
-            .map(|queue_family_index| {
+        let queue_create_infos: Vec<vk::DeviceQueueCreateInfo> = max_queue_priorities_counts
+            .iter()
+            .enumerate()
+            .map(|(queue_family_index, queue_priorities)| {
                 vk::DeviceQueueCreateInfo::default()
                     .flags(vk::DeviceQueueCreateFlags::empty())
                     .queue_family_index(queue_family_index as u32)
@@ -153,10 +153,12 @@ impl Device {
 
         let max_compute_work_group_count;
         let mut is_dynamic_subgroup_size = false;
-        let subgroup_size = unsafe {
-            let props = instance
-                .vk_instance()
-                .get_physical_device_properties(vk_physical_device.vk_physical_device);
+        let subgroup_size = {
+            let props = unsafe {
+                instance
+                    .vk_instance()
+                    .get_physical_device_properties(vk_physical_device.vk_physical_device)
+            };
             max_compute_work_group_count = [
                 props.limits.max_compute_work_group_count[0] as usize,
                 props.limits.max_compute_work_group_count[1] as usize,
@@ -167,10 +169,12 @@ impl Device {
             let mut props2 = vk::PhysicalDeviceProperties2::default()
                 .push_next(&mut subgroup_properties)
                 .push_next(&mut vulkan_1_3_properties);
-            instance.vk_instance().get_physical_device_properties2(
-                vk_physical_device.vk_physical_device,
-                &mut props2,
-            );
+            unsafe {
+                instance.vk_instance().get_physical_device_properties2(
+                    vk_physical_device.vk_physical_device,
+                    &mut props2,
+                );
+            }
 
             let subgroup_size = if vulkan_1_3_properties.min_subgroup_size
                 != vulkan_1_3_properties.max_subgroup_size
