@@ -297,8 +297,9 @@ impl ShardReplicaSet {
             .params
             .write_consistency_factor
             .get() as usize;
-        let minimal_success_count =
-            write_consistency_factor.min(total_results - pre_condition_fail_count);
+        let minimal_success_count = write_consistency_factor
+            .min(total_results - pre_condition_fail_count)
+            .max(1);
 
         // Advance clock if some replica echoed *newer* tick
 
