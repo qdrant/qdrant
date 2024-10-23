@@ -419,12 +419,14 @@ impl ShardReplicaSet {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
             Some(ReplicaState::Initializing) => true,
-            Some(ReplicaState::Dead) => false,
             Some(ReplicaState::Listener) => true,
-            Some(ReplicaState::PartialSnapshot) => false,
-            Some(ReplicaState::Recovery) => false,
+            // Recovery: keep sending updates to prevent a data race
+            // The replica on the peer may still be active for some time if its consensus is slow.
+            // The peer may respond to read requests until it switches to recovery state too. We
+            // must keep sending updates to prevent those reads being stale.
+            Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => true,
             Some(ReplicaState::Resharding) => true,
-            None => false,
+            Some(ReplicaState::Dead) | None => false,
         };
         res && !self.is_locally_disabled(peer_id)
     }
