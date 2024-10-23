@@ -277,7 +277,19 @@ impl ShardReplicaSet {
         drop(local);
 
         let total_results = all_res.len();
+        let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
+        // Determine minimum required successes, never higher than maximum possible successes
+        // Requests having precondition failures on replica states participating in shard transfers
+        // are subtracted because data consistency will be guaranteed by the transfer itself.
+        let pre_condition_fail_count = failures
+            .iter()
+            .filter(|(_, err)| err.is_pre_condition_failed())
+            .filter(|(peer_id, _)| {
+                self.peer_state(peer_id)
+                    .map_or(false, ReplicaState::is_partial_or_recovery)
+            })
+            .count();
         let write_consistency_factor = self
             .collection_config
             .read()
@@ -285,10 +297,8 @@ impl ShardReplicaSet {
             .params
             .write_consistency_factor
             .get() as usize;
-
-        let minimal_success_count = write_consistency_factor.min(total_results);
-
-        let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
+        let minimal_success_count =
+            write_consistency_factor.min(total_results - pre_condition_fail_count);
 
         // Advance clock if some replica echoed *newer* tick
 
@@ -459,20 +469,20 @@ impl ShardReplicaSet {
                 continue;
             };
 
-            let ignore_pre_condition_failed = match peer_state {
-                // Active and initializing replicas should not respond with precondition failures
-                ReplicaState::Active | ReplicaState::Initializing => false,
-                // Shard transfer related replica states may respond with precondition failures during state switches
-                ReplicaState::Partial
+            // Ignore errors entirely for dead and listener replicas
+            match peer_state {
+                ReplicaState::Dead | ReplicaState::Listener => continue,
+                ReplicaState::Active
+                | ReplicaState::Initializing
+                | ReplicaState::Partial
                 | ReplicaState::Recovery
                 | ReplicaState::PartialSnapshot
-                | ReplicaState::Resharding => true,
-                // Ignore errors entirely for dead and listener replicas
-                ReplicaState::Dead | ReplicaState::Listener => continue,
-            };
-            if ignore_pre_condition_failed && err.is_pre_condition_failed() {
-                // Handles a special case where transfer receiver haven't created a shard yet.
-                // In this case update should be handled by source shard and forward proxy.
+                | ReplicaState::Resharding => (),
+            }
+
+            // Handle a special case where transfer receiver is not in the expected replica state yet.
+            // Data consistency will be handled by the shard transfer and the associated proxies.
+            if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
                 continue;
             }
 
