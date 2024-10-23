@@ -15,5 +15,5 @@ rand = "0.8.5"
 ash = { version = "0.37.0", default-features = false, features = ["loaded", "debug"] }
 gpu-allocator = "0.21.0"
 shaderc = { version = "0.8.3", features = ["build-from-source"]}
-parking_lot = { workspace = true }
+parking_lot = { version = "0.12.3" }
 memory = { path = "../common/memory" }
