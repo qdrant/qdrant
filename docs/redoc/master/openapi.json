@@ -10596,7 +10596,7 @@
             "format": "uint",
             "minimum": 0
           },
-          "vector_size_bytes": {
+          "vectors_size_bytes": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
