@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use collection::operations::types::{CollectionError, CollectionResult};
-use tempfile::TempDir;
 
 use crate::content_manager::toc::TableOfContent;
 
@@ -137,20 +136,6 @@ impl TableOfContent {
             })?;
         }
         Ok(upload_dir)
-    }
-
-    pub fn snapshots_download_tempdir(&self) -> CollectionResult<TempDir> {
-        let tmp_storage_dir = match self.optional_temp_path() {
-            Ok(Some(path)) => path,
-            Ok(None) => self.snapshots_temp_path()?,
-            Err(err) => return Err(err),
-        };
-
-        let download_tempdir = tempfile::Builder::new()
-            .prefix("download-")
-            .tempdir_in(tmp_storage_dir)?;
-
-        Ok(download_tempdir)
     }
 
     pub fn clear_all_tmp_directories(&self) -> CollectionResult<()> {

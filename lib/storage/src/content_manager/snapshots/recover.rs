@@ -91,14 +91,12 @@ async fn _do_recover_from_snapshot(
 
     let is_distributed = toc.is_distributed();
 
-    let download_dir = toc.snapshots_download_tempdir()?;
-
-    log::debug!(
-        "Downloading snapshot from {location} to {}",
-        download_dir.path().display(),
-    );
-
-    let snapshot_path = download_snapshot(client, location, download_dir.path()).await?;
+    let snapshot_path = download_snapshot(
+        client,
+        location,
+        &toc.optional_temp_or_snapshot_temp_path()?,
+    )
+    .await?;
 
     if let Some(checksum) = checksum {
         let snapshot_checksum = hash_file(&snapshot_path).await?;
