@@ -459,14 +459,18 @@ impl ShardReplicaSet {
                 continue;
             };
 
-            match peer_state {
-                ReplicaState::Active | ReplicaState::Initializing | ReplicaState::Resharding => (),
-                _ => continue,
-            }
-
-            if matches!(peer_state, ReplicaState::Partial | ReplicaState::Resharding)
-                && err.is_pre_condition_failed()
-            {
+            let ignore_pre_condition_failed = match peer_state {
+                // Active and initializing replicas should not respond with precondition failures
+                ReplicaState::Active | ReplicaState::Initializing => false,
+                // Shard transfer related replica states may respond with precondition failures during state switches
+                ReplicaState::Partial
+                | ReplicaState::Recovery
+                | ReplicaState::PartialSnapshot
+                | ReplicaState::Resharding => true,
+                // Ignore errors entirely for dead and listener replicas
+                ReplicaState::Dead | ReplicaState::Listener => continue,
+            };
+            if ignore_pre_condition_failed && err.is_pre_condition_failed() {
                 // Handles a special case where transfer receiver haven't created a shard yet.
                 // In this case update should be handled by source shard and forward proxy.
                 continue;
