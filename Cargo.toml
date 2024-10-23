@@ -232,6 +232,8 @@ members = [
     "lib/storage",
 ]
 
+exclude = ["lib/gpu"]
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
