@@ -227,7 +227,6 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
-    "lib/gpu",
     "lib/segment",
     "lib/sparse",
     "lib/storage",
