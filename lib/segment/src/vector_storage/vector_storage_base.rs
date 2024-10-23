@@ -53,7 +53,7 @@ pub trait VectorStorage {
             .saturating_sub(self.deleted_vector_count())
     }
 
-    fn available_size_in_bytes(&self) -> usize;
+    fn size_in_bytes(&self) -> usize;
 
     /// Get the vector by the given key
     fn get_vector(&self, key: PointOffsetType) -> CowVector;
@@ -441,30 +441,30 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn available_size_in_bytes(&self) -> usize {
+    fn size_in_bytes(&self) -> usize {
         match self {
-            VectorStorageEnum::DenseSimple(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseSimpleByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseSimpleHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseMemmap(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableInRam(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableInRamByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::SparseSimple(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseSimple(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.available_size_in_bytes(),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.available_size_in_bytes(),
+            VectorStorageEnum::DenseSimple(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseMemmap(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableInRam(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::SparseSimple(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimple(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.size_in_bytes(),
         }
     }
 
