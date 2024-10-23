@@ -200,19 +200,20 @@ impl ShardReplicaSet {
 
         let remotes = self.remotes.read().await;
         let local = self.local.read().await;
+        let replica_count = usize::from(local.is_some()) + remotes.len();
 
         let this_peer_id = self.this_peer_id();
 
-        // target all remote peers that can receive updates
-        let active_remote_shards: Vec<_> = remotes
+        // Target all remote peers that can receive updates
+        let updatable_remote_shards: Vec<_> = remotes
             .iter()
-            .filter(|rs| self.peer_is_active_or_pending(&rs.peer_id))
+            .filter(|rs| self.is_peer_updatable(&rs.peer_id))
             .collect();
 
-        // local is defined AND the peer itself can receive updates
-        let local_is_updatable = local.is_some() && self.peer_is_active_or_pending(&this_peer_id);
+        // Local is defined and can receive updates
+        let local_is_updatable = local.is_some() && self.is_peer_updatable(&this_peer_id);
 
-        if active_remote_shards.is_empty() && !local_is_updatable {
+        if updatable_remote_shards.is_empty() && !local_is_updatable {
             return Err(CollectionError::service_error(format!(
                 "The replica set for shard {} on peer {this_peer_id} has no active replica",
                 self.shard_id,
@@ -223,10 +224,10 @@ impl ShardReplicaSet {
         let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, current_clock_tick);
         let operation = OperationWithClockTag::new(operation, Some(clock_tag));
 
-        let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
+        let mut update_futures = Vec::with_capacity(updatable_remote_shards.len() + 1);
 
         if let Some(local) = local.deref() {
-            if self.peer_is_active_or_pending(&this_peer_id) {
+            if self.is_peer_updatable(&this_peer_id) {
                 let local_wait = if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
                     false
                 } else {
@@ -248,7 +249,7 @@ impl ShardReplicaSet {
             }
         }
 
-        for remote in active_remote_shards {
+        for remote in updatable_remote_shards {
             let operation = operation.clone();
 
             let remote_update = async move {
@@ -276,8 +277,6 @@ impl ShardReplicaSet {
         drop(remotes);
         drop(local);
 
-        let total_results = all_res.len();
-
         let write_consistency_factor = self
             .collection_config
             .read()
@@ -286,7 +285,7 @@ impl ShardReplicaSet {
             .write_consistency_factor
             .get() as usize;
 
-        let minimal_success_count = write_consistency_factor.min(total_results);
+        let minimal_success_count = write_consistency_factor.min(replica_count);
 
         let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
@@ -414,17 +413,23 @@ impl ShardReplicaSet {
         Ok(Some(res))
     }
 
-    fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
+    /// Whether to send updates to the given peer
+    ///
+    /// A peer in dead state, or a locally disabled peer, will not accept updates.
+    fn is_peer_updatable(&self, peer_id: &PeerId) -> bool {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
             Some(ReplicaState::Initializing) => true,
-            Some(ReplicaState::Dead) => false,
             Some(ReplicaState::Listener) => true,
-            Some(ReplicaState::PartialSnapshot) => false,
-            Some(ReplicaState::Recovery) => false,
+            // Recovery: keep sending updates to prevent a data race
+            // The replica on the peer may still be active for some time if its consensus is slow.
+            // The peer may respond to read requests until it switches to recovery state too. We
+            // must keep sending updates to prevent those reads being stale.
+            // See: <https://github.com/qdrant/qdrant/pull/5298>
+            Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => true,
             Some(ReplicaState::Resharding) => true,
-            None => false,
+            Some(ReplicaState::Dead) | None => false,
         };
         res && !self.is_locally_disabled(peer_id)
     }
@@ -453,16 +458,20 @@ impl ShardReplicaSet {
                 continue;
             };
 
+            // Ignore errors entirely for dead and listener replicas
             match peer_state {
-                ReplicaState::Active | ReplicaState::Initializing | ReplicaState::Resharding => (),
-                _ => continue,
+                ReplicaState::Dead | ReplicaState::Listener => continue,
+                ReplicaState::Active
+                | ReplicaState::Initializing
+                | ReplicaState::Partial
+                | ReplicaState::Recovery
+                | ReplicaState::PartialSnapshot
+                | ReplicaState::Resharding => (),
             }
 
-            if matches!(peer_state, ReplicaState::Partial | ReplicaState::Resharding)
-                && err.is_pre_condition_failed()
-            {
-                // Handles a special case where transfer receiver haven't created a shard yet.
-                // In this case update should be handled by source shard and forward proxy.
+            // Handle a special case where transfer receiver is not in the expected replica state yet.
+            // Data consistency will be handled by the shard transfer and the associated proxies.
+            if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
                 continue;
             }
 

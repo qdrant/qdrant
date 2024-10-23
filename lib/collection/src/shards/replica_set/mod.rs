@@ -1075,7 +1075,6 @@ pub enum ReplicaState {
 impl ReplicaState {
     /// Check whether the replica state is active or listener or resharding.
     pub fn is_active_or_listener_or_resharding(self) -> bool {
-        // Use explicit match, to catch future changes to `ReplicaState`
         match self {
             ReplicaState::Active | ReplicaState::Listener | ReplicaState::Resharding => true,
 
@@ -1088,8 +1087,9 @@ impl ReplicaState {
     }
 
     /// Check whether the replica state is partial or partial-like.
+    ///
+    /// In other words: is the state related to shard transfers?
     pub fn is_partial_or_recovery(self) -> bool {
-        // Use explicit match, to catch future changes to `ReplicaState`
         match self {
             ReplicaState::Partial
             | ReplicaState::PartialSnapshot
