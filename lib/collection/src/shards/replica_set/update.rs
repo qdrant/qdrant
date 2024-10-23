@@ -200,6 +200,7 @@ impl ShardReplicaSet {
 
         let remotes = self.remotes.read().await;
         let local = self.local.read().await;
+        let replica_count = usize::from(local.is_some()) + remotes.len();
 
         let this_peer_id = self.this_peer_id();
 
@@ -276,20 +277,6 @@ impl ShardReplicaSet {
         drop(remotes);
         drop(local);
 
-        let total_results = all_res.len();
-        let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
-
-        // Determine minimum required successes, never higher than maximum possible successes
-        // Requests having precondition failures on replica states participating in shard transfers
-        // are subtracted because data consistency will be guaranteed by the transfer itself.
-        let pre_condition_fail_count = failures
-            .iter()
-            .filter(|(_, err)| err.is_pre_condition_failed())
-            .filter(|(peer_id, _)| {
-                self.peer_state(peer_id)
-                    .map_or(false, ReplicaState::is_partial_or_recovery)
-            })
-            .count();
         let write_consistency_factor = self
             .collection_config
             .read()
@@ -297,9 +284,10 @@ impl ShardReplicaSet {
             .params
             .write_consistency_factor
             .get() as usize;
-        let minimal_success_count = write_consistency_factor
-            .min(total_results - pre_condition_fail_count)
-            .max(1);
+
+        let minimal_success_count = write_consistency_factor.min(replica_count);
+
+        let (successes, failures): (Vec<_>, Vec<_>) = all_res.into_iter().partition_result();
 
         // Advance clock if some replica echoed *newer* tick
 
