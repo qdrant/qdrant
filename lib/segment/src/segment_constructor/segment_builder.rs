@@ -453,6 +453,20 @@ impl SegmentBuilder {
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
 
+            for vector_name in segment_config.sparse_vector_data.keys() {
+                let Some(vector_storage) = vector_storages.remove(vector_name) else {
+                    return Err(OperationError::service_error(format!(
+                        "Vector storage for vector name {vector_name} not found on sparse segment build"
+                    )));
+                };
+
+                vector_storage.flusher()()?;
+
+                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+
+                vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
+            }
+
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
             let mut payload_index = StructPayloadIndex::open(
@@ -492,15 +506,7 @@ impl SegmentBuilder {
             for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
                 let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
 
-                let Some(vector_storage) = vector_storages.remove(vector_name) else {
-                    return Err(OperationError::service_error(format!(
-                        "Vector storage for vector name {vector_name} not found on sparse segment build"
-                    )));
-                };
-
-                vector_storage.flusher()()?;
-
-                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+                let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
 
                 create_sparse_vector_index(SparseVectorIndexOpenArgs {
                     config: sparse_vector_config.index,
