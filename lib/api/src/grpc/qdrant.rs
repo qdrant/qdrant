@@ -512,6 +512,9 @@ pub struct CreateCollection {
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[prost(string, optional, tag = "18")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -552,6 +555,9 @@ pub struct UpdateCollection {
     /// New strict mode configuration
     #[prost(message, optional, tag = "9")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[prost(string, optional, tag = "10")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -653,6 +659,9 @@ pub struct CollectionConfig {
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[prost(string, optional, tag = "7")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

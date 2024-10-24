@@ -171,6 +171,9 @@ pub struct CreateCollection {
     /// Strict-mode config.
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -230,6 +233,9 @@ pub struct UpdateCollection {
     pub sparse_vectors: Option<SparseVectorsConfig>,
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// Operation for updating parameters of the existing collection
@@ -253,6 +259,7 @@ impl UpdateCollectionOperation {
                 quantization_config: None,
                 sparse_vectors: None,
                 strict_mode_config: None,
+                comment: None,
             },
             shard_replica_changes: None,
         }
@@ -407,6 +414,7 @@ impl From<CollectionConfig> for CreateCollection {
             quantization_config: value.quantization_config,
             sparse_vectors: value.params.sparse_vectors,
             strict_mode_config: value.strict_mode_config,
+            comment: value.comment,
         }
     }
 }

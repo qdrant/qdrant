@@ -165,6 +165,9 @@ pub struct CollectionConfig {
     #[schemars(skip)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfig>,
+    /// Collection-level-metadata for simple description, data title etc
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 impl CollectionConfig {
