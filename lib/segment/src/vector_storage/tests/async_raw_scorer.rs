@@ -111,7 +111,6 @@ fn test_random_score(
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();
-    raw_scorer.set_hardware_counter_checked(false);
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
@@ -119,7 +118,6 @@ fn test_random_score(
     } else {
         unreachable!();
     };
-    async_raw_scorer.set_hardware_counter_checked(false);
 
     let points = rng.gen_range(1..storage.total_vector_count());
     let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
@@ -129,5 +127,7 @@ fn test_random_score(
 
     assert_eq!(res, async_res);
 
+    raw_scorer.take_hardware_counter().discard_results();
+    async_raw_scorer.take_hardware_counter().discard_results();
     Ok(())
 }

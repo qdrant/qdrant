@@ -541,10 +541,10 @@ mod tests {
                     let fake_filter_context = FakeFilterContext {};
                     let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-                    raw_scorer.set_hardware_counter_checked(false);
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
                     graph_layers.link_new_point(idx, scorer);
+                    raw_scorer.take_hardware_counter().discard_results();
                 });
         });
 
@@ -584,9 +584,9 @@ mod tests {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
-            raw_scorer.set_hardware_counter_checked(false);
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
+            raw_scorer.take_hardware_counter().discard_results();
         }
 
         (vector_holder, graph_layers)
@@ -654,11 +654,11 @@ mod tests {
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
-        raw_scorer.set_hardware_counter_checked(false);
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
 
+        raw_scorer.take_hardware_counter().discard_results();
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
@@ -738,11 +738,10 @@ mod tests {
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-        raw_scorer.set_hardware_counter_checked(false);
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
-
+        raw_scorer.take_hardware_counter().discard_results();
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
@@ -764,11 +763,11 @@ mod tests {
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-            raw_scorer.set_hardware_counter_checked(false);
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
+            raw_scorer.take_hardware_counter().discard_results();
         }
         let graph_layers = graph_layers_builder
             .into_graph_layers::<GraphLinksRam>(None)
@@ -813,7 +812,6 @@ mod tests {
         let new_vector_to_insert = random_vector(&mut rng, DIM);
 
         let scorer = vector_holder.get_raw_scorer(new_vector_to_insert).unwrap();
-        scorer.set_hardware_counter_checked(false);
 
         for i in 0..NUM_VECTORS {
             candidates.push(ScoredPointOffset {
@@ -837,6 +835,8 @@ mod tests {
         for x in selected_candidates.iter() {
             eprintln!("selected_candidates = {x}");
         }
+
+        scorer.take_hardware_counter().discard_results();
     }
 
     #[test]

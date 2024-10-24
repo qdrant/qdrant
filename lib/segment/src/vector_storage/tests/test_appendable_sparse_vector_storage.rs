@@ -78,8 +78,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -169,8 +169,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);

@@ -53,12 +53,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
     assert_eq!(closest[2].idx, 4);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
 
     // Delete 1, redelete 2
@@ -74,11 +74,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
     assert_eq!(closest[1].idx, 0);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
 
     // Delete all
@@ -94,9 +94,9 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_all(5);
     assert!(closest.is_empty(), "must have no results, all deleted");
+    scorer.take_hardware_counter().discard_results();
 }
 
 fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
@@ -153,8 +153,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -198,8 +198,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
 
     let top_idx = match closest.first() {
@@ -216,7 +216,6 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let raw_scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    raw_scorer.set_hardware_counter_checked(false);
     let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let query_points = vec![0, 1, 2, 3, 4];
@@ -228,6 +227,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let mut raw_res2 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
     let raw_res2_count = raw_scorer.score_points(&query_points, &mut raw_res2);
     raw_res2.resize(raw_res2_count, ScoredPointOffset { idx: 0, score: 0. });
+
+    raw_scorer.take_hardware_counter().discard_results();
 
     assert_eq!(raw_res1, raw_res2);
 
@@ -290,14 +291,12 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             &stopped,
         )
         .unwrap();
-    scorer_quant.set_hardware_counter_checked(false);
     let scorer_orig = new_raw_scorer(
         query.clone(),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    scorer_orig.set_hardware_counter_checked(false);
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);
@@ -307,6 +306,9 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         let orig = scorer_orig.score_internal(0, i);
         assert!((orig - quant).abs() < 0.15);
     }
+
+    scorer_orig.take_hardware_counter().discard_results();
+    scorer_quant.take_hardware_counter().discard_results();
 
     let files = storage.files();
     let quantization_files = quantized_vectors.files();
@@ -324,10 +326,8 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             &stopped,
         )
         .unwrap();
-    scorer_quant.set_hardware_counter_checked(false);
     let scorer_orig =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer_orig.set_hardware_counter_checked(false);
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);
@@ -337,6 +337,8 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         let orig = scorer_orig.score_internal(0, i);
         assert!((orig - quant).abs() < 0.15);
     }
+    scorer_orig.take_hardware_counter().discard_results();
+    scorer_quant.take_hardware_counter().discard_results();
 }
 
 #[test]

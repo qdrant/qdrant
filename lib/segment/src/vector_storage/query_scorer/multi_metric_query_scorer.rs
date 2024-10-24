@@ -114,11 +114,7 @@ impl<
         self.score_multi(v1, v2)
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
         self.hardware_counter_finalized()
-    }
-
-    fn set_hardware_counter_checked(&self, checked: bool) {
-        self.hardware_counter.set_checked(checked);
     }
 }

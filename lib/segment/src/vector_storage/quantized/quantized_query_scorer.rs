@@ -103,12 +103,8 @@ where
         self.quantized_data.score_internal(point_a, point_b)
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
         // TODO: implement!
         HardwareCounterCell::new()
-    }
-
-    fn set_hardware_counter_checked(&self, _checked: bool) {
-        // TODO: implement!
     }
 }

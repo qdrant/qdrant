@@ -260,14 +260,19 @@ impl SegmentsSearcher {
                             let segment_query_context =
                                 query_context_arc_segment.get_segment_query_context();
 
-                            segment_query_context.hardware_counter().set_checked(false); // TODO: propagate measurements instead of discarding!
-
-                            search_in_segment(
+                            let result = search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
-                                segment_query_context,
-                            )
+                                &segment_query_context,
+                            );
+
+                            // TODO: propagate measurements instead of discarding!
+                            segment_query_context
+                                .take_hardware_counter()
+                                .discard_results();
+
+                            result
                         }
                     });
                     (segment.clone(), search)
@@ -312,13 +317,17 @@ impl SegmentsSearcher {
                     res.push(runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
-                        segment_query_context.hardware_counter().set_checked(false); // TODO: propagate measurements instead of discarding!
-                        search_in_segment(
+                        let result = search_in_segment(
                             segment,
                             partial_batch_request,
                             false,
-                            segment_query_context,
-                        )
+                            &segment_query_context,
+                        );
+                        // TODO: propagate measurements instead of discarding!
+                        segment_query_context
+                            .take_hardware_counter()
+                            .discard_results();
+                        result
                     }))
                 }
                 res
@@ -551,7 +560,7 @@ fn search_in_segment(
     segment: LockedSegment,
     request: Arc<CoreSearchRequestBatch>,
     use_sampling: bool,
-    segment_query_context: SegmentQueryContext,
+    segment_query_context: &SegmentQueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
 
@@ -590,7 +599,7 @@ fn search_in_segment(
                     &vectors_batch,
                     &prev_params,
                     use_sampling,
-                    &segment_query_context,
+                    segment_query_context,
                 )?;
                 further_results.append(&mut further);
                 result.append(&mut res);
@@ -609,7 +618,7 @@ fn search_in_segment(
             &vectors_batch,
             &prev_params,
             use_sampling,
-            &segment_query_context,
+            segment_query_context,
         )?;
         further_results.append(&mut further);
         result.append(&mut res);

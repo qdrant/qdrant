@@ -115,7 +115,6 @@ fn test_batch_and_single_request_equivalency() {
 
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
-        segment_query_context.hardware_counter().set_checked(false);
 
         let batch_res = segment
             .search_batch(
@@ -129,6 +128,9 @@ fn test_batch_and_single_request_equivalency() {
                 &segment_query_context,
             )
             .unwrap();
+
+        // Ignore the hardware counter in tests
+        segment_query_context.take_hardware_counter().discard_results();
 
         assert_eq!(search_res_1, batch_res[0]);
         assert_eq!(search_res_2, batch_res[1]);

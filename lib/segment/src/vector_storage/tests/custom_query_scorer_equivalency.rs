@@ -248,7 +248,6 @@ fn scoring_equivalency(
             id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        raw_scorer.set_hardware_counter_checked(false);
 
         let is_stopped = AtomicBool::new(false);
 
@@ -268,7 +267,6 @@ fn scoring_equivalency(
             )
             .unwrap(),
         };
-        other_scorer.set_hardware_counter_checked(false);
 
         let points =
             (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
@@ -315,6 +313,9 @@ fn scoring_equivalency(
                 only {intersection} of {top} top results are shared",
             );
         }
+
+        raw_scorer.take_hardware_counter().discard_results();
+        other_scorer.take_hardware_counter().discard_results();
     }
 
     Ok(())

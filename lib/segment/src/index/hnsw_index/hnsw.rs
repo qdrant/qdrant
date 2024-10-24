@@ -310,13 +310,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 } else {
                     new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice())
                 }?;
-
-                // We don't need to process measurements for building HNSW indices.
-                raw_scorer.set_hardware_counter_checked(false);
-
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
+
+                // Ignore hardware counter, for internal operations
+                raw_scorer.take_hardware_counter().discard_results();
+
                 Ok::<_, OperationError>(())
             };
 
@@ -466,9 +466,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 ),
                 None => new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice()),
             }?;
-            // We don't need to process measurements for building HNSW indices.
-            raw_scorer.set_hardware_counter_checked(false);
-
             let block_condition_checker = BuildConditionChecker {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
@@ -477,6 +474,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
             graph_layers_builder.link_new_point(block_point_id, points_scorer);
+
+            // Ignore hardware counter, for internal operations
+            raw_scorer.take_hardware_counter().discard_results();
+
             Ok::<_, OperationError>(())
         };
 
@@ -553,8 +554,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             &hw_counter,
         )?;
 
-        vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
-        vector_query_context.apply_hardware_counter(&hw_counter);
+        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
+        vector_query_context.apply_hardware_counter(hw_counter);
         Ok(res)
     }
 
@@ -614,7 +615,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let search_result =
             raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
 
-        vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
+        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
 
         let hw_counter = HardwareCounterCell::new();
         let res = self.postprocess_search_result(
@@ -625,7 +626,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             &is_stopped,
             &hw_counter,
         )?;
-        vector_query_context.apply_hardware_counter(&hw_counter);
+        vector_query_context.apply_hardware_counter(hw_counter);
         Ok(res)
     }
 
@@ -777,7 +778,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let mut ids_iterator = search_result.iter().map(|x| x.idx);
             let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
 
-            hardware_counter.apply_from(&raw_scorer.hardware_counter());
+            hardware_counter.apply_from(raw_scorer.take_hardware_counter());
 
             re_scored.sort_unstable();
             re_scored.reverse();
@@ -842,7 +843,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                             )
                             .map(|scorer| {
                                 let res = scorer.peek_top_all(top);
-                                query_context.apply_hardware_counter(&scorer.hardware_counter());
+                                query_context
+                                    .apply_hardware_counter(scorer.take_hardware_counter());
                                 res
                             })
                         })

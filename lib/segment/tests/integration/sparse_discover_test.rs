@@ -212,10 +212,6 @@ fn sparse_index_discover_test() {
         let query_context = QueryContext::default();
         let segment_query_context = query_context.get_segment_query_context();
         let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
-        vector_context
-            .hardware_counter()
-            .unwrap()
-            .set_checked(false);
 
         let sparse_search_result = sparse_index
             .search(&[&sparse_query], None, top, None, &vector_context)
@@ -232,8 +228,10 @@ fn sparse_index_discover_test() {
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &Default::default())
+            .search(&[&dense_query], None, top, None, &vector_context)
             .unwrap();
+
+        segment_query_context.take_hardware_counter().discard_results();
 
         // check that nearest search uses sparse index
         let telemetry = sparse_index.get_telemetry_data(TelemetryDetail::default());
@@ -310,10 +308,6 @@ fn sparse_index_hardware_measurement_test() {
     let segment_query_context = query_context.get_segment_query_context();
     let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
     assert!(vector_context.hardware_counter().is_some());
-    vector_context
-        .hardware_counter()
-        .unwrap()
-        .set_checked(false);
     assert_eq!(
         vector_context
             .hardware_counter()
@@ -339,4 +333,6 @@ fn sparse_index_hardware_measurement_test() {
             .get()
             > 0
     );
+
+    segment_query_context.take_hardware_counter().discard_results();
 }

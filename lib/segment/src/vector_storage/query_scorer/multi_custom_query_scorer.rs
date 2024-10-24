@@ -140,11 +140,7 @@ impl<
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
         self.hardware_counter_finalized()
-    }
-
-    fn set_hardware_counter_checked(&self, checked: bool) {
-        self.hardware_counter.set_checked(checked);
     }
 }

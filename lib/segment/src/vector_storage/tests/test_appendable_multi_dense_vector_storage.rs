@@ -120,8 +120,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -141,8 +141,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -161,8 +161,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_all(5);
+    scorer.take_hardware_counter().discard_results();
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
 
@@ -222,8 +222,8 @@ fn do_test_update_from_delete_points(
 
     let scorer =
         new_raw_scorer(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
-    scorer.set_hardware_counter_checked(false);
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 4);
