@@ -1,5 +1,8 @@
 use std::cmp::Reverse;
+use std::collections::HashMap;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use itertools::Itertools;
 
 use crate::common::utils::IndexesMap;
@@ -15,6 +18,7 @@ use crate::index::query_optimization::optimized_filter::{
 };
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::types::{Condition, Filter, MinShould};
+use crate::vector_storage::VectorStorageEnum;
 
 /// Converts user-provided filtering condition into optimized representation
 ///
@@ -39,6 +43,7 @@ use crate::types::{Condition, Filter, MinShould};
 pub fn optimize_filter<'a, F>(
     filter: &'a Filter,
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -55,6 +60,7 @@ where
                 let (optimized_conditions, estimation) = optimize_should(
                     conditions,
                     id_tracker,
+                    vector_storages,
                     field_indexes,
                     payload_provider.clone(),
                     estimator,
@@ -76,6 +82,7 @@ where
                         conditions,
                         *min_count,
                         id_tracker,
+                        vector_storages,
                         field_indexes,
                         payload_provider.clone(),
                         estimator,
@@ -96,6 +103,7 @@ where
                 let (optimized_conditions, estimation) = optimize_must(
                     conditions,
                     id_tracker,
+                    vector_storages,
                     field_indexes,
                     payload_provider.clone(),
                     estimator,
@@ -112,6 +120,7 @@ where
                 let (optimized_conditions, estimation) = optimize_must_not(
                     conditions,
                     id_tracker,
+                    vector_storages,
                     field_indexes,
                     payload_provider.clone(),
                     estimator,
@@ -134,6 +143,7 @@ where
 fn convert_conditions<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -149,6 +159,7 @@ where
                 let (optimized_filter, estimation) = optimize_filter(
                     filter,
                     id_tracker,
+                    vector_storages,
                     field_indexes,
                     payload_provider.clone(),
                     estimator,
@@ -162,6 +173,7 @@ where
                     condition,
                     field_indexes,
                     payload_provider.clone(),
+                    vector_storages,
                     id_tracker,
                 );
                 (OptimizedCondition::Checker(condition_checker), estimation)
@@ -173,6 +185,7 @@ where
 fn optimize_should<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -184,6 +197,7 @@ where
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
+        vector_storages,
         field_indexes,
         payload_provider,
         estimator,
@@ -196,10 +210,12 @@ where
     (conditions, combine_should_estimations(&estimations, total))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn optimize_min_should<'a, F>(
     conditions: &'a [Condition],
     min_count: usize,
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -211,6 +227,7 @@ where
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
+        vector_storages,
         field_indexes,
         payload_provider,
         estimator,
@@ -234,6 +251,7 @@ where
 fn optimize_must<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -245,6 +263,7 @@ where
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
+        vector_storages,
         field_indexes,
         payload_provider,
         estimator,
@@ -260,6 +279,7 @@ where
 fn optimize_must_not<'a, F>(
     conditions: &'a [Condition],
     id_tracker: &IdTrackerSS,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
     estimator: &F,
@@ -271,6 +291,7 @@ where
     let mut converted = convert_conditions(
         conditions,
         id_tracker,
+        vector_storages,
         field_indexes,
         payload_provider,
         estimator,

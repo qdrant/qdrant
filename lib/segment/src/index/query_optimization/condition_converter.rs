@@ -1,7 +1,9 @@
 mod match_converter;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
 use serde_json::Value;
@@ -19,11 +21,13 @@ use crate::types::{
     Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
     GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, Range, RangeInterface,
 };
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub fn condition_converter<'a>(
     condition: &'a Condition,
     field_indexes: &'a IndexesMap,
     payload_provider: PayloadProvider,
+    vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
     id_tracker: &IdTrackerSS,
 ) -> ConditionCheckerFn<'a> {
     match condition {
@@ -74,6 +78,13 @@ pub fn condition_converter<'a>(
                 .collect();
             Box::new(move |point_id| segment_ids.contains(&point_id))
         }
+        Condition::HasVector(has_vector) => {
+            if let Some(vector_storage) = vector_storages.get(&has_vector.has_vector).cloned() {
+                Box::new(move |point_id| !vector_storage.borrow().is_deleted_vector(point_id))
+            } else {
+                Box::new(|_point_id| false)
+            }
+        }
         Condition::Nested(nested) => {
             // Select indexes for nested fields. Trim nested part from key, so
             // that nested condition can address fields without nested part.
@@ -109,6 +120,8 @@ pub fn condition_converter<'a>(
                                 // None because has_id in nested is not supported. So retrieving
                                 // IDs through the tracker would always return None.
                                 None,
+                                // Same as above, nested conditions don't support has_vector.
+                                &HashMap::new(),
                                 &nested.nested.filter,
                                 point_id,
                                 &nested_indexes,

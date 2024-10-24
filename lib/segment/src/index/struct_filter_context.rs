@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 
 use crate::common::utils::IndexesMap;
@@ -8,6 +12,7 @@ use crate::index::query_optimization::optimizer::optimize_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::FilterContext;
 use crate::types::{Condition, Filter};
+use crate::vector_storage::VectorStorageEnum;
 
 pub struct StructFilterContext<'a> {
     optimized_filter: OptimizedFilter<'a>,
@@ -17,6 +22,7 @@ impl<'a> StructFilterContext<'a> {
     pub fn new<F>(
         filter: &'a Filter,
         id_tracker: &IdTrackerSS,
+        vector_storages: &'a HashMap<String, Arc<AtomicRefCell<VectorStorageEnum>>>,
         payload_provider: PayloadProvider,
         field_indexes: &'a IndexesMap,
         estimator: &F,
@@ -28,6 +34,7 @@ impl<'a> StructFilterContext<'a> {
         let (optimized_filter, _) = optimize_filter(
             filter,
             id_tracker,
+            vector_storages,
             field_indexes,
             payload_provider,
             estimator,

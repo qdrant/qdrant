@@ -21,10 +21,10 @@ use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
     DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
     FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
-    KeywordIndexParams, LookupLocation, MultiVectorComparator, MultiVectorConfig, OrderBy,
-    OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint, SearchMatrixPair,
-    SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams,
-    VectorsOutput, WithLookup,
+    HasVectorCondition, KeywordIndexParams, LookupLocation, MultiVectorComparator,
+    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
+    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::conversions::json;
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
@@ -1070,6 +1070,11 @@ impl TryFrom<Condition> for segment::types::Condition {
                 ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
                     segment::types::NestedCondition::new(nested.try_into()?),
                 )),
+                ConditionOneOf::HasVector(has_vector) => Ok(segment::types::Condition::HasVector(
+                    segment::types::HasVectorCondition {
+                        has_vector: has_vector.has_vector,
+                    },
+                )),
             };
         }
         Err(Status::invalid_argument("Malformed Condition type"))
@@ -1100,6 +1105,11 @@ impl From<segment::types::Condition> for Condition {
             // This type of condition should be only applied locally
             // and never be sent to the other peers
             segment::types::Condition::CustomIdChecker(_) => None,
+            segment::types::Condition::HasVector(has_vector) => {
+                Some(ConditionOneOf::HasVector(HasVectorCondition {
+                    has_vector: has_vector.has_vector,
+                }))
+            }
         };
 
         Self { condition_one_of }

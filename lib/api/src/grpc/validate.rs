@@ -190,6 +190,7 @@ impl Validate for grpc::condition::ConditionOneOf {
             ConditionOneOf::IsEmpty(_) => Ok(()),
             ConditionOneOf::HasId(_) => Ok(()),
             ConditionOneOf::IsNull(_) => Ok(()),
+            ConditionOneOf::HasVector(_) => Ok(()),
         }
     }
 }
