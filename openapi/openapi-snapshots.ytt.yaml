@@ -4,8 +4,7 @@ paths:
   /collections/{collection_name}/snapshots/upload:
     post:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Recover from an uploaded snapshot
       description: Recover local collection data from an uploaded snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.
       operationId: recover_from_uploaded_snapshot
@@ -48,8 +47,7 @@ paths:
   /collections/{collection_name}/snapshots/recover:
     put:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Recover from a snapshot
       description: Recover local collection data from a snapshot. This will overwrite any data, stored on this node, for the collection. If collection does not exist - it will be created.
       operationId: recover_from_snapshot
@@ -77,8 +75,7 @@ paths:
   /collections/{collection_name}/snapshots:
     get:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: List collection snapshots
       description: Get list of snapshots for a collection
       operationId: list_snapshots
@@ -93,8 +90,7 @@ paths:
 
     post:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Create collection snapshot
       description: Create new snapshot for a collection
       operationId: create_snapshot
@@ -116,8 +112,7 @@ paths:
   /collections/{collection_name}/snapshots/{snapshot_name}:
     delete:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Delete collection snapshot
       description: Delete snapshot for a collection
       operationId: delete_snapshot
@@ -143,8 +138,7 @@ paths:
       responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
-        - snapshots
-        - collections
+        - Snapshots
       summary: Download collection snapshot
       description: Download specified snapshot from a collection as a file
       operationId: get_snapshot
@@ -186,7 +180,7 @@ paths:
   /snapshots:
     get:
       tags:
-        - snapshots
+        - Snapshots
       summary: List of storage snapshots
       description: Get list of snapshots of the whole storage
       operationId: list_full_snapshots
@@ -194,7 +188,7 @@ paths:
 
     post:
       tags:
-        - snapshots
+        - Snapshots
       summary: Create storage snapshot
       description: Create new snapshot of the whole storage
       operationId: create_full_snapshot
@@ -210,7 +204,7 @@ paths:
   /snapshots/{snapshot_name}:
     delete:
       tags:
-        - snapshots
+        - Snapshots
       summary: Delete storage snapshot
       description: Delete snapshot of the whole storage
       operationId: delete_full_snapshot
@@ -230,7 +224,7 @@ paths:
       responses: #@ response_with_accepted(type("boolean"))
     get:
       tags:
-        - snapshots
+        - Snapshots
       summary: Download storage snapshot
       description: Download specified snapshot of the whole storage as a file
       operationId: get_full_snapshot
