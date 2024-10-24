@@ -9,6 +9,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 
+/// Custom type to make hardware reporting settings available in actix handlers.
 #[derive(Deserialize, Clone)]
 pub(crate) struct HardwareReportingSettings {
     pub enabled: bool,
