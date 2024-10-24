@@ -154,7 +154,7 @@ async fn delete_vectors(
         access,
     )
     .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[post("/collections/{name}/points/payload")]
@@ -304,7 +304,7 @@ async fn update_batch(
 
     // vpass == None => No update operation available
     let Some(pass) = vpass else {
-        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing);
+        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
     };
 
     let wait = params.wait.unwrap_or(false);
@@ -321,7 +321,7 @@ async fn update_batch(
         access,
     )
     .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 #[put("/collections/{name}/index")]
 async fn create_field_index(
@@ -347,7 +347,7 @@ async fn create_field_index(
         access,
     )
     .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[delete("/collections/{name}/index/{field_name}")]
@@ -373,7 +373,7 @@ async fn delete_field_index(
         access,
     )
     .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 // Configure services

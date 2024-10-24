@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
@@ -22,7 +23,7 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{self, process_response_error, HardwareReportingSettings};
 
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
@@ -30,6 +31,7 @@ async fn recommend_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let RecommendRequest {
@@ -55,7 +57,9 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         dispatcher
             .toc(&access, &pass)
             .recommend(
@@ -72,6 +76,8 @@ async fn recommend_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
+        hw_measurement_acc,
+        hardware_reporting.enabled,
     )
     .await
 }
@@ -107,6 +113,7 @@ async fn recommend_batch_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
@@ -122,7 +129,9 @@ async fn recommend_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         do_recommend_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -142,6 +151,8 @@ async fn recommend_batch_points(
                 })
                 .collect_vec()
         }),
+        hw_measurement_acc,
+        hardware_reporting.enabled,
     )
     .await
 }
