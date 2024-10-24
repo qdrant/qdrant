@@ -45,29 +45,26 @@ impl DescriptorSetLayoutBuilder {
         let mut descriptor_set_layout_bindings = Vec::new();
         for binding in &self.uniform_buffer_bindings {
             descriptor_set_layout_bindings.push(
-                vk::DescriptorSetLayoutBinding::builder()
+                vk::DescriptorSetLayoutBinding::default()
                     .binding(*binding as u32)
                     .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                     .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::COMPUTE)
-                    .build(),
+                    .stage_flags(vk::ShaderStageFlags::COMPUTE),
             );
         }
 
         for binding in &self.storage_buffer_bindings {
             descriptor_set_layout_bindings.push(
-                vk::DescriptorSetLayoutBinding::builder()
+                vk::DescriptorSetLayoutBinding::default()
                     .binding(*binding as u32)
                     .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                     .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::COMPUTE)
-                    .build(),
+                    .stage_flags(vk::ShaderStageFlags::COMPUTE),
             );
         }
 
-        let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo::builder()
-            .bindings(&descriptor_set_layout_bindings)
-            .build();
+        let descriptor_set_layout_create_info =
+            vk::DescriptorSetLayoutCreateInfo::default().bindings(&descriptor_set_layout_bindings);
 
         let vk_descriptor_set_layout = unsafe {
             device.vk_device.create_descriptor_set_layout(

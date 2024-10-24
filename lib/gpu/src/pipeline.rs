@@ -50,10 +50,9 @@ impl Pipeline {
             .collect::<Vec<_>>();
 
         // Create a Vulkan pipeline layout.
-        let vk_pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::builder()
+        let vk_pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default()
             .set_layouts(&vk_descriptor_set_layouts)
-            .push_constant_ranges(&[])
-            .build();
+            .push_constant_ranges(&[]);
         let vk_pipeline_layout = unsafe {
             device.vk_device.create_pipeline_layout(
                 &vk_pipeline_layout_create_info,
@@ -73,7 +72,7 @@ impl Pipeline {
         // which is an v1.3 api structure that is used to specify the required subgroup size for a shader.
         let mut subgroup_size_create_info = if device.is_dynamic_subgroup_size {
             Some(
-                vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::builder()
+                vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo::default()
                     .required_subgroup_size(device.subgroup_size as u32),
             )
         } else {
@@ -82,25 +81,21 @@ impl Pipeline {
 
         // Initialize the shader stage create info.
         // It contains the shader module, entry point, mark the stage as compute etc.
-        let mut vk_pipeline_shader_stage_create_info_builder =
-            vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::COMPUTE)
-                .module(shader.vk_shader_module)
-                .name(SHADER_ENTRY_POINT);
+        let mut vk_pipeline_shader_stage_create_info = vk::PipelineShaderStageCreateInfo::default()
+            .stage(vk::ShaderStageFlags::COMPUTE)
+            .module(shader.vk_shader_module)
+            .name(SHADER_ENTRY_POINT);
 
         // Append the subgroup size info to the shader stage create info if it's present.
         if let Some(subgroup_size_info) = &mut subgroup_size_create_info {
-            vk_pipeline_shader_stage_create_info_builder =
-                vk_pipeline_shader_stage_create_info_builder.push_next(subgroup_size_info);
+            vk_pipeline_shader_stage_create_info =
+                vk_pipeline_shader_stage_create_info.push_next(subgroup_size_info);
         }
-        let vk_pipeline_shader_stage_create_info =
-            vk_pipeline_shader_stage_create_info_builder.build();
 
         // Finally, create the pipeline.
-        let vk_compute_pipeline_create_info = vk::ComputePipelineCreateInfo::builder()
+        let vk_compute_pipeline_create_info = vk::ComputePipelineCreateInfo::default()
             .stage(vk_pipeline_shader_stage_create_info)
-            .layout(vk_pipeline_layout)
-            .build();
+            .layout(vk_pipeline_layout);
 
         let vk_pipelines_result = unsafe {
             device.vk_device.create_compute_pipelines(

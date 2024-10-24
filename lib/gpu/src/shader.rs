@@ -27,9 +27,7 @@ impl Shader {
             .map_err(|_| GpuError::Other("Failed to read SPIR-V shader code".to_string()))?;
 
         // Create shader.
-        let shader_module_create_info = vk::ShaderModuleCreateInfo::builder()
-            .code(&shader_code)
-            .build();
+        let shader_module_create_info = vk::ShaderModuleCreateInfo::default().code(&shader_code);
         let shader_module = unsafe {
             device.vk_device.create_shader_module(
                 &shader_module_create_info,

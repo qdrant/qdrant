@@ -108,26 +108,23 @@ impl DescriptorSet {
         let mut vk_descriptor_pool_sizes = Vec::new();
         if !uniform_buffers.is_empty() {
             vk_descriptor_pool_sizes.push(
-                vk::DescriptorPoolSize::builder()
+                vk::DescriptorPoolSize::default()
                     .ty(vk::DescriptorType::UNIFORM_BUFFER)
-                    .descriptor_count(uniform_buffers.len() as u32)
-                    .build(),
+                    .descriptor_count(uniform_buffers.len() as u32),
             );
         }
         if !storage_buffers.is_empty() {
             vk_descriptor_pool_sizes.push(
-                vk::DescriptorPoolSize::builder()
+                vk::DescriptorPoolSize::default()
                     .ty(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(storage_buffers.len() as u32)
-                    .build(),
+                    .descriptor_count(storage_buffers.len() as u32),
             );
         }
 
         if !vk_descriptor_pool_sizes.is_empty() {
-            let vk_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo::builder()
+            let vk_descriptor_pool_create_info = vk::DescriptorPoolCreateInfo::default()
                 .pool_sizes(&vk_descriptor_pool_sizes)
-                .max_sets(1)
-                .build();
+                .max_sets(1);
             unsafe {
                 device
                     .vk_device
@@ -149,10 +146,9 @@ impl DescriptorSet {
         vk_descriptor_set_layout: &[vk::DescriptorSetLayout],
         vk_descriptor_pool: vk::DescriptorPool,
     ) -> GpuResult<vk::DescriptorSet> {
-        let vk_descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::builder()
+        let vk_descriptor_set_allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(vk_descriptor_pool)
-            .set_layouts(vk_descriptor_set_layout)
-            .build();
+            .set_layouts(vk_descriptor_set_layout);
         unsafe {
             Ok(device
                 .vk_device
@@ -167,42 +163,50 @@ impl DescriptorSet {
         // `vk_descriptor_uniform_buffer_infos` is a collection of uniform buffers.
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_uniform_buffer_infos = Vec::new();
-        for (binding, uniform_buffer) in &self.uniform_buffers {
-            let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::builder()
+        for (_binding, uniform_buffer) in &self.uniform_buffers {
+            let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(uniform_buffer.vk_buffer)
                 .offset(0)
-                .range(uniform_buffer.size as u64)
-                .build();
+                .range(uniform_buffer.size as u64);
             vk_descriptor_uniform_buffer_infos.push(vec![vk_descriptor_buffer_info]);
-            let vk_write_descriptor_set = vk::WriteDescriptorSet::builder()
+        }
+
+        for ((binding, _uniform_buffer), buffer_infos) in self
+            .uniform_buffers
+            .iter()
+            .zip(vk_descriptor_uniform_buffer_infos.iter())
+        {
+            let vk_write_descriptor_set = vk::WriteDescriptorSet::default()
                 .dst_set(self.vk_descriptor_set)
                 .dst_binding(*binding as u32)
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                // unwrap is safe because we just pushed a new element to the vector
-                .buffer_info(vk_descriptor_uniform_buffer_infos.last().unwrap())
-                .build();
+                .buffer_info(buffer_infos);
             vk_write_descriptor_sets.push(vk_write_descriptor_set);
         }
 
         // `vk_descriptor_storage_buffer_infos` is a collection of storage buffers.
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_storage_buffer_infos = Vec::new();
-        for (binding, storage_buffer) in &self.storage_buffers {
-            let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::builder()
+        for (_binding, storage_buffer) in &self.storage_buffers {
+            let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(storage_buffer.vk_buffer)
                 .offset(0)
-                .range(storage_buffer.size as u64)
-                .build();
+                .range(storage_buffer.size as u64);
             vk_descriptor_storage_buffer_infos.push(vec![vk_descriptor_buffer_info]);
-            let vk_write_descriptor_set = vk::WriteDescriptorSet::builder()
+        }
+
+        for ((binding, _storage_buffer), buffer_info) in self
+            .storage_buffers
+            .iter()
+            .zip(vk_descriptor_storage_buffer_infos.iter())
+        {
+            let vk_write_descriptor_set = vk::WriteDescriptorSet::default()
                 .dst_set(self.vk_descriptor_set)
                 .dst_binding(*binding as u32)
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                // unwrap is safe because we just pushed a new element to the vector
-                .buffer_info(vk_descriptor_storage_buffer_infos.last().unwrap())
-                .build();
+                .buffer_info(buffer_info);
             vk_write_descriptor_sets.push(vk_write_descriptor_set);
         }
 

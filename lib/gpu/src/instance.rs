@@ -1,7 +1,6 @@
 use std::ffi::CString;
 use std::sync::Arc;
 
-use ash::extensions::ext::DebugUtils;
 use ash::vk;
 
 use crate::*;
@@ -31,7 +30,7 @@ pub struct Instance {
     pub extensions: Vec<String>,
 
     /// Validation layer handler.
-    vk_debug_utils_loader: Option<ash::extensions::ext::DebugUtils>,
+    vk_debug_utils_loader: Option<ash::ext::debug_utils::Instance>,
 
     /// Validation layer messenger.
     vk_debug_messenger: vk::DebugUtilsMessengerEXT,
@@ -40,10 +39,22 @@ pub struct Instance {
     pub compiler: shaderc::Compiler,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Hardware type of the physical device.
+pub enum PhysicalDeviceType {
+    /// Discrete GPU like Nvidia or AMD.
+    Discrete,
+    /// Integrated graphics like Intel HD Graphics.
+    Integrated,
+    /// Other types of hardware like software emulated GPU.
+    Other,
+}
+
 #[derive(Clone)]
 pub struct PhysicalDevice {
     pub vk_physical_device: vk::PhysicalDevice,
     pub name: String,
+    pub device_type: PhysicalDeviceType,
 }
 
 impl Instance {
@@ -66,13 +77,12 @@ impl Instance {
 
         // Collect Vulkan application info.
         // It contains application name and required Vulkan API version.
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(APPLICATION_NAME)
             .application_version(0)
             .engine_name(APPLICATION_NAME)
             .engine_version(0)
-            .api_version(vk::make_api_version(0, 1, 3, 0))
-            .build();
+            .api_version(vk::make_api_version(0, 1, 3, 0));
 
         // Collect Vulkan API extensions and convert it in raw pointers.
         let extensions = Self::get_extensions_list(debug_messenger.is_some());
@@ -107,17 +117,15 @@ impl Instance {
         };
 
         // Collect all parameters together and create Vulkan instance.
-        let mut create_info_builder = vk::InstanceCreateInfo::builder()
+        let mut create_info = vk::InstanceCreateInfo::default()
             .flags(create_flags)
             .application_info(&app_info)
             .enabled_layer_names(&layers_raw)
             .enabled_extension_names(&extension_names_raw);
 
         if let Some(debug_utils_create_info) = &mut debug_utils_create_info {
-            create_info_builder = create_info_builder.push_next(debug_utils_create_info);
+            create_info = create_info.push_next(debug_utils_create_info);
         }
-
-        let create_info = create_info_builder.build();
 
         // Get CPU allocation callbacks if they are provided.
         let vk_allocation_callbacks = allocation_callbacks
@@ -143,17 +151,24 @@ impl Instance {
 
         let vk_physical_devices = vk_physical_devices
             .iter()
-            .map(|vk_physical_device| {
+            .map(|&vk_physical_device| {
                 let device_properties =
-                    unsafe { vk_instance.get_physical_device_properties(*vk_physical_device) };
+                    unsafe { vk_instance.get_physical_device_properties(vk_physical_device) };
                 let device_name =
                     unsafe { ::std::ffi::CStr::from_ptr(device_properties.device_name.as_ptr()) };
                 let device_name = device_name.to_str().unwrap_or("Unnamed GPU").to_owned();
 
+                let device_type = match device_properties.device_type {
+                    vk::PhysicalDeviceType::DISCRETE_GPU => PhysicalDeviceType::Discrete,
+                    vk::PhysicalDeviceType::INTEGRATED_GPU => PhysicalDeviceType::Integrated,
+                    _ => PhysicalDeviceType::Other,
+                };
+
                 log::info!("Foung GPU device: {device_name}");
                 PhysicalDevice {
-                    vk_physical_device: *vk_physical_device,
+                    vk_physical_device,
                     name: device_name,
+                    device_type,
                 }
             })
             .collect::<Vec<_>>();
@@ -172,7 +187,7 @@ impl Instance {
         let (vk_debug_utils_loader, vk_debug_messenger) = if let Some(debug_messenger) =
             debug_messenger
         {
-            let debug_utils_loader = ash::extensions::ext::DebugUtils::new(&entry, &vk_instance);
+            let debug_utils_loader = ash::ext::debug_utils::Instance::new(&entry, &vk_instance);
             let messenger_create_info = Self::debug_messenger_create_info(debug_messenger);
             let utils_messenger_result = unsafe {
                 debug_utils_loader
@@ -210,12 +225,11 @@ impl Instance {
     fn debug_messenger_create_info(
         debug_messenger: &dyn DebugMessenger,
     ) -> vk::DebugUtilsMessengerCreateInfoEXT {
-        vk::DebugUtilsMessengerCreateInfoEXT::builder()
+        vk::DebugUtilsMessengerCreateInfoEXT::default()
             .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
             .message_severity(debug_messenger.get_severity_flags())
             .message_type(debug_messenger.get_message_type_flags())
             .pfn_user_callback(debug_messenger.get_callback())
-            .build()
     }
 
     pub fn is_validation_enable(&self) -> bool {
@@ -242,17 +256,17 @@ impl Instance {
     fn get_extensions_list(validation: bool) -> Vec<String> {
         let mut extensions_list = Vec::new();
         if validation {
-            if let Ok(ext) = DebugUtils::name().to_str() {
+            if let Ok(ext) = ash::ext::debug_utils::NAME.to_str() {
                 extensions_list.push(ext.to_string());
             }
         }
 
         #[cfg(target_os = "macos")]
         {
-            if let Ok(ext) = vk::KhrPortabilityEnumerationFn::name().to_str() {
+            if let Ok(ext) = ash::khr::portability_enumeration::NAME.to_str() {
                 extensions_list.push(ext.to_string());
             }
-            if let Ok(ext) = vk::KhrGetPhysicalDeviceProperties2Fn::name().to_str() {
+            if let Ok(ext) = ash::khr::get_physical_device_properties2::NAME.to_str() {
                 extensions_list.push(ext.to_string());
             }
         }

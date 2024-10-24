@@ -78,11 +78,10 @@ impl Device {
         queue_index: usize,
     ) -> GpuResult<Arc<Device>> {
         #[allow(unused_mut)]
-        let mut extensions_cstr: Vec<CString> =
-            vec![CString::from(ash::vk::KhrMaintenance1Fn::name())];
+        let mut extensions_cstr: Vec<CString> = vec![CString::from(ash::khr::maintenance1::NAME)];
         #[cfg(target_os = "macos")]
         {
-            extensions_cstr.push(CString::from(ash::vk::KhrPortabilitySubsetFn::name()));
+            extensions_cstr.push(CString::from(ash::khr::portability_subset::NAME));
         }
 
         let vk_queue_families = unsafe {
@@ -100,11 +99,10 @@ impl Device {
 
         let queue_create_infos: Vec<vk::DeviceQueueCreateInfo> = (0..vk_queue_families.len())
             .map(|queue_family_index| {
-                vk::DeviceQueueCreateInfo::builder()
+                vk::DeviceQueueCreateInfo::default()
                     .flags(vk::DeviceQueueCreateFlags::empty())
                     .queue_family_index(queue_family_index as u32)
                     .queue_priorities(queue_priorities.as_slice())
-                    .build()
             })
             .collect();
 
@@ -116,17 +114,17 @@ impl Device {
 
         // Define Vulkan features that we need.
         // From Vulkan 1.1 we need storage buffer 16 bit access.
-        let physical_device_features_1_1 =
-            vk::PhysicalDeviceVulkan11Features::builder().storage_buffer16_bit_access(true);
+        let mut physical_device_features_1_1 =
+            vk::PhysicalDeviceVulkan11Features::default().storage_buffer16_bit_access(true);
 
         // From Vulkan 1.2 we need int8/float16 support.
-        let physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::builder()
+        let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
             .shader_float16(true)
             .storage_buffer8_bit_access(true);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
-        let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::builder();
+        let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();
 
         let max_compute_work_group_size;
         let mut is_dynamic_subgroup_size = false;
@@ -141,10 +139,9 @@ impl Device {
             ];
             let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
             let mut vulkan_1_3_properties = vk::PhysicalDeviceVulkan13Properties::default();
-            let mut props2 = vk::PhysicalDeviceProperties2::builder()
+            let mut props2 = vk::PhysicalDeviceProperties2::default()
                 .push_next(&mut subgroup_properties)
-                .push_next(&mut vulkan_1_3_properties)
-                .build();
+                .push_next(&mut vulkan_1_3_properties);
             instance.vk_instance.get_physical_device_properties2(
                 vk_physical_device.vk_physical_device,
                 &mut props2,
@@ -180,25 +177,20 @@ impl Device {
             subgroup_size
         };
 
-        let mut physical_device_features_1_1 = physical_device_features_1_1.build();
-        let mut physical_device_features_1_2 = physical_device_features_1_2.build();
-        let mut physical_device_features_1_3 = physical_device_features_1_3.build();
-
         // convert extension names to raw pointers to provide to Vulkan
         let extension_names_raw: Vec<*const i8> = extensions_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
 
-        let device_create_info = vk::DeviceCreateInfo::builder()
+        let device_create_info = vk::DeviceCreateInfo::default()
             .flags(vk::DeviceCreateFlags::empty())
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&extension_names_raw)
             .enabled_features(&physical_device_features)
             .push_next(&mut physical_device_features_1_1)
             .push_next(&mut physical_device_features_1_2)
-            .push_next(&mut physical_device_features_1_3)
-            .build();
+            .push_next(&mut physical_device_features_1_3);
 
         let vk_device_result = unsafe {
             instance.vk_instance.create_device(
@@ -245,6 +237,7 @@ impl Device {
             physical_device: vk_physical_device.vk_physical_device,
             debug_settings: Default::default(),
             buffer_device_address: false,
+            allocation_sizes: Default::default(),
         });
 
         let gpu_allocator = match gpu_allocator_result {

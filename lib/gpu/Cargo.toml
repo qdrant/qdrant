@@ -10,6 +10,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+default = ["gpu"]
 gpu = [
     "dep:ash",
     "dep:gpu-allocator",
@@ -17,8 +18,8 @@ gpu = [
 ]
 
 [dependencies]
-ash = { version = "0.37.0", optional = true, default-features = false, features = ["loaded", "debug"] }
-gpu-allocator = { version = "0.21.0", optional = true }
+ash = { version = "0.38.0", optional = true, default-features = false, features = ["loaded", "debug"] }
+gpu-allocator = { version = "0.27.0", optional = true }
 shaderc = { version = "0.8.3", optional = true, features = ["build-from-source"]}
 
 log = "0.4"

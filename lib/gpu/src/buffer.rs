@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
 use parking_lot::Mutex;
 
@@ -89,14 +89,14 @@ impl Buffer {
         };
 
         // Create a Vulkan buffer.
-        let vk_info = vk::BufferCreateInfo::builder()
+        let vk_create_buffer_info = vk::BufferCreateInfo::default()
             .size(size as vk::DeviceSize)
             .usage(vk_usage_flags)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
         let vk_buffer = unsafe {
             device
                 .vk_device
-                .create_buffer(&vk_info, device.cpu_allocation_callbacks())
+                .create_buffer(&vk_create_buffer_info, device.cpu_allocation_callbacks())
                 .unwrap()
         };
 
@@ -108,6 +108,7 @@ impl Buffer {
             requirements: buffer_allocation_requirements,
             location,
             linear: true, // Buffers are always linear.
+            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
         });
 
         // Check if the allocation was successful.

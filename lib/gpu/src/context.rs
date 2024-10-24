@@ -44,7 +44,7 @@ impl Context {
         let queue = device.compute_queues[device.queue_index % device.compute_queues.len()].clone();
 
         // Create command pool.
-        let command_pool_create_info = vk::CommandPoolCreateInfo::builder()
+        let command_pool_create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue.vk_queue_family_index as u32)
             .flags(vk::CommandPoolCreateFlags::default());
         let vk_command_pool = unsafe {
@@ -55,7 +55,7 @@ impl Context {
 
         // Create fence to wait for GPU execution.
         let fence_create_info =
-            vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::default());
+            vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::default());
         let vk_fence = unsafe {
             device
                 .vk_device
@@ -172,11 +172,10 @@ impl Context {
             ));
         }
 
-        let buffer_copy = vk::BufferCopy::builder()
+        let buffer_copy = vk::BufferCopy::default()
             .src_offset(src_offset as vk::DeviceSize)
             .dst_offset(dst_offset as vk::DeviceSize)
-            .size(size as vk::DeviceSize)
-            .build();
+            .size(size as vk::DeviceSize);
         unsafe {
             self.device.vk_device.cmd_copy_buffer(
                 self.vk_command_buffer,
@@ -243,9 +242,8 @@ impl Context {
         }
 
         // Start execution of recorded commands.
-        let submit_info = vec![vk::SubmitInfo::builder()
-            .command_buffers(&[self.vk_command_buffer])
-            .build()];
+        let submit_buffers = [self.vk_command_buffer];
+        let submit_info = vec![vk::SubmitInfo::default().command_buffers(&submit_buffers)];
         let submit_result = unsafe {
             self.device
                 .vk_device
@@ -301,7 +299,7 @@ impl Context {
         }
 
         // Create new command buffer from pool.
-        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::builder()
+        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::default()
             .command_pool(self.vk_command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(1);
@@ -312,7 +310,7 @@ impl Context {
         };
 
         let command_buffer_begin_info =
-            vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::default());
+            vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::default());
         //.inheritance_info(..);
 
         let begin_result = unsafe {
