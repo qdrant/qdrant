@@ -150,6 +150,7 @@ mod tests {
                 payload.borrow().as_ref().cloned().unwrap()
             }),
             Some(&id_tracker),
+            &HashMap::new(),
             &query,
             0,
             &IndexesMap::new(),

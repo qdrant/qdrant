@@ -157,6 +157,7 @@
     - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
+    - [HasVectorCondition](#qdrant-HasVectorCondition)
     - [Image](#qdrant-Image)
     - [Image.OptionsEntry](#qdrant-Image-OptionsEntry)
     - [InferenceObject](#qdrant-InferenceObject)
@@ -2133,6 +2134,7 @@ The JSON representation for `Value` is a JSON value.
 | filter | [Filter](#qdrant-Filter) |  |  |
 | is_null | [IsNullCondition](#qdrant-IsNullCondition) |  |  |
 | nested | [NestedCondition](#qdrant-NestedCondition) |  |  |
+| has_vector | [HasVectorCondition](#qdrant-HasVectorCondition) |  |  |
 
 
 
@@ -2763,6 +2765,21 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | has_id | [PointId](#qdrant-PointId) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-HasVectorCondition"></a>
+
+### HasVectorCondition
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| has_vector | [string](#string) |  |  |
 
 
 

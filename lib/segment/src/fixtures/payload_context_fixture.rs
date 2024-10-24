@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -216,6 +217,7 @@ pub fn create_plain_payload_index(path: &Path, num_points: usize, seed: u64) -> 
     let condition_checker = Arc::new(SimpleConditionChecker::new(
         Arc::new(AtomicRefCell::new(payload_storage.into())),
         id_tracker.clone(),
+        HashMap::new(),
     ));
 
     PlainPayloadIndex::open(condition_checker, id_tracker, path).unwrap()
@@ -243,7 +245,14 @@ pub fn create_struct_payload_index(
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num_points)));
 
-    let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        path,
+        true,
+    )
+    .unwrap();
 
     index
         .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)

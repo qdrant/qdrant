@@ -946,6 +946,7 @@ message Condition {
     Filter filter = 4;
     IsNullCondition is_null = 5;
     NestedCondition nested = 6;
+    HasVectorCondition has_vector = 7;
   }
 }
 
@@ -959,6 +960,10 @@ message IsNullCondition {
 
 message HasIdCondition {
   repeated PointId has_id = 1;
+}
+
+message HasVectorCondition {
+  string has_vector = 1;
 }
 
 message NestedCondition {

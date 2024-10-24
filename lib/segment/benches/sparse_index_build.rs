@@ -50,6 +50,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let payload_index = StructPayloadIndex::open(
         wrapped_payload_storage,
         id_tracker.clone(),
+        std::collections::HashMap::new(),
         payload_dir.path(),
         true,
     )

@@ -337,6 +337,12 @@ mod tests {
                 exp: TOTAL / 2,
                 max: TOTAL,
             },
+            Condition::HasVector(condition) => CardinalityEstimation {
+                primary_clauses: vec![PrimaryCondition::HasVector(condition.has_vector.clone())],
+                min: 0,
+                exp: TOTAL / 2,
+                max: TOTAL,
+            },
         }
     }
 
