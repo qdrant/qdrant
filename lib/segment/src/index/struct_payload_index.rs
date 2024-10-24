@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::create_dir_all;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -48,10 +47,10 @@ pub struct StructPayloadIndex {
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Used for `has_id` condition and estimating cardinality
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Vector storages for each field, used for `has_vector` condition
     #[allow(dead_code)]
-    vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+    pub(super) vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
     config: PayloadConfig,
@@ -219,22 +218,15 @@ impl StructPayloadIndex {
     }
 
     pub fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
-        let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
-        let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
-        let vector_storages = &self.vector_storages;
-        StructFilterContext::new(
-            filter,
-            id_tracker.deref(),
-            vector_storages,
-            payload_provider,
-            &self.field_indexes,
-            &estimator,
-            self.available_point_count(),
-        )
+
+        let (optimized_filter, _) =
+            self.optimize_filter(filter, payload_provider, self.available_point_count());
+
+        StructFilterContext::new(optimized_filter)
     }
 
-    fn condition_cardinality(
+    pub(super) fn condition_cardinality(
         &self,
         condition: &Condition,
         nested_path: Option<&JsonPath>,
