@@ -231,7 +231,9 @@ fn sparse_index_discover_test() {
             .search(&[&dense_query], None, top, None, &vector_context)
             .unwrap();
 
-        segment_query_context.take_hardware_counter().discard_results();
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
 
         // check that nearest search uses sparse index
         let telemetry = sparse_index.get_telemetry_data(TelemetryDetail::default());
@@ -334,5 +336,7 @@ fn sparse_index_hardware_measurement_test() {
             > 0
     );
 
-    segment_query_context.take_hardware_counter().discard_results();
+    segment_query_context
+        .take_hardware_counter()
+        .discard_results();
 }
