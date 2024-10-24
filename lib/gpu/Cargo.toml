@@ -10,7 +10,6 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-default = ["gpu"]
 gpu = [
     "dep:ash",
     "dep:gpu-allocator",

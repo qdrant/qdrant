@@ -164,6 +164,11 @@ impl DescriptorSet {
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_uniform_buffer_infos = Vec::new();
         for (_binding, uniform_buffer) in &self.uniform_buffers {
+            if uniform_buffer.buffer_type != BufferType::Uniform {
+                return Err(GpuError::Other(
+                    "Uniform buffer type must be `BufferType::Uniform`".to_string(),
+                ));
+            }
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(uniform_buffer.vk_buffer)
                 .offset(0)
@@ -189,6 +194,12 @@ impl DescriptorSet {
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_storage_buffer_infos = Vec::new();
         for (_binding, storage_buffer) in &self.storage_buffers {
+            if storage_buffer.buffer_type != BufferType::Storage {
+                return Err(GpuError::Other(
+                    "Storage buffer type must be `BufferType::Storage`".to_string(),
+                ));
+            }
+
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(storage_buffer.vk_buffer)
                 .offset(0)

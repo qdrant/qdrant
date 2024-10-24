@@ -20,7 +20,7 @@ impl Resource for Shader {}
 impl Shader {
     /// Create a new shader from the given compiled shader code.
     /// `shader_code` is a compiled shader code in the binary SPIR-V format.
-    pub fn new(device: Arc<Device>, shader_code: &[u8]) -> GpuResult<Self> {
+    pub fn new(device: Arc<Device>, shader_code: &[u8]) -> GpuResult<Arc<Self>> {
         // Decode SPIR-V from bytes with correct alignment.
         let mut spv_file = std::io::Cursor::new(shader_code);
         let shader_code = ash::util::read_spv(&mut spv_file)
@@ -35,10 +35,10 @@ impl Shader {
             )?
         };
 
-        Ok(Self {
+        Ok(Arc::new(Self {
             device,
             vk_shader_module: shader_module,
-        })
+        }))
     }
 }
 
