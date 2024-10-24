@@ -5,6 +5,7 @@ use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
     SearchMatrixRequestInternal,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Condition, Filter, HasIdCondition, PointIdType, ScoredPoint, WithVector};
 
@@ -139,6 +140,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let CollectionSearchMatrixRequest {
             sample_size,
@@ -192,6 +194,7 @@ impl Collection {
                     read_consistency,
                     shard_selection.clone(),
                     timeout,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -253,7 +256,13 @@ impl Collection {
         // run batch search request
         let batch_request = CoreSearchRequestBatch { searches };
         let nearest = self
-            .core_search_batch(batch_request, read_consistency, shard_selection, timeout)
+            .core_search_batch(
+                batch_request,
+                read_consistency,
+                shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await?;
 
         Ok(CollectionSearchMatrixResponse {

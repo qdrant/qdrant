@@ -3,6 +3,7 @@ use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -28,7 +29,13 @@ async fn distance_matrix_empty() {
         using: "".to_string(), // default vector name
     };
     let matrix = collection
-        .search_points_matrix(request, ShardSelectorInternal::All, None, None)
+        .search_points_matrix(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 
@@ -77,7 +84,13 @@ async fn distance_matrix_anonymous_vector() {
         using: "".to_string(), // default vector name
     };
     let matrix = collection
-        .search_points_matrix(request, ShardSelectorInternal::All, None, None)
+        .search_points_matrix(
+            request,
+            ShardSelectorInternal::All,
+            None,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 

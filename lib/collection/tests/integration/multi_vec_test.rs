@@ -16,6 +16,7 @@ use collection::operations::types::{
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStructInternal};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
@@ -127,6 +128,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -161,6 +163,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await;
 
@@ -190,6 +193,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -242,6 +246,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
+        HwMeasurementAcc::new(),
     )
     .await;
 
@@ -268,6 +273,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
+        HwMeasurementAcc::new(),
     )
     .await
     .unwrap();
