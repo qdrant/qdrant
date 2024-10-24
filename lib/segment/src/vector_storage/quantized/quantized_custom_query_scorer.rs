@@ -149,8 +149,8 @@ where
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
-        // TODO: implement!
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
+        // ToDO: implement
         HardwareCounterCell::new()
     }
 }

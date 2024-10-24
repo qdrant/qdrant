@@ -311,6 +311,11 @@ impl ProxySegment {
             &segment_query_context,
         )?;
 
+        // This function is only for testing and no measurements are needed.
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
+
         Ok(result.into_iter().next().unwrap())
     }
 }
@@ -354,10 +359,11 @@ impl SegmentEntry for ProxySegment {
             // we can make this hack of replacing deleted_points of the wrapped_segment
             // with our proxied deleted_points, do avoid additional filter creation
             if let Some(deleted_points) = self.deleted_mask.as_ref() {
-                let query_context_with_deleted =
-                    query_context.clone().with_deleted_points(deleted_points);
+                let query_context_with_deleted = query_context
+                    .clone_no_counters()
+                    .with_deleted_points(deleted_points);
 
-                self.wrapped_segment.get().read().search_batch(
+                let res = self.wrapped_segment.get().read().search_batch(
                     vector_name,
                     vectors,
                     with_payload,
@@ -366,7 +372,12 @@ impl SegmentEntry for ProxySegment {
                     top,
                     params,
                     &query_context_with_deleted,
-                )?
+                );
+
+                let counters = query_context_with_deleted.take_hardware_counter();
+                query_context.merge_hardware_counter(counters);
+
+                res?
             } else {
                 let wrapped_filter =
                     Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
@@ -1261,7 +1272,10 @@ mod tests {
         eprintln!("search_batch_result = {search_batch_result:#?}");
 
         assert!(!search_result.is_empty());
-        assert_eq!(search_result, search_batch_result[0].clone())
+        assert_eq!(search_result, search_batch_result[0].clone());
+        let counter = segment_query_context.take_hardware_counter();
+        assert!(counter.cpu_counter().get() > 0);
+        counter.discard_results();
     }
 
     #[test]
@@ -1314,6 +1328,10 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
+
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -1381,6 +1399,10 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
+
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 

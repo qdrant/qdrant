@@ -112,6 +112,11 @@ impl Segment {
             &segment_query_context,
         )?;
 
+        // This function is only for testing and no measurements are needed.
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
+
         Ok(result.into_iter().next().unwrap())
     }
 }

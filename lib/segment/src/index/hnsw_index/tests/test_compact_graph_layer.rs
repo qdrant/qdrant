@@ -62,7 +62,9 @@ fn test_compact_graph_layers() {
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            search_in_builder(&graph_layers_builder, top, ef, scorer)
+            let res = search_in_builder(&graph_layers_builder, top, ef, scorer);
+            raw_scorer.take_hardware_counter().discard_results();
+            res
         })
         .collect_vec();
 
@@ -75,7 +77,9 @@ fn test_compact_graph_layers() {
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            graph_layers.search(top, ef, scorer, None)
+            let res = graph_layers.search(top, ef, scorer, None);
+            raw_scorer.take_hardware_counter().discard_results();
+            res
         })
         .collect_vec();
 

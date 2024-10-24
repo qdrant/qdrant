@@ -127,5 +127,7 @@ fn test_random_score(
 
     assert_eq!(res, async_res);
 
+    raw_scorer.take_hardware_counter().discard_results();
+    async_raw_scorer.take_hardware_counter().discard_results();
     Ok(())
 }

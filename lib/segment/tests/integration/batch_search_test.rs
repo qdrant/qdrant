@@ -129,6 +129,11 @@ fn test_batch_and_single_request_equivalency() {
             )
             .unwrap();
 
+        // Ignore the hardware counter in tests
+        segment_query_context
+            .take_hardware_counter()
+            .discard_results();
+
         assert_eq!(search_res_1, batch_res[0]);
         assert_eq!(search_res_2, batch_res[1]);
     }

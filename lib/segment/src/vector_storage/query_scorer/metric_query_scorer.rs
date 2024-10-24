@@ -48,7 +48,7 @@ impl<
     }
 
     fn hardware_counter_finalized(&self) -> HardwareCounterCell {
-        let mut counter = self.hardware_counter.clone();
+        let mut counter = self.hardware_counter.take();
 
         // Calculate the dimension multiplier here to improve performance of measuring.
         counter
@@ -85,7 +85,7 @@ impl<
         TMetric::similarity(v1, v2)
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
         self.hardware_counter_finalized()
     }
 }

@@ -65,7 +65,7 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.clone()
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter.take()
     }
 }

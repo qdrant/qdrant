@@ -307,12 +307,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     }
                 };
                 let res = raw_scorer.peek_top_iter(&mut filtered_points, top);
-                vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
+                vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
                 Ok(res)
             }
             None => {
                 let res = raw_scorer.peek_top_all(top);
-                vector_query_context.apply_hardware_counter(&raw_scorer.hardware_counter());
+                vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
                 Ok(res)
             }
         }
@@ -359,7 +359,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &is_stopped,
         );
         let search_result = search_context.plain_search(&ids);
-        vector_query_context.apply_hardware_counter(search_context.hardware_counter());
+        vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
         Ok(search_result)
     }
 
@@ -402,12 +402,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
                 let res = search_context.search(&matches_filter_condition);
-                vector_query_context.apply_hardware_counter(search_context.hardware_counter());
+                vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
                 res
             }
             None => {
                 let res = search_context.search(&not_deleted_condition);
-                vector_query_context.apply_hardware_counter(search_context.hardware_counter());
+                vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
                 res
             }
         }
