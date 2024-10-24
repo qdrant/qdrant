@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::types::TelemetryDetail;
+use common::types::{DetailsLevel, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -36,7 +36,7 @@ pub struct TelemetryData {
     pub(crate) collections: CollectionsTelemetry,
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
-    pub(crate) memory: MemoryTelemetry,
+    pub(crate) memory: Option<MemoryTelemetry>,
 }
 
 impl Anonymize for TelemetryData {
@@ -93,7 +93,9 @@ impl TelemetryCollector {
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
-            memory: MemoryTelemetry::collect(),
+            memory: (detail.level > DetailsLevel::Level0)
+                .then(MemoryTelemetry::collect)
+                .flatten(),
         }
     }
 }

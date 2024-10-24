@@ -26,24 +26,24 @@ impl MemoryTelemetry {
         not(target_env = "msvc"),
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
-    pub fn collect() -> MemoryTelemetry {
+    pub fn collect() -> Option<MemoryTelemetry> {
         if epoch::advance().is_ok() {
-            MemoryTelemetry {
+            Some(MemoryTelemetry {
                 active_bytes: stats::active::read().unwrap_or_default(),
                 allocated_bytes: stats::allocated::read().unwrap_or_default(),
                 metadata_bytes: stats::metadata::read().unwrap_or_default(),
                 resident_bytes: stats::resident::read().unwrap_or_default(),
                 retained_bytes: stats::retained::read().unwrap_or_default(),
-            }
+            })
         } else {
             log::info!("Failed to advance Jemalloc stats epoch");
-            MemoryTelemetry::default()
+            None
         }
     }
 
     #[cfg(target_env = "msvc")]
-    pub fn collect() -> MemoryTelemetry {
-        MemoryTelemetry::default()
+    pub fn collect() -> Option<MemoryTelemetry> {
+        None
     }
 }
 

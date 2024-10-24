@@ -110,7 +110,9 @@ impl MetricsProvider for TelemetryData {
         self.collections.add_metrics(metrics);
         self.cluster.add_metrics(metrics);
         self.requests.add_metrics(metrics);
-        self.memory.add_metrics(metrics);
+        if let Some(mem) = &self.memory {
+            mem.add_metrics(metrics);
+        }
     }
 }
 

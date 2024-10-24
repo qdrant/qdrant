@@ -10218,7 +10218,6 @@
           "cluster",
           "collections",
           "id",
-          "memory",
           "requests"
         ],
         "properties": {
@@ -10238,7 +10237,14 @@
             "$ref": "#/components/schemas/RequestsTelemetry"
           },
           "memory": {
-            "$ref": "#/components/schemas/MemoryTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
