@@ -793,6 +793,15 @@ impl LocalShard {
 
         let tar_c = tar.clone();
         tokio::task::spawn_blocking(move || {
+            // TODO: why does placing this here seem to fix inconsistencies?
+            // TODO: the proxies we have should prevent this from happening
+            if save_wal {
+                // snapshot all shard's WAL
+                Self::snapshot_wal(wal, &tar_c)?;
+            } else {
+                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)?;
+            }
+
             // Do not change segments while snapshotting
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
@@ -804,12 +813,14 @@ impl LocalShard {
                 format,
             )?;
 
-            if save_wal {
-                // snapshot all shard's WAL
-                Self::snapshot_wal(wal, &tar_c)
-            } else {
-                Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
-            }
+            // if save_wal {
+            //     // snapshot all shard's WAL
+            //     Self::snapshot_wal(wal, &tar_c)
+            // } else {
+            //     Self::snapshot_empty_wal(wal, &temp_path, &tar_c)
+            // }
+
+            Ok::<(), CollectionError>(())
         })
         .await??;
 

@@ -886,7 +886,8 @@ impl ShardHolder {
                 snapshot_temp_dir.path(),
                 &tar,
                 SnapshotFormat::Regular,
-                false,
+                // TODO: include WAL in snapshot - this should not be necessary
+                true,
             )
             .await?;
 
