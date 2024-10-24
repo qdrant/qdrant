@@ -111,11 +111,46 @@ impl Device {
         // TODO(gpu): check presence of features
 
         // Define Vulkan features that we need.
+        let mut enabled_physical_device_features_1_1 =
+            vk::PhysicalDeviceVulkan11Features::default();
+        let mut enabled_physical_device_features_1_2 =
+            vk::PhysicalDeviceVulkan12Features::default();
+        let mut enabled_physical_device_features_1_3 =
+            vk::PhysicalDeviceVulkan13Features::default();
+        let mut enabled_physical_devices_features = vk::PhysicalDeviceFeatures2::default()
+            .push_next(&mut enabled_physical_device_features_1_1)
+            .push_next(&mut enabled_physical_device_features_1_2)
+            .push_next(&mut enabled_physical_device_features_1_3);
+        unsafe {
+            instance.vk_instance.get_physical_device_features2(
+                vk_physical_device.vk_physical_device,
+                &mut enabled_physical_devices_features,
+            );
+        };
+
         // From Vulkan 1.1 we need storage buffer 16 bit access.
+        if !enabled_physical_device_features_1_1.storage_buffer16_bit_access == 0 {
+            return Err(GpuError::NotSupported(
+                "Storage buffer 16 bit access is not supported".to_string(),
+            ));
+        }
         let mut physical_device_features_1_1 =
             vk::PhysicalDeviceVulkan11Features::default().storage_buffer16_bit_access(true);
 
         // From Vulkan 1.2 we need int8/float16 support.
+        if !enabled_physical_device_features_1_2.shader_int8 == 0 {
+            return Err(GpuError::NotSupported("Int8 is not supported".to_string()));
+        }
+        if !enabled_physical_device_features_1_2.shader_float16 == 0 {
+            return Err(GpuError::NotSupported(
+                "Float16 is not supported".to_string(),
+            ));
+        }
+        if !enabled_physical_device_features_1_2.storage_buffer8_bit_access == 0 {
+            return Err(GpuError::NotSupported(
+                "Storage buffer 8 bit access is not supported".to_string(),
+            ));
+        }
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
             .shader_float16(true)
@@ -148,6 +183,14 @@ impl Device {
             let subgroup_size = if vulkan_1_3_properties.min_subgroup_size
                 != vulkan_1_3_properties.max_subgroup_size
             {
+                if !enabled_physical_device_features_1_3.subgroup_size_control == 0 {
+                    return Err(GpuError::NotSupported(
+                        "Subgroup size control is not supported".to_string(),
+                    ));
+                }
+                physical_device_features_1_3 =
+                    physical_device_features_1_3.subgroup_size_control(true);
+
                 if !vulkan_1_3_properties
                     .required_subgroup_size_stages
                     .contains(vk::ShaderStageFlags::COMPUTE)
@@ -159,8 +202,6 @@ impl Device {
                     ));
                 }
                 is_dynamic_subgroup_size = true;
-                physical_device_features_1_3 =
-                    physical_device_features_1_3.subgroup_size_control(true);
                 // prefer max subgroup size
                 vulkan_1_3_properties.max_subgroup_size as usize
             } else {

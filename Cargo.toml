@@ -17,7 +17,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["web", "parking_lot"]
+default = ["web", "parking_lot", "gpu"]
 web = ["actix-web"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
