@@ -762,11 +762,13 @@ pub enum PayloadStorageType {
     InMemory,
     // Store payload on disk only, read each time it is requested
     OnDisk,
+    // Store payload on disk and in memory, read from memory if possible
+    Mmap,
 }
 
 impl PayloadStorageType {
     pub fn is_on_disk(&self) -> bool {
-        matches!(self, PayloadStorageType::OnDisk)
+        matches!(self, PayloadStorageType::OnDisk) || matches!(self, PayloadStorageType::Mmap)
     }
 }
 
