@@ -12,9 +12,7 @@ pub struct HwMeasurementAcc {
 
 impl HwMeasurementAcc {
     pub fn new() -> Self {
-        Self {
-            cpu_counter: Arc::new(AtomicUsize::new(0)),
-        }
+        Self::default()
     }
 
     pub fn get_cpu(&self) -> usize {
@@ -33,5 +31,13 @@ impl HwMeasurementAcc {
 
         self.cpu_counter
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);
+    }
+}
+
+impl Default for HwMeasurementAcc {
+    fn default() -> Self {
+        Self {
+            cpu_counter: Arc::new(AtomicUsize::new(0)),
+        }
     }
 }
