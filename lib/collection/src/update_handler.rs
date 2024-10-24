@@ -692,10 +692,7 @@ impl UpdateHandler {
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
-                            debug!(
-                                "Can't report operation {} result. Assume already not required",
-                                op_num
-                            );
+                            debug!("Can't report operation {op_num} result. Assume already not required");
                         });
                     };
                 }
