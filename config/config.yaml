@@ -291,6 +291,12 @@ service:
   #
   # jwt_rbac: true
 
+  # Hardware reporting adds information to the API responses with a
+  # hint on how many resources were used to execute the request.
+  #
+  # Uncomment to enable.
+  # hardware_reporting: true
+
 cluster:
   # Use `enabled: true` to run Qdrant in distributed deployment mode
   enabled: false

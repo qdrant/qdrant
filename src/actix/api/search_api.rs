@@ -18,7 +18,9 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::helpers::{
+    self, process_response, process_response_error, HardwareReportingSettings,
+};
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
@@ -29,6 +31,7 @@ async fn search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let SearchRequest {
@@ -56,7 +59,7 @@ async fn search_points(
 
     let hw_counter_accumulator = HwMeasurementAcc::new();
 
-    helpers::time_and_hardware(
+    helpers::time_and_hardware_opt(
         do_core_search_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -73,6 +76,7 @@ async fn search_points(
                 .collect_vec()
         }),
         hw_counter_accumulator,
+        hardware_reporting.enabled,
     )
     .await
 }
@@ -83,6 +87,7 @@ async fn batch_search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let requests = request
@@ -119,7 +124,7 @@ async fn batch_search_points(
 
     let hw_counter_accumulator = HwMeasurementAcc::new();
 
-    helpers::time_and_hardware(
+    helpers::time_and_hardware_opt(
         do_search_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -140,6 +145,7 @@ async fn batch_search_points(
                 .collect_vec()
         }),
         hw_counter_accumulator,
+        hardware_reporting.enabled,
     )
     .await
 }

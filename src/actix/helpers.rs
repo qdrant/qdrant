@@ -6,8 +6,13 @@ use actix_web::{http, HttpResponse, ResponseError};
 use api::grpc::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
+
+#[derive(Deserialize, Clone)]
+pub(crate) struct HardwareReportingSettings {
+    pub enabled: bool,
+}
 
 pub fn accepted_response(timing: Instant) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
@@ -59,15 +64,20 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
 /// # Cancel safety
 ///
 /// Future must be cancel safe.
-pub async fn time_and_hardware<T, Fut>(
+pub async fn time_and_hardware_opt<T, Fut>(
     future: Fut,
     hardware_counter_acc: HwMeasurementAcc,
+    enabled: bool,
 ) -> HttpResponse
 where
     Fut: Future<Output = Result<T, StorageError>>,
     T: serde::Serialize,
 {
-    time_and_hardware_impl(async { future.await.map(Some) }, hardware_counter_acc).await
+    if enabled {
+        time_and_hardware_impl(async { future.await.map(Some) }, hardware_counter_acc).await
+    } else {
+        time_impl(async { future.await.map(Some) }).await
+    }
 }
 
 /// Response wrapper for a `Future` returning `Result`.

@@ -14,7 +14,7 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{self, process_response_error, HardwareReportingSettings};
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
@@ -26,6 +26,7 @@ async fn query_points(
     collection: Path<CollectionPath>,
     request: Json<QueryRequest>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let QueryRequest {
@@ -47,7 +48,7 @@ async fn query_points(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    helpers::time_and_hardware(
+    helpers::time_and_hardware_opt(
         async move {
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
@@ -77,6 +78,7 @@ async fn query_points(
             Ok(QueryResponse { points })
         },
         hw_measurement_acc,
+        hardware_reporting.enabled,
     )
     .await
 }
@@ -87,6 +89,7 @@ async fn query_points_batch(
     collection: Path<CollectionPath>,
     request: Json<QueryRequestBatch>,
     params: Query<ReadParams>,
+    hardware_reporting: web::Data<HardwareReportingSettings>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
@@ -105,7 +108,7 @@ async fn query_points_batch(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    helpers::time_and_hardware(
+    helpers::time_and_hardware_opt(
         async move {
             let mut batch = Vec::with_capacity(searches.len());
             for request in searches {
@@ -145,6 +148,7 @@ async fn query_points_batch(
             Ok(res)
         },
         hw_measurement_acc,
+        hardware_reporting.enabled,
     )
     .await
 }
