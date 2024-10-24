@@ -69,6 +69,14 @@ impl OperationError {
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
+
+    /// Create a new service error with a description and no backtrace
+    pub fn service_error_light(description: impl Into<String>) -> OperationError {
+        OperationError::ServiceError {
+            description: description.into(),
+            backtrace: None,
+        }
+    }
 }
 
 pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
