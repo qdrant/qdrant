@@ -328,6 +328,7 @@ pub struct SegmentInfo {
     pub num_points: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
+    pub vectors_size_bytes: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,

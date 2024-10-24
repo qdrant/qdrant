@@ -162,7 +162,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn available_size_in_bytes(&self) -> usize {
+    fn size_in_bytes(&self) -> usize {
         self.total_sparse_size * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>())
     }
 
