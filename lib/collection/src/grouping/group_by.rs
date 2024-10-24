@@ -3,6 +3,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::JsonPath;
@@ -146,6 +147,7 @@ impl QueryGroupRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
@@ -165,7 +167,13 @@ impl QueryGroupRequest {
         request.with_vector = WithVector::Bool(false);
 
         collection
-            .query(request, read_consistency, shard_selection, timeout)
+            .query(
+                request,
+                read_consistency,
+                shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
     }
 }
@@ -305,6 +313,7 @@ pub async fn group_by(
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();
@@ -365,6 +374,7 @@ pub async fn group_by(
                 read_consistency,
                 shard_selection.clone(),
                 timeout,
+                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -427,6 +437,7 @@ pub async fn group_by(
                     read_consistency,
                     shard_selection.clone(),
                     timeout,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
 

@@ -61,6 +61,7 @@ async fn discover_points(
                 shard_selection,
                 access,
                 params.timeout(),
+                hw_measurement_acc.clone(),
             )
             .map_ok(|scored_points| {
                 scored_points
@@ -108,6 +109,7 @@ async fn discover_batch_points(
             params.consistency,
             access,
             params.timeout(),
+            hw_measurement_acc.clone(),
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points

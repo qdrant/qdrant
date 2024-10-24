@@ -27,7 +27,7 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
 pub fn process_response<T>(
     response: Result<T, StorageError>,
     timing: Instant,
-    hardware_counter_acc: Option<HwMeasurementAcc>,
+    hw_measurement_acc: Option<HwMeasurementAcc>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -37,7 +37,7 @@ where
             result: Some(res),
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
-            hardware_usage: hardware_counter_acc.map(hardware_accumulator_to_api),
+            hardware_usage: hw_measurement_acc.map(hardware_accumulator_to_api),
         }),
         Err(err) => process_response_error(err, timing),
     }
@@ -67,7 +67,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
 /// Future must be cancel safe.
 pub async fn time_and_hardware_opt<T, Fut>(
     future: Fut,
-    hardware_counter_acc: HwMeasurementAcc,
+    hw_measurement_acc: HwMeasurementAcc,
     enabled: bool,
 ) -> HttpResponse
 where
@@ -75,7 +75,7 @@ where
     T: serde::Serialize,
 {
     if enabled {
-        time_and_hardware_impl(async { future.await.map(Some) }, hardware_counter_acc).await
+        time_and_hardware_impl(async { future.await.map(Some) }, hw_measurement_acc).await
     } else {
         time_impl(async { future.await.map(Some) }).await
     }
@@ -144,7 +144,7 @@ where
 /// Future must be cancel safe.
 async fn time_and_hardware_impl<T, Fut>(
     future: Fut,
-    hardware_counter_acc: HwMeasurementAcc,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> HttpResponse
 where
     Fut: Future<Output = Result<Option<T>, StorageError>>,
@@ -152,7 +152,7 @@ where
 {
     let instant = Instant::now();
     match future.await.transpose() {
-        Some(res) => process_response(res, instant, Some(hardware_counter_acc)),
+        Some(res) => process_response(res, instant, Some(hw_measurement_acc)),
         None => accepted_response(instant),
     }
 }

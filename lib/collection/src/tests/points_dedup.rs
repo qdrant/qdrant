@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use api::rest::OrderByInterface;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use rand::{thread_rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
@@ -258,6 +259,7 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to search");

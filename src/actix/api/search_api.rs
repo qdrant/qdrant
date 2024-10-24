@@ -57,7 +57,7 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_counter_accumulator = HwMeasurementAcc::new();
+    let hw_measurement_acc = HwMeasurementAcc::new();
 
     helpers::time_and_hardware_opt(
         do_core_search_points(
@@ -68,6 +68,7 @@ async fn search_points(
             shard_selection,
             access,
             params.timeout(),
+            hw_measurement_acc.clone(),
         )
         .map_ok(|scored_points| {
             scored_points
@@ -75,7 +76,7 @@ async fn search_points(
                 .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         }),
-        hw_counter_accumulator,
+        hw_measurement_acc,
         hardware_reporting.enabled,
     )
     .await
@@ -122,7 +123,7 @@ async fn batch_search_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_counter_accumulator = HwMeasurementAcc::new();
+    let hw_measurement_acc = HwMeasurementAcc::new();
 
     helpers::time_and_hardware_opt(
         do_search_batch_points(
@@ -132,6 +133,7 @@ async fn batch_search_points(
             params.consistency,
             access,
             params.timeout(),
+            hw_measurement_acc.clone(),
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points
@@ -144,7 +146,7 @@ async fn batch_search_points(
                 })
                 .collect_vec()
         }),
-        hw_counter_accumulator,
+        hw_measurement_acc,
         hardware_reporting.enabled,
     )
     .await
@@ -226,6 +228,8 @@ async fn search_points_matrix_pairs(
         Some(shard_keys) => shard_keys.into(),
     };
 
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
         &collection.name,
@@ -234,6 +238,7 @@ async fn search_points_matrix_pairs(
         shard_selection,
         access,
         params.timeout(),
+        hw_measurement_acc.clone(),
     )
     .await
     .map(SearchMatrixPairsResponse::from);
@@ -274,6 +279,8 @@ async fn search_points_matrix_offsets(
         Some(shard_keys) => shard_keys.into(),
     };
 
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
         &collection.name,
@@ -282,6 +289,7 @@ async fn search_points_matrix_offsets(
         shard_selection,
         access,
         params.timeout(),
+        hw_measurement_acc,
     )
     .await
     .map(SearchMatrixOffsetsResponse::from);

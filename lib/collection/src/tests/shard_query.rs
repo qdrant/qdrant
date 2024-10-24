@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use segment::data_types::vectors::{NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
@@ -65,7 +66,12 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await;
     let expected_error =
         CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
@@ -99,7 +105,12 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -145,7 +156,12 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -188,7 +204,12 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -266,7 +287,12 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -292,7 +318,12 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -321,7 +352,12 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()
@@ -388,7 +424,12 @@ async fn test_shard_query_payload_vector() {
     };
 
     let sources_scores = shard
-        .query_batch(Arc::new(vec![query]), &current_runtime, None)
+        .query_batch(
+            Arc::new(vec![query]),
+            &current_runtime,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap()
         .pop()

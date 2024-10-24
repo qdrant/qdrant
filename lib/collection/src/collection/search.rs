@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
 use segment::data_types::vectors::VectorStructInternal;
@@ -24,6 +25,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -33,7 +35,13 @@ impl Collection {
             searches: vec![request],
         };
         let results = self
-            .do_core_search_batch(request_batch, read_consistency, shard_selection, timeout)
+            .do_core_search_batch(
+                request_batch,
+                read_consistency,
+                shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await?;
         Ok(results.into_iter().next().unwrap())
     }
@@ -44,6 +52,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
@@ -99,6 +108,7 @@ impl Collection {
                     read_consistency,
                     &shard_selection,
                     timeout,
+                    hw_measurement_acc,
                 )
                 .await?;
             // update timeout
@@ -119,7 +129,13 @@ impl Collection {
             future::try_join_all(filled_results).await
         } else {
             let result = self
-                .do_core_search_batch(request, read_consistency, &shard_selection, timeout)
+                .do_core_search_batch(
+                    request,
+                    read_consistency,
+                    &shard_selection,
+                    timeout,
+                    hw_measurement_acc,
+                )
                 .await?;
             Ok(result)
         }
@@ -131,6 +147,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
@@ -148,6 +165,7 @@ impl Collection {
                         read_consistency,
                         shard_selection.is_shard_id(),
                         timeout,
+                        hw_measurement_acc.clone(),
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
