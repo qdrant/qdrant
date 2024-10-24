@@ -182,7 +182,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         }
 
         if stored_version != Some(TInvertedIndex::Version::current()) {
-            return Err(OperationError::service_error(format!(
+            return Err(OperationError::service_error_light(format!(
                 "Index version mismatch, expected {}, found {}",
                 TInvertedIndex::Version::current(),
                 stored_version.map_or_else(|| "none".to_string(), |v| v.to_string()),
