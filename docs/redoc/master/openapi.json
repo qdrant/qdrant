@@ -7548,6 +7548,9 @@
             "$ref": "#/components/schemas/HasIdCondition"
           },
           {
+            "$ref": "#/components/schemas/HasVectorCondition"
+          },
+          {
             "$ref": "#/components/schemas/NestedCondition"
           },
           {
@@ -7973,6 +7976,18 @@
               "$ref": "#/components/schemas/ExtendedPointId"
             },
             "uniqueItems": true
+          }
+        }
+      },
+      "HasVectorCondition": {
+        "description": "Filter points which have specific vector assigned",
+        "type": "object",
+        "required": [
+          "has_vector"
+        ],
+        "properties": {
+          "has_vector": {
+            "type": "string"
           }
         }
       },
