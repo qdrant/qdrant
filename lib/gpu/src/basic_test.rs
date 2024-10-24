@@ -15,6 +15,8 @@ void main() {
 }
 ";
 
+// Basic GPU test.
+// It takes list of numbers and adds parameter to each number.
 #[test]
 fn basic_gpu_test() {
     // First step: initialize GPU device.

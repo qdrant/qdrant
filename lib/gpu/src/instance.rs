@@ -86,6 +86,8 @@ impl Instance {
 
         // Collect Vulkan API extensions and convert it in raw pointers.
         let extensions = Self::get_extensions_list(debug_messenger.is_some());
+        // Check presence of all required extensions.
+        Self::check_extensions_list(&entry, &extensions)?;
         let extensions_cstr: Vec<CString> = extensions
             .iter()
             .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
@@ -97,6 +99,8 @@ impl Instance {
 
         // Collect Vulkan API layers and convert it in raw pointers.
         let layers = Self::get_layers_list(debug_messenger.is_some(), dump_api);
+        // Check presence of all required layers.
+        Self::check_layers_list(&entry, &layers)?;
         let layers_cstr: Vec<CString> = layers
             .iter()
             .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
@@ -271,6 +275,37 @@ impl Instance {
             }
         }
         extensions_list
+    }
+
+    fn check_extensions_list(entry: &ash::Entry, extensions: &[String]) -> GpuResult<()> {
+        let extension_properties = unsafe { entry.enumerate_instance_extension_properties(None)? };
+        for extension in extensions {
+            let extension_found = extension_properties.iter().any(|ep| {
+                let name = unsafe { ::std::ffi::CStr::from_ptr(ep.extension_name.as_ptr()) };
+                name.to_str().unwrap_or("") == extension
+            });
+            if !extension_found {
+                return Err(GpuError::Other(format!(
+                    "Extension {} not found",
+                    extension
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn check_layers_list(entry: &ash::Entry, layers: &[String]) -> GpuResult<()> {
+        let layer_properties = unsafe { entry.enumerate_instance_layer_properties()? };
+        for layer in layers {
+            let layer_found = layer_properties.iter().any(|lp| {
+                let name = unsafe { ::std::ffi::CStr::from_ptr(lp.layer_name.as_ptr()) };
+                name.to_str().unwrap_or("") == layer
+            });
+            if !layer_found {
+                return Err(GpuError::Other(format!("Layer {} not found", layer)));
+            }
+        }
+        Ok(())
     }
 }
 

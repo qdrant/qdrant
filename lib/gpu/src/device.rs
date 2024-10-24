@@ -106,9 +106,7 @@ impl Device {
             })
             .collect();
 
-        let physical_device_features = vk::PhysicalDeviceFeatures {
-            ..Default::default()
-        };
+        let physical_device_features = vk::PhysicalDeviceFeatures::default();
 
         // TODO(gpu): check presence of features
 
@@ -146,10 +144,6 @@ impl Device {
                 vk_physical_device.vk_physical_device,
                 &mut props2,
             );
-            log::info!(
-                "Chosen GPU device: {:?}",
-                ::std::ffi::CStr::from_ptr(props.device_name.as_ptr())
-            );
 
             let subgroup_size = if vulkan_1_3_properties.min_subgroup_size
                 != vulkan_1_3_properties.max_subgroup_size
@@ -173,11 +167,17 @@ impl Device {
                 subgroup_properties.subgroup_size as usize
             };
 
+            log::info!("Create GPU device {}", vk_physical_device.name);
             log::debug!("GPU subgroup size: {subgroup_size}");
             subgroup_size
         };
 
         // convert extension names to raw pointers to provide to Vulkan
+        Self::check_extensions_list(
+            &instance,
+            vk_physical_device.vk_physical_device,
+            &extensions_cstr,
+        )?;
         let extension_names_raw: Vec<*const i8> = extensions_cstr
             .iter()
             .map(|raw_name| raw_name.as_ptr())
@@ -300,6 +300,35 @@ impl Device {
     /// Get subgroup size (warp in terms of CUDA).
     pub fn subgroup_size(&self) -> usize {
         self.subgroup_size
+    }
+
+    fn check_extensions_list(
+        instance: &Instance,
+        vk_physical_device: vk::PhysicalDevice,
+        required_extensions: &[CString],
+    ) -> GpuResult<()> {
+        let available_extensions = unsafe {
+            instance
+                .vk_instance
+                .enumerate_device_extension_properties(vk_physical_device)?
+        };
+
+        for required_extension in required_extensions {
+            let is_extension_available = available_extensions.iter().any(|extension| {
+                let extension_name =
+                    unsafe { std::ffi::CStr::from_ptr(extension.extension_name.as_ptr()) };
+                extension_name == required_extension.as_c_str()
+            });
+
+            if !is_extension_available {
+                return Err(GpuError::NotSupported(format!(
+                    "Extension {:?} is not supported",
+                    required_extension
+                )));
+            }
+        }
+
+        Ok(())
     }
 }
 
