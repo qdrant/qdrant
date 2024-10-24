@@ -106,7 +106,7 @@ pub(super) async fn transfer_wal_delta(
     };
 
     // Resolve WAL delta, get the version to start the diff from
-    let current_wal_version = replica_set.wal_version().await?;
+    let next_wal_version = replica_set.wal_version().await?.map(|n| n + 1);
     let wal_delta_version = replica_set
         .resolve_wal_delta(recovery_point)
         .await
@@ -116,8 +116,8 @@ pub(super) async fn transfer_wal_delta(
         // If diff is empty, queue and forward from our version to prevent losing new updates
         // See: <https://github.com/qdrant/qdrant/pull/5271>
         .or_else(|| {
-            log::trace!("Remote shard is up-to-date and WAL diff is empty, queueing newly incoming updates (version: {current_wal_version:?})");
-            current_wal_version
+            log::trace!("Remote shard is up-to-date and WAL diff is empty, queueing newly incoming updates (version: {next_wal_version:?})");
+            next_wal_version
         });
 
     // Queue proxy local shard, start flushing updates to remote
