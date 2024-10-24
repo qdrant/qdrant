@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::types::TelemetryDetail;
+use common::types::{DetailsLevel, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
+use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, RequestsTelemetry, TonicTelemetryCollector,
 };
@@ -35,6 +36,7 @@ pub struct TelemetryData {
     pub(crate) collections: CollectionsTelemetry,
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
+    pub(crate) memory: Option<MemoryTelemetry>,
 }
 
 impl Anonymize for TelemetryData {
@@ -45,6 +47,7 @@ impl Anonymize for TelemetryData {
             collections: self.collections.anonymize(),
             cluster: self.cluster.anonymize(),
             requests: self.requests.anonymize(),
+            memory: self.memory.anonymize(),
         }
     }
 }
@@ -90,6 +93,9 @@ impl TelemetryCollector {
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
+            memory: (detail.level > DetailsLevel::Level0)
+                .then(MemoryTelemetry::collect)
+                .flatten(),
         }
     }
 }

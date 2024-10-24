@@ -10231,6 +10231,16 @@
           },
           "requests": {
             "$ref": "#/components/schemas/RequestsTelemetry"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -11390,6 +11400,48 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/OperationDurationStatistics"
             }
+          }
+        }
+      },
+      "MemoryTelemetry": {
+        "type": "object",
+        "required": [
+          "active_bytes",
+          "allocated_bytes",
+          "metadata_bytes",
+          "resident_bytes",
+          "retained_bytes"
+        ],
+        "properties": {
+          "active_bytes": {
+            "description": "Total number of bytes in active pages allocated by the application",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "allocated_bytes": {
+            "description": "Total number of bytes allocated by the application",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "metadata_bytes": {
+            "description": "Total number of bytes dedicated to metadata",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "resident_bytes": {
+            "description": "Maximum number of bytes in physically resident data pages mapped",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "retained_bytes": {
+            "description": "Total number of bytes in virtual memory mappings",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
