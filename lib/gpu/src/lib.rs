@@ -27,9 +27,6 @@ pub use instance::*;
 pub mod pipeline;
 pub use pipeline::*;
 
-pub mod pipeline_builder;
-pub use pipeline_builder::*;
-
 pub mod shader;
 use ash::vk;
 pub use shader::*;

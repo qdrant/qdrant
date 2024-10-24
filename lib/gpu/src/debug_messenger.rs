@@ -8,29 +8,29 @@ use ash::vk;
 /// If presented, vulkan instance will be created with validation layers and debug messenger.
 /// Validation layer has a large performance cost, so it should be used only for tests and debugging.
 pub trait DebugMessenger {
-    fn get_callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT;
+    fn callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT;
 
-    fn get_severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT;
+    fn severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT;
 
-    fn get_message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT;
+    fn message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT;
 }
 
 /// Log all messages from the Vulkan validation layer.
 pub struct LogAllMessenger {}
 
 impl DebugMessenger for LogAllMessenger {
-    fn get_callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT {
+    fn callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT {
         Some(vulkan_debug_callback_log)
     }
 
-    fn get_severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT {
+    fn severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT {
         vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
             | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
             | vk::DebugUtilsMessageSeverityFlagsEXT::INFO
             | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
     }
 
-    fn get_message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT {
+    fn message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT {
         vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
             | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
             | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
@@ -72,15 +72,15 @@ unsafe extern "system" fn vulkan_debug_callback_log(
 pub struct PanicIfErrorMessenger {}
 
 impl DebugMessenger for PanicIfErrorMessenger {
-    fn get_callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT {
+    fn callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT {
         Some(vulkan_debug_callback_panic)
     }
 
-    fn get_severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT {
+    fn severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT {
         vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
     }
 
-    fn get_message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT {
+    fn message_type_flags(&self) -> vk::DebugUtilsMessageTypeFlagsEXT {
         vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
             | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
             | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION

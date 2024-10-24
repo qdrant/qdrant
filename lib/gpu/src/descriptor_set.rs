@@ -4,25 +4,24 @@ use ash::vk;
 
 use crate::*;
 
-pub struct DescriptorSetBuilder {
-    pub descriptor_set_layout: Arc<DescriptorSetLayout>,
-    pub uniform_buffers: Vec<(usize, Arc<Buffer>)>,
-    pub storage_buffers: Vec<(usize, Arc<Buffer>)>,
-}
-
 /// `DescriptorSet` is a collection of buffers that can be bound to a shader.
 /// It depends on a DescriptorSetLayout which defines linkage to the shader.
 /// This structure does not need shader directly, shader will be provided by `Pipeline`.
 /// It can be reused between different pipelines and shaders with the same layout.
 #[derive(Clone)]
 pub struct DescriptorSet {
-    pub device: Arc<Device>,
-    pub layout: Arc<DescriptorSetLayout>,
-    pub uniform_buffers: Vec<(usize, Arc<Buffer>)>,
-    pub storage_buffers: Vec<(usize, Arc<Buffer>)>,
-    pub vk_descriptor_pool: vk::DescriptorPool,
-    pub vk_descriptor_set: vk::DescriptorSet,
-    pub vk_descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    device: Arc<Device>,
+    _layout: Arc<DescriptorSetLayout>,
+    uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+    storage_buffers: Vec<(usize, Arc<Buffer>)>,
+    vk_descriptor_pool: vk::DescriptorPool,
+    vk_descriptor_set: vk::DescriptorSet,
+}
+
+pub struct DescriptorSetBuilder {
+    descriptor_set_layout: Arc<DescriptorSetLayout>,
+    uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+    storage_buffers: Vec<(usize, Arc<Buffer>)>,
 }
 
 // Mark `DescriptorSet` as a GPU resource that should be kept alive while it's in use by the GPU context.
@@ -41,7 +40,7 @@ impl DescriptorSetBuilder {
 
     pub fn build(&self) -> GpuResult<Arc<DescriptorSet>> {
         DescriptorSet::new(
-            self.descriptor_set_layout.device.clone(),
+            self.descriptor_set_layout.device().clone(),
             self.descriptor_set_layout.clone(),
             self.uniform_buffers.clone(),
             self.storage_buffers.clone(),
@@ -69,7 +68,7 @@ impl DescriptorSet {
             Self::create_vk_descriptor_pool(&device, &uniform_buffers, &storage_buffers)?;
 
         // Create Vulkan descriptor set.
-        let vk_descriptor_set_layouts = vec![layout.vk_descriptor_set_layout];
+        let vk_descriptor_set_layouts = vec![layout.vk_descriptor_set_layout()];
         let vk_descriptor_set_result =
             Self::create_vk_descriptor_set(&device, &vk_descriptor_set_layouts, vk_descriptor_pool);
 
@@ -78,7 +77,7 @@ impl DescriptorSet {
             Err(error) => {
                 unsafe {
                     // Destroy descriptor pool if descriptor set creation failed.
-                    device.vk_device.destroy_descriptor_pool(
+                    device.vk_device().destroy_descriptor_pool(
                         vk_descriptor_pool,
                         device.cpu_allocation_callbacks(),
                     );
@@ -89,15 +88,18 @@ impl DescriptorSet {
 
         let result = Arc::new(Self {
             device,
-            layout,
+            _layout: layout,
             uniform_buffers,
             storage_buffers,
             vk_descriptor_pool,
             vk_descriptor_set,
-            vk_descriptor_set_layouts,
         });
         result.update()?;
         Ok(result)
+    }
+
+    pub fn vk_descriptor_set(&self) -> vk::DescriptorSet {
+        self.vk_descriptor_set
     }
 
     fn create_vk_descriptor_pool(
@@ -127,7 +129,7 @@ impl DescriptorSet {
                 .max_sets(1);
             unsafe {
                 device
-                    .vk_device
+                    .vk_device()
                     .create_descriptor_pool(
                         &vk_descriptor_pool_create_info,
                         device.cpu_allocation_callbacks(),
@@ -151,7 +153,7 @@ impl DescriptorSet {
             .set_layouts(vk_descriptor_set_layout);
         unsafe {
             Ok(device
-                .vk_device
+                .vk_device()
                 .allocate_descriptor_sets(&vk_descriptor_set_allocate_info)?[0])
         }
     }
@@ -164,15 +166,15 @@ impl DescriptorSet {
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_uniform_buffer_infos = Vec::new();
         for (_binding, uniform_buffer) in &self.uniform_buffers {
-            if uniform_buffer.buffer_type != BufferType::Uniform {
+            if uniform_buffer.buffer_type() != BufferType::Uniform {
                 return Err(GpuError::Other(
                     "Uniform buffer type must be `BufferType::Uniform`".to_string(),
                 ));
             }
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
-                .buffer(uniform_buffer.vk_buffer)
+                .buffer(uniform_buffer.vk_buffer())
                 .offset(0)
-                .range(uniform_buffer.size as u64);
+                .range(uniform_buffer.size() as u64);
             vk_descriptor_uniform_buffer_infos.push(vec![vk_descriptor_buffer_info]);
         }
 
@@ -194,16 +196,16 @@ impl DescriptorSet {
         // It should be alive because `vk_write_descriptor_sets` references pointer to it.
         let mut vk_descriptor_storage_buffer_infos = Vec::new();
         for (_binding, storage_buffer) in &self.storage_buffers {
-            if storage_buffer.buffer_type != BufferType::Storage {
+            if storage_buffer.buffer_type() != BufferType::Storage {
                 return Err(GpuError::Other(
                     "Storage buffer type must be `BufferType::Storage`".to_string(),
                 ));
             }
 
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
-                .buffer(storage_buffer.vk_buffer)
+                .buffer(storage_buffer.vk_buffer())
                 .offset(0)
-                .range(storage_buffer.size as u64);
+                .range(storage_buffer.size() as u64);
             vk_descriptor_storage_buffer_infos.push(vec![vk_descriptor_buffer_info]);
         }
 
@@ -223,7 +225,7 @@ impl DescriptorSet {
 
         unsafe {
             self.device
-                .vk_device
+                .vk_device()
                 .update_descriptor_sets(&vk_write_descriptor_sets, &[]);
         }
 
@@ -235,7 +237,7 @@ impl Drop for DescriptorSet {
     fn drop(&mut self) {
         unsafe {
             if self.vk_descriptor_pool != vk::DescriptorPool::null() {
-                self.device.vk_device.destroy_descriptor_pool(
+                self.device.vk_device().destroy_descriptor_pool(
                     self.vk_descriptor_pool,
                     self.device.cpu_allocation_callbacks(),
                 );

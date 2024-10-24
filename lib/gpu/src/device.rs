@@ -10,45 +10,37 @@ use crate::*;
 /// GPU device structure.
 /// It's a wrapper around Vulkan device.
 pub struct Device {
-    /// Name of the device provided by GPU driver.
-    pub name: String,
-
     /// Instance that owns the device.
-    pub instance: Arc<Instance>,
+    instance: Arc<Instance>,
 
     /// Native Vulkan device handle.
-    pub vk_device: ash::Device,
-
-    /// Native Vulkan physical device handle.
-    /// It's the source of the device creation.
-    /// It's managed by the Vulkan instance and does not need to be destroyed.
-    pub vk_physical_device: vk::PhysicalDevice,
+    vk_device: ash::Device,
 
     /// GPU memory allocator from `gpu-allocator` crate.
     /// It's an Option because of drop order. We need to drop it before the device.
     /// But `Allocator` is destroyed by it's own drop.
-    pub gpu_allocator: Option<Mutex<Allocator>>,
+    gpu_allocator: Option<Mutex<Allocator>>,
 
     /// All found compute queues.
-    pub compute_queues: Vec<Queue>,
+    compute_queues: Vec<Queue>,
 
     /// All found transfer queues.
-    pub transfer_queues: Vec<Queue>,
+    _transfer_queues: Vec<Queue>,
 
     /// GPU subgroup (warp in CUDA terms) size.
-    pub subgroup_size: usize,
+    subgroup_size: usize,
 
     /// Is subgroup size (warp) dynamic.
     /// If true, we need to use additional subgroup size control in the pipeline.
     /// And use Vulkan extension that allows to set subgroup size.
-    pub is_dynamic_subgroup_size: bool,
+    is_dynamic_subgroup_size: bool,
 
     /// Maximum work group size for compute shaders.
     /// It's used in bounds checking in Context.
-    pub max_compute_work_group_size: [usize; 3],
+    max_compute_work_group_size: [usize; 3],
 
     /// Selected queue index to use.
-    pub queue_index: usize,
+    queue_index: usize,
 }
 
 // GPU execution queue.
@@ -67,14 +59,14 @@ pub struct Queue {
 impl Device {
     pub fn new(
         instance: Arc<Instance>,
-        vk_physical_device: PhysicalDevice,
+        vk_physical_device: &PhysicalDevice,
     ) -> GpuResult<Arc<Device>> {
         Self::new_with_queue_index(instance, vk_physical_device, 0)
     }
 
     pub fn new_with_queue_index(
         instance: Arc<Instance>,
-        vk_physical_device: PhysicalDevice,
+        vk_physical_device: &PhysicalDevice,
         queue_index: usize,
     ) -> GpuResult<Arc<Device>> {
         #[allow(unused_mut)]
@@ -86,7 +78,7 @@ impl Device {
 
         let vk_queue_families = unsafe {
             instance
-                .vk_instance
+                .vk_instance()
                 .get_physical_device_queue_family_properties(vk_physical_device.vk_physical_device)
         };
 
@@ -122,7 +114,7 @@ impl Device {
             .push_next(&mut enabled_physical_device_features_1_2)
             .push_next(&mut enabled_physical_device_features_1_3);
         unsafe {
-            instance.vk_instance.get_physical_device_features2(
+            instance.vk_instance().get_physical_device_features2(
                 vk_physical_device.vk_physical_device,
                 &mut enabled_physical_devices_features,
             );
@@ -163,7 +155,7 @@ impl Device {
         let mut is_dynamic_subgroup_size = false;
         let subgroup_size = unsafe {
             let props = instance
-                .vk_instance
+                .vk_instance()
                 .get_physical_device_properties(vk_physical_device.vk_physical_device);
             max_compute_work_group_size = [
                 props.limits.max_compute_work_group_size[0] as usize,
@@ -175,7 +167,7 @@ impl Device {
             let mut props2 = vk::PhysicalDeviceProperties2::default()
                 .push_next(&mut subgroup_properties)
                 .push_next(&mut vulkan_1_3_properties);
-            instance.vk_instance.get_physical_device_properties2(
+            instance.vk_instance().get_physical_device_properties2(
                 vk_physical_device.vk_physical_device,
                 &mut props2,
             );
@@ -234,7 +226,7 @@ impl Device {
             .push_next(&mut physical_device_features_1_3);
 
         let vk_device_result = unsafe {
-            instance.vk_instance.create_device(
+            instance.vk_instance().create_device(
                 vk_physical_device.vk_physical_device,
                 &device_create_info,
                 instance.cpu_allocation_callbacks(),
@@ -273,7 +265,7 @@ impl Device {
         }
 
         let gpu_allocator_result = Allocator::new(&AllocatorCreateDesc {
-            instance: instance.vk_instance.clone(),
+            instance: instance.vk_instance().clone(),
             device: vk_device.clone(),
             physical_device: vk_physical_device.vk_physical_device,
             debug_settings: Default::default(),
@@ -292,13 +284,11 @@ impl Device {
         };
 
         Ok(Arc::new(Device {
-            name: vk_physical_device.name.clone(),
             instance: instance.clone(),
             vk_device,
-            vk_physical_device: vk_physical_device.vk_physical_device,
             gpu_allocator,
             compute_queues,
-            transfer_queues,
+            _transfer_queues: transfer_queues,
             subgroup_size,
             max_compute_work_group_size,
             is_dynamic_subgroup_size,
@@ -343,6 +333,22 @@ impl Device {
         self.subgroup_size
     }
 
+    pub fn vk_device(&self) -> &ash::Device {
+        &self.vk_device
+    }
+
+    pub fn is_dynamic_subgroup_size(&self) -> bool {
+        self.is_dynamic_subgroup_size
+    }
+
+    pub fn max_compute_work_group_size(&self) -> [usize; 3] {
+        self.max_compute_work_group_size
+    }
+
+    pub fn compute_queue(&self) -> &Queue {
+        &self.compute_queues[self.queue_index % self.compute_queues.len()]
+    }
+
     fn check_extensions_list(
         instance: &Instance,
         vk_physical_device: vk::PhysicalDevice,
@@ -350,7 +356,7 @@ impl Device {
     ) -> GpuResult<()> {
         let available_extensions = unsafe {
             instance
-                .vk_instance
+                .vk_instance()
                 .enumerate_device_extension_properties(vk_physical_device)?
         };
 

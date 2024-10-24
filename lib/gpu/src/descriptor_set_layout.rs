@@ -4,11 +4,6 @@ use ash::vk;
 
 use crate::*;
 
-pub struct DescriptorSetLayoutBuilder {
-    pub uniform_buffer_bindings: Vec<usize>,
-    pub storage_buffer_bindings: Vec<usize>,
-}
-
 /// `DescriptorSetLayout` defines the linkage to the shader.
 /// It describes which resources are defined in the shader and how they must be binded.
 /// This structure does not need shader directly, it defines only linking rules.
@@ -16,18 +11,23 @@ pub struct DescriptorSetLayoutBuilder {
 #[derive(Clone)]
 pub struct DescriptorSetLayout {
     // Device that owns the descriptor set layout.
-    pub device: Arc<Device>,
+    device: Arc<Device>,
 
     // Bindings for uniform buffers.
     // It contains index defined in the shader.
-    pub uniform_buffer_bindings: Vec<usize>,
+    uniform_buffer_bindings: Vec<usize>,
 
     // Bindings for storage buffers.
     // It contains index defined in the shader.
-    pub storage_buffer_bindings: Vec<usize>,
+    storage_buffer_bindings: Vec<usize>,
 
     // Native Vulkan descriptor set layout handle.
-    pub vk_descriptor_set_layout: vk::DescriptorSetLayout,
+    vk_descriptor_set_layout: vk::DescriptorSetLayout,
+}
+
+pub struct DescriptorSetLayoutBuilder {
+    uniform_buffer_bindings: Vec<usize>,
+    storage_buffer_bindings: Vec<usize>,
 }
 
 impl DescriptorSetLayoutBuilder {
@@ -67,7 +67,7 @@ impl DescriptorSetLayoutBuilder {
             vk::DescriptorSetLayoutCreateInfo::default().bindings(&descriptor_set_layout_bindings);
 
         let vk_descriptor_set_layout = unsafe {
-            device.vk_device.create_descriptor_set_layout(
+            device.vk_device().create_descriptor_set_layout(
                 &descriptor_set_layout_create_info,
                 device.cpu_allocation_callbacks(),
             )?
@@ -86,7 +86,7 @@ impl Drop for DescriptorSetLayout {
     fn drop(&mut self) {
         unsafe {
             if self.vk_descriptor_set_layout != vk::DescriptorSetLayout::null() {
-                self.device.vk_device.destroy_descriptor_set_layout(
+                self.device.vk_device().destroy_descriptor_set_layout(
                     self.vk_descriptor_set_layout,
                     self.device.cpu_allocation_callbacks(),
                 );
@@ -104,5 +104,13 @@ impl DescriptorSetLayout {
             uniform_buffer_bindings: Vec::new(),
             storage_buffer_bindings: Vec::new(),
         }
+    }
+
+    pub fn vk_descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.vk_descriptor_set_layout
+    }
+
+    pub fn device(&self) -> Arc<Device> {
+        self.device.clone()
     }
 }

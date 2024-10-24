@@ -31,7 +31,7 @@ fn basic_gpu_test() {
     let instance =
         crate::Instance::new(Some(&debug_messenger), allocation_callbacks, dump_api).unwrap();
     // Choose any GPU hardware to use.
-    let physical_device = instance.vk_physical_devices[0].clone();
+    let physical_device = &instance.physical_devices()[0];
     // Create GPU device.
     let device = crate::Device::new(instance.clone(), physical_device).unwrap();
 
@@ -74,13 +74,13 @@ fn basic_gpu_test() {
         device.clone(),
         "Upload buffer",
         crate::BufferType::CpuToGpu, // Mark buffer as buffer to copy from CPU to GPU.
-        storage_buffer.size + uniform_buffer.size,
+        storage_buffer.size() + uniform_buffer.size(),
     )
     .unwrap();
     // Copy numbers.
     upload_buffer.upload_slice(&numbers, 0).unwrap();
     // Copy parameter to the end.
-    upload_buffer.upload(&param, storage_buffer.size).unwrap();
+    upload_buffer.upload(&param, storage_buffer.size()).unwrap();
 
     // Upload from intermediate buffer to GPU buffers.
     context
@@ -89,16 +89,16 @@ fn basic_gpu_test() {
             storage_buffer.clone(),
             0,
             0,
-            storage_buffer.size,
+            storage_buffer.size(),
         )
         .unwrap();
     context
         .copy_gpu_buffer(
             upload_buffer.clone(),
             uniform_buffer.clone(),
-            storage_buffer.size,
+            storage_buffer.size(),
             0,
-            uniform_buffer.size,
+            uniform_buffer.size(),
         )
         .unwrap();
     // run copy commands.
@@ -108,18 +108,9 @@ fn basic_gpu_test() {
     // Third step: create computation pipeline.
 
     // Compile shader code to SPIR-V.
-    let spirv = instance
-        .compiler
-        .compile_into_spirv(
-            SHADER_CODE,
-            shaderc::ShaderKind::Compute,
-            "shader.comp",
-            "main",
-            None,
-        )
-        .unwrap();
+    let spirv = instance.compile_shader(SHADER_CODE).unwrap();
     // Create shader.
-    let shader = crate::Shader::new(device.clone(), spirv.as_binary_u8()).unwrap();
+    let shader = crate::Shader::new(device.clone(), &spirv).unwrap();
 
     // Create linking to the shader.
     let descriptor_set_layout = crate::DescriptorSetLayout::builder()
@@ -157,7 +148,7 @@ fn basic_gpu_test() {
         device.clone(),
         "Download buffer",
         crate::BufferType::GpuToCpu, // Mark buffer as buffer to copy from GPU to CPU.
-        storage_buffer.size,
+        storage_buffer.size(),
     )
     .unwrap();
     // Copy data from GPU to intermediate buffer.
@@ -167,7 +158,7 @@ fn basic_gpu_test() {
             download_buffer.clone(),
             0,
             0,
-            storage_buffer.size,
+            storage_buffer.size(),
         )
         .unwrap();
     // Run copy command.

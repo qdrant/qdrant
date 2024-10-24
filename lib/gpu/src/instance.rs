@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 use ash::vk;
+use parking_lot::Mutex;
 
 use crate::*;
 
@@ -15,19 +16,13 @@ pub struct Instance {
     _entry: ash::Entry,
 
     /// Native Vulkan instance handle.
-    pub vk_instance: ash::Instance,
+    vk_instance: ash::Instance,
 
     /// List of physical devices found by the Vulkan instance.
-    pub vk_physical_devices: Vec<PhysicalDevice>,
+    vk_physical_devices: Vec<PhysicalDevice>,
 
     /// CPU allocator.
-    pub allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
-
-    /// List of Vulkan API layers that are enabled.
-    pub layers: Vec<String>,
-
-    /// List of Vulkan API extensions that are enabled.
-    pub extensions: Vec<String>,
+    allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
 
     /// Validation layer handler.
     vk_debug_utils_loader: Option<ash::ext::debug_utils::Instance>,
@@ -36,7 +31,7 @@ pub struct Instance {
     vk_debug_messenger: vk::DebugUtilsMessengerEXT,
 
     /// Shader compiler.
-    pub compiler: shaderc::Compiler,
+    compiler: Mutex<shaderc::Compiler>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,8 +60,10 @@ impl Instance {
     ) -> GpuResult<Arc<Self>> {
         // Create a shader compiler before we start.
         // It's used to compile GLSL into SPIR-V.
-        let compiler = shaderc::Compiler::new()
-            .ok_or_else(|| GpuError::Other("Failed to create shaderc compiler".to_string()))?;
+        let compiler = Mutex::new(
+            shaderc::Compiler::new()
+                .ok_or_else(|| GpuError::Other("Failed to create shaderc compiler".to_string()))?,
+        );
 
         // Create Vulkan API entry point.
         let entry = unsafe {
@@ -85,7 +82,7 @@ impl Instance {
             .api_version(vk::make_api_version(0, 1, 3, 0));
 
         // Collect Vulkan API extensions and convert it in raw pointers.
-        let extensions = Self::get_extensions_list(debug_messenger.is_some());
+        let extensions = Self::extensions_list(debug_messenger.is_some());
         // Check presence of all required extensions.
         Self::check_extensions_list(&entry, &extensions)?;
         let extensions_cstr: Vec<CString> = extensions
@@ -98,7 +95,7 @@ impl Instance {
             .collect();
 
         // Collect Vulkan API layers and convert it in raw pointers.
-        let layers = Self::get_layers_list(debug_messenger.is_some(), dump_api);
+        let layers = Self::layers_list(debug_messenger.is_some(), dump_api);
         // Check presence of all required layers.
         Self::check_layers_list(&entry, &layers)?;
         let layers_cstr: Vec<CString> = layers
@@ -218,8 +215,6 @@ impl Instance {
             vk_instance,
             vk_physical_devices,
             allocation_callbacks,
-            layers,
-            extensions,
             vk_debug_utils_loader,
             vk_debug_messenger,
             compiler,
@@ -231,13 +226,9 @@ impl Instance {
     ) -> vk::DebugUtilsMessengerCreateInfoEXT {
         vk::DebugUtilsMessengerCreateInfoEXT::default()
             .flags(vk::DebugUtilsMessengerCreateFlagsEXT::empty())
-            .message_severity(debug_messenger.get_severity_flags())
-            .message_type(debug_messenger.get_message_type_flags())
-            .pfn_user_callback(debug_messenger.get_callback())
-    }
-
-    pub fn is_validation_enable(&self) -> bool {
-        self.vk_debug_utils_loader.is_some()
+            .message_severity(debug_messenger.severity_flags())
+            .message_type(debug_messenger.message_type_flags())
+            .pfn_user_callback(debug_messenger.callback())
     }
 
     pub fn cpu_allocation_callbacks(&self) -> Option<&vk::AllocationCallbacks> {
@@ -246,7 +237,29 @@ impl Instance {
             .map(|alloc| alloc.allocation_callbacks())
     }
 
-    fn get_layers_list(validation: bool, dump_api: bool) -> Vec<String> {
+    pub fn vk_instance(&self) -> &ash::Instance {
+        &self.vk_instance
+    }
+
+    pub fn physical_devices(&self) -> &[PhysicalDevice] {
+        &self.vk_physical_devices
+    }
+
+    pub fn compile_shader(&self, shader: &str) -> GpuResult<Vec<u8>> {
+        let compiler = self.compiler.lock();
+        let result = compiler
+            .compile_into_spirv(
+                shader,
+                shaderc::ShaderKind::Compute,
+                "shader.glsl",
+                "main",
+                None,
+            )
+            .map_err(|e| GpuError::Other(format!("Failed to compile shader: {:?}", e)))?;
+        Ok(result.as_binary_u8().to_owned())
+    }
+
+    fn layers_list(validation: bool, dump_api: bool) -> Vec<String> {
         let mut result = Vec::new();
         if validation {
             result.push("VK_LAYER_KHRONOS_validation".to_owned());
@@ -257,7 +270,7 @@ impl Instance {
         result
     }
 
-    fn get_extensions_list(validation: bool) -> Vec<String> {
+    fn extensions_list(validation: bool) -> Vec<String> {
         let mut extensions_list = Vec::new();
         if validation {
             if let Ok(ext) = ash::ext::debug_utils::NAME.to_str() {
