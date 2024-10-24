@@ -10,11 +10,23 @@ use crate::*;
 /// It can be reused between different pipelines and shaders with the same layout.
 #[derive(Clone)]
 pub struct DescriptorSet {
+    /// Device that owns the descriptor set.
     device: Arc<Device>,
+
+    /// Descriptor set layout that defines linkage to the shader.
+    /// Keep it alive to prevent it from being dropped.
     _layout: Arc<DescriptorSetLayout>,
+
+    /// Collection of uniform buffers.
     uniform_buffers: Vec<(usize, Arc<Buffer>)>,
+
+    /// Collection of storage buffers.
     storage_buffers: Vec<(usize, Arc<Buffer>)>,
+
+    /// Native Vulkan descriptor pool handle.
     vk_descriptor_pool: vk::DescriptorPool,
+
+    /// Native Vulkan descriptor set handle.
     vk_descriptor_set: vk::DescriptorSet,
 }
 

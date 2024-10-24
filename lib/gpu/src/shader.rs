@@ -8,10 +8,10 @@ use crate::*;
 /// If you want to create a new shader, you have to compile it first using `shaderc`.
 pub struct Shader {
     /// Device that owns the shader.
-    pub device: Arc<Device>,
+    device: Arc<Device>,
 
     /// Vulkan shader module handle.
-    pub vk_shader_module: vk::ShaderModule,
+    vk_shader_module: vk::ShaderModule,
 }
 
 // Mark `Shader` as a GPU resource that should be kept alive while it's in use by the GPU context.
@@ -39,6 +39,10 @@ impl Shader {
             device,
             vk_shader_module: shader_module,
         }))
+    }
+
+    pub fn vk_shader_module(&self) -> vk::ShaderModule {
+        self.vk_shader_module
     }
 }
 

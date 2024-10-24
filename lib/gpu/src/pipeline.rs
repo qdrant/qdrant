@@ -111,7 +111,7 @@ impl Pipeline {
         // It contains the shader module, entry point, mark the stage as compute etc.
         let mut vk_pipeline_shader_stage_create_info = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::COMPUTE)
-            .module(shader.vk_shader_module)
+            .module(shader.vk_shader_module())
             .name(SHADER_ENTRY_POINT);
 
         // Append the subgroup size info to the shader stage create info if it's present.
