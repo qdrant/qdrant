@@ -9,8 +9,8 @@ use crate::counter::counter_cell::CounterCell;
 /// In release mode it'll only log a warning in this case.
 #[derive(Debug)]
 pub struct HardwareCounterCell {
-    cpu_counter: CounterCell,
-    checked: Cell<bool>,
+    pub(super) cpu_counter: CounterCell,
+    pub(super) checked: Cell<bool>,
 }
 
 impl HardwareCounterCell {
