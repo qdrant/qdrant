@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::*;
@@ -6,7 +6,7 @@ use crate::*;
 #[derive(Default)]
 pub struct PipelineBuilder {
     pub(crate) shader: Option<Arc<Shader>>,
-    pub(crate) descriptor_set_layouts: BTreeMap<usize, Arc<DescriptorSetLayout>>,
+    pub(crate) descriptor_set_layouts: HashMap<usize, Arc<DescriptorSetLayout>>,
 }
 
 impl PipelineBuilder {
