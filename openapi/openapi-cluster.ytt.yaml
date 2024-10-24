@@ -4,7 +4,7 @@ paths:
   /cluster:
     get:
       tags:
-        - cluster
+        - Distributed
       summary: Get cluster status info
       description: Get information about the current state and composition of the cluster
       operationId: cluster_status
@@ -13,7 +13,7 @@ paths:
   /cluster/recover:
     post:
       tags:
-        - cluster
+        - Distributed
       summary: Tries to recover current peer Raft state.
       operationId: recover_current_peer
       responses: #@ response(type("boolean"))
@@ -21,7 +21,7 @@ paths:
   /cluster/peer/{peer_id}:
     delete:
       tags:
-        - cluster
+        - Distributed
       summary: Remove peer from the cluster
       description: Tries to remove peer from the cluster. Will return an error if peer has shards on it.
       operationId: remove_peer
