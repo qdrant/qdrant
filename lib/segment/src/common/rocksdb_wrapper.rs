@@ -27,6 +27,7 @@ pub struct DatabaseColumnWrapper {
     database: Arc<RwLock<DB>>,
     column_name: String,
     write_options: Arc<WriteOptions>,
+    db_options: Arc<Options>,
 }
 
 impl Debug for DatabaseColumnWrapper {
@@ -48,7 +49,7 @@ pub struct LockedDatabaseColumnWrapper<'a> {
 }
 
 /// RocksDB options (both global and for column families)
-pub fn db_options() -> Options {
+pub fn make_db_options() -> Options {
     let mut options: Options = Options::default();
     options.set_write_buffer_size(DB_CACHE_SIZE); // write_buffer_size is enforced per column family.
     options.create_if_missing(true);
@@ -78,7 +79,7 @@ pub fn open_db<T: AsRef<str>>(
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
-    let options = db_options();
+    let options = make_db_options();
     // Make sure that all column families have the same options
     let column_with_options = column_families
         .into_iter()
@@ -94,28 +95,30 @@ pub fn check_db_exists(path: &Path) -> bool {
 }
 
 pub fn open_db_with_existing_cf(path: &Path) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
+    let options = make_db_options();
     let existing_column_families = if check_db_exists(path) {
-        DB::list_cf(&db_options(), path)?
+        DB::list_cf(&options, path)?
     } else {
         vec![]
     };
-    let options = db_options();
     // Make sure that all column families have the same options
     let column_with_options = existing_column_families
         .into_iter()
         .map(|cf| (cf, options.clone()))
         .collect::<Vec<_>>();
-    let db = DB::open_cf_with_opts(&db_options(), path, column_with_options)?;
+    let db = DB::open_cf_with_opts(&options, path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
 impl DatabaseColumnWrapper {
     pub fn new(database: Arc<RwLock<DB>>, column_name: &str) -> Self {
         let write_options = Arc::new(Self::make_write_options());
+        let db_options = Arc::new(make_db_options());
         Self {
             database,
             column_name: column_name.to_string(),
             write_options,
+            db_options,
         }
     }
 
@@ -214,7 +217,7 @@ impl DatabaseColumnWrapper {
     pub fn create_column_family_if_not_exists(&self) -> OperationResult<()> {
         let mut db = self.database.write();
         if db.cf_handle(&self.column_name).is_none() {
-            db.create_cf(&self.column_name, &db_options())
+            db.create_cf(&self.column_name, &self.db_options)
                 .map_err(|err| {
                     OperationError::service_error(format!("RocksDB create_cf error: {err}"))
                 })?;
