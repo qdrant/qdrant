@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use parking_lot::Mutex;
@@ -58,6 +59,7 @@ impl LocalShard {
         request: PlannedQuery,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -68,6 +70,7 @@ impl LocalShard {
             }),
             search_runtime_handle,
             Some(timeout),
+            hw_counter_acc.clone(),
         );
 
         let scrolls_f =
@@ -87,6 +90,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 0,
+                hw_counter_acc.clone(),
             )
         });
 
@@ -150,6 +154,7 @@ impl LocalShard {
         search_runtime_handle: &'shard Handle,
         timeout: Duration,
         depth: usize,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> BoxFuture<'query, CollectionResult<Vec<Vec<ScoredPoint>>>>
     where
         'shard: 'query,
@@ -176,6 +181,7 @@ impl LocalShard {
                                 search_runtime_handle,
                                 timeout,
                                 depth + 1,
+                                hw_counter_acc.clone(),
                             )
                             .await?
                             .into_iter();
@@ -190,7 +196,13 @@ impl LocalShard {
             // Rescore or return plain sources
             if let Some(rescore_params) = merge_plan.rescore_params {
                 let rescored = self
-                    .rescore(sources, rescore_params, search_runtime_handle, timeout)
+                    .rescore(
+                        sources,
+                        rescore_params,
+                        search_runtime_handle,
+                        timeout,
+                        hw_counter_acc,
+                    )
                     .await?;
 
                 Ok(vec![rescored])
@@ -211,6 +223,7 @@ impl LocalShard {
         rescore_params: RescoreParams,
         search_runtime_handle: &Handle,
         timeout: Duration,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let RescoreParams {
             rescore,
@@ -283,6 +296,7 @@ impl LocalShard {
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
                     Some(timeout),
+                    hw_counter_acc,
                 )
                 .await?
                 // One search request is sent. We expect only one result

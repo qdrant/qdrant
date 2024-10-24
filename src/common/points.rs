@@ -34,6 +34,7 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint, StrictModeConfig};
@@ -831,6 +832,7 @@ pub async fn do_delete_index(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_core_search_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -839,6 +841,7 @@ pub async fn do_core_search_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
         toc,
@@ -850,6 +853,7 @@ pub async fn do_core_search_points(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await?;
     batch_res
@@ -865,6 +869,7 @@ pub async fn do_search_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
         (CoreSearchRequest, ShardSelectorInternal),
@@ -894,6 +899,7 @@ pub async fn do_search_batch_points(
                 shard_selector,
                 access.clone(),
                 timeout,
+                hw_measurement_acc.clone(),
             );
             res.push(req);
             Ok(())
@@ -905,6 +911,7 @@ pub async fn do_search_batch_points(
     Ok(flatten_results)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_core_search_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -913,6 +920,7 @@ pub async fn do_core_search_batch_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
         collection_name,
@@ -921,6 +929,7 @@ pub async fn do_core_search_batch_points(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await
 }
@@ -972,6 +981,7 @@ pub async fn do_discover_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -986,8 +996,15 @@ pub async fn do_discover_batch_points(
         })
         .collect();
 
-    toc.discover_batch(collection_name, requests, read_consistency, access, timeout)
-        .await
+    toc.discover_batch(
+        collection_name,
+        requests,
+        read_consistency,
+        access,
+        timeout,
+        hw_measurement_acc,
+    )
+    .await
 }
 
 pub async fn do_count_points(
@@ -1050,6 +1067,7 @@ pub async fn do_scroll_points(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_query_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1058,10 +1076,18 @@ pub async fn do_query_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
     let batch_res = toc
-        .query_batch(collection_name, requests, read_consistency, access, timeout)
+        .query_batch(
+            collection_name,
+            requests,
+            read_consistency,
+            access,
+            timeout,
+            hw_measurement_acc,
+        )
         .await?;
     batch_res
         .into_iter()
@@ -1069,6 +1095,7 @@ pub async fn do_query_points(
         .ok_or_else(|| StorageError::service_error("Empty query result"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_query_batch_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1076,9 +1103,17 @@ pub async fn do_query_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-    toc.query_batch(collection_name, requests, read_consistency, access, timeout)
-        .await
+    toc.query_batch(
+        collection_name,
+        requests,
+        read_consistency,
+        access,
+        timeout,
+        hw_measurement_acc,
+    )
+    .await
 }
 
 pub async fn do_query_point_groups(
@@ -1101,6 +1136,7 @@ pub async fn do_query_point_groups(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_search_points_matrix(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1109,6 +1145,7 @@ pub async fn do_search_points_matrix(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CollectionSearchMatrixResponse, StorageError> {
     toc.search_points_matrix(
         collection_name,
@@ -1117,6 +1154,7 @@ pub async fn do_search_points_matrix(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await
 }

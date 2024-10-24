@@ -70,6 +70,7 @@ async fn recommend_points(
                 shard_selection,
                 access,
                 params.timeout(),
+                hw_measurement_acc.clone(),
             )
             .map_ok(|scored_points| {
                 scored_points
@@ -90,6 +91,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -104,8 +106,15 @@ async fn do_recommend_batch_points(
         })
         .collect();
 
-    toc.recommend_batch(collection_name, requests, read_consistency, access, timeout)
-        .await
+    toc.recommend_batch(
+        collection_name,
+        requests,
+        read_consistency,
+        access,
+        timeout,
+        hw_measurement_acc,
+    )
+    .await
 }
 
 #[post("/collections/{name}/points/recommend/batch")]
@@ -140,6 +149,7 @@ async fn recommend_batch_points(
             params.consistency,
             access,
             params.timeout(),
+            hw_measurement_acc.clone(),
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points

@@ -49,6 +49,7 @@ async fn query_points(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
             let shard_selection = match shard_key {
@@ -66,6 +67,7 @@ async fn query_points(
                     params.consistency,
                     access,
                     params.timeout(),
+                    hw_measurement_acc_clone,
                 )
                 .await?
                 .pop()
@@ -109,6 +111,7 @@ async fn query_points_batch(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
             let mut batch = Vec::with_capacity(searches.len());
@@ -135,6 +138,7 @@ async fn query_points_batch(
                     params.consistency,
                     access,
                     params.timeout(),
+                    hw_measurement_acc_clone,
                 )
                 .await?
                 .into_iter()
@@ -145,7 +149,6 @@ async fn query_points_batch(
                         .collect_vec(),
                 })
                 .collect_vec();
-
             Ok(res)
         },
         hw_measurement_acc,
