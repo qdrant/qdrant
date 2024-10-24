@@ -43,6 +43,14 @@ pub struct ApiResponse<D> {
     pub result: Option<D>,
     pub status: ApiStatus,
     pub time: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hardware_usage: Option<HardwareUsage>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct HardwareUsage {
+    pub cpu: usize,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

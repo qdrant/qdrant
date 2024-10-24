@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
@@ -55,7 +56,9 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware(
         dispatcher
             .toc(&access, &pass)
             .recommend(
@@ -72,6 +75,7 @@ async fn recommend_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
+        hw_measurement_acc,
     )
     .await
 }
@@ -122,7 +126,9 @@ async fn recommend_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware(
         do_recommend_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -142,6 +148,7 @@ async fn recommend_batch_points(
                 })
                 .collect_vec()
         }),
+        hw_measurement_acc,
     )
     .await
 }

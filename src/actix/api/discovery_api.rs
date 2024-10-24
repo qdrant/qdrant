@@ -2,6 +2,7 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -47,7 +48,9 @@ async fn discover_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware(
         dispatcher
             .toc(&access, &pass)
             .discover(
@@ -64,6 +67,7 @@ async fn discover_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
+        hw_measurement_acc,
     )
     .await
 }
@@ -91,7 +95,9 @@ async fn discover_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware(
         do_discover_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -111,6 +117,7 @@ async fn discover_batch_points(
                 })
                 .collect_vec()
         }),
+        hw_measurement_acc,
     )
     .await
 }

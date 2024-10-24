@@ -59,7 +59,7 @@ async fn facet(
         .await
         .map(FacetResponse::from);
 
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 pub fn config_facet_api(cfg: &mut web::ServiceConfig) {
