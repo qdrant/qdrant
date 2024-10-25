@@ -28,7 +28,7 @@ impl StructPayloadIndex {
     /// # Arguments
     ///
     /// * `filter` - original filter
-    /// * `payload_provider` - provides the payload storage 
+    /// * `payload_provider` - provides the payload storage
     /// * `total` - total number of points in segment (used for cardinality estimation)
     ///
     /// # Result
