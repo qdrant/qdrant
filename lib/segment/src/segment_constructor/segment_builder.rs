@@ -426,11 +426,53 @@ impl SegmentBuilder {
             id_tracker.versions_flusher()()?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
 
+            // Arc permit to share it with each vector store
+            let permit = Arc::new(permit);
+
+            let mut quantized_vectors = Self::update_quantization(
+                &segment_config,
+                &vector_storages,
+                temp_dir.path(),
+                &permit,
+                stopped,
+            )?;
+
+            let mut vector_storages_arc = HashMap::new();
+
+            for vector_name in segment_config.vector_data.keys() {
+                let Some(vector_storage) = vector_storages.remove(vector_name) else {
+                    return Err(OperationError::service_error(format!(
+                        "Vector storage for vector name {vector_name} not found on segment build"
+                    )));
+                };
+
+                vector_storage.flusher()()?;
+
+                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+
+                vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
+            }
+
+            for vector_name in segment_config.sparse_vector_data.keys() {
+                let Some(vector_storage) = vector_storages.remove(vector_name) else {
+                    return Err(OperationError::service_error(format!(
+                        "Vector storage for vector name {vector_name} not found on sparse segment build"
+                    )));
+                };
+
+                vector_storage.flusher()()?;
+
+                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+
+                vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
+            }
+
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
             let mut payload_index = StructPayloadIndex::open(
                 payload_storage_arc,
                 id_tracker_arc.clone(),
+                vector_storages_arc.clone(),
                 &payload_index_path,
                 appendable_flag,
             )?;
@@ -443,30 +485,9 @@ impl SegmentBuilder {
             payload_index.flusher()()?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
 
-            // Arc permit to share it with each vector store
-            let permit = Arc::new(permit);
-
-            let mut quantized_vectors = Self::update_quantization(
-                &segment_config,
-                &vector_storages,
-                temp_dir.path(),
-                &permit,
-                stopped,
-            )?;
-
             for (vector_name, vector_config) in &segment_config.vector_data {
+                let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
                 let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
-
-                let Some(vector_storage) = vector_storages.remove(vector_name) else {
-                    return Err(OperationError::service_error(format!(
-                        "Vector storage for vector name {vector_name} not found on segment build"
-                    )));
-                };
-
-                vector_storage.flusher()()?;
-
-                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
-
                 let quantized_vectors = quantized_vectors.remove(vector_name);
                 let quantized_vectors_arc = Arc::new(AtomicRefCell::new(quantized_vectors));
 
@@ -485,15 +506,7 @@ impl SegmentBuilder {
             for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
                 let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
 
-                let Some(vector_storage) = vector_storages.remove(vector_name) else {
-                    return Err(OperationError::service_error(format!(
-                        "Vector storage for vector name {vector_name} not found on sparse segment build"
-                    )));
-                };
-
-                vector_storage.flusher()()?;
-
-                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+                let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
 
                 create_sparse_vector_index(SparseVectorIndexOpenArgs {
                     config: sparse_vector_config.index,

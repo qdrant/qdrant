@@ -44,6 +44,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
     let payload_index = StructPayloadIndex::open(
         wrapped_payload_storage,
         id_tracker.clone(),
+        std::collections::HashMap::new(),
         payload_dir,
         true,
     )?;

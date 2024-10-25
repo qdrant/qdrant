@@ -63,6 +63,7 @@ fn range_filtering(c: &mut Criterion) {
     let mut index = StructPayloadIndex::open(
         payload_storage.clone(),
         id_tracker.clone(),
+        std::collections::HashMap::new(),
         dir.path(),
         true,
     )
@@ -112,7 +113,14 @@ fn range_filtering(c: &mut Criterion) {
     drop(index);
 
     // reload as IMMUTABLE index
-    let index = StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), false).unwrap();
+    let index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        dir.path(),
+        false,
+    )
+    .unwrap();
 
     group.bench_function("float-immutable-index", |b| {
         b.iter_batched(

@@ -5873,7 +5873,7 @@ pub struct MinShould {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Condition {
-    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "condition::ConditionOneOf", tags = "1, 2, 3, 4, 5, 6, 7")]
     #[validate(nested)]
     pub condition_one_of: ::core::option::Option<condition::ConditionOneOf>,
 }
@@ -5895,6 +5895,8 @@ pub mod condition {
         IsNull(super::IsNullCondition),
         #[prost(message, tag = "6")]
         Nested(super::NestedCondition),
+        #[prost(message, tag = "7")]
+        HasVector(super::HasVectorCondition),
     }
 }
 #[derive(serde::Serialize)]
@@ -5917,6 +5919,13 @@ pub struct IsNullCondition {
 pub struct HasIdCondition {
     #[prost(message, repeated, tag = "1")]
     pub has_id: ::prost::alloc::vec::Vec<PointId>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct HasVectorCondition {
+    #[prost(string, tag = "1")]
+    pub has_vector: ::prost::alloc::string::String,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

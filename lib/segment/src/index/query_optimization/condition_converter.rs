@@ -1,16 +1,13 @@
-mod match_converter;
-
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
 use serde_json::Value;
 
-use crate::common::utils::IndexesMap;
-use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
@@ -19,119 +16,136 @@ use crate::types::{
     Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
     GeoRadius, IntPayloadType, OwnedPayloadRef, PayloadContainer, Range, RangeInterface,
 };
+use crate::vector_storage::VectorStorage;
 
-pub fn condition_converter<'a>(
-    condition: &'a Condition,
-    field_indexes: &'a IndexesMap,
-    payload_provider: PayloadProvider,
-    id_tracker: &IdTrackerSS,
-) -> ConditionCheckerFn<'a> {
-    match condition {
-        Condition::Field(field_condition) => field_indexes
-            .get(&field_condition.key)
-            .and_then(|indexes| {
-                indexes
-                    .iter()
-                    .find_map(|index| field_condition_index(index, field_condition))
-            })
-            .unwrap_or_else(|| {
-                Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        check_field_condition(field_condition, &payload, field_indexes)
+mod match_converter;
+
+impl StructPayloadIndex {
+    pub fn condition_converter<'a>(
+        &'a self,
+        condition: &'a Condition,
+        payload_provider: PayloadProvider,
+    ) -> ConditionCheckerFn<'a> {
+        let id_tracker = self.id_tracker.borrow();
+        let field_indexes = &self.field_indexes;
+        match condition {
+            Condition::Field(field_condition) => field_indexes
+                .get(&field_condition.key)
+                .and_then(|indexes| {
+                    indexes
+                        .iter()
+                        .find_map(|index| field_condition_index(index, field_condition))
+                })
+                .unwrap_or_else(|| {
+                    Box::new(move |point_id| {
+                        payload_provider.with_payload(point_id, |payload| {
+                            check_field_condition(field_condition, &payload, field_indexes)
+                        })
                     })
+                }),
+            // We can use index for `is_empty` condition effectively only when it is not empty.
+            // If the index says it is "empty", we still need to check the payload.
+            Condition::IsEmpty(is_empty) => {
+                let first_field_index = field_indexes
+                    .get(&is_empty.is_empty.key)
+                    .and_then(|indexes| indexes.first());
+
+                let fallback = Box::new(move |point_id| {
+                    payload_provider.with_payload(point_id, |payload| {
+                        check_is_empty_condition(is_empty, &payload)
+                    })
+                });
+
+                match first_field_index {
+                    Some(index) => get_is_empty_checker(index, fallback),
+                    None => fallback,
+                }
+            }
+
+            Condition::IsNull(is_null) => Box::new(move |point_id| {
+                payload_provider.with_payload(point_id, |payload| {
+                    check_is_null_condition(is_null, &payload)
                 })
             }),
-        // We can use index for `is_empty` condition effectively only when it is not empty.
-        // If the index says it is "empty", we still need to check the payload.
-        Condition::IsEmpty(is_empty) => {
-            let first_field_index = field_indexes
-                .get(&is_empty.is_empty.key)
-                .and_then(|indexes| indexes.first());
-
-            let fallback = Box::new(move |point_id| {
-                payload_provider.with_payload(point_id, |payload| {
-                    check_is_empty_condition(is_empty, &payload)
-                })
-            });
-
-            match first_field_index {
-                Some(index) => get_is_empty_checker(index, fallback),
-                None => fallback,
+            // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
+            Condition::HasId(has_id) => {
+                let segment_ids: HashSet<_> = has_id
+                    .has_id
+                    .iter()
+                    .filter_map(|external_id| id_tracker.internal_id(*external_id))
+                    .collect();
+                Box::new(move |point_id| segment_ids.contains(&point_id))
             }
-        }
+            Condition::HasVector(has_vector) => {
+                if let Some(vector_storage) =
+                    self.vector_storages.get(&has_vector.has_vector).cloned()
+                {
+                    Box::new(move |point_id| !vector_storage.borrow().is_deleted_vector(point_id))
+                } else {
+                    Box::new(|_point_id| false)
+                }
+            }
+            Condition::Nested(nested) => {
+                // Select indexes for nested fields. Trim nested part from key, so
+                // that nested condition can address fields without nested part.
 
-        Condition::IsNull(is_null) => Box::new(move |point_id| {
-            payload_provider.with_payload(point_id, |payload| {
-                check_is_null_condition(is_null, &payload)
-            })
-        }),
-        // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
-        Condition::HasId(has_id) => {
-            let segment_ids: HashSet<_> = has_id
-                .has_id
-                .iter()
-                .filter_map(|external_id| id_tracker.internal_id(*external_id))
-                .collect();
-            Box::new(move |point_id| segment_ids.contains(&point_id))
-        }
-        Condition::Nested(nested) => {
-            // Select indexes for nested fields. Trim nested part from key, so
-            // that nested condition can address fields without nested part.
+                // Example:
+                // Index for field `nested.field` will be stored under key `nested.field`
+                // And we have a query:
+                // {
+                //   "nested": {
+                //     "path": "nested",
+                //     "filter": {
+                //         ...
+                //         "match": {"key": "field", "value": "value"}
+                //     }
+                //   }
 
-            // Example:
-            // Index for field `nested.field` will be stored under key `nested.field`
-            // And we have a query:
-            // {
-            //   "nested": {
-            //     "path": "nested",
-            //     "filter": {
-            //         ...
-            //         "match": {"key": "field", "value": "value"}
-            //     }
-            //   }
+                // In this case we want to use `nested.field`, but we only have `field` in query.
+                // Therefore we need to trim `nested` part from key. So that query executor
+                // can address proper index for nested field.
+                let nested_path = nested.array_key();
 
-            // In this case we want to use `nested.field`, but we only have `field` in query.
-            // Therefore we need to trim `nested` part from key. So that query executor
-            // can address proper index for nested field.
-            let nested_path = nested.array_key();
+                let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
-            let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
+                Box::new(move |point_id| {
+                    payload_provider.with_payload(point_id, |payload| {
+                        let field_values = payload.get_value(&nested_path);
 
-            Box::new(move |point_id| {
-                payload_provider.with_payload(point_id, |payload| {
-                    let field_values = payload.get_value(&nested_path);
-
-                    for value in field_values {
-                        if let Value::Object(object) = value {
-                            let get_payload = || OwnedPayloadRef::from(object);
-                            if check_payload(
-                                Box::new(get_payload),
-                                // None because has_id in nested is not supported. So retrieving
-                                // IDs through the tracker would always return None.
-                                None,
-                                &nested.nested.filter,
-                                point_id,
-                                &nested_indexes,
-                            ) {
-                                // If at least one nested object matches, return true
-                                return true;
+                        for value in field_values {
+                            if let Value::Object(object) = value {
+                                let get_payload = || OwnedPayloadRef::from(object);
+                                if check_payload(
+                                    Box::new(get_payload),
+                                    // None because has_id in nested is not supported. So retrieving
+                                    // IDs through the tracker would always return None.
+                                    None,
+                                    // Same as above, nested conditions don't support has_vector.
+                                    &HashMap::new(),
+                                    &nested.nested.filter,
+                                    point_id,
+                                    &nested_indexes,
+                                ) {
+                                    // If at least one nested object matches, return true
+                                    return true;
+                                }
                             }
                         }
-                    }
-                    false
+                        false
+                    })
                 })
-            })
-        }
-        Condition::CustomIdChecker(cond) => {
-            let segment_ids: HashSet<_> = id_tracker
-                .iter_external()
-                .filter(|&point_id| cond.check(point_id))
-                .filter_map(|external_id| id_tracker.internal_id(external_id))
-                .collect();
+            }
+            Condition::CustomIdChecker(cond) => {
+                let segment_ids: HashSet<_> = id_tracker
+                    .iter_external()
+                    .filter(|&point_id| cond.check(point_id))
+                    .filter_map(|external_id| id_tracker.internal_id(external_id))
+                    .collect();
 
-            Box::new(move |internal_id| segment_ids.contains(&internal_id))
+                Box::new(move |internal_id| segment_ids.contains(&internal_id))
+            }
+            Condition::Filter(_) => unreachable!(),
         }
-        Condition::Filter(_) => unreachable!(),
     }
 }
 
