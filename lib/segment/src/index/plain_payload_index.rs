@@ -251,8 +251,7 @@ impl PlainIndex {
         let vector_storage = self.vector_storage.borrow();
         let available_vector_count = vector_storage.available_vector_count();
         if available_vector_count > 0 {
-            let vector_size_bytes =
-                vector_storage.available_size_in_bytes() / available_vector_count;
+            let vector_size_bytes = vector_storage.size_in_bytes() / available_vector_count;
             let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
             if let Some(payload_filter) = filter {
