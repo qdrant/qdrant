@@ -49,7 +49,6 @@ pub struct StructPayloadIndex {
     /// Used for `has_id` condition and estimating cardinality
     pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Vector storages for each field, used for `has_vector` condition
-    #[allow(dead_code)]
     pub(super) vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
