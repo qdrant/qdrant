@@ -14,11 +14,12 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error, HardwareReportingSettings};
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
 use crate::common::points::do_query_point_groups;
+use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/query")]
 async fn query_points(
@@ -26,7 +27,7 @@ async fn query_points(
     collection: Path<CollectionPath>,
     request: Json<QueryRequest>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let QueryRequest {
@@ -78,7 +79,7 @@ async fn query_points(
             Ok(QueryResponse { points })
         },
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -89,7 +90,7 @@ async fn query_points_batch(
     collection: Path<CollectionPath>,
     request: Json<QueryRequestBatch>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
@@ -148,7 +149,7 @@ async fn query_points_batch(
             Ok(res)
         },
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }

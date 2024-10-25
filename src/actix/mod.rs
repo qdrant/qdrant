@@ -20,7 +20,6 @@ use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
 use collection::operations::validation;
 use collection::operations::verification::new_unchecked_verification_pass;
-use helpers::HardwareReportingSettings;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 
@@ -87,9 +86,7 @@ pub fn init(
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
-        let hardware_reporting_settings = web::Data::new(HardwareReportingSettings {
-            enabled: settings.service.hardware_reporting,
-        });
+        let service_config = web::Data::new(settings.service.clone());
 
         let mut api_key_whitelist = vec![
             WhitelistItem::exact("/"),
@@ -146,7 +143,7 @@ pub fn init(
                 .app_data(validate_json_config)
                 .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
-                .app_data(hardware_reporting_settings.clone())
+                .app_data(service_config.clone())
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)

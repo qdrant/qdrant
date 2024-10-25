@@ -23,7 +23,8 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error, HardwareReportingSettings};
+use crate::actix::helpers::{self, process_response_error};
+use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
@@ -31,7 +32,7 @@ async fn recommend_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let RecommendRequest {
@@ -77,7 +78,7 @@ async fn recommend_points(
                     .collect_vec()
             }),
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -113,7 +114,7 @@ async fn recommend_batch_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
@@ -152,7 +153,7 @@ async fn recommend_batch_points(
                 .collect_vec()
         }),
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }

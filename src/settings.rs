@@ -53,7 +53,13 @@ pub struct ServiceConfig {
 
     /// Whether to enable reporting of measured hardware utilization in API responses.
     #[serde(default)]
-    pub hardware_reporting: bool,
+    pub hardware_reporting: Option<bool>,
+}
+
+impl ServiceConfig {
+    pub fn hardware_reporting(&self) -> bool {
+        self.hardware_reporting.unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]

@@ -14,8 +14,9 @@ use tokio::time::Instant;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error, HardwareReportingSettings};
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_discover_batch_points;
+use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/discover")]
 async fn discover_points(
@@ -23,7 +24,7 @@ async fn discover_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let DiscoverRequest {
@@ -69,7 +70,7 @@ async fn discover_points(
                     .collect_vec()
             }),
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -80,7 +81,7 @@ async fn discover_batch_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
-    hardware_reporting: web::Data<HardwareReportingSettings>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let request = request.into_inner();
@@ -121,7 +122,7 @@ async fn discover_batch_points(
                 .collect_vec()
         }),
         hw_measurement_acc,
-        hardware_reporting.enabled,
+        service_config.hardware_reporting(),
     )
     .await
 }

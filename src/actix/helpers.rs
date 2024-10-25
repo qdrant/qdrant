@@ -6,14 +6,8 @@ use actix_web::{http, HttpResponse, ResponseError};
 use api::grpc::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::content_manager::errors::StorageError;
-
-/// Custom type to make hardware reporting settings available in actix handlers.
-#[derive(Deserialize, Clone)]
-pub(crate) struct HardwareReportingSettings {
-    pub enabled: bool,
-}
 
 pub fn accepted_response(timing: Instant) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
