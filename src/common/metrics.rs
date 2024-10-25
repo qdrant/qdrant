@@ -8,6 +8,7 @@ use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, Cl
 use crate::common::telemetry_ops::collections_telemetry::{
     CollectionTelemetryEnum, CollectionsTelemetry,
 };
+use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
     GrpcTelemetry, RequestsTelemetry, WebApiTelemetry,
 };
@@ -109,6 +110,9 @@ impl MetricsProvider for TelemetryData {
         self.collections.add_metrics(metrics);
         self.cluster.add_metrics(metrics);
         self.requests.add_metrics(metrics);
+        if let Some(mem) = &self.memory {
+            mem.add_metrics(metrics);
+        }
     }
 }
 
@@ -273,6 +277,41 @@ impl MetricsProvider for GrpcTelemetry {
             builder.add(stats, &[("endpoint", endpoint.as_str())], true);
         }
         builder.build("grpc", metrics);
+    }
+}
+
+impl MetricsProvider for MemoryTelemetry {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        metrics.push(metric_family(
+            "memory_active_bytes",
+            "Total number of bytes in active pages allocated by the application",
+            MetricType::GAUGE,
+            vec![gauge(self.active_bytes as f64, &[])],
+        ));
+        metrics.push(metric_family(
+            "memory_allocated_bytes",
+            "Total number of bytes allocated by the application",
+            MetricType::GAUGE,
+            vec![gauge(self.allocated_bytes as f64, &[])],
+        ));
+        metrics.push(metric_family(
+            "memory_metadata_bytes",
+            "Total number of bytes dedicated to metadata",
+            MetricType::GAUGE,
+            vec![gauge(self.metadata_bytes as f64, &[])],
+        ));
+        metrics.push(metric_family(
+            "memory_resident_bytes",
+            "Maximum number of bytes in physically resident data pages mapped",
+            MetricType::GAUGE,
+            vec![gauge(self.resident_bytes as f64, &[])],
+        ));
+        metrics.push(metric_family(
+            "memory_retained_bytes",
+            "Total number of bytes in virtual memory mappings",
+            MetricType::GAUGE,
+            vec![gauge(self.retained_bytes as f64, &[])],
+        ));
     }
 }
 
