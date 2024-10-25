@@ -313,6 +313,9 @@ fn scoring_equivalency(
                 only {intersection} of {top} top results are shared",
             );
         }
+
+        raw_scorer.take_hardware_counter().discard_results();
+        other_scorer.take_hardware_counter().discard_results();
     }
 
     Ok(())

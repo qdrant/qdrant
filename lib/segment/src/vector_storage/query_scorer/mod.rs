@@ -19,7 +19,7 @@ pub trait QueryScorer<TVector: ?Sized> {
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
-    fn hardware_counter(&self) -> HardwareCounterCell;
+    fn take_hardware_counter(&self) -> HardwareCounterCell;
 }
 
 /// Colbert MaxSim metric, metric for multi-dense vectors

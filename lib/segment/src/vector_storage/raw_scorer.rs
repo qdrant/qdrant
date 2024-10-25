@@ -25,6 +25,7 @@ use crate::vector_storage::query_scorer::QueryScorer;
 
 /// RawScorer composition:
 ///
+/// ```plaintext
 ///                                              Metric
 ///                                             ┌───────────────────┐
 ///                                             │  - Cosine         │
@@ -44,6 +45,8 @@ use crate::vector_storage::query_scorer::QueryScorer;
 ///                       - Vector storage       └───────────────────┘
 ///                                              - Scoring logic
 ///                                              - Complex queries
+///
+/// ```
 ///
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
@@ -85,7 +88,7 @@ pub trait RawScorer {
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
 
-    fn hardware_counter(&self) -> HardwareCounterCell;
+    fn take_hardware_counter(&self) -> HardwareCounterCell;
 }
 
 pub struct RawScorerImpl<'a, TVector: ?Sized, TQueryScorer>
@@ -925,8 +928,8 @@ where
         peek_top_largest_iterable(scores, top)
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
-        self.query_scorer.hardware_counter()
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
+        self.query_scorer.take_hardware_counter()
     }
 }
 
