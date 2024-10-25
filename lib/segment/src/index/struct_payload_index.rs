@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::create_dir_all;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -38,8 +37,9 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
     IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, VectorName,
 };
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 #[derive(Debug)]
@@ -47,7 +47,9 @@ pub struct StructPayloadIndex {
     /// Payload storage
     payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Used for `has_id` condition and estimating cardinality
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    /// Vector storages for each field, used for `has_vector` condition
+    pub(super) vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
     config: PayloadConfig,
@@ -142,6 +144,7 @@ impl StructPayloadIndex {
     pub fn open(
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+        vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
         is_appendable: bool,
     ) -> OperationResult<Self> {
@@ -159,6 +162,7 @@ impl StructPayloadIndex {
         let mut index = StructPayloadIndex {
             payload,
             id_tracker,
+            vector_storages,
             field_indexes: Default::default(),
             config,
             path: path.to_owned(),
@@ -213,20 +217,15 @@ impl StructPayloadIndex {
     }
 
     pub fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
-        let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
-        let id_tracker = self.id_tracker.borrow();
         let payload_provider = PayloadProvider::new(self.payload.clone());
-        StructFilterContext::new(
-            filter,
-            id_tracker.deref(),
-            payload_provider,
-            &self.field_indexes,
-            &estimator,
-            self.available_point_count(),
-        )
+
+        let (optimized_filter, _) =
+            self.optimize_filter(filter, payload_provider, self.available_point_count());
+
+        StructFilterContext::new(optimized_filter)
     }
 
-    fn condition_cardinality(
+    pub(super) fn condition_cardinality(
         &self,
         condition: &Condition,
         nested_path: Option<&JsonPath>,
@@ -309,7 +308,17 @@ impl StructPayloadIndex {
                     max: num_ids,
                 }
             }
-
+            Condition::HasVector(has_vectors) => {
+                if let Some(vector_storage) = self.vector_storages.get(&has_vectors.has_vector) {
+                    let vector_storage = vector_storage.borrow();
+                    let vectors = vector_storage.available_vector_count();
+                    CardinalityEstimation::exact(vectors).with_primary_clause(
+                        PrimaryCondition::HasVector(has_vectors.has_vector.clone()),
+                    )
+                } else {
+                    CardinalityEstimation::exact(0)
+                }
+            }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
@@ -384,6 +393,7 @@ impl StructPayloadIndex {
                         PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
                         PrimaryCondition::IsEmpty(_) => id_tracker.iter_ids(), /* there are no fast index for IsEmpty */
                         PrimaryCondition::IsNull(_) => id_tracker.iter_ids(),  /* no fast index for IsNull too */
+                        PrimaryCondition::HasVector(_) => id_tracker.iter_ids(), /* no fast index for HasVector */
                     }
                 })
                 .filter(move |&id| !visited_list.check_and_update_visited(id))

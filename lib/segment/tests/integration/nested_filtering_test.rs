@@ -71,8 +71,14 @@ fn test_filtering_context_consistency() {
     let wrapped_payload_storage = Arc::new(AtomicRefCell::new(payload_storage.into()));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
-    let mut index =
-        StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
+    let mut index = StructPayloadIndex::open(
+        wrapped_payload_storage,
+        id_tracker,
+        HashMap::new(),
+        dir.path(),
+        true,
+    )
+    .unwrap();
 
     index
         .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer)

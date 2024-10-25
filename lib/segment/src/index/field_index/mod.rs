@@ -31,6 +31,7 @@ pub enum PrimaryCondition {
     IsEmpty(IsEmptyCondition),
     IsNull(IsNullCondition),
     Ids(HashSet<PointOffsetType>),
+    HasVector(String),
 }
 
 #[derive(Debug, Clone)]

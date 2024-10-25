@@ -13,6 +13,7 @@ use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
 use segment::types::{Condition, FieldCondition, Filter, Match, PayloadSchemaType, ValueVariants};
 use tempfile::Builder;
+
 mod prof;
 
 const NUM_POINTS: usize = 100000;
@@ -91,8 +92,14 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
-    let mut index =
-        StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), true).unwrap();
+    let mut index = StructPayloadIndex::open(
+        payload_storage,
+        id_tracker,
+        std::collections::HashMap::new(),
+        dir.path(),
+        true,
+    )
+    .unwrap();
 
     index
         .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Keyword)

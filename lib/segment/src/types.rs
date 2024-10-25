@@ -2036,6 +2036,12 @@ pub struct HasIdCondition {
     pub has_id: HashSet<PointIdType>,
 }
 
+/// Filter points which have specific vector assigned
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct HasVectorCondition {
+    pub has_vector: String,
+}
+
 impl From<HashSet<PointIdType>> for HasIdCondition {
     fn from(set: HashSet<PointIdType>) -> Self {
         HasIdCondition { has_id: set }
@@ -2089,6 +2095,8 @@ pub enum Condition {
     IsNull(IsNullCondition),
     /// Check if points id is in a given set
     HasId(HasIdCondition),
+    /// Check if point has vector assigned
+    HasVector(HasVectorCondition),
     /// Nested filters
     Nested(NestedCondition),
     /// Nested filter
@@ -2105,6 +2113,7 @@ impl PartialEq for Condition {
             (Self::IsEmpty(this), Self::IsEmpty(other)) => this == other,
             (Self::IsNull(this), Self::IsNull(other)) => this == other,
             (Self::HasId(this), Self::HasId(other)) => this == other,
+            (Self::HasVector(this), Self::HasVector(other)) => this == other,
             (Self::Nested(this), Self::Nested(other)) => this == other,
             (Self::Filter(this), Self::Filter(other)) => this == other,
             (Self::CustomIdChecker(_), Self::CustomIdChecker(_)) => false,
@@ -2125,7 +2134,10 @@ impl Condition {
 impl Validate for Condition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
+            Condition::HasId(_)
+            | Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasVector(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
