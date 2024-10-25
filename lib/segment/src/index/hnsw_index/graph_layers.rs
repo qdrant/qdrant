@@ -319,9 +319,12 @@ mod tests {
     ) -> Vec<ScoredPointOffset> {
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
+
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, scorer, None)
+        let res = graph.search(top, ef, scorer, None);
+        raw_scorer.take_hardware_counter().discard_results();
+        res
     }
 
     const M: usize = 8;
@@ -383,6 +386,8 @@ mod tests {
                 scorer.score_internal(linking_idx, nearest.idx)
             )
         }
+
+        raw_scorer.take_hardware_counter().discard_results();
     }
 
     #[test]

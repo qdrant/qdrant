@@ -7,6 +7,7 @@ use std::thread;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::{get_num_cpus, CpuPermit};
@@ -312,6 +313,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
+
+                // Ignore hardware counter, for internal operations
+                raw_scorer.take_hardware_counter().discard_results();
+
                 Ok::<_, OperationError>(())
             };
 
@@ -469,6 +474,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
             graph_layers_builder.link_new_point(block_point_id, points_scorer);
+
+            // Ignore hardware counter, for internal operations
+            raw_scorer.take_hardware_counter().discard_results();
+
             Ok::<_, OperationError>(())
         };
 
@@ -534,7 +543,20 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let search_result =
             self.graph
                 .search(oversampled_top, ef, points_scorer, custom_entry_points);
-        self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
+
+        let hw_counter = HardwareCounterCell::new();
+        let res = self.postprocess_search_result(
+            search_result,
+            vector,
+            params,
+            top,
+            &is_stopped,
+            &hw_counter,
+        )?;
+
+        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
+        vector_query_context.apply_hardware_counter(hw_counter);
+        Ok(res)
     }
 
     fn search_vectors_with_graph(
@@ -593,7 +615,19 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let search_result =
             raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
 
-        self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
+        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
+
+        let hw_counter = HardwareCounterCell::new();
+        let res = self.postprocess_search_result(
+            search_result,
+            vector,
+            params,
+            top,
+            &is_stopped,
+            &hw_counter,
+        )?;
+        vector_query_context.apply_hardware_counter(hw_counter);
+        Ok(res)
     }
 
     fn search_vectors_plain(
@@ -715,6 +749,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         params: Option<&SearchParams>,
         top: usize,
         is_stopped: &AtomicBool,
+        hardware_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -742,6 +777,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
             let mut ids_iterator = search_result.iter().map(|x| x.idx);
             let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
+
+            hardware_counter.apply_from(raw_scorer.take_hardware_counter());
 
             re_scored.sort_unstable();
             re_scored.reverse();
@@ -804,7 +841,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                                 deleted_points,
                                 &is_stopped,
                             )
-                            .map(|scorer| scorer.peek_top_all(top))
+                            .map(|scorer| {
+                                let res = scorer.peek_top_all(top);
+                                query_context
+                                    .apply_hardware_counter(scorer.take_hardware_counter());
+                                res
+                            })
                         })
                         .collect()
                 } else {

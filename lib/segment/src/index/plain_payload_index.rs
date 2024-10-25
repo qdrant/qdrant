@@ -313,7 +313,7 @@ impl VectorIndex for PlainIndex {
                         .map(|scorer| {
                             let res =
                                 scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top);
-                            query_context.apply_hardware_counter(&scorer.hardware_counter());
+                            query_context.apply_hardware_counter(scorer.take_hardware_counter());
                             res
                         })
                     })
@@ -337,7 +337,7 @@ impl VectorIndex for PlainIndex {
                         )
                         .map(|scorer| {
                             let res = scorer.peek_top_all(top);
-                            query_context.apply_hardware_counter(&scorer.hardware_counter());
+                            query_context.apply_hardware_counter(scorer.take_hardware_counter());
                             res
                         })
                     })

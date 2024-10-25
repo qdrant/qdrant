@@ -203,8 +203,8 @@ where
         pq.into_vec()
     }
 
-    fn hardware_counter(&self) -> HardwareCounterCell {
-        self.query_scorer.hardware_counter()
+    fn take_hardware_counter(&self) -> HardwareCounterCell {
+        self.query_scorer.take_hardware_counter()
     }
 }
 

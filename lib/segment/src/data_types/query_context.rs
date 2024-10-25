@@ -83,7 +83,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::default(),
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 }
@@ -95,7 +95,7 @@ impl Default for QueryContext {
 }
 
 /// Defines context of the search query on the segment level
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
@@ -121,6 +121,24 @@ impl<'a> SegmentQueryContext<'a> {
     pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
         self.deleted_points = Some(deleted_points);
         self
+    }
+
+    pub fn take_hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter.take()
+    }
+
+    pub fn merge_hardware_counter(&self, other: HardwareCounterCell) {
+        self.hardware_counter.apply_from(other);
+    }
+
+    /// Clone the context without the hardware counters.
+    /// This is useful to avoid double counting the hardware counters.
+    pub fn clone_no_counters(&self) -> Self {
+        SegmentQueryContext {
+            query_context: self.query_context,
+            deleted_points: self.deleted_points,
+            hardware_counter: HardwareCounterCell::new(),
+        }
     }
 }
 
@@ -164,9 +182,13 @@ impl VectorQueryContext<'_> {
         self.hardware_counter
     }
 
-    pub fn apply_hardware_counter(&self, other: &HardwareCounterCell) {
+    pub fn apply_hardware_counter(&self, other: HardwareCounterCell) {
         if let Some(hardware_counter) = self.hardware_counter {
             hardware_counter.apply_from(other);
+        } else {
+            // If we don't specify a hardware counter reference when initiating a new VectorQueryContext,
+            // we don't want its result and need to discard the results here in order to not panic in tests/debug mode.
+            other.discard_results();
         }
     }
 

@@ -83,7 +83,10 @@ fn test_search_batch_equivalence_single() {
     eprintln!("search_batch_result = {search_batch_result:#?}");
 
     assert!(!search_result.is_empty());
-    assert_eq!(search_result, search_batch_result[0].clone())
+    assert_eq!(search_result, search_batch_result[0].clone());
+    segment_query_context
+        .take_hardware_counter()
+        .discard_results();
 }
 
 #[test]

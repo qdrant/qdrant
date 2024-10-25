@@ -391,8 +391,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     }
 
     /// Return the current hardware measurement counter.
-    pub fn hardware_counter(&self) -> &HardwareCounterCell {
-        &self.hardware_counter
+    pub fn take_hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter.take()
     }
 }
 
@@ -560,7 +560,9 @@ mod tests {
         );
 
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
-        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 9);
+        let counter = search_context.take_hardware_counter();
+        assert_eq!(counter.cpu_counter().get(), 9);
+        counter.discard_results();
     }
 
     #[test]
@@ -607,6 +609,7 @@ mod tests {
                 },
             ]
         );
+        search_context.take_hardware_counter().discard_results();
         drop(search_context);
 
         // update index with new point
@@ -650,6 +653,7 @@ mod tests {
                 },
             ]
         );
+        search_context.take_hardware_counter().discard_results();
     }
 
     #[test]
@@ -703,6 +707,7 @@ mod tests {
         // [ID=3] (Retrieve 1-3)           => 3
         //                       3 + 3 + 9 => 15
         assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
+        search_context.take_hardware_counter().discard_results();
 
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -737,6 +742,7 @@ mod tests {
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
         assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
+        search_context.take_hardware_counter().discard_results();
     }
 
     #[test]
@@ -953,7 +959,9 @@ mod tests {
         // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
         // [ID=3] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
         //                                                      6 + 5 + 5 => 16
-        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 16);
+        let hardware_counter = search_context.take_hardware_counter();
+        assert_eq!(hardware_counter.cpu_counter().get(), 16);
+        hardware_counter.discard_results();
     }
 
     #[test]
@@ -1002,6 +1010,8 @@ mod tests {
         // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
         // [ID=3] (Retrieve one sparse vector (3))    + QueryLength=2 => 3
         //                                                  4 + 4 + 3 => 11
-        assert_eq!(search_context.hardware_counter().cpu_counter().get(), 11);
+        let hardware_counter = search_context.take_hardware_counter();
+        assert_eq!(hardware_counter.cpu_counter().get(), 11);
+        hardware_counter.discard_results();
     }
 }
