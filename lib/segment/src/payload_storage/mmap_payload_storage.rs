@@ -154,7 +154,7 @@ impl PayloadStorage for MmapPayloadStorage {
     fn flusher(&self) -> Flusher {
         let storage = self.storage.clone();
         Box::new(move || {
-            storage.write().flush()?;
+            storage.write().flush().unwrap(); // TODO: error conversion
             Ok(())
         })
     }
@@ -167,10 +167,13 @@ impl PayloadStorage for MmapPayloadStorage {
             match callback(point_id, &payload.clone().into()) {
                 Ok(true) => Ok(true),
                 Ok(false) => Ok(false),
-                Err(e) => Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                )),
+                Err(e) => {
+                    // TODO return proper error
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ))
+                }
             }
         })?;
         Ok(())
