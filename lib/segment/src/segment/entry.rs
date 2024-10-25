@@ -390,7 +390,7 @@ impl SegmentEntry for Segment {
         Ok(self.vector_data[vector_name]
             .vector_storage
             .borrow()
-            .available_size_in_bytes())
+            .size_in_bytes())
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
@@ -449,7 +449,9 @@ impl SegmentEntry for Segment {
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
-        let vector_data_info = self
+        let mut vectors_size_bytes: usize = 0;
+
+        let vector_data_info: HashMap<_, _> = self
             .vector_data
             .iter()
             .map(|(key, vector_data)| {
@@ -457,6 +459,9 @@ impl SegmentEntry for Segment {
                 let num_vectors = vector_storage.available_vector_count();
                 let vector_index = vector_data.vector_index.borrow();
                 let is_indexed = vector_index.is_index();
+
+                vectors_size_bytes += vector_storage.size_in_bytes();
+
                 let vector_data_info = VectorDataInfo {
                     num_vectors,
                     num_indexed_vectors: if is_indexed {
@@ -485,7 +490,8 @@ impl SegmentEntry for Segment {
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
-            ram_usage_bytes: 0,  // ToDo: Implement
+            vectors_size_bytes, // Considers vector storage, but not payload or indices
+            ram_usage_bytes: 0, // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
             index_schema: schema,

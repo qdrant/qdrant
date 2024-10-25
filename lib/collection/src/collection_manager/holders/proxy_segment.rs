@@ -916,6 +916,7 @@ impl SegmentEntry for ProxySegment {
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: write_info.num_deleted_vectors,
+            vectors_size_bytes: wrapped_info.vectors_size_bytes + write_info.vectors_size_bytes,
             ram_usage_bytes: wrapped_info.ram_usage_bytes + write_info.ram_usage_bytes,
             disk_usage_bytes: wrapped_info.disk_usage_bytes + write_info.disk_usage_bytes,
             is_appendable: false,

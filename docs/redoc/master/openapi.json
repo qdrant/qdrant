@@ -10574,7 +10574,8 @@
           "num_vectors",
           "ram_usage_bytes",
           "segment_type",
-          "vector_data"
+          "vector_data",
+          "vectors_size_bytes"
         ],
         "properties": {
           "segment_type": {
@@ -10596,6 +10597,11 @@
             "minimum": 0
           },
           "num_deleted_vectors": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "vectors_size_bytes": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
