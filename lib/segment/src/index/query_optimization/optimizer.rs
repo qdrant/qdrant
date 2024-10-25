@@ -28,8 +28,7 @@ impl StructPayloadIndex {
     /// # Arguments
     ///
     /// * `filter` - original filter
-    /// * `id_tracker` - used for converting collection-level ids into segment-level offsets of HasId condition
-    /// * `estimator` - function to estimate cardinality of individual conditions
+    /// * `payload_provider` - provides the payload storage 
     /// * `total` - total number of points in segment (used for cardinality estimation)
     ///
     /// # Result
