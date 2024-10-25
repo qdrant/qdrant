@@ -214,29 +214,28 @@ impl Collection {
         sampled_points.truncate(sample_size);
         // sort by id for a deterministic order
         sampled_points.sort_unstable_by(|(id1, _), (id2, _)| id1.cmp(id2));
+
+        // collect the sampled point ids in the same order
         let sampled_point_ids: Vec<_> = sampled_points.iter().map(|(id, _)| *id).collect();
+
+        // filter to only include the sampled points in the search
+        // use the same filter for all requests to leverage batch search
+        let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(
+            sampled_point_ids.iter().copied().collect::<HashSet<_>>(),
+        )));
 
         // Perform nearest neighbor search for each sampled point
         let mut searches = Vec::with_capacity(sampled_points.len());
-        for (point_id, vector) in sampled_points {
+        for (_point_id, vector) in sampled_points {
             // nearest query on the sample vector
             let named_vector = NamedVectorStruct::new_from_vector(vector, using.clone());
             let query = QueryEnum::Nearest(named_vector);
 
-            // exclude the point itself from the possible points to score
-            let req_ids: HashSet<_> = sampled_point_ids
-                .iter()
-                .filter(|id| *id != &point_id)
-                .cloned()
-                .collect();
-            // TODO: optimize this by using the same filter for all searches to leverage search_batch with oversampling
-            let only_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(req_ids)));
-
             searches.push(CoreSearchRequest {
                 query,
-                filter: Some(only_ids),
+                filter: Some(filter.clone()),
                 score_threshold: None,
-                limit: limit_per_sample,
+                limit: limit_per_sample + 1, // +1 to exclude the point itself afterward
                 offset: 0,
                 params: None,
                 with_vector: None,
@@ -246,9 +245,25 @@ impl Collection {
 
         // run batch search request
         let batch_request = CoreSearchRequestBatch { searches };
-        let nearest = self
+        let mut nearest = self
             .core_search_batch(batch_request, read_consistency, shard_selection, timeout)
             .await?;
+
+        // postprocess the results to account for overlapping samples
+        for (scores, sample_id) in nearest.iter_mut().zip(sampled_point_ids.iter()) {
+            // need to remove the sample_id from the results
+            let mut filtered: Vec<_> = scores
+                .iter()
+                .filter(|p| p.id != *sample_id)
+                .cloned()
+                .collect();
+            // if not found pop lowest score
+            if filtered.len() == limit_per_sample + 1 {
+                // if we have enough results, remove the last one
+                filtered.pop();
+            }
+            *scores = filtered;
+        }
 
         Ok(CollectionSearchMatrixResponse {
             sample_ids: sampled_point_ids,
