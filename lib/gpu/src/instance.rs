@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::sync::Arc;
 
@@ -245,7 +246,47 @@ impl Instance {
         &self.vk_physical_devices
     }
 
-    pub fn compile_shader(&self, shader: &str) -> GpuResult<Vec<u8>> {
+    pub fn compile_shader(
+        &self,
+        shader: &str,
+        defines: Option<&HashMap<String, Option<String>>>,
+        includes: Option<&HashMap<String, String>>,
+    ) -> GpuResult<Vec<u8>> {
+        let mut options = shaderc::CompileOptions::new()
+            .ok_or_else(|| GpuError::Other(format!("Failed to create shaderc compile options")))?;
+        options.set_optimization_level(shaderc::OptimizationLevel::Performance);
+        options.set_target_env(
+            shaderc::TargetEnv::Vulkan,
+            shaderc::EnvVersion::Vulkan1_3 as u32,
+        );
+        options.set_target_spirv(shaderc::SpirvVersion::V1_3);
+
+        if let Some(defines) = defines {
+            for (define, value) in defines {
+                match value {
+                    Some(value) => {
+                        options.add_macro_definition(define, Some(value));
+                    }
+                    None => {
+                        options.add_macro_definition(define, None);
+                    }
+                }
+            }
+        }
+
+        if let Some(includes) = includes {
+            options.set_include_callback(|filename, _, _, _| {
+                if let Some(code) = includes.get(filename) {
+                    Ok(shaderc::ResolvedInclude {
+                        resolved_name: filename.to_string(),
+                        content: code.to_owned(),
+                    })
+                } else {
+                    Err(format!("Include file not found: {}", filename))
+                }
+            });
+        }
+
         let compiler = self.compiler.lock();
         let result = compiler
             .compile_into_spirv(
@@ -253,7 +294,7 @@ impl Instance {
                 shaderc::ShaderKind::Compute,
                 "shader.glsl",
                 "main",
-                None,
+                Some(&options),
             )
             .map_err(|e| GpuError::Other(format!("Failed to compile shader: {:?}", e)))?;
         Ok(result.as_binary_u8().to_owned())

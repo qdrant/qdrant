@@ -333,6 +333,10 @@ impl Device {
         self.subgroup_size
     }
 
+    pub fn instance(&self) -> Arc<Instance> {
+        self.instance.clone()
+    }
+
     pub fn vk_device(&self) -> &ash::Device {
         &self.vk_device
     }
