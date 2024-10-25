@@ -229,18 +229,12 @@ impl Collection {
                 .filter(|id| *id != &point_id)
                 .cloned()
                 .collect();
+            // TODO: optimize this by using the same filter for all searches to leverage search_batch with oversampling
             let only_ids = Filter::new_must(Condition::HasId(HasIdCondition::from(req_ids)));
 
-            // update filter with the only_ids
-            let req_filter = Some(
-                filter
-                    .as_ref()
-                    .map(|filter| filter.merge(&only_ids))
-                    .unwrap_or(only_ids),
-            );
             searches.push(CoreSearchRequest {
                 query,
-                filter: req_filter,
+                filter: Some(only_ids),
                 score_threshold: None,
                 limit: limit_per_sample,
                 offset: 0,
