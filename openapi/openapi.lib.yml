@@ -18,6 +18,11 @@ default:
       schema:
         type: object
         properties:
+          usage:
+            default: null
+            anyOf:
+              - $ref: '#/components/schemas/HardwareUsage'
+              - nullable: true
           time:
             type: number
             format: float

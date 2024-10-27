@@ -14,7 +14,7 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
-        hardware_usage: None,
+        usage: None,
     })
 }
 
@@ -31,7 +31,7 @@ where
             result: Some(res),
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
-            hardware_usage: hardware_counter_acc.map(hardware_accumulator_to_api),
+            usage: hardware_counter_acc.map(hardware_accumulator_to_api),
         }),
         Err(err) => process_response_error(err, timing),
     }
@@ -50,7 +50,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
         result: None,
         status: ApiStatus::Error(error.to_string()),
         time: timing.elapsed().as_secs_f64(),
-        hardware_usage: None,
+        usage: None,
     })
 }
 

@@ -242,7 +242,7 @@ fn validation_error_handler(
         result: None,
         status: ApiStatus::Error(msg),
         time: 0.0,
-        hardware_usage: None,
+        usage: None,
     });
     error::InternalError::from_response(err, response).into()
 }
