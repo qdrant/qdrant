@@ -2042,6 +2042,12 @@ pub struct HasVectorCondition {
     pub has_vector: String,
 }
 
+impl From<String> for HasVectorCondition {
+    fn from(vector: String) -> Self {
+        HasVectorCondition { has_vector: vector }
+    }
+}
+
 impl From<HashSet<PointIdType>> for HasIdCondition {
     fn from(set: HashSet<PointIdType>) -> Self {
         HasIdCondition { has_id: set }
