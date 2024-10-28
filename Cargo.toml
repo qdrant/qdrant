@@ -173,7 +173,7 @@ num-traits = "0.2.19"
 ordered-float = "4.4"
 rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
-ph = "0.8.4"
+ph = "0.8.5"
 pprof = { version = "0.13.0", features = ["flamegraph", "prost-codec"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
