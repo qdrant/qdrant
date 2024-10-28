@@ -6,16 +6,24 @@ set -ex
 QDRANT_HOST=${QDRANT_HOST:-'localhost:6333'}
 COLLECTION_NAME=${COLLECTION_NAME:-'sparse_collection'}
 
+qdrant_host_headers=()
+
+if [ -n "${QDRANT_HOST_HEADERS}" ]; then
+  while read h; do
+    qdrant_host_headers+=("-H" "$h")
+  done <<<  $(echo "${QDRANT_HOST_HEADERS}" | jq -r 'to_entries|map("\(.key): \(.value)")[]')
+fi
+
 # cleanup collection if it exists
 curl -X DELETE "http://$QDRANT_HOST/collections/$COLLECTION_NAME" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --fail -s | jq
 
 # TODO(sparse) add validation and tests for case where dense and sparse vectors have the same name
 # create collection
 curl -X PUT "http://$QDRANT_HOST/collections/$COLLECTION_NAME" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "sparse_vectors": {
@@ -28,7 +36,7 @@ curl -X PUT "http://$QDRANT_HOST/collections/$COLLECTION_NAME" \
     }' | jq
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/$COLLECTION_NAME/index" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "field_name": "city",
@@ -36,7 +44,7 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/$COLLECTION_NAME/index" \
     }' | jq
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/$COLLECTION_NAME/index" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "field_name": "count",
@@ -44,18 +52,18 @@ curl -L -X PUT  "http://$QDRANT_HOST/collections/$COLLECTION_NAME/index" \
     }' | jq
 
 curl -L -X PUT  "http://$QDRANT_HOST/collections/$COLLECTION_NAME/index" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "field_name": "coords",
       "field_schema": "geo"
     }' | jq
 
-curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" | jq
+curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" "${qdrant_host_headers[@]}" | jq
 
 # insert points
 curl -L -X PUT "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points?wait=true" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "points": [
@@ -129,19 +137,19 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points?wait=tru
 
 # retrieve point
 curl -L -X GET "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/2" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s | jq
 
 # retrieve points
 curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "ids": [1, 2],
       "with_vectors": true
     }' | jq
 
-SAVED_POINTS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" | jq '.result.points_count')
+SAVED_POINTS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" "${qdrant_host_headers[@]}" | jq '.result.points_count')
 [[ "$SAVED_POINTS_COUNT" == "6" ]] || {
   echo 'check failed - 6 points expected'
   exit 1
@@ -149,7 +157,7 @@ SAVED_POINTS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION
 
 # search points
 curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
         "vector": {
@@ -164,7 +172,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search"
 
 # search points batch
 curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search/batch" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
     "searches": [
@@ -192,7 +200,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search/
   }' | jq
 
 curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points/search" \
-  -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
       "filter": {

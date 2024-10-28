@@ -7,3 +7,5 @@ OPENAPI_FILE = os.environ.get("OPENAPI_FILE", os.path.join(os.path.dirname(ROOT_
 
 SCHEMA = schemathesis.from_file(open(OPENAPI_FILE))
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "http://localhost:6333")
+
+QDRANT_HOST_HEADERS = os.environ.get("QDRANT_HOST_HEADERS", "{}")

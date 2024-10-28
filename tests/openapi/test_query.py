@@ -4,9 +4,10 @@ import requests
 import os
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import distribution_based_score_fusion, reciprocal_rank_fusion, request_with_validation
+from .helpers.helpers import distribution_based_score_fusion, reciprocal_rank_fusion, request_with_validation, \
+    qdrant_host_headers
+from .helpers.settings import QDRANT_HOST
 
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 collection_name = "test_query"
 
 
@@ -74,7 +75,8 @@ def test_query_validation():
 
 
     # raw query to bypass local validation
-    response = requests.post(f"http://{QDRANT_HOST}/collections/{collection_name}/points/query",
+    response = requests.post(f"{QDRANT_HOST}/collections/{collection_name}/points/query",
+        headers=qdrant_host_headers(),
         json={
             "query": {
                 "recommend": {

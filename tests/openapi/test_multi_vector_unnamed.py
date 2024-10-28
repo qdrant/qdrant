@@ -4,7 +4,6 @@ import os
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
 collection_name = 'test_multi_vector_persistence'
 

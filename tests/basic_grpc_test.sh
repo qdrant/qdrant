@@ -6,15 +6,21 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-QDRANT_HOST='localhost:6334'
+QDRANT_HOST=${QDRANT_HOST:-'localhost:6334'}
 
-docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
+docker_grpcurl=("docker" "run" "--rm" "--network=host" "-v" "${PWD}/lib/api/src/grpc/proto:/proto" "fullstorydev/grpcurl" "-plaintext" "-import-path" "/proto" "-proto" "qdrant.proto")
 
-$docker_grpcurl -d '{
+if [ -n "${QDRANT_HOST_HEADERS}" ]; then
+  while read h; do
+    docker_grpcurl+=("-H" "$h")
+  done <<<  $(echo "${QDRANT_HOST_HEADERS}" | jq -r 'to_entries|map("\(.key): \(.value)")[]')
+fi
+
+"${docker_grpcurl[@]}" -d '{
    "collection_name": "test_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
    "collection_name": "test_collection",
    "vectors_config": {
       "params": {
@@ -24,9 +30,9 @@ $docker_grpcurl -d '{
    }
 }' $QDRANT_HOST qdrant.Collections/Create
 
-$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
+"${docker_grpcurl[@]}" -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "wait": true,
   "ordering": null,
@@ -51,7 +57,7 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Points/Upsert
 
 # Create payload index
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "field_name": "city",
   "field_type": 0,
@@ -59,15 +65,15 @@ $docker_grpcurl -d '{
   "wait": true
 }' $QDRANT_HOST qdrant.Points/CreateFieldIndex
 
-$docker_grpcurl -d '{ "collection_name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
+"${docker_grpcurl[@]}" -d '{ "collection_name": "test_collection" }' $QDRANT_HOST qdrant.Collections/Get
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "vector": [0.2,0.1,0.9,0.7],
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "filter": {
     "should": [
@@ -85,7 +91,7 @@ $docker_grpcurl -d '{
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "limit": 2,
   "with_vectors": {"enable": true},
@@ -103,26 +109,26 @@ $docker_grpcurl -d '{
   }
 }' $QDRANT_HOST qdrant.Points/Scroll
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "positive": [{ "num": 1 }],
   "negative": [{ "num": 2 }]
 }' $QDRANT_HOST qdrant.Points/Recommend
 
 # city facet
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "key": "city"
 }' $QDRANT_HOST qdrant.Points/Facet
 
 # create alias
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "actions": [
     {
       "create_alias": {
@@ -134,14 +140,14 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Collections/UpdateAliases
 
 # search via alias
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_alias",
   "vector": [0.2,0.1,0.9,0.7],
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 # rename alias
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "actions": [
     {
       "rename_alias": {
@@ -153,14 +159,14 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Collections/UpdateAliases
 
 # search via renamed alias
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "new_test_alias",
   "vector": [0.2,0.1,0.9,0.7],
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Search
 
 # delete alias
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "actions": [
     {
       "delete_alias": {
@@ -171,14 +177,14 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Collections/UpdateAliases
 
 # create bool index
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "field_name": "bool_field",
   "field_type": 5,
   "field_index_params": { "bool_index_params": {} }
 }' $QDRANT_HOST qdrant.Points/CreateFieldIndex
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "with_vectors": {"enable": false},
   "with_payload": {
@@ -190,7 +196,7 @@ $docker_grpcurl -d '{
 # The following must return a validation error
 set +e
 response=$(
-    $docker_grpcurl -d '{
+    "${docker_grpcurl[@]}" -d '{
         "collection_name": "test_collection",
         "recommend_points": [
             {
@@ -209,20 +215,20 @@ fi
 set -e
 
 # use the reflection service to inspect the full API
-$docker_grpcurl $QDRANT_HOST describe
+"${docker_grpcurl[@]}" $QDRANT_HOST describe
 
 # use the reflection service to inspect each advertised service
-$docker_grpcurl $QDRANT_HOST describe qdrant.Collections
-$docker_grpcurl $QDRANT_HOST describe qdrant.Points
-$docker_grpcurl $QDRANT_HOST describe qdrant.Snapshots
-$docker_grpcurl $QDRANT_HOST describe qdrant.Qdrant
-$docker_grpcurl $QDRANT_HOST describe grpc.health.v1.Health
+"${docker_grpcurl[@]}" $QDRANT_HOST describe qdrant.Collections
+"${docker_grpcurl[@]}" $QDRANT_HOST describe qdrant.Points
+"${docker_grpcurl[@]}" $QDRANT_HOST describe qdrant.Snapshots
+"${docker_grpcurl[@]}" $QDRANT_HOST describe qdrant.Qdrant
+"${docker_grpcurl[@]}" $QDRANT_HOST describe grpc.health.v1.Health
 
 # use the reflection service to get the shape of a specific message
-$docker_grpcurl $QDRANT_HOST describe qdrant.UpsertPoints
+"${docker_grpcurl[@]}" $QDRANT_HOST describe qdrant.UpsertPoints
 
 # grpc protocol compliant health check
-$docker_grpcurl $QDRANT_HOST grpc.health.v1.Health/Check
+"${docker_grpcurl[@]}" $QDRANT_HOST grpc.health.v1.Health/Check
 
 #SAVED_POINTS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/test_collection" | jq '.result.points_count')
 #[[ "$SAVED_POINTS_COUNT" == "6" ]] || {
