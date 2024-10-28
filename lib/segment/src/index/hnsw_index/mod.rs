@@ -2,12 +2,14 @@ use common::defaults::thread_count_for_hnsw;
 
 mod build_cache;
 pub mod build_condition_checker;
+pub mod compressed_links;
 mod config;
 mod entry_points;
 pub mod graph_layers;
 pub mod graph_layers_builder;
 pub mod graph_links;
 pub mod hnsw;
+mod links_compressor;
 pub mod point_scorer;
 mod search_context;
 

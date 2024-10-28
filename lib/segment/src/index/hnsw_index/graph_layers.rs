@@ -154,7 +154,7 @@ impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
         F: FnMut(PointOffsetType),
     {
         for link in self.links.links(point_id, level) {
-            f(*link);
+            f(link);
         }
     }
 
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(main_entry.level, num_levels);
 
         let total_links_0 = (0..num_vectors)
-            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).count())
             .sum::<usize>();
 
         eprintln!("total_links_0 = {total_links_0:#?}");

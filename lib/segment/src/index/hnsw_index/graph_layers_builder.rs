@@ -685,10 +685,13 @@ mod tests {
         assert_eq!(orig_len, builder_len);
 
         for idx in 0..builder_len {
-            let links_orig = &graph_layers_orig.links.links(idx as PointOffsetType, 0);
+            let links_orig = graph_layers_orig
+                .links
+                .links(idx as PointOffsetType, 0)
+                .collect::<Vec<_>>();
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
             let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
-            assert_eq!(links_orig, &link_container_from_builder);
+            assert_eq!(links_orig, link_container_from_builder);
         }
 
         let main_entry = graph_layers_builder
@@ -784,12 +787,12 @@ mod tests {
 
         let layers910 = graph_layers.links.point_level(910);
         let links910 = (0..layers910 + 1)
-            .map(|i| graph_layers.links.links(910, i).to_vec())
+            .map(|i| graph_layers.links.links(910, i).collect_vec())
             .collect::<Vec<_>>();
         eprintln!("graph_layers.links_layers[910] = {links910:#?}",);
 
         let total_edges: usize = (0..NUM_VECTORS)
-            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).count())
             .sum();
         let avg_connectivity = total_edges as f64 / NUM_VECTORS as f64;
         eprintln!("avg_connectivity = {avg_connectivity:#?}");

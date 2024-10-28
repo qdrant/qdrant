@@ -47,7 +47,7 @@ links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
 
 #[derive(Debug, Default)]
-struct GraphLinksFileHeader {
+pub struct GraphLinksFileHeader {
     pub point_count: u64,
     pub levels_count: u64,
     pub total_links_len: u64,
@@ -55,7 +55,7 @@ struct GraphLinksFileHeader {
     pub offsets_padding: u64,
 }
 
-fn get_reindex_slice<'a>(
+pub fn get_reindex_slice<'a>(
     data: &'a [u8],
     header: &'a GraphLinksFileHeader,
 ) -> &'a [PointOffsetType] {
@@ -64,13 +64,16 @@ fn get_reindex_slice<'a>(
     mmap_ops::transmute_from_u8_to_slice(reindex_byte_slice)
 }
 
-fn get_links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [PointOffsetType] {
+pub fn get_links_slice<'a>(
+    data: &'a [u8],
+    header: &'a GraphLinksFileHeader,
+) -> &'a [PointOffsetType] {
     let links_range = header.get_links_range();
     let links_byte_slice = &data[links_range];
     mmap_ops::transmute_from_u8_to_slice(links_byte_slice)
 }
 
-fn get_offsets_iter<'a>(
+pub fn get_offsets_iter<'a>(
     data: &'a [u8],
     header: &'a GraphLinksFileHeader,
 ) -> impl Iterator<Item = u64> + 'a {
@@ -84,7 +87,7 @@ fn get_offsets_iter<'a>(
         })
 }
 
-fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
+pub fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
     let level_offsets_range = header.get_level_offsets_range();
     let level_offsets_byte_slice = &data[level_offsets_range];
     mmap_ops::transmute_from_u8_to_slice(level_offsets_byte_slice)
@@ -340,64 +343,15 @@ pub trait GraphLinks: Default {
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self>;
 
-    fn offsets_len(&self) -> usize;
-
-    fn levels_count(&self) -> usize;
-
-    fn get_links(&self, range: Range<usize>) -> &[PointOffsetType];
-
-    fn get_links_range(&self, idx: usize) -> Range<usize>;
-
-    fn get_level_offset(&self, level: usize) -> usize;
-
-    fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType;
-
     fn num_points(&self) -> usize;
 
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
-        if level == 0 {
-            let links_range = self.get_links_range(point_id as usize);
-            self.get_links(links_range)
-        } else {
-            let reindexed_point_id = self.reindex(point_id) as usize;
-            let layer_offsets_start = self.get_level_offset(level);
-            let links_range = self.get_links_range(layer_offsets_start + reindexed_point_id);
-            self.get_links(links_range)
-        }
-    }
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType>;
 
-    fn point_level(&self, point_id: PointOffsetType) -> usize {
-        let reindexed_point_id = self.reindex(point_id) as usize;
-        // level 0 is always present, start checking from level 1. Stop checking when level is incorrect
-        for level in 1.. {
-            if let Some(offsets_range) = self.get_level_offsets_range(level) {
-                if offsets_range.start + reindexed_point_id >= offsets_range.end {
-                    // incorrect level because point_id is out of range
-                    return level - 1;
-                }
-            } else {
-                // incorrect level because this level is larger that available levels
-                return level - 1;
-            }
-        }
-        unreachable!()
-    }
-
-    fn get_level_offsets_range(&self, level: usize) -> Option<Range<usize>> {
-        if level < self.levels_count() {
-            let layer_offsets_start = self.get_level_offset(level);
-            let layer_offsets_end = if level + 1 < self.levels_count() {
-                // `level` is not last, next level_offsets is end of range
-                self.get_level_offset(level + 1)
-            } else {
-                // `level` is last, next `offsets.len()` is end of range
-                self.offsets_len() - 1
-            };
-            Some(layer_offsets_start..layer_offsets_end)
-        } else {
-            None
-        }
-    }
+    fn point_level(&self, point_id: PointOffsetType) -> usize;
 }
 
 #[derive(Debug, Default)]
@@ -469,6 +423,45 @@ impl GraphLinks for GraphLinksRam {
         Self::load_from_memory(&data)
     }
 
+    fn num_points(&self) -> usize {
+        self.reindex.len()
+    }
+
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType> {
+        if level == 0 {
+            let links_range = self.get_links_range(point_id as usize);
+            self.get_links(links_range).iter().cloned()
+        } else {
+            let reindexed_point_id = self.reindex(point_id) as usize;
+            let layer_offsets_start = self.get_level_offset(level);
+            let links_range = self.get_links_range(layer_offsets_start + reindexed_point_id);
+            self.get_links(links_range).iter().cloned()
+        }
+    }
+
+    fn point_level(&self, point_id: PointOffsetType) -> usize {
+        let reindexed_point_id = self.reindex(point_id) as usize;
+        // level 0 is always present, start checking from level 1. Stop checking when level is incorrect
+        for level in 1.. {
+            if let Some(offsets_range) = self.get_level_offsets_range(level) {
+                if offsets_range.start + reindexed_point_id >= offsets_range.end {
+                    // incorrect level because point_id is out of range
+                    return level - 1;
+                }
+            } else {
+                // incorrect level because this level is larger that available levels
+                return level - 1;
+            }
+        }
+        unreachable!()
+    }
+}
+
+impl GraphLinksRam {
     fn offsets_len(&self) -> usize {
         self.offsets.len()
     }
@@ -495,8 +488,20 @@ impl GraphLinks for GraphLinksRam {
         self.reindex[point_id as usize]
     }
 
-    fn num_points(&self) -> usize {
-        self.reindex.len()
+    fn get_level_offsets_range(&self, level: usize) -> Option<Range<usize>> {
+        if level < self.levels_count() {
+            let layer_offsets_start = self.get_level_offset(level);
+            let layer_offsets_end = if level + 1 < self.levels_count() {
+                // `level` is not last, next level_offsets is end of range
+                self.get_level_offset(level + 1)
+            } else {
+                // `level` is last, next `offsets.len()` is end of range
+                self.offsets_len() - 1
+            };
+            Some(layer_offsets_start..layer_offsets_end)
+        } else {
+            None
+        }
     }
 }
 
@@ -569,6 +574,45 @@ impl GraphLinks for GraphLinksMmap {
         }
     }
 
+    fn num_points(&self) -> usize {
+        self.header.point_count as usize
+    }
+
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType> {
+        if level == 0 {
+            let links_range = self.get_links_range(point_id as usize);
+            self.get_links(links_range).iter().cloned()
+        } else {
+            let reindexed_point_id = self.reindex(point_id) as usize;
+            let layer_offsets_start = self.get_level_offset(level);
+            let links_range = self.get_links_range(layer_offsets_start + reindexed_point_id);
+            self.get_links(links_range).iter().cloned()
+        }
+    }
+
+    fn point_level(&self, point_id: PointOffsetType) -> usize {
+        let reindexed_point_id = self.reindex(point_id) as usize;
+        // level 0 is always present, start checking from level 1. Stop checking when level is incorrect
+        for level in 1.. {
+            if let Some(offsets_range) = self.get_level_offsets_range(level) {
+                if offsets_range.start + reindexed_point_id >= offsets_range.end {
+                    // incorrect level because point_id is out of range
+                    return level - 1;
+                }
+            } else {
+                // incorrect level because this level is larger that available levels
+                return level - 1;
+            }
+        }
+        unreachable!()
+    }
+}
+
+impl GraphLinksMmap {
     fn offsets_len(&self) -> usize {
         self.header.get_offsets_range().len() / size_of::<u64>()
     }
@@ -600,13 +644,26 @@ impl GraphLinks for GraphLinksMmap {
         self.get_reindex_slice()[point_id as usize]
     }
 
-    fn num_points(&self) -> usize {
-        self.header.point_count as usize
+    fn get_level_offsets_range(&self, level: usize) -> Option<Range<usize>> {
+        if level < self.levels_count() {
+            let layer_offsets_start = self.get_level_offset(level);
+            let layer_offsets_end = if level + 1 < self.levels_count() {
+                // `level` is not last, next level_offsets is end of range
+                self.get_level_offset(level + 1)
+            } else {
+                // `level` is last, next `offsets.len()` is end of range
+                self.offsets_len() - 1
+            };
+            Some(layer_offsets_start..layer_offsets_end)
+        } else {
+            None
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use rand::Rng;
     use tempfile::Builder;
 
@@ -619,7 +676,7 @@ mod tests {
             let mut layers = Vec::new();
             let num_levels = links.point_level(i as PointOffsetType) + 1;
             for level in 0..num_levels {
-                let links = links.links(i as PointOffsetType, level).to_vec();
+                let links = links.links(i as PointOffsetType, level).collect_vec();
                 layers.push(links);
             }
             result.push(layers);

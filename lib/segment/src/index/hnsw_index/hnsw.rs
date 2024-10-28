@@ -409,7 +409,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         {
             for (idx, deleted) in deleted_bitslice.iter().enumerate() {
                 if *deleted {
-                    debug_assert!(graph.links.links(idx as PointOffsetType, 0).is_empty());
+                    debug_assert_eq!(graph.links.links(idx as PointOffsetType, 0).count(), 0);
                 }
             }
         }
