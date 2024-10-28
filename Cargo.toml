@@ -67,7 +67,7 @@ uuid = { workspace = true }
 sys-info = "0.9.1"
 wal = { workspace = true }
 
-config = "~0.14.0"
+config = "~0.14.1"
 
 tokio = { workspace = true }
 
