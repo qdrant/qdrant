@@ -204,7 +204,7 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "7c9202d0874b719212e6ea
 zerocopy = { version = "0.7.34", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 bitvec = "1.0.1"
 merge = "0.1.0"
 
