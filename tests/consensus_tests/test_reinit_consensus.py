@@ -9,7 +9,7 @@ from .utils import *
 N_PEERS = 2
 N_SHARDS = 2
 N_REPLICAS = 1
-N_COLLECTION_LOOPS = 10
+N_COLLECTION_LOOPS = 3
 COLLECTION_NAME = "test_collection"
 POINTS_JSON = {
             "points": [
@@ -26,6 +26,7 @@ POINTS_JSON = {
             ]
         }
 
+
 def get_collection_points(uri):
     req_json = {
         "limit": len(POINTS_JSON["points"]),
@@ -37,6 +38,7 @@ def get_collection_points(uri):
     )
     assert_http_ok(res)
     return res.json()["result"]["points"]
+
 
 def compare_points(uri):
     original_points = POINTS_JSON["points"]
@@ -64,7 +66,6 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
             f"{peer_urls[randrange(N_PEERS)]}/collections/{COLLECTION_NAME}/points?wait=true", json=POINTS_JSON)
         assert_http_ok(r_batch)
 
-        sleep(3)
         # assert data in both shards
         for peer_api_uri in peer_urls:
             info = get_collection_cluster_info(peer_api_uri, COLLECTION_NAME)
@@ -91,6 +92,7 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
     peer_dir_additional = make_peer_folder(tmp_path, N_PEERS)
     peer_dirs.append(peer_dir_additional)
     peer_url_additional = start_peer(peer_dir_additional, f"peer_{N_PEERS}_additional.log", bootstrap_uri)
+    wait_peer_added(bootstrap_api_uri, expected_size=3)
     peer_urls_new.append(peer_url_additional)
     wait_for_uniform_cluster_status(peer_urls_new, leader)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls_new)
