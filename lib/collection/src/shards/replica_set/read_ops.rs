@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -66,13 +67,19 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = Arc::clone(&request);
                 let search_runtime = self.search_runtime.clone();
-
-                async move { shard.core_search(request, &search_runtime, timeout).await }.boxed()
+                let hw_counter_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .core_search(request, &search_runtime, timeout, hw_counter_acc_clone)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             local_only,
@@ -86,13 +93,20 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         local_only: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.count(request, &search_runtime, timeout).await }.boxed()
+                let hw_measurement_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .count(request, &search_runtime, timeout, hw_measurement_acc_clone)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             local_only,
@@ -150,6 +164,7 @@ impl ShardReplicaSet {
         &self,
         request: Arc<CountRequestInternal>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<CountResult>> {
         let local = self.local.read().await;
         match &*local {
@@ -157,7 +172,10 @@ impl ShardReplicaSet {
             Some(shard) => {
                 let search_runtime = self.search_runtime.clone();
                 Ok(Some(
-                    shard.get().count(request, &search_runtime, timeout).await?,
+                    shard
+                        .get()
+                        .count(request, &search_runtime, timeout, hw_measurement_acc)
+                        .await?,
                 ))
             }
         }
@@ -169,13 +187,19 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let requests = Arc::clone(&requests);
                 let search_runtime = self.search_runtime.clone();
-
-                async move { shard.query_batch(requests, &search_runtime, timeout).await }.boxed()
+                let hw_counter_acc_clone = hw_measurement_acc.clone();
+                async move {
+                    shard
+                        .query_batch(requests, &search_runtime, timeout, hw_counter_acc_clone)
+                        .await
+                }
+                .boxed()
             },
             read_consistency,
             local_only,

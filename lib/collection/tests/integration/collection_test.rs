@@ -15,6 +15,7 @@ use collection::operations::types::{
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::VectorStructInternal;
@@ -85,6 +86,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await;
 
@@ -153,6 +155,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await;
 
@@ -181,7 +184,13 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     };
 
     let count_res = collection
-        .count(count_request, None, &ShardSelectorInternal::All, None)
+        .count(
+            count_request,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);
@@ -370,6 +379,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
+        HwMeasurementAcc::new(),
     )
     .await
     .unwrap();

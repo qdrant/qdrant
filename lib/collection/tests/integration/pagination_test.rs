@@ -5,6 +5,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::CollectionUpdateOperations;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 
@@ -60,6 +61,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -86,6 +88,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -113,6 +116,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();

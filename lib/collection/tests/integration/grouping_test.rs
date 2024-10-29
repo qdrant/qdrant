@@ -24,6 +24,7 @@ mod group_by {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
 
     use super::*;
 
@@ -99,6 +100,7 @@ mod group_by {
             resources.request.clone(),
             &resources.collection,
             |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
         );
 
         let result = group_by.execute().await;
@@ -149,9 +151,12 @@ mod group_by {
             2,
         );
 
-        let group_by = GroupBy::new(request.clone(), &resources.collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            request.clone(),
+            &resources.collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -209,9 +214,12 @@ mod group_by {
             3,
         );
 
-        let group_by = GroupBy::new(group_by_request, &resources.collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request,
+            &resources.collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -241,9 +249,12 @@ mod group_by {
             3,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &resources.collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &resources.collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -279,9 +290,12 @@ mod group_by {
             3,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -315,9 +329,12 @@ mod group_by {
             0,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -347,9 +364,12 @@ mod group_by {
             3,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -379,9 +399,12 @@ mod group_by {
             3,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -415,9 +438,12 @@ mod group_by {
             400,
         );
 
-        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
-            unreachable!()
-        });
+        let group_by = GroupBy::new(
+            group_by_request.clone(),
+            &collection,
+            |_| async { unreachable!() },
+            HwMeasurementAcc::new(),
+        );
 
         let result = group_by.execute().await;
 
@@ -442,6 +468,7 @@ mod group_by_builder {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::json_path::JsonPath;
     use tokio::sync::RwLock;
 
@@ -557,9 +584,14 @@ mod group_by_builder {
 
         let collection_by_name = |_: String| async { unreachable!() };
 
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
-            .execute()
-            .await;
+        let result = GroupBy::new(
+            request.clone(),
+            &collection,
+            collection_by_name,
+            HwMeasurementAcc::new(),
+        )
+        .execute()
+        .await;
 
         assert!(result.is_ok());
 
@@ -590,9 +622,14 @@ mod group_by_builder {
 
         let collection_by_name = |_: String| async { Some(lookup_collection.read().await) };
 
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
-            .execute()
-            .await;
+        let result = GroupBy::new(
+            request.clone(),
+            &collection,
+            collection_by_name,
+            HwMeasurementAcc::new(),
+        )
+        .execute()
+        .await;
 
         assert!(result.is_ok());
 

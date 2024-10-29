@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
 use futures::future::try_join_all;
 use itertools::Itertools;
@@ -230,6 +231,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         query_context: QueryContext,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_arc = Arc::new(query_context);
 
@@ -254,25 +256,24 @@ impl SegmentsSearcher {
             segments
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
+                    let hw_counter_clone = hw_measurement_acc.clone();
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
                             let segment_query_context =
                                 query_context_arc_segment.get_segment_query_context();
 
-                            let result = search_in_segment(
+                            let res = search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
                                 &segment_query_context,
                             );
 
-                            // TODO: propagate measurements instead of discarding!
-                            segment_query_context
-                                .take_hardware_counter()
-                                .discard_results();
+                            hw_counter_clone
+                                .merge_from_cell(segment_query_context.take_hardware_counter());
 
-                            result
+                            res
                         }
                     });
                     (segment.clone(), search)
@@ -314,19 +315,21 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
+                    let hw_counter_clone = hw_measurement_acc.clone();
                     res.push(runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
+
                         let result = search_in_segment(
                             segment,
                             partial_batch_request,
                             false,
                             &segment_query_context,
                         );
-                        // TODO: propagate measurements instead of discarding!
-                        segment_query_context
-                            .take_hardware_counter()
-                            .discard_results();
+
+                        hw_counter_clone
+                            .merge_from_cell(segment_query_context.take_hardware_counter());
+
                         result
                     }))
                 }
@@ -764,6 +767,7 @@ mod tests {
             &Handle::current(),
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap()
@@ -823,15 +827,21 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
+            let hw_measurement_acc = HwMeasurementAcc::new();
+
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
                 batch_request.clone(),
                 &Handle::current(),
                 false,
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
+                hw_measurement_acc.clone(),
             )
             .await
             .unwrap();
+
+            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            hw_measurement_acc.clear();
 
             assert!(!result_no_sampling.is_empty());
 
@@ -841,10 +851,14 @@ mod tests {
                 &Handle::current(),
                 true,
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
+                hw_measurement_acc.clone(),
             )
             .await
             .unwrap();
             assert!(!result_sampling.is_empty());
+
+            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            hw_measurement_acc.clear();
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());

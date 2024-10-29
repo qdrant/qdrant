@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use tokio::runtime::Handle;
 
@@ -16,6 +17,7 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let is_stopped_guard = StoppingGuard::new();
 
@@ -44,6 +46,7 @@ impl LocalShard {
             search_runtime_handle,
             true,
             query_context,
+            hw_counter_acc,
         );
 
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
