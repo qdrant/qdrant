@@ -174,6 +174,7 @@ async fn recommend_point_groups(
     collection: Path<CollectionPath>,
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let RecommendGroupsRequest {
@@ -199,15 +200,21 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(crate::common::points::do_recommend_point_groups(
-        dispatcher.toc(&access, &pass),
-        &collection.name,
-        recommend_group_request,
-        params.consistency,
-        shard_selection,
-        access,
-        params.timeout(),
-    ))
+    let hw_measurement_acc = HwMeasurementAcc::new();
+    helpers::time_and_hardware_opt(
+        crate::common::points::do_recommend_point_groups(
+            dispatcher.toc(&access, &pass),
+            &collection.name,
+            recommend_group_request,
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+            hw_measurement_acc.clone(),
+        ),
+        hw_measurement_acc,
+        service_config.hardware_reporting(),
+    )
     .await
 }
 // Configure services

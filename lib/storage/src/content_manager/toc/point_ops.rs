@@ -159,6 +159,7 @@ impl TableOfContent {
     ///
     /// Number of points in the collection.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub async fn count(
         &self,
         collection_name: &str,
@@ -167,12 +168,19 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<CountResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .count(request, read_consistency, &shard_selection, timeout)
+            .count(
+                request,
+                read_consistency,
+                &shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
             .map_err(|err| err.into())
     }
@@ -206,6 +214,7 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn group(
         &self,
         collection_name: &str,
@@ -214,6 +223,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<GroupsResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -221,7 +231,7 @@ impl TableOfContent {
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
-        let group_by = GroupBy::new(request, &collection, collection_by_name)
+        let group_by = GroupBy::new(request, &collection, collection_by_name, hw_measurement_acc)
             .set_read_consistency(read_consistency)
             .set_shard_selection(shard_selection)
             .set_timeout(timeout);

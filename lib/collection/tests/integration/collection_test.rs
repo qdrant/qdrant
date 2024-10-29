@@ -184,7 +184,13 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     };
 
     let count_res = collection
-        .count(count_request, None, &ShardSelectorInternal::All, None)
+        .count(
+            count_request,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);

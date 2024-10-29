@@ -786,6 +786,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<CountRequestInternal>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO: measure hardware when counting
     ) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),

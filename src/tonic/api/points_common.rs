@@ -1215,6 +1215,9 @@ pub async fn search_groups(
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
+    // TODO: put in grpc API
+    let hw_measuerement_acc = HwMeasurementAcc::new();
+
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
         toc,
@@ -1224,6 +1227,7 @@ pub async fn search_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
+        hw_measuerement_acc.clone(),
     )
     .await?;
 
@@ -1429,7 +1433,7 @@ pub async fn recommend_groups(
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     // TODO: Apply hardware counter value
-    // let hw_measurement_acc = AtomicHardwareAccumulator::new();
+    let hw_measurement_acc = HwMeasurementAcc::new();
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_recommend_point_groups(
@@ -1440,6 +1444,7 @@ pub async fn recommend_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
+        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -1667,6 +1672,9 @@ pub async fn count(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
+    // TODO: use value
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let count_result = do_count_points(
         toc,
         &collection_name,
@@ -1675,6 +1683,7 @@ pub async fn count(
         timeout,
         shard_selector,
         access.clone(),
+        hw_measurement_acc,
     )
     .await?;
 
@@ -1884,6 +1893,9 @@ pub async fn query_groups(
 
     let timeout = timeout.map(Duration::from_secs);
     let timing = Instant::now();
+
+    // TODO: put this value in API
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let groups_result = do_query_point_groups(
         toc,
         &collection_name,
@@ -1892,6 +1904,7 @@ pub async fn query_groups(
         shard_selector,
         access,
         timeout,
+        hw_measurement_acc.clone(),
     )
     .await?;
 

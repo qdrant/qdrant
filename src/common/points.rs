@@ -934,6 +934,7 @@ pub async fn do_core_search_batch_points(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_search_point_groups(
     toc: &TableOfContent,
     collection_name: &str,
@@ -942,6 +943,7 @@ pub async fn do_search_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -950,10 +952,12 @@ pub async fn do_search_point_groups(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_recommend_point_groups(
     toc: &TableOfContent,
     collection_name: &str,
@@ -962,6 +966,7 @@ pub async fn do_recommend_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -970,6 +975,7 @@ pub async fn do_recommend_point_groups(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await
 }
@@ -1007,6 +1013,7 @@ pub async fn do_discover_batch_points(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_count_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1015,6 +1022,7 @@ pub async fn do_count_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<CountResult, StorageError> {
     toc.count(
         collection_name,
@@ -1023,6 +1031,7 @@ pub async fn do_count_points(
         timeout,
         shard_selection,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -1116,6 +1125,7 @@ pub async fn do_query_batch_points(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_query_point_groups(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1124,6 +1134,7 @@ pub async fn do_query_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -1132,6 +1143,7 @@ pub async fn do_query_point_groups(
         shard_selection,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await
 }

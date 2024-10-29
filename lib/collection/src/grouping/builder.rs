@@ -35,7 +35,12 @@ where
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
     /// Creates a basic GroupBy builder
-    pub fn new(group_by: GroupRequest, collection: &'a Collection, collection_by_name: F) -> Self {
+    pub fn new(
+        group_by: GroupRequest,
+        collection: &'a Collection,
+        collection_by_name: F,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> Self {
         Self {
             group_by,
             collection,
@@ -43,7 +48,7 @@ where
             read_consistency: None,
             shard_selection: ShardSelectorInternal::All,
             timeout: None,
-            hw_measurement_acc: HwMeasurementAcc::new(),
+            hw_measurement_acc,
         }
     }
 

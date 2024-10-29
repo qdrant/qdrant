@@ -48,6 +48,7 @@ pub trait ShardOperation {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult>;
 
     async fn retrieve(

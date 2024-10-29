@@ -104,6 +104,7 @@ impl ShardOperation for DummyShard {
         _: Arc<CountRequestInternal>,
         _: &Handle,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         self.dummy()
     }
