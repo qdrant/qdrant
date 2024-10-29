@@ -12,19 +12,19 @@ N_REPLICAS = 1
 N_COLLECTION_LOOPS = 3
 COLLECTION_NAME = "test_collection"
 POINTS_JSON = {
-            "points": [
-                {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": "Berlin"}},
-                {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": "London"}},
-                {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": "Paris"}},
-                {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": "Malaga"}},
-                {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"city": "New York"}},
-                {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44], "payload": {"city": "Munich"}},
-                {"id": 7, "vector": [0.45, 0.07, 0.21, 0.04], "payload": {"city": "Madrid"}},
-                {"id": 8, "vector": [0.75, 0.18, 0.91, 0.48], "payload": {"city": "Prague"}},
-                {"id": 9, "vector": [0.30, 0.01, 0.10, 0.12], "payload": {"city": "Bratislava"}},
-                {"id": 10, "vector": [0.95, 0.8, 0.17, 0.19], "payload": {"city": "Tokyo"}},
-            ]
-        }
+    "points": [
+        {"id": 1, "vector": [0.05, 0.61, 0.76, 0.74], "payload": {"city": "Berlin"}},
+        {"id": 2, "vector": [0.19, 0.81, 0.75, 0.11], "payload": {"city": "London"}},
+        {"id": 3, "vector": [0.36, 0.55, 0.47, 0.94], "payload": {"city": "Paris"}},
+        {"id": 4, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"city": "Malaga"}},
+        {"id": 5, "vector": [0.24, 0.18, 0.22, 0.44], "payload": {"city": "New York"}},
+        {"id": 6, "vector": [0.35, 0.08, 0.11, 0.44], "payload": {"city": "Munich"}},
+        {"id": 7, "vector": [0.45, 0.07, 0.21, 0.04], "payload": {"city": "Madrid"}},
+        {"id": 8, "vector": [0.75, 0.18, 0.91, 0.48], "payload": {"city": "Prague"}},
+        {"id": 9, "vector": [0.30, 0.01, 0.10, 0.12], "payload": {"city": "Bratislava"}},
+        {"id": 10, "vector": [0.95, 0.8, 0.17, 0.19], "payload": {"city": "Tokyo"}},
+    ]
+}
 
 
 def get_collection_points(uri):
@@ -96,3 +96,4 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
     peer_urls_new.append(peer_url_additional)
     wait_for_uniform_cluster_status(peer_urls_new, leader)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls_new)
+    compare_points(peer_urls_new[1])
