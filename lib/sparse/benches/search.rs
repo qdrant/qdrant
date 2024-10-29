@@ -236,7 +236,9 @@ fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> io::Result<InvertedInde
 #[cfg(not(target_os = "windows"))]
 criterion_group! {
     name = benches;
-    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
+    config = Criterion::default()
+    .sample_size(500)
+    .with_profiler(prof::FlamegraphProfiler::new(100));
     targets = bench_search,
 }
 
