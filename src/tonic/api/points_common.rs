@@ -40,6 +40,7 @@ use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
@@ -1053,6 +1054,9 @@ pub async fn search(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let timing = Instant::now();
     let scored_points = do_core_search_points(
         toc,
@@ -1062,6 +1066,7 @@ pub async fn search(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
+        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -1096,6 +1101,8 @@ pub async fn core_search_batch(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
 
     let scored_points = do_search_batch_points(
@@ -1105,6 +1112,7 @@ pub async fn core_search_batch(
         read_consistency,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -1151,6 +1159,8 @@ pub async fn core_search_list(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let scored_points = toc
         .core_search_batch(
             &collection_name,
@@ -1159,6 +1169,7 @@ pub async fn core_search_list(
             shard_selection,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 
@@ -1204,6 +1215,9 @@ pub async fn search_groups(
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
+    // TODO: put in grpc API
+    let hw_measuerement_acc = HwMeasurementAcc::new();
+
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
         toc,
@@ -1213,6 +1227,7 @@ pub async fn search_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
+        hw_measuerement_acc.clone(),
     )
     .await?;
 
@@ -1306,6 +1321,8 @@ pub async fn recommend(
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
     let timeout = timeout.map(Duration::from_secs);
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
     let recommended_points = toc
         .recommend(
@@ -1315,6 +1332,7 @@ pub async fn recommend(
             shard_selector,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 
@@ -1359,6 +1377,8 @@ pub async fn recommend_batch(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
     let scored_points = toc
         .recommend_batch(
@@ -1367,6 +1387,7 @@ pub async fn recommend_batch(
             read_consistency,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 
@@ -1411,6 +1432,9 @@ pub async fn recommend_groups(
 
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let timing = Instant::now();
     let groups_result = crate::common::points::do_recommend_point_groups(
         toc,
@@ -1420,6 +1444,7 @@ pub async fn recommend_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
+        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -1453,6 +1478,8 @@ pub async fn discover(
 
     let timing = Instant::now();
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     let discovered_points = toc
@@ -1463,6 +1490,7 @@ pub async fn discover(
             shard_selector,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 
@@ -1506,6 +1534,8 @@ pub async fn discover_batch(
         )
         .await?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
     let scored_points = toc
         .discover_batch(
@@ -1514,6 +1544,7 @@ pub async fn discover_batch(
             read_consistency,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 
@@ -1641,6 +1672,9 @@ pub async fn count(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
+    // TODO: use value
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let count_result = do_count_points(
         toc,
         &collection_name,
@@ -1649,6 +1683,7 @@ pub async fn count(
         timeout,
         shard_selector,
         access.clone(),
+        hw_measurement_acc,
     )
     .await?;
 
@@ -1750,6 +1785,8 @@ pub async fn query(
 
     let timeout = timeout.map(Duration::from_secs);
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
     let scored_points = do_query_points(
         toc,
@@ -1759,6 +1796,7 @@ pub async fn query(
         shard_selector,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -1800,6 +1838,8 @@ pub async fn query_batch(
         )
         .await?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timing = Instant::now();
     let scored_points = do_query_batch_points(
         toc,
@@ -1808,6 +1848,7 @@ pub async fn query_batch(
         read_consistency,
         access,
         timeout,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -1852,6 +1893,9 @@ pub async fn query_groups(
 
     let timeout = timeout.map(Duration::from_secs);
     let timing = Instant::now();
+
+    // TODO: put this value in API
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let groups_result = do_query_point_groups(
         toc,
         &collection_name,
@@ -1860,6 +1904,7 @@ pub async fn query_groups(
         shard_selector,
         access,
         timeout,
+        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -1977,6 +2022,8 @@ pub async fn search_points_matrix(
         )
         .await?;
 
+    // TODO: Apply hardware counter value
+    let hw_measurement_acc = HwMeasurementAcc::new();
     let timeout = timeout.map(Duration::from_secs);
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
@@ -1990,6 +2037,7 @@ pub async fn search_points_matrix(
             shard_selector,
             access,
             timeout,
+            hw_measurement_acc,
         )
         .await?;
 

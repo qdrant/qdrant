@@ -1,6 +1,7 @@
 use std::cmp;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{future, TryStreamExt as _};
 use lazy_static::lazy_static;
 use segment::types::{QuantizationConfig, StrictModeConfig};
@@ -341,7 +342,7 @@ impl Collection {
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
                 let count_result = replica_set
-                    .count_local(count_request.clone(), None)
+                    .count_local(count_request.clone(), None, HwMeasurementAcc::new())
                     .await
                     .unwrap_or_default();
                 let points_count = count_result.map(|x| x.count).unwrap_or(0);

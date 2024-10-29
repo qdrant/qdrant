@@ -16,6 +16,7 @@ use api::grpc::qdrant::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
@@ -70,8 +71,17 @@ pub async fn query_batch_internal(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
+    // TODO: Apply hardware counter in response
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
     let batch_response = toc
-        .query_batch_internal(&collection_name, batch_requests, shard_selection, timeout)
+        .query_batch_internal(
+            &collection_name,
+            batch_requests,
+            shard_selection,
+            timeout,
+            hw_measurement_acc,
+        )
         .await?;
 
     let response = QueryBatchResponseInternal {

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -93,6 +94,7 @@ impl ShardOperation for DummyShard {
         _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }
@@ -102,6 +104,7 @@ impl ShardOperation for DummyShard {
         _: Arc<CountRequestInternal>,
         _: &Handle,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         self.dummy()
     }
@@ -122,6 +125,7 @@ impl ShardOperation for DummyShard {
         _requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.dummy()
     }

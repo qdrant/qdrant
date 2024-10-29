@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -69,6 +70,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: true,
                 }),
                 None,
+                HwMeasurementAcc::new(),
             )
             .await?
         else {

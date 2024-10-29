@@ -26,8 +26,8 @@ impl HwMeasurementAcc {
     }
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
-    pub fn apply_from_cell(&self, hw_counter_cell: &HardwareCounterCell) {
-        let HardwareCounterCell { cpu_counter } = hw_counter_cell;
+    pub fn merge_from_cell(&self, hw_counter_cell: HardwareCounterCell) {
+        let HardwareCounterCell { ref cpu_counter } = hw_counter_cell;
 
         self.cpu_counter
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);

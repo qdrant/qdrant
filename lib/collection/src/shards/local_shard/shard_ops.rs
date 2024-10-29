@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
@@ -169,8 +170,9 @@ impl ShardOperation for LocalShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        self.do_search(request, search_runtime_handle, timeout)
+        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 
@@ -179,6 +181,7 @@ impl ShardOperation for LocalShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO: measure hardware when counting
     ) -> CollectionResult<CountResult> {
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -233,11 +236,17 @@ impl ShardOperation for LocalShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
-        self.do_planned_query(planned_query, search_runtime_handle, timeout)
-            .await
+        self.do_planned_query(
+            planned_query,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     async fn facet(

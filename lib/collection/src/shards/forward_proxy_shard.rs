@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -354,10 +355,11 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout)
+            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 
@@ -366,10 +368,11 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(request, search_runtime_handle, timeout)
+            .count(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 
@@ -398,10 +401,11 @@ impl ShardOperation for ForwardProxyShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(requests, search_runtime_handle, timeout)
+            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 

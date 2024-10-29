@@ -12,6 +12,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::save_on_disk::SaveOnDisk;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
@@ -160,6 +161,7 @@ fn batch_search_bench(c: &mut Criterion) {
                                 }),
                                 search_runtime_handle,
                                 None,
+                                HwMeasurementAcc::new(),
                             )
                             .await
                             .unwrap();
@@ -191,7 +193,12 @@ fn batch_search_bench(c: &mut Criterion) {
 
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), search_runtime_handle, None)
+                        .core_search(
+                            Arc::new(search_query),
+                            search_runtime_handle,
+                            None,
+                            HwMeasurementAcc::new(),
+                        )
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

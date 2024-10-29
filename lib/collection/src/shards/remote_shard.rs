@@ -18,6 +18,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -726,6 +727,7 @@ impl ShardOperation for RemoteShard {
         batch_request: Arc<CoreSearchRequestBatch>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
@@ -784,6 +786,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<CountRequestInternal>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO: measure hardware when counting
     ) -> CollectionResult<CountResult> {
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
@@ -865,6 +868,7 @@ impl ShardOperation for RemoteShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
