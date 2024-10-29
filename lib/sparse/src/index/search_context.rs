@@ -148,12 +148,6 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         self.pooled.scores.clear(); // keep underlying allocated memory
         self.pooled.scores.resize(batch_len as usize, 0.0);
 
-        {
-            // Measure CPU usage of indexed sparse search.
-            let cpu_counter = self.hardware_counter.cpu_counter_mut();
-            cpu_counter.incr_delta(batch_len as usize);
-        }
-
         for posting in self.postings_iterators.iter_mut() {
             posting.posting_list_iterator.for_each_till_id(
                 batch_last_id,
@@ -259,6 +253,17 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
+
+        {
+            // Measure CPU usage of indexed sparse search.
+            // Assume the complexity of the search as total volume of the posting lists
+            // that are traversed in the batched search.
+            let cpu_counter = self.hardware_counter.cpu_counter_mut();
+            for posting in self.postings_iterators.iter() {
+                cpu_counter.incr_delta(posting.posting_list_iterator.len_to_end());
+            }
+        }
+
         let mut best_min_score = f32::MIN;
         loop {
             // check for cancellation (atomic amortized by batch)
