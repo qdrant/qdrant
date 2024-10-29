@@ -260,7 +260,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // that are traversed in the batched search.
             let cpu_counter = self.hardware_counter.cpu_counter_mut();
             for posting in self.postings_iterators.iter() {
-                cpu_counter.incr_delta(posting.posting_list_iterator.len_to_end());
+                cpu_counter.incr_delta_mut(posting.posting_list_iterator.len_to_end());
             }
         }
 
