@@ -1,4 +1,4 @@
-use api::grpc::models::{CollectionsResponse, VersionInfo};
+use api::grpc::models::{CollectionsResponse, HardwareUsage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
 use api::rest::{
     FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
@@ -95,6 +95,7 @@ struct AllDefinitions {
     bk: SearchMatrixPairsResponse,
     bl: FacetRequest,
     bm: FacetResponse,
+    bn: HardwareUsage,
 }
 
 fn save_schema<T: JsonSchema>() {

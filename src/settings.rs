@@ -50,6 +50,16 @@ pub struct ServiceConfig {
 
     /// How much time is considered too long for a query to execute.
     pub slow_query_secs: Option<f32>,
+
+    /// Whether to enable reporting of measured hardware utilization in API responses.
+    #[serde(default)]
+    pub hardware_reporting: Option<bool>,
+}
+
+impl ServiceConfig {
+    pub fn hardware_reporting(&self) -> bool {
+        self.hardware_reporting.unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]

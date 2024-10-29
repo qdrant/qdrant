@@ -86,6 +86,7 @@ pub fn init(
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
+        let service_config = web::Data::new(settings.service.clone());
 
         let mut api_key_whitelist = vec![
             WhitelistItem::exact("/"),
@@ -142,6 +143,7 @@ pub fn init(
                 .app_data(validate_json_config)
                 .app_data(TempFileConfig::default().directory(&upload_dir))
                 .app_data(MultipartFormConfig::default().total_limit(usize::MAX))
+                .app_data(service_config.clone())
                 .service(index)
                 .configure(config_collections_api)
                 .configure(config_snapshots_api)
@@ -240,6 +242,7 @@ fn validation_error_handler(
         result: None,
         status: ApiStatus::Error(msg),
         time: 0.0,
+        usage: None,
     });
     error::InternalError::from_response(err, response).into()
 }

@@ -6,6 +6,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -21,6 +22,7 @@ use crate::actix::helpers::{self, process_response, process_response_error};
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
+use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/search")]
 async fn search_points(
@@ -28,6 +30,7 @@ async fn search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let SearchRequest {
@@ -53,7 +56,9 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(
+    let hw_counter_accumulator = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         do_core_search_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -69,6 +74,8 @@ async fn search_points(
                 .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         }),
+        hw_counter_accumulator,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -79,6 +86,7 @@ async fn batch_search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let requests = request
@@ -113,7 +121,9 @@ async fn batch_search_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(
+    let hw_counter_accumulator = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         do_search_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -133,6 +143,8 @@ async fn batch_search_points(
                 })
                 .collect_vec()
         }),
+        hw_counter_accumulator,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -225,7 +237,7 @@ async fn search_points_matrix_pairs(
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
@@ -273,7 +285,7 @@ async fn search_points_matrix_offsets(
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 // Configure services

@@ -42,7 +42,7 @@ async fn create_shard_key(
     )
     .await;
 
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[post("/collections/{name}/shards/delete")]
@@ -72,7 +72,7 @@ async fn delete_shard_key(
     )
     .await;
 
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 pub fn config_shards_api(cfg: &mut web::ServiceConfig) {

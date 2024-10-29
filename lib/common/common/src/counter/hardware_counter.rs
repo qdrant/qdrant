@@ -7,7 +7,7 @@ use crate::counter::counter_cell::CounterCell;
 /// In release mode it'll only log a warning in this case.
 #[derive(Debug, Default)]
 pub struct HardwareCounterCell {
-    cpu_counter: CounterCell,
+    pub(super) cpu_counter: CounterCell,
 }
 
 impl HardwareCounterCell {
