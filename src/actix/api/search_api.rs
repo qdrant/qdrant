@@ -157,6 +157,7 @@ async fn search_point_groups(
     collection: Path<CollectionPath>,
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let SearchGroupsRequest {
@@ -182,15 +183,22 @@ async fn search_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(do_search_point_groups(
-        dispatcher.toc(&access, &pass),
-        &collection.name,
-        search_group_request,
-        params.consistency,
-        shard_selection,
-        access,
-        params.timeout(),
-    ))
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
+        do_search_point_groups(
+            dispatcher.toc(&access, &pass),
+            &collection.name,
+            search_group_request,
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+            hw_measurement_acc.clone(),
+        ),
+        hw_measurement_acc,
+        service_config.hardware_reporting(),
+    )
     .await
 }
 
@@ -200,6 +208,7 @@ async fn search_points_matrix_pairs(
     collection: Path<CollectionPath>,
     request: Json<SearchMatrixRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -242,7 +251,11 @@ async fn search_points_matrix_pairs(
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    process_response(response, timing, None)
+    let hw_measurements = service_config
+        .hardware_reporting()
+        .then_some(hw_measurement_acc);
+
+    process_response(response, timing, hw_measurements)
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
@@ -251,6 +264,7 @@ async fn search_points_matrix_offsets(
     collection: Path<CollectionPath>,
     request: Json<SearchMatrixRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -288,12 +302,16 @@ async fn search_points_matrix_offsets(
         shard_selection,
         access,
         params.timeout(),
-        hw_measurement_acc,
+        hw_measurement_acc.clone(),
     )
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    process_response(response, timing, None)
+    let hw_measurements = service_config
+        .hardware_reporting()
+        .then_some(hw_measurement_acc);
+
+    process_response(response, timing, hw_measurements)
 }
 
 // Configure services

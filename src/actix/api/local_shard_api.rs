@@ -7,6 +7,7 @@ use collection::operations::types::{
 };
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, Filter};
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
@@ -18,6 +19,7 @@ use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::points;
+use crate::settings::ServiceConfig;
 
 // Configure services
 pub fn config_local_shard_api(cfg: &mut web::ServiceConfig) {
@@ -122,6 +124,7 @@ async fn count_points(
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<CountRequestInternal>>,
     params: web::Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let WithFilter {
         mut request,
@@ -141,35 +144,43 @@ async fn count_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(async move {
-        let hash_ring_filter = match hash_ring_filter {
-            Some(filter) => get_hash_ring_filter(
-                &dispatcher,
-                &access,
+    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+
+    helpers::time_and_hardware_opt(
+        async move {
+            let hash_ring_filter = match hash_ring_filter {
+                Some(filter) => get_hash_ring_filter(
+                    &dispatcher,
+                    &access,
+                    &path.collection,
+                    AccessRequirements::new(),
+                    filter.expected_shard_id,
+                    &pass,
+                )
+                .await?
+                .into(),
+
+                None => None,
+            };
+
+            request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
+
+            points::do_count_points(
+                dispatcher.toc(&access, &pass),
                 &path.collection,
-                AccessRequirements::new(),
-                filter.expected_shard_id,
-                &pass,
+                request,
+                params.consistency,
+                params.timeout(),
+                ShardSelectorInternal::ShardId(path.shard),
+                access,
+                hw_measurement_acc_clone,
             )
-            .await?
-            .into(),
-
-            None => None,
-        };
-
-        request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
-
-        points::do_count_points(
-            dispatcher.toc(&access, &pass),
-            &path.collection,
-            request,
-            params.consistency,
-            params.timeout(),
-            ShardSelectorInternal::ShardId(path.shard),
-            access,
-        )
-        .await
-    })
+            .await
+        },
+        hw_measurement_acc,
+        service_config.hardware_reporting(),
+    )
     .await
 }
 

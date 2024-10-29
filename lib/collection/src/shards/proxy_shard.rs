@@ -249,10 +249,11 @@ impl ShardOperation for ProxyShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(request, search_runtime_handle, timeout)
+            .count(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 
