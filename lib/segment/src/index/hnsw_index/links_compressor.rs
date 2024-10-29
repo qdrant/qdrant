@@ -1,10 +1,8 @@
-use common::types::PointOffsetType;
-
 use crate::common::operation_error::{OperationError, OperationResult};
 
 pub struct DecompressIterator<T: Iterator<Item = u8>> {
     data: T,
-    delta: u32,
+    delta: u64,
 }
 
 impl<T: Iterator<Item = u8>> DecompressIterator<T> {
@@ -14,17 +12,17 @@ impl<T: Iterator<Item = u8>> DecompressIterator<T> {
 }
 
 impl<T: Iterator<Item = u8>> Iterator for DecompressIterator<T> {
-    type Item = u32;
+    type Item = u64;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut link: PointOffsetType = 0;
+        let mut link: u64 = 0;
         #[allow(for_loops_over_fallibles)]
-        for byte in self.data.next() {
-            let byte = byte as PointOffsetType;
+        while let Some(byte) = self.data.next() {
+            let byte = byte as u64;
             link |= (link << 7) | (byte & 127);
             if byte < 128 {
                 let result = link + self.delta;
-                self.delta = link;
+                self.delta = result;
                 return Some(result);
             }
         }
@@ -32,7 +30,7 @@ impl<T: Iterator<Item = u8>> Iterator for DecompressIterator<T> {
     }
 }
 
-pub fn estimate_compressed_size(data: &[u32]) -> usize {
+pub fn estimate_compressed_size(data: &[u64]) -> usize {
     let mut delta = 0;
     data.iter()
         .map(|&v| {
@@ -56,14 +54,7 @@ pub fn estimate_compressed_size(data: &[u32]) -> usize {
         .sum()
 }
 
-pub fn compress(data: &[u32], dst: &mut [u8]) -> OperationResult<()> {
-    if dst.len() != estimate_compressed_size(data) {
-        return Err(OperationError::service_error(
-            "Destination links buffer size does not match the estimated compressed size",
-        ));
-    }
-
-    let mut pos = 0;
+pub fn compress(data: &[u64], dst: &mut Vec<u8>) {
     let mut delta = 0;
     for &v in data {
         if v < delta {
@@ -78,17 +69,14 @@ pub fn compress(data: &[u32], dst: &mut [u8]) -> OperationResult<()> {
 
             v >>= 7;
             if v > 0 {
-                dst[pos] = 128 | byte;
+                dst.push(128 | byte);
             } else {
-                dst[pos] = byte;
+                dst.push(byte);
             }
-            pos += 1;
 
             if v == 0 {
                 break;
             }
         }
     }
-
-    Ok(())
 }

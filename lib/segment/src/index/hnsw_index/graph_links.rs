@@ -391,6 +391,18 @@ impl GraphLinksRam {
         reindex.try_set_capacity_exact(reindex_slice.len())?;
         reindex.extend_from_slice(reindex_slice);
 
+        log::info!(
+            "Loaded GraphLinksRam: SIZE: {}, points: {}, levels: {}, links: {}, offsets: {}",
+            reindex.len() * size_of::<u32>()
+                + level_offsets.len() * size_of::<u64>()
+                + links.len() * size_of::<u32>()
+                + offsets.len() * size_of::<u64>(),
+            reindex.len(),
+            level_offsets.len(),
+            links.len(),
+            offsets.len()
+        );
+
         let graph_links = Self {
             links,
             offsets,

@@ -10,6 +10,7 @@ use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexIm
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
+use super::hnsw_index::compressed_links::GraphLinksCompressed;
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
@@ -58,7 +59,7 @@ pub trait VectorIndex {
 #[derive(Debug)]
 pub enum VectorIndexEnum {
     Plain(PlainIndex),
-    HnswRam(HNSWIndex<GraphLinksRam>),
+    HnswRam(HNSWIndex<GraphLinksCompressed>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
     SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam>),

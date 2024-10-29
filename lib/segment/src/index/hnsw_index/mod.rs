@@ -9,7 +9,7 @@ pub mod graph_layers;
 pub mod graph_layers_builder;
 pub mod graph_links;
 pub mod hnsw;
-mod links_compressor;
+pub mod links_compressor;
 pub mod point_scorer;
 mod search_context;
 
