@@ -30,8 +30,8 @@ const MAX_SPARSE_DIM: usize = 30_000;
 const TOP: usize = 10;
 
 pub fn bench_search(c: &mut Criterion) {
-    bench_uniform_random(c, "random-50k", 50_000);
-    bench_uniform_random(c, "random-500k", 500_000);
+    // bench_uniform_random(c, "random-50k", 50_000);
+    // bench_uniform_random(c, "random-500k", 500_000);
 
     {
         let query_vectors =
@@ -40,9 +40,9 @@ pub fn bench_search(c: &mut Criterion) {
         let index_1m = load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0).unwrap();
         run_bench(c, "neurips2023-1M", index_1m, &query_vectors);
 
-        let index_full =
-            load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25).unwrap();
-        run_bench(c, "neurips2023-full-25pct", index_full, &query_vectors);
+        // let index_full =
+        //     load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25).unwrap();
+        // run_bench(c, "neurips2023-full-25pct", index_full, &query_vectors);
     }
 
     bench_movies(c);
