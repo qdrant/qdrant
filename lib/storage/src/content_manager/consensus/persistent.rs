@@ -84,23 +84,46 @@ impl Persistent {
     pub fn load_or_init(
         storage_path: impl AsRef<Path>,
         first_peer: bool,
+        reinit: bool,
     ) -> Result<Self, StorageError> {
         create_dir_all(storage_path.as_ref())?;
         let path_legacy = storage_path.as_ref().join(STATE_FILE_NAME_CBOR);
         let path_json = storage_path.as_ref().join(STATE_FILE_NAME);
-        let state = if path_json.exists() {
+        let mut state = if path_json.exists() {
             log::info!("Loading raft state from {}", path_json.display());
-            Self::load_json(path_json)?
+            Self::load_json(path_json.clone())?
         } else if path_legacy.exists() {
             log::info!("Loading raft state from {}", path_legacy.display());
             let mut state = Self::load(path_legacy)?;
             // migrate to json
-            state.path = path_json;
+            state.path = path_json.clone();
             state.save()?;
             state
         } else {
             log::info!("Initializing new raft state at {}", path_json.display());
-            Self::init(path_json, first_peer)?
+            Self::init(path_json.clone(), first_peer, None)?
+        };
+
+        let state = if reinit {
+            if first_peer {
+                // Re-initialize consensus of the first peer is different from the rest
+                // Effectively, we should remove all other peers from voters and learners
+                // assuming that other peers would need to join consensus again.
+                // PeerId if the current peer should stay in the list of voters,
+                // so we can accept consensus operations.
+                state.state.conf_state.voters = vec![state.this_peer_id];
+                state.state.conf_state.learners = vec![];
+                state.state.hard_state.vote = state.this_peer_id;
+                state.save()?;
+                state
+            } else {
+                // We want to re-initialize consensus while preserve the peer ID
+                // which is needed for migration from one cluster to another
+                let keep_peer_id = state.this_peer_id;
+                Self::init(path_json, first_peer, Some(keep_peer_id))?
+            }
+        } else {
+            state
         };
 
         log::debug!("State: {:?}", state);
@@ -235,10 +258,14 @@ impl Persistent {
     ///
     /// `first_peer` - if this is a first peer in a new deployment (e.g. it does not bootstrap from anyone)
     /// It is `None` if distributed deployment is disabled
-    fn init(path: PathBuf, first_peer: bool) -> Result<Self, StorageError> {
+    fn init(
+        path: PathBuf,
+        first_peer: bool,
+        this_peer_id: Option<PeerId>,
+    ) -> Result<Self, StorageError> {
         // Do not generate too big peer ID, to avoid problems with serialization
         // (especially in json format)
-        let this_peer_id = rand::random::<PeerId>() % (1 << 53);
+        let this_peer_id = this_peer_id.unwrap_or_else(|| rand::random::<PeerId>() % (1 << 53));
         let voters = if first_peer {
             vec![this_peer_id]
         } else {

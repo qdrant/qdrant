@@ -293,6 +293,12 @@ impl ConsensusOpWal {
             offset.wal_index + self.wal.num_entries() - 1, // there's always *at least* 1 entry, because WAL is not empty
         );
 
+        log::debug!(
+            "Compacting WAL until Raft index {}, WAL index {}",
+            until_raft_index,
+            compact_until_wal_index,
+        );
+
         // Compact WAL
         self.compacted_until_raft_index = offset.wal_to_raft(compact_until_wal_index);
         self.wal.prefix_truncate(compact_until_wal_index)?;
