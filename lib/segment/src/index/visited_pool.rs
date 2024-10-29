@@ -17,8 +17,8 @@ pub struct VisitedListHandle<'a> {
 /// and reuse same counter for multiple queries.
 #[derive(Debug)]
 struct VisitedList {
-    current_iter: usize,
-    visit_counters: Vec<usize>,
+    current_iter: u8,
+    visit_counters: Vec<u8>,
 }
 
 impl Default for VisitedList {
@@ -59,23 +59,26 @@ impl<'a> VisitedListHandle<'a> {
         self.visited_list
             .visit_counters
             .get(point_id as usize)
-            .map_or(false, |x| *x >= self.visited_list.current_iter)
+            .map_or(false, |x| *x == self.visited_list.current_iter)
     }
 
     /// Updates visited list
     /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
-        let idx = point_id as usize;
-        if idx >= self.visited_list.visit_counters.len() {
-            self.visited_list.visit_counters.resize(idx + 1, 0);
-        }
-        let prev_value = self.visited_list.visit_counters[idx];
-        self.visited_list.visit_counters[idx] = self.visited_list.current_iter;
-        prev_value >= self.visited_list.current_iter
+        std::mem::replace(
+            &mut self.visited_list.visit_counters[point_id as usize],
+            self.visited_list.current_iter,
+        ) == self.visited_list.current_iter
     }
 
     pub fn next_iteration(&mut self) {
-        self.visited_list.current_iter += 1;
+        self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
+        if self.visited_list.current_iter == 0 {
+            self.visited_list
+                .visit_counters
+                .iter_mut()
+                .for_each(|x| *x = u8::MAX);
+        }
     }
 }
 
