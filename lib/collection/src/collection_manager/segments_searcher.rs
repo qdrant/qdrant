@@ -271,7 +271,7 @@ impl SegmentsSearcher {
                             );
 
                             hw_counter_clone
-                                .apply_from_cell(&segment_query_context.take_hardware_counter());
+                                .merge_from_cell(segment_query_context.take_hardware_counter());
 
                             res
                         }
@@ -328,7 +328,7 @@ impl SegmentsSearcher {
                         );
 
                         hw_counter_clone
-                            .apply_from_cell(&segment_query_context.take_hardware_counter());
+                            .merge_from_cell(segment_query_context.take_hardware_counter());
 
                         result
                     }))
