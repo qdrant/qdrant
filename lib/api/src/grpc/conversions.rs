@@ -3,6 +3,7 @@ use std::str::FromStr as _;
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -21,7 +22,7 @@ use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
     DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
     FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
-    HasVectorCondition, KeywordIndexParams, LookupLocation, MultiVectorComparator,
+    HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MultiVectorComparator,
     MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
     SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
     UuidIndexParams, VectorsOutput, WithLookup,
@@ -2126,6 +2127,14 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
             a: Some(pair.a.into()),
             b: Some(pair.b.into()),
             score: pair.score,
+        }
+    }
+}
+
+impl From<HwMeasurementAcc> for HardwareUsage {
+    fn from(value: HwMeasurementAcc) -> Self {
+        Self {
+            cpu: value.get_cpu() as u64,
         }
     }
 }

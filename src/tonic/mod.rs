@@ -159,7 +159,7 @@ pub fn init(
         let qdrant_service = QdrantService::default();
         let health_service = HealthService::default();
         let collections_service = CollectionsService::new(dispatcher.clone());
-        let points_service = PointsService::new(dispatcher.clone());
+        let points_service = PointsService::new(dispatcher.clone(), settings.service.clone());
         let snapshot_service = SnapshotsService::new(dispatcher.clone());
 
         // Only advertise the public services. By default, all services in QDRANT_DESCRIPTOR_SET
@@ -276,10 +276,11 @@ pub fn init_internal(
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
 
             let qdrant_service = QdrantService::default();
+            let points_internal_service =
+                PointsInternalService::new(toc.clone(), settings.service.clone());
             let qdrant_internal_service =
                 QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
-            let points_internal_service = PointsInternalService::new(toc.clone());
             let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
             let raft_service = RaftService::new(to_consensus, consensus_state);
 
