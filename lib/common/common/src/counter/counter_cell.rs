@@ -78,4 +78,9 @@ impl CounterCell {
     pub fn clear(&self) {
         self.counter.set(0);
     }
+
+    /// Takes the value of the counter, leaving 0 in its place.
+    pub fn take(&self) -> usize {
+        self.counter.take()
+    }
 }

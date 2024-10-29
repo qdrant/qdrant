@@ -2,6 +2,7 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -15,6 +16,7 @@ use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::points::do_discover_batch_points;
+use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/discover")]
 async fn discover_points(
@@ -22,6 +24,7 @@ async fn discover_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let DiscoverRequest {
@@ -47,7 +50,9 @@ async fn discover_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         dispatcher
             .toc(&access, &pass)
             .discover(
@@ -64,6 +69,8 @@ async fn discover_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
+        hw_measurement_acc,
+        service_config.hardware_reporting(),
     )
     .await
 }
@@ -74,6 +81,7 @@ async fn discover_batch_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let request = request.into_inner();
@@ -91,7 +99,9 @@ async fn discover_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    helpers::time(
+    let hw_measurement_acc = HwMeasurementAcc::new();
+
+    helpers::time_and_hardware_opt(
         do_discover_batch_points(
             dispatcher.toc(&access, &pass),
             &collection.name,
@@ -111,6 +121,8 @@ async fn discover_batch_points(
                 })
                 .collect_vec()
         }),
+        hw_measurement_acc,
+        service_config.hardware_reporting(),
     )
     .await
 }

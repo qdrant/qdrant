@@ -144,7 +144,7 @@ async fn update_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[delete("/collections/{name}")]
@@ -164,7 +164,7 @@ async fn delete_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[post("/collections/aliases")]
@@ -182,7 +182,7 @@ async fn update_aliases(
             query.timeout(),
         )
         .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 #[get("/collections/{name}/cluster")]
@@ -220,7 +220,7 @@ async fn update_collection_cluster(
         wait_timeout,
     )
     .await;
-    process_response(response, timing)
+    process_response(response, timing, None)
 }
 
 // Configure services

@@ -64,6 +64,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -149,6 +160,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -242,6 +264,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -346,6 +379,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -401,6 +445,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -584,6 +639,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -640,6 +706,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -717,6 +794,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -774,6 +862,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -842,6 +941,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -926,6 +1036,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1010,6 +1131,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1084,6 +1216,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1160,6 +1303,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1256,6 +1410,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1324,6 +1489,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1419,6 +1595,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1487,6 +1674,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1570,6 +1768,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1638,6 +1847,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -1695,6 +1915,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -2001,6 +2232,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -2323,6 +2565,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -2894,6 +3147,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3272,6 +3536,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3369,6 +3644,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3466,6 +3752,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3562,6 +3859,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3658,6 +3966,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3754,6 +4073,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3850,6 +4180,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -3944,6 +4285,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4040,6 +4392,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4136,6 +4499,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4232,6 +4606,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4332,6 +4717,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4429,6 +4825,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4529,6 +4936,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4632,6 +5050,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4729,6 +5158,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4829,6 +5269,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -4932,6 +5383,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5029,6 +5491,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5129,6 +5602,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5223,6 +5707,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5320,6 +5815,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5417,6 +5923,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5514,6 +6031,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5614,6 +6142,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5711,6 +6250,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -5808,6 +6358,17 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "usage": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/HardwareUsage"
+                        },
+                        {
+                          "nullable": true
+                        }
+                      ]
+                    },
                     "time": {
                       "type": "number",
                       "format": "float",
@@ -13569,6 +14130,20 @@
             "type": "boolean"
           }
         ]
+      },
+      "HardwareUsage": {
+        "description": "Usage of the hardware resources, spent to process the request",
+        "type": "object",
+        "required": [
+          "cpu"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
       }
     }
   }

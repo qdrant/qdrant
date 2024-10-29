@@ -1,20 +1,18 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use super::hardware_counter::HardwareCounterCell;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
 
 /// A "slow" but thread-safe accumulator for measurement results of `HardwareCounterCell` values.
+/// This type is completely reference counted and clones of this type will read/write the same values as their origin structure.
 #[derive(Clone)]
-pub struct AtomicHardwareAccumulator {
+pub struct HwMeasurementAcc {
     cpu_counter: Arc<AtomicUsize>,
 }
 
-impl AtomicHardwareAccumulator {
+impl HwMeasurementAcc {
     pub fn new() -> Self {
-        Self {
-            cpu_counter: Arc::new(AtomicUsize::new(0)),
-        }
+        Self::default()
     }
 
     pub fn get_cpu(&self) -> usize {
@@ -22,21 +20,24 @@ impl AtomicHardwareAccumulator {
     }
 
     pub fn clear(&self) {
-        let AtomicHardwareAccumulator { cpu_counter } = self;
+        let HwMeasurementAcc { cpu_counter } = self;
 
         cpu_counter.store(0, Ordering::Relaxed);
     }
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
     pub fn apply_from_cell(&self, hw_counter_cell: &HardwareCounterCell) {
-        let HardwareCounterCell {
-            cpu_counter,
-            checked: _,
-        } = hw_counter_cell;
+        let HardwareCounterCell { cpu_counter } = hw_counter_cell;
 
-        self.cpu_counter.store(cpu_counter.get(), Ordering::Relaxed);
+        self.cpu_counter
+            .fetch_add(cpu_counter.take(), Ordering::Relaxed);
+    }
+}
 
-        // Clear the cells measurements to 'consume' it.
-        cpu_counter.set(0);
+impl Default for HwMeasurementAcc {
+    fn default() -> Self {
+        Self {
+            cpu_counter: Arc::new(AtomicUsize::new(0)),
+        }
     }
 }
