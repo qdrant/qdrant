@@ -31,6 +31,9 @@ validator = { workspace = true }
 itertools = { workspace = true }
 parking_lot = { workspace = true }
 log = { workspace = true }
+tikv-jemallocator = { version = "0.6", features = ["stats", "unprefixed_malloc_on_supported_platforms"] }
+tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
+
 
 [dev-dependencies]
 criterion = { workspace = true }

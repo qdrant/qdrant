@@ -24,6 +24,10 @@ use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::loaders::{self, Csr};
 use sparse::index::search_context::SearchContext;
 mod prof;
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 const NUM_QUERIES: usize = 2048;
 const MAX_SPARSE_DIM: usize = 30_000;
