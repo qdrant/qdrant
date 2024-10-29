@@ -1,11 +1,12 @@
 pub struct DecompressIterator<T: Iterator<Item = u8>> {
     data: T,
     delta: u64,
+    sorted: bool,
 }
 
 impl<T: Iterator<Item = u8>> DecompressIterator<T> {
-    pub fn new(data: T) -> Self {
-        DecompressIterator { data, delta: 0 }
+    pub fn new(data: T, sorted: bool) -> Self {
+        DecompressIterator { data, delta: 0, sorted }
     }
 }
 
@@ -21,7 +22,9 @@ impl<T: Iterator<Item = u8>> Iterator for DecompressIterator<T> {
             shift += 7;
             if byte < 0x80 {
                 let result = link + self.delta;
-                self.delta = result;
+                if self.sorted {
+                    self.delta = result;
+                }
                 return Some(result);
             }
         }
@@ -29,7 +32,7 @@ impl<T: Iterator<Item = u8>> Iterator for DecompressIterator<T> {
     }
 }
 
-pub fn estimate_compressed_size(data: &[u64]) -> usize {
+pub fn estimate_compressed_size(data: &[u64], sorted: bool) -> usize {
     let mut delta = 0;
     data.iter()
         .map(|&orig| {
@@ -38,7 +41,9 @@ pub fn estimate_compressed_size(data: &[u64]) -> usize {
             }
 
             let mut v = orig - delta;
-            delta = orig;
+            if sorted {
+                delta = orig;
+            }
 
             let mut bytes_count = 0;
             loop {
@@ -53,7 +58,7 @@ pub fn estimate_compressed_size(data: &[u64]) -> usize {
         .sum()
 }
 
-pub fn compress(data: &[u64], dst: &mut Vec<u8>) {
+pub fn compress(data: &[u64], dst: &mut Vec<u8>, sorted: bool) {
     let mut delta = 0;
     for &orig in data {
         if orig < delta {
@@ -61,7 +66,9 @@ pub fn compress(data: &[u64], dst: &mut Vec<u8>) {
         }
 
         let mut v = orig - delta;
-        delta = orig;
+        if sorted {
+            delta = orig;
+        }
 
         loop {
             let byte = (v & 0x7F) as u8;
@@ -84,11 +91,11 @@ mod tests {
 
     #[test]
     fn test_compression() {
-        let data = vec![0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        //let data = vec![500, 1_000, 9_000, 1_000_000, 6_000_000, 7_000_000_000, 7_000_000_001, 7_000_000_001];
+        //let data = vec![0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let data = vec![500, 1_000, 9_000, 1_000_000, 6_000_000, 7_000_000_000, 7_000_000_001, 7_000_000_001];
         let mut compressed = Vec::new();
-        compress(&data, &mut compressed);
-        let decompressed = DecompressIterator::new(compressed.iter().copied());
+        compress(&data, &mut compressed, true);
+        let decompressed = DecompressIterator::new(compressed.iter().copied(), true);
         let decompressed_data: Vec<_> = decompressed.collect();
         assert_eq!(data, decompressed_data);
     }
@@ -96,9 +103,9 @@ mod tests {
     #[test]
     fn test_estimate_compressed_size() {
         let data = vec![0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let compressed_size = estimate_compressed_size(&data);
+        let compressed_size = estimate_compressed_size(&data, true);
         let mut compressed = Vec::new();
-        compress(&data, &mut compressed);
+        compress(&data, &mut compressed, true);
         assert_eq!(compressed_size, compressed.len());
     }
 }

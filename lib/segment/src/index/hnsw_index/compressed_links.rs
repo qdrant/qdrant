@@ -58,15 +58,15 @@ impl GraphLinks for GraphLinksCompressed {
         let entry_block = point_id as usize / ENTRY_BLOCK_SIZE;
         let entry_block_i = point_id as usize % ENTRY_BLOCK_SIZE;
         let entries = &self.entry[self.entry_blocks[entry_block]..];
-        let level_start = DecompressIterator::new(entries.iter().cloned())
+        let level_start = DecompressIterator::new(entries.iter().cloned(), true)
             .skip(entry_block_i)
             .next()
             .unwrap() as usize;
 
         let levels_data = &self.links_start[level_start..];
-        let mut iter = DecompressIterator::new(levels_data.iter().cloned());
-        let levels_count = iter.next().unwrap() as usize;
-        if level >= levels_count {
+        let mut iter = DecompressIterator::new(levels_data.iter().cloned(), true);
+        let point_level = iter.next().unwrap() as usize;
+        if level > point_level {
             panic!("Level {} is out of bounds", level);
         }
 
@@ -75,20 +75,20 @@ impl GraphLinks for GraphLinksCompressed {
         let links_end = iter.next().unwrap() as usize;
 
         let links_data = &self.links[links_start..links_end];
-        DecompressIterator::new(links_data.iter().cloned()).map(|l| l as PointOffsetType)
+        DecompressIterator::new(links_data.iter().cloned(), false).map(|l| l as PointOffsetType)
     }
 
     fn point_level(&self, point_id: PointOffsetType) -> usize {
         let entry_block = point_id as usize / ENTRY_BLOCK_SIZE;
         let entry_block_i = point_id as usize % ENTRY_BLOCK_SIZE;
         let entries = &self.entry[self.entry_blocks[entry_block]..];
-        let level_start = DecompressIterator::new(entries.iter().cloned())
+        let level_start = DecompressIterator::new(entries.iter().cloned(), true)
             .skip(entry_block_i)
             .next()
             .unwrap() as usize;
 
         let levels_data = &self.links_start[level_start..];
-        DecompressIterator::new(levels_data.iter().cloned())
+        DecompressIterator::new(levels_data.iter().cloned(), true)
             .next()
             .unwrap() as usize
     }
@@ -103,42 +103,42 @@ impl GraphLinksCompressed {
         let mut links = vec![0u8; PADDING_SIZE];
         let mut links_start = vec![];
         let mut entry = vec![];
-        let mut entry_blocks = vec![0];
+        let mut entry_blocks = vec![];
 
-        let mut e = vec![0];
+        let mut e = vec![];
         let mut l = vec![];
         let mut lnk = vec![];
         for point_id in 0..num_points {
-            if point_id % ENTRY_BLOCK_SIZE == 0 && e.len() > 0 {
-                compress(&e, &mut entry);
+            if point_id % ENTRY_BLOCK_SIZE == 0 {
+                compress(&e, &mut entry, true);
                 entry_blocks.push(entry.len());
                 e.clear();
             }
 
-            e.push(entry.len() as u64);
+            e.push(links_start.len() as u64);
 
-            let levels_count = mmap.point_level(point_id as PointOffsetType) + 1;
+            let point_level = mmap.point_level(point_id as PointOffsetType);
             l.clear();
-            l.push(levels_count as u64);
+            l.push(point_level as u64);
 
             l.push(links.len() as u64);
-            for level in 0..levels_count {
+            for level in 0..=point_level {
                 lnk.clear();
                 lnk.extend(
                     mmap.links(point_id as PointOffsetType, level)
                         .iter()
                         .map(|x| *x as u64),
                 );
-                lnk.sort();
+                //lnk.sort();
 
-                compress(&lnk, &mut links);
+                compress(&lnk, &mut links, false);
                 l.push(links.len() as u64);
             }
 
-            compress(&l, &mut links_start);
+            compress(&l, &mut links_start, true);
         }
         if e.len() > 0 {
-            compress(&e, &mut entry);
+            compress(&e, &mut entry, true);
             entry_blocks.push(entry.len());
             e.clear();
         }
