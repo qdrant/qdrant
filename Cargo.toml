@@ -153,7 +153,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [workspace.dependencies]
 atomicwrites = "0.4.4"
-bytes = "1.7.2"
+bytes = "1.8.0"
 chrono = { version = "0.4.38", features = ["serde"] }
 criterion = "0.5.1"
 data-encoding = "2.6.0"
