@@ -45,7 +45,7 @@ pub fn bench_search(c: &mut Criterion) {
         // run_bench(c, "neurips2023-full-25pct", index_full, &query_vectors);
     }
 
-    bench_movies(c);
+    // bench_movies(c);
 }
 
 fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
@@ -182,9 +182,9 @@ pub fn run_bench(
     }
 
     run_bench2!("c32", f32);
-    run_bench2!("c16", half::f16);
+    // run_bench2!("c16", half::f16);
     // run_bench2!("c8", u8);
-    run_bench2!("q8", QuantizedU8);
+    // run_bench2!("q8", QuantizedU8);
 }
 
 fn run_bench2(
