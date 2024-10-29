@@ -71,6 +71,7 @@ impl Consensus {
         telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
+        reinit: bool,
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
@@ -88,6 +89,7 @@ impl Consensus {
             tls_client_config,
             channel_service,
             runtime.clone(),
+            reinit,
         )?;
 
         let state_ref_clone = state_ref.clone();
@@ -179,7 +181,24 @@ impl Consensus {
         tls_config: Option<ClientTlsConfig>,
         channel_service: ChannelService,
         runtime: Handle,
+        reinit: bool,
     ) -> anyhow::Result<(Self, Sender<Message>)> {
+        // If we want to re-initialize consensus, we need to prevent other peers
+        // from re-playing consensus WAL operations, as they should already have them applied.
+        // Do ensure that we are forcing compacting WAL on the first re-initialized peer,
+        // which should trigger snapshot transferring instead of replaying WAL.
+        let force_compact_wal = reinit && bootstrap_peer.is_none();
+
+        // On the bootstrap-ed peers during reinit of the consensus
+        // we want to make sure only the bootstrap peer will hold the true state
+        // Therefore we clear the WAL on the bootstrap peer to force it to request a snapshot
+        let clear_wal = reinit && bootstrap_peer.is_some();
+
+        if clear_wal {
+            log::debug!("Clearing WAL on the bootstrap peer to force snapshot transfer");
+            state_ref.clear_wal()?;
+        }
+
         // raft will not return entries to the application smaller or equal to `applied`
         let last_applied = state_ref.last_applied_entry().unwrap_or_default();
         let raft_config = Config {
@@ -201,7 +220,7 @@ impl Consensus {
         // bounded channel for backpressure
         let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
-        if state_ref.is_new_deployment() {
+        if state_ref.is_new_deployment() || reinit {
             let leader_established_in_ms =
                 config.tick_period_ms * raft_config.max_election_tick() as u64;
             Self::init(
@@ -243,7 +262,13 @@ impl Consensus {
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
-        state_ref.compact_wal(config.compact_wal_entries)?;
+
+        if force_compact_wal {
+            // Making sure that the WAL will be compacted on start
+            state_ref.compact_wal(1)?;
+        } else {
+            state_ref.compact_wal(config.compact_wal_entries)?;
+        }
 
         let broker = RaftMessageBroker::new(
             runtime.clone(),
@@ -1380,7 +1405,7 @@ mod tests {
         let handle = general_runtime.handle().clone();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
         let persistent_state =
-            Persistent::load_or_init(&settings.storage.storage_path, true).unwrap();
+            Persistent::load_or_init(&settings.storage.storage_path, true, false).unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
@@ -1413,6 +1438,7 @@ mod tests {
             None,
             ChannelService::new(settings.service.http_port, None),
             handle.clone(),
+            false,
         )
         .unwrap();
 

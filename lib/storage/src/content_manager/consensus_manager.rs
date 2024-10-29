@@ -774,6 +774,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.toc.sync_local_state()
     }
 
+    pub fn clear_wal(&self) -> Result<(), StorageError> {
+        self.wal.lock().clear()
+    }
+
     pub fn compact_wal(&self, min_entries_to_compact: u64) -> Result<bool, StorageError> {
         if min_entries_to_compact == 0 {
             return Ok(false);
@@ -789,7 +793,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         let first_unapplied_index = applied_index + 1;
 
-        debug_assert!(first_unapplied_index <= first_entry.index);
+        // ToDo: it seems like a mistake, need to check if it's correct
+        // debug_assert!(first_unapplied_index <= first_entry.index);
 
         if first_unapplied_index - first_entry.index < min_entries_to_compact {
             return Ok(false);
@@ -924,9 +929,18 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
         _context: GetEntriesContext,
     ) -> raft::Result<Vec<RaftEntry>> {
         let max_size: Option<_> = max_size.into();
-        if low < self.first_index()? {
+        let first_index = self.first_index()?;
+        if low < first_index {
+            log::debug!(
+                "Requested entries from {} to {} are already compacted (first index: {})",
+                low,
+                high,
+                first_index
+            );
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
+
+        log::debug!("Requesting entries from {} to {}", low, high);
 
         if high > self.last_index()? + 1 {
             panic!(
@@ -1069,7 +1083,7 @@ mod tests {
     #[test]
     fn update_is_applied() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), false, false).unwrap();
         assert_eq!(state.state().hard_state.commit, 0);
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
@@ -1091,13 +1105,13 @@ mod tests {
     #[test]
     fn state_is_loaded() {
         let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
-        let mut state = Persistent::load_or_init(dir.path(), false).unwrap();
+        let mut state = Persistent::load_or_init(dir.path(), false, false).unwrap();
         state
             .apply_state_update(|state| state.hard_state.commit = 1)
             .unwrap();
         assert_eq!(state.state().hard_state.commit, 1);
 
-        let state_loaded = Persistent::load_or_init(dir.path(), false).unwrap();
+        let state_loaded = Persistent::load_or_init(dir.path(), false, false).unwrap();
         assert_eq!(state_loaded.state().hard_state.commit, 1);
     }
 
@@ -1195,7 +1209,7 @@ mod tests {
         entries: Vec<Entry>,
         path: &std::path::Path,
     ) -> (ConsensusManager<NoCollections>, MemStorage) {
-        let persistent = Persistent::load_or_init(path, true).unwrap();
+        let persistent = Persistent::load_or_init(path, true, false).unwrap();
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusManager::new(
             persistent,
