@@ -305,7 +305,7 @@ impl ShardOperation for ForwardProxyShard {
             let tick = result.clock_tag.map(|tag| tag.clock_tick);
             let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
 
-            if remote_tick > tick {
+            if remote_tick > tick || tick.is_none() {
                 result.clock_tag = remote_result.clock_tag;
             }
 
