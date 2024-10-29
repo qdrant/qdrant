@@ -4075,16 +4075,16 @@ dependencies = [
 
 [[package]]
 name = "ph"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2662713b3e8e02977b289a7ada32d672ae5477b5c23f290e5999122d53658847"
+checksum = "b2fbaf8da280599aae4047ea0659a1e79cf61739bce5bdc50ca88dc7e6357060"
 dependencies = [
  "aligned-vec",
  "binout",
  "bitm",
  "dyn_size_of",
  "rayon",
- "wyhash",
+ "seedable_hash",
 ]
 
 [[package]]
@@ -5632,6 +5632,15 @@ checksum = "317936bbbd05227752583946b9e66d7ce3b489f84e11a94a510b4437fef407d7"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "seedable_hash"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed064ed6aaf88eb6a28ae191f5871a7fcdd2858e1cd6e1ffcc746baef8cd3cfd"
+dependencies = [
+ "wyhash",
 ]
 
 [[package]]
