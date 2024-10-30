@@ -124,3 +124,28 @@ impl Default for VisitedPool {
         VisitedPool::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visited_list() {
+        let pool = VisitedPool::new();
+        let mut visited_list = pool.get(10);
+
+        for _ in 0..2 {
+            assert!(!visited_list.check(0));
+            assert!(!visited_list.check_and_update_visited(0));
+            assert!(visited_list.check(0));
+
+            assert!(visited_list.check_and_update_visited(0));
+            assert!(visited_list.check(0));
+
+            for _ in 0..260 {
+                visited_list.next_iteration();
+                assert!(!visited_list.check(0));
+            }
+        }
+    }
+}
