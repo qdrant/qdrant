@@ -473,6 +473,8 @@ impl ShardReplicaSet {
             // Data consistency will be handled by the shard transfer and the associated proxies.
             if err.is_pre_condition_failed() {
                 if !peer_state.is_partial_or_recovery() {
+                    // TODO: this replica is now inconsistent. We must ensure it's undergoing a
+                    // shard transfer to become consistent again.
                     log::warn!(
                         "Precondition failure on peer {peer_id} replica {}/{} while not in transfer, replica states may temporarily be out of sync",
                         self.collection_id,
