@@ -2,7 +2,6 @@
 name = "gpu"
 version = "0.0.1"
 authors = [
-    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
     "Ivan Pleshkov <pleshkov.ivan@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
