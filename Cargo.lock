@@ -3885,9 +3885,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "mmap-payload-storage"
+name = "mmap-value-storage"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#6eebbcd11607dfc630094d1275dceda12b93355f"
+source = "git+https://github.com/qdrant/mmap-payload-storage#08d00249580e7b5d94118e5ac329e0d5ffd08a11"
 dependencies = [
  "bitvec",
  "ciborium",
@@ -3896,6 +3896,7 @@ dependencies = [
  "lz4_flex",
  "memmap2 0.9.5",
  "parking_lot",
+ "proptest",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -5920,7 +5921,7 @@ dependencies = [
  "memmap2 0.9.5",
  "memory",
  "merge",
- "mmap-payload-storage",
+ "mmap-value-storage",
  "nom",
  "num-cmp",
  "num-derive",
