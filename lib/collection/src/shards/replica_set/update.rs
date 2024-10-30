@@ -471,7 +471,14 @@ impl ShardReplicaSet {
 
             // Handle a special case where transfer receiver is not in the expected replica state yet.
             // Data consistency will be handled by the shard transfer and the associated proxies.
-            if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
+            if err.is_pre_condition_failed() {
+                if !peer_state.is_partial_or_recovery() {
+                    log::warn!(
+                        "Precondition failure on peer {peer_id} replica {}/{} while not in transfer, replica states may temporarily be out of sync",
+                        self.collection_id,
+                        self.shard_id,
+                    );
+                }
                 continue;
             }
 
