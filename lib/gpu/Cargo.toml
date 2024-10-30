@@ -2,7 +2,6 @@
 name = "gpu"
 version = "0.0.1"
 authors = [
-    "Ivan Pleshkov <pleshkov.ivan@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
