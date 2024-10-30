@@ -6,7 +6,11 @@ pub struct DecompressIterator<T: Iterator<Item = u8>> {
 
 impl<T: Iterator<Item = u8>> DecompressIterator<T> {
     pub fn new(data: T, sorted: bool) -> Self {
-        DecompressIterator { data, delta: 0, sorted }
+        DecompressIterator {
+            data,
+            delta: 0,
+            sorted,
+        }
     }
 }
 
@@ -92,7 +96,16 @@ mod tests {
     #[test]
     fn test_compression() {
         //let data = vec![0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let data = vec![500, 1_000, 9_000, 1_000_000, 6_000_000, 7_000_000_000, 7_000_000_001, 7_000_000_001];
+        let data = vec![
+            500,
+            1_000,
+            9_000,
+            1_000_000,
+            6_000_000,
+            7_000_000_000,
+            7_000_000_001,
+            7_000_000_001,
+        ];
         let mut compressed = Vec::new();
         compress(&data, &mut compressed, true);
         let decompressed = DecompressIterator::new(compressed.iter().copied(), true);
