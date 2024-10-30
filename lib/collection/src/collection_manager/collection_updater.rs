@@ -20,8 +20,7 @@ impl CollectionUpdater {
             Ok(_) => {
                 if !segments.read().failed_operation.is_empty() {
                     // If this operation failed before, remove it because it got fixed now
-                    let mut write_segments = segments.write();
-                    write_segments.failed_operation.remove(&op_num);
+                    segments.write().failed_operation.remove(&op_num);
                 }
             }
             Err(collection_error) => {
