@@ -148,10 +148,14 @@ impl ShardReplicaSet {
                     let notify = self
                         .locally_disabled_peers
                         .write()
-                        .disable_peer_and_notify_if_elapsed(self.this_peer_id());
+                        .disable_peer_and_notify_if_elapsed(self.this_peer_id(), None);
 
                     if notify {
-                        self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id);
+                        self.notify_peer_failure_cb.deref()(
+                            self.this_peer_id(),
+                            self.shard_id,
+                            None,
+                        );
                     }
                 }
 

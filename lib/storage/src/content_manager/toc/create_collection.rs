@@ -216,11 +216,10 @@ impl TableOfContent {
             storage_config,
             collection_shard_distribution,
             self.channel_service.clone(),
-            Self::change_peer_state_callback(
+            Self::change_peer_from_state_callback(
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
                 ReplicaState::Dead,
-                None,
             ),
             Self::request_shard_transfer_callback(
                 self.consensus_proposal_sender.clone(),

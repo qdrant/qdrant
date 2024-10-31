@@ -18,7 +18,7 @@ use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
-use super::replica_set::AbortShardTransfer;
+use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
@@ -38,7 +38,7 @@ use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
-use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}; // TODO rename ReplicaShard to ReplicaSetShard
+use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
@@ -569,7 +569,7 @@ impl ShardHolder {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
-        on_peer_failure: ChangePeerState,
+        on_peer_failure: ChangePeerFromState,
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
