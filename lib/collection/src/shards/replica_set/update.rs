@@ -550,7 +550,7 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
     use crate::save_on_disk::SaveOnDisk;
-    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
@@ -637,8 +637,8 @@ mod tests {
         .unwrap()
     }
 
-    fn dummy_on_replica_failure() -> ChangePeerState {
-        Arc::new(move |_peer_id, _shard_id| {})
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
     }
 
     fn dummy_abort_shard_transfer() -> AbortShardTransfer {

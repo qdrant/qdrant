@@ -9,7 +9,7 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
-use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
+use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
 use collection::shards::CollectionId;
 use common::cpu::CpuBudget;
 use segment::types::Distance;
@@ -67,8 +67,8 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     .unwrap()
 }
 
-pub fn dummy_on_replica_failure() -> ChangePeerState {
-    Arc::new(move |_peer_id, _shard_id| {})
+pub fn dummy_on_replica_failure() -> ChangePeerFromState {
+    Arc::new(move |_peer_id, _shard_id, _from_state| {})
 }
 
 pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
