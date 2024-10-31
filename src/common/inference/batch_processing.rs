@@ -1,5 +1,5 @@
 // use collection::operations::point_ops::VectorPersisted;
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use api::rest::{
     ContextPair, DiscoverInput, Prefetch, Query, QueryGroupsRequestInternal, QueryInterface,
@@ -9,18 +9,18 @@ use api::rest::{
 use crate::common::inference::service::InferenceData;
 
 pub struct BatchAccum {
-    objects: HashMap<InferenceData, InferenceData>,
+    objects: HashSet<InferenceData>,
 }
 
 impl BatchAccum {
     pub fn new() -> Self {
         Self {
-            objects: HashMap::new(),
+            objects: HashSet::new(),
         }
     }
 
     pub fn add(&mut self, data: InferenceData) {
-        self.objects.insert(data.clone(), data);
+        self.objects.insert(data);
     }
 
     pub fn extend(&mut self, other: BatchAccum) {
@@ -158,7 +158,7 @@ mod tests {
         batch.add(doc.clone());
         assert_eq!(batch.objects.len(), 1);
 
-        batch.add(doc.clone());
+        batch.add(doc);
         assert_eq!(batch.objects.len(), 1);
     }
 
