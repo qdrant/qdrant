@@ -34,7 +34,10 @@ fn collect_vector_input(vector: VectorInput, batch: &mut BatchAccum) {
         VectorInput::Image(img) => batch.add(InferenceData::Image(img)),
         VectorInput::Object(obj) => batch.add(InferenceData::Object(obj)),
         // types that are not supported in the Inference Service
-        _ => {}
+        VectorInput::DenseVector(_)  => {}
+        VectorInput::MultiDenseVector(_) => {}
+        VectorInput::Id(_) => {}
+        VectorInput::SparseVector(_) => {}
     }
 }
 
