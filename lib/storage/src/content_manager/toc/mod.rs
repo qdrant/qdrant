@@ -498,13 +498,7 @@ impl TableOfContent {
                     state,
                     from_state,
                 ) {
-                    log::error!(
-                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
-                        peer_id,
-                        shard_id,
-                        collection_name,
-                        send_error
-                    );
+                    log::error!("Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}");
                 }
             } else {
                 log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");

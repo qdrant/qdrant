@@ -490,7 +490,7 @@ impl ShardReplicaSet {
             log::debug!(
                 "Deactivating peer {peer_id} because of failed update of shard {}:{}",
                 self.collection_id,
-                self.shard_id
+                self.shard_id,
             );
 
             // Deactivate replica in consensus if it matches the state we expect

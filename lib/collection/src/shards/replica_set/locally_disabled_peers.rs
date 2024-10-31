@@ -12,6 +12,7 @@ pub struct Registry {
     /// Each peer optionally specifies what state it was in when it was disabled. They're send
     /// along with the consensus proposal and prevents accidentally killing replicas if the current
     /// peer is slow to catch up with consensus.
+    /// See: <https://github.com/qdrant/qdrant/pull/5343>
     locally_disabled_peers: HashMap<PeerId, (Backoff, Option<ReplicaState>)>,
 }
 
