@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
@@ -48,15 +49,34 @@ struct InferenceInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct InferenceResponse {
-    embeddings: Vec<VectorPersisted>,
+pub(crate) struct InferenceResponse {
+    pub(crate) embeddings: Vec<VectorPersisted>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum InferenceData {
     Document(Document),
     Image(Image),
     Object(InferenceObject),
+}
+
+impl Hash for InferenceData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            InferenceData::Document(doc) => {
+                doc.text.hash(state);
+                doc.model.as_deref().unwrap_or("");
+            }
+            InferenceData::Image(img) => {
+                img.image.hash(state);
+                img.model.as_deref().unwrap_or("");
+            }
+            InferenceData::Object(obj) => {
+                obj.object.hash(state);
+                obj.model.as_deref().unwrap_or("");
+            }
+        }
+    }
 }
 
 impl From<InferenceData> for InferenceInput {

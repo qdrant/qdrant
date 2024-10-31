@@ -142,7 +142,7 @@ impl Validate for VectorStruct {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Text document for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Document {
     /// Text of the document
     /// This field will be used as input for the embedding model
@@ -158,7 +158,7 @@ pub struct Document {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Image object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Image {
     /// Image data: base64 encoded image or an URL
     pub image: String,
@@ -173,7 +173,7 @@ pub struct Image {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Custom object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct InferenceObject {
     /// Arbitrary data, used as input for the embedding model
     /// Used if the model requires more than one input or a custom input
