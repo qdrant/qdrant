@@ -493,7 +493,11 @@ impl ShardReplicaSet {
                 self.shard_id
             );
 
-            self.add_locally_disabled(state, *peer_id, Some(peer_state));
+            // Deactivate replica in consensus if it matches the state we expect
+            // Always deactivate the replica if its in a shard trnasfer related state
+            let from_state = Some(peer_state).filter(|state| !state.is_partial_or_recovery());
+
+            self.add_locally_disabled(state, *peer_id, from_state);
         }
 
         wait_for_deactivation
