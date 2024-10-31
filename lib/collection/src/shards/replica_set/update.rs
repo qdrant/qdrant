@@ -37,7 +37,7 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
 
         if let Some(local_shard) = local.deref() {
-            match self.peer_state(&self.this_peer_id()) {
+            match self.peer_state(self.this_peer_id()) {
                 Some(
                     ReplicaState::Active
                     | ReplicaState::Partial
@@ -129,7 +129,7 @@ impl ShardReplicaSet {
 
         peer_ids
             .into_iter()
-            .filter(|peer_id| self.peer_is_active_or_resharding(peer_id)) // re-acquire replica_state read lock
+            .filter(|&peer_id| self.peer_is_active_or_resharding(peer_id)) // re-acquire replica_state read lock
             .max()
     }
 
@@ -207,11 +207,11 @@ impl ShardReplicaSet {
         // Target all remote peers that can receive updates
         let updatable_remote_shards: Vec<_> = remotes
             .iter()
-            .filter(|rs| self.is_peer_updatable(&rs.peer_id))
+            .filter(|rs| self.is_peer_updatable(rs.peer_id))
             .collect();
 
         // Local is defined and can receive updates
-        let local_is_updatable = local.is_some() && self.is_peer_updatable(&this_peer_id);
+        let local_is_updatable = local.is_some() && self.is_peer_updatable(this_peer_id);
 
         if updatable_remote_shards.is_empty() && !local_is_updatable {
             return Err(CollectionError::service_error(format!(
@@ -227,8 +227,8 @@ impl ShardReplicaSet {
         let mut update_futures = Vec::with_capacity(updatable_remote_shards.len() + 1);
 
         if let Some(local) = local.deref() {
-            if self.is_peer_updatable(&this_peer_id) {
-                let local_wait = if self.peer_state(&this_peer_id) == Some(ReplicaState::Listener) {
+            if self.is_peer_updatable(this_peer_id) {
+                let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
                     false
                 } else {
                     wait
@@ -376,7 +376,7 @@ impl ShardReplicaSet {
             self.handle_failed_replicas(
                 failures
                     .iter()
-                    .filter(|(peer_id, _)| self.peer_is_resharding(peer_id)),
+                    .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
                 &self.replica_state.read(),
                 update_only_existing,
             );
@@ -388,7 +388,7 @@ impl ShardReplicaSet {
 
         if !successes
             .iter()
-            .any(|(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
+            .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
@@ -416,7 +416,7 @@ impl ShardReplicaSet {
     /// Whether to send updates to the given peer
     ///
     /// A peer in dead state, or a locally disabled peer, will not accept updates.
-    fn is_peer_updatable(&self, peer_id: &PeerId) -> bool {
+    fn is_peer_updatable(&self, peer_id: PeerId) -> bool {
         let res = match self.peer_state(peer_id) {
             Some(ReplicaState::Active) => true,
             Some(ReplicaState::Partial) => true,
@@ -434,7 +434,7 @@ impl ShardReplicaSet {
         res && !self.is_locally_disabled(peer_id)
     }
 
-    fn peer_is_resharding(&self, peer_id: &PeerId) -> bool {
+    fn peer_is_resharding(&self, peer_id: PeerId) -> bool {
         self.peer_state(peer_id) == Some(ReplicaState::Resharding)
             && !self.is_locally_disabled(peer_id)
     }
@@ -454,7 +454,7 @@ impl ShardReplicaSet {
                 self.shard_id,
             );
 
-            let Some(&peer_state) = state.get_peer_state(peer_id) else {
+            let Some(&peer_state) = state.get_peer_state(*peer_id) else {
                 continue;
             };
 
@@ -557,10 +557,10 @@ mod tests {
         // at build time the replicas are all dead, they need to be activated
         assert_eq!(rs.highest_alive_replica_peer_id(), None);
 
-        rs.set_replica_state(&1, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&3, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&4, ReplicaState::Active).unwrap();
-        rs.set_replica_state(&5, ReplicaState::Partial).unwrap();
+        rs.set_replica_state(1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(5, ReplicaState::Partial).unwrap();
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));

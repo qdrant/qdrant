@@ -109,13 +109,13 @@ async fn fixture() -> Collection {
         let op = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
                 PointStructPersisted {
-                    id: u64::from(*shard_id).into(),
+                    id: u64::from(shard_id).into(),
                     vector: VectorStructPersisted::Single(
                         (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
                     ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),
-                        Value::from(-(*shard_id as i32)),
+                        Value::from(-(shard_id as i32)),
                     )]))),
                 },
                 PointStructPersisted {
@@ -125,7 +125,7 @@ async fn fixture() -> Collection {
                     ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),
-                        Value::from(100 - *shard_id as i32),
+                        Value::from(100 - shard_id as i32),
                     )]))),
                 },
             ])),
@@ -139,7 +139,7 @@ async fn fixture() -> Collection {
     // Activate all shards
     for shard_id in 0..SHARD_COUNT {
         collection
-            .set_shard_replica_state(shard_id as ShardId, PEER_ID, ReplicaState::Active, None)
+            .set_shard_replica_state(shard_id, PEER_ID, ReplicaState::Active, None)
             .await
             .expect("failed to active shard");
     }

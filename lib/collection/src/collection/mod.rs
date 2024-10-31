@@ -329,7 +329,7 @@ impl Collection {
     }
 
     pub async fn contains_shard(&self, shard_id: ShardId) -> bool {
-        self.shards_holder.read().await.contains_shard(&shard_id)
+        self.shards_holder.read().await.contains_shard(shard_id)
     }
 
     pub async fn wait_local_shard_replica_state(
@@ -340,7 +340,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         let shard_holder_read = self.shards_holder.read().await;
 
-        let shard = shard_holder_read.get_shard(&shard_id);
+        let shard = shard_holder_read.get_shard(shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
                 what: "Shard {shard_id}".into(),
@@ -359,16 +359,16 @@ impl Collection {
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
         let replica_set = shard_holder
-            .get_shard(&shard_id)
+            .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         log::debug!(
             "Changing shard {}:{shard_id} replica state from {:?} to {state:?}",
             self.id,
-            replica_set.peer_state(&peer_id),
+            replica_set.peer_state(peer_id),
         );
 
-        let current_state = replica_set.peer_state(&peer_id);
+        let current_state = replica_set.peer_state(peer_id);
 
         // Validation:
         //
@@ -380,7 +380,7 @@ impl Collection {
             .read()
             .contains_key(&peer_id);
 
-        let replica_exists = replica_set.peer_state(&peer_id).is_some();
+        let replica_exists = replica_set.peer_state(peer_id).is_some();
 
         if !peer_exists && !replica_exists {
             return Err(CollectionError::bad_input(format!(
@@ -443,14 +443,14 @@ impl Collection {
         }
 
         replica_set
-            .ensure_replica_with_state(&peer_id, state)
+            .ensure_replica_with_state(peer_id, state)
             .await?;
 
         if state == ReplicaState::Dead {
             // TODO(resharding): Abort all resharding transfers!?
 
             // Terminate transfer if source or target replicas are now dead
-            let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
+            let related_transfers = shard_holder.get_related_transfers(shard_id, peer_id);
 
             // `abort_shard_transfer` locks `shard_holder`!
             drop(shard_holder);
@@ -485,7 +485,7 @@ impl Collection {
     pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<RecoveryPoint> {
         let shard_holder_read = self.shards_holder.read().await;
 
-        let shard = shard_holder_read.get_shard(&shard_id);
+        let shard = shard_holder_read.get_shard(shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
                 what: format!("Shard {shard_id}"),
@@ -502,7 +502,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         let shard_holder_read = self.shards_holder.read().await;
 
-        let shard = shard_holder_read.get_shard(&shard_id);
+        let shard = shard_holder_read.get_shard(shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
                 what: "Shard {shard_id}".into(),
@@ -524,7 +524,7 @@ impl Collection {
                     let shard_info = ShardInfo {
                         replicas: replicas.peers(),
                     };
-                    (*shard_id, shard_info)
+                    (shard_id, shard_info)
                 })
                 .collect(),
             resharding,
@@ -579,7 +579,7 @@ impl Collection {
         }
 
         // Check for un-reported finished transfers
-        let outgoing_transfers = shard_holder.get_outgoing_transfers(&self.this_peer_id);
+        let outgoing_transfers = shard_holder.get_outgoing_transfers(self.this_peer_id);
         let tasks_lock = self.transfer_tasks.lock().await;
         for transfer in outgoing_transfers {
             match tasks_lock
@@ -619,29 +619,29 @@ impl Collection {
 
         // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
-            let this_peer_id = &replica_set.this_peer_id();
+            let this_peer_id = replica_set.this_peer_id();
             let shard_id = replica_set.shard_id;
 
             let peers = replica_set.peers();
-            let this_peer_state = peers.get(this_peer_id).copied();
+            let this_peer_state = peers.get(&this_peer_id).copied();
             let is_last_active = peers.values().filter(|state| **state == Active).count() == 1;
 
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
                 // Try to activate shard, as the collection clearly exists
-                on_finish_init(*this_peer_id, shard_id);
+                on_finish_init(this_peer_id, shard_id);
                 continue;
             }
 
             if self.shared_storage_config.node_type == NodeType::Listener {
                 if this_peer_state == Some(Active) && !is_last_active {
                     // Convert active node from active to listener
-                    on_convert_to_listener(*this_peer_id, shard_id);
+                    on_convert_to_listener(this_peer_id, shard_id);
                     continue;
                 }
             } else if this_peer_state == Some(Listener) {
                 // Convert listener node to active
-                on_convert_from_listener(*this_peer_id, shard_id);
+                on_convert_from_listener(this_peer_id, shard_id);
                 continue;
             }
 
@@ -654,7 +654,7 @@ impl Collection {
 
             // Respect shard transfer limit, consider already proposed transfers in our counts
             let (mut incoming, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
-            incoming += proposed.get(this_peer_id).copied().unwrap_or(0);
+            incoming += proposed.get(&this_peer_id).copied().unwrap_or(0);
             if self.check_auto_shard_transfer_limit(incoming, outgoing) {
                 log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (incoming: {incoming}, outgoing: {outgoing})");
                 continue;
@@ -680,7 +680,7 @@ impl Collection {
             for replica_id in replica_set.active_remote_shards().await {
                 let transfer = ShardTransfer {
                     from: replica_id,
-                    to: *this_peer_id,
+                    to: this_peer_id,
                     shard_id,
                     to_shard_id: None,
                     sync: true,
@@ -693,7 +693,7 @@ impl Collection {
                 }
 
                 // Respect shard transfer limit, consider already proposed transfers in our counts
-                let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(&replica_id);
+                let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(replica_id);
                 outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
                 if self.check_auto_shard_transfer_limit(incoming, outgoing) {
                     log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})");
