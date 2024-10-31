@@ -461,7 +461,7 @@ impl TableOfContent {
         let collections = self.collections.read().await;
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             for collection in collections.values() {
-                for transfer in collection.get_outgoing_transfers(&self.this_peer_id).await {
+                for transfer in collection.get_outgoing_transfers(self.this_peer_id).await {
                     let cancel_transfer =
                         ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
                     proposal_sender.send(cancel_transfer)?;

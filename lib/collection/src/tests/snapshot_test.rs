@@ -148,15 +148,15 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     {
         let shards_holder = &recovered_collection.shards_holder.read().await;
 
-        let replica_ser_0 = shards_holder.get_shard(&0).unwrap();
+        let replica_ser_0 = shards_holder.get_shard(0).unwrap();
         assert!(replica_ser_0.is_local().await);
-        let replica_ser_1 = shards_holder.get_shard(&1).unwrap();
+        let replica_ser_1 = shards_holder.get_shard(1).unwrap();
         assert!(replica_ser_1.is_local().await);
-        let replica_ser_2 = shards_holder.get_shard(&2).unwrap();
+        let replica_ser_2 = shards_holder.get_shard(2).unwrap();
         assert!(!replica_ser_2.is_local().await);
         assert_eq!(replica_ser_2.peers().len(), 1);
 
-        let replica_ser_3 = shards_holder.get_shard(&3).unwrap();
+        let replica_ser_3 = shards_holder.get_shard(3).unwrap();
 
         assert!(replica_ser_3.is_local().await);
         assert_eq!(replica_ser_3.peers().len(), 3); // 2 remotes + 1 local

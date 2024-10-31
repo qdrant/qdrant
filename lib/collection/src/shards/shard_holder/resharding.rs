@@ -306,7 +306,7 @@ impl ShardHolder {
                 // Revert replicas in `Resharding` state back into `Active` state
                 for (peer, state) in shard.peers() {
                     if state == ReplicaState::Resharding {
-                        shard.set_replica_state(&peer, ReplicaState::Active)?;
+                        shard.set_replica_state(peer, ReplicaState::Active)?;
                     }
                 }
 
@@ -334,8 +334,8 @@ impl ShardHolder {
 
         // Remove new shard if resharding up
         if direction == ReshardingDirection::Up {
-            if let Some(shard) = self.get_shard(&shard_id) {
-                match shard.peer_state(&peer_id) {
+            if let Some(shard) = self.get_shard(shard_id) {
+                match shard.peer_state(peer_id) {
                     Some(ReplicaState::Resharding) => {
                         log::debug!("removing peer {peer_id} from {shard_id} replica set");
                         shard.remove_peer(peer_id).await?;
@@ -514,7 +514,7 @@ impl ShardHolder {
     }
 
     pub async fn cleanup_local_shard(&self, shard_id: ShardId) -> CollectionResult<UpdateResult> {
-        let shard = self.get_shard(&shard_id).ok_or_else(|| {
+        let shard = self.get_shard(shard_id).ok_or_else(|| {
             CollectionError::not_found(format!("shard {shard_id} does not exist"))
         })?;
 
@@ -535,7 +535,7 @@ impl ShardHolder {
     }
 
     pub fn hash_ring_filter(&self, shard_id: ShardId) -> Option<hash_ring::HashRingFilter> {
-        if !self.contains_shard(&shard_id) {
+        if !self.contains_shard(shard_id) {
             return None;
         }
 

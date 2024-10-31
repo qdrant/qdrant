@@ -92,7 +92,7 @@ impl Collection {
         let result = tokio::task::spawn(async move {
             let _update_lock = update_lock;
 
-            let Some(shard) = shard_holder.get_shard(&shard_selection) else {
+            let Some(shard) = shard_holder.get_shard(shard_selection) else {
                 return Ok(None);
             };
 

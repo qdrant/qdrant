@@ -198,7 +198,7 @@ impl Collection {
                 Change::Remove(shard_id, peer_id) => (shard_id, peer_id),
             };
 
-            let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
+            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
                 return Err(CollectionError::BadRequest {
                     description: format!("Shard {} of {} not found", shard_id, self.name()),
                 });
@@ -333,7 +333,6 @@ impl Collection {
 
         // extract shards info
         for (shard_id, replica_set) in shards_holder.get_shards() {
-            let shard_id = *shard_id;
             let peers = replica_set.peers();
 
             if replica_set.has_local_shard().await {

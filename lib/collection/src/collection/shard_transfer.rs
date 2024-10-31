@@ -19,7 +19,7 @@ use crate::shards::transfer::{
 };
 
 impl Collection {
-    pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
+    pub async fn get_outgoing_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
         self.shards_holder
             .read()
             .await
@@ -67,10 +67,10 @@ impl Collection {
                 .unwrap_or(shard_transfer.shard_id);
 
             let shards_holder = self.shards_holder.read().await;
-            let from_replica_set = shards_holder.get_shard(&from_shard_id).ok_or_else(|| {
+            let from_replica_set = shards_holder.get_shard(from_shard_id).ok_or_else(|| {
                 CollectionError::service_error(format!("Shard {from_shard_id} doesn't exist"))
             })?;
-            let to_replica_set = shards_holder.get_shard(&to_shard_id).ok_or_else(|| {
+            let to_replica_set = shards_holder.get_shard(to_shard_id).ok_or_else(|| {
                 CollectionError::service_error(format!("Shard {to_shard_id} doesn't exist"))
             })?;
             let _was_not_transferred =
@@ -112,7 +112,7 @@ impl Collection {
                 debug_assert!(old_shard.is_none(), "We should not have a local shard yet");
             } else {
                 to_replica_set
-                    .ensure_replica_with_state(&shard_transfer.to, initial_state)
+                    .ensure_replica_with_state(shard_transfer.to, initial_state)
                     .await?;
             }
 
@@ -206,10 +206,10 @@ impl Collection {
         let mut is_dest_replica_active = false;
 
         let dest_replica_set =
-            shard_holder.get_shard(&transfer.to_shard_id.unwrap_or(transfer.shard_id));
+            shard_holder.get_shard(transfer.to_shard_id.unwrap_or(transfer.shard_id));
 
         if let Some(replica_set) = dest_replica_set {
-            if replica_set.peer_state(&transfer.to).is_some() {
+            if replica_set.peer_state(transfer.to).is_some() {
                 // Promote *destination* replica/shard to `Active` if:
                 //
                 // - replica *exists*
@@ -227,7 +227,7 @@ impl Collection {
                 };
 
                 if transfer.to == self.this_peer_id {
-                    replica_set.set_replica_state(&transfer.to, state)?;
+                    replica_set.set_replica_state(transfer.to, state)?;
                 } else {
                     replica_set.add_remote(transfer.to, state).await?;
                 }
@@ -237,7 +237,7 @@ impl Collection {
         }
 
         // Handle *source* replica
-        let src_replica_set = shard_holder.get_shard(&transfer.shard_id);
+        let src_replica_set = shard_holder.get_shard(transfer.shard_id);
 
         if let Some(replica_set) = src_replica_set {
             if transfer.sync || is_resharding_transfer {
@@ -303,8 +303,8 @@ impl Collection {
 
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
-        if let Some(replica_set) = shard_holder.get_shard(&shard_id) {
-            if replica_set.peer_state(&transfer.to).is_some() {
+        if let Some(replica_set) = shard_holder.get_shard(shard_id) {
+            if replica_set.peer_state(transfer.to).is_some() {
                 if is_resharding_transfer {
                     // If *resharding* shard transfer failed, we don't need/want to change replica state:
                     // - on transfer failure, the whole resharding would be aborted (see below),
@@ -319,7 +319,7 @@ impl Collection {
                     //   and so failed transfer does not introduce any inconsistencies to points
                     //   that are not affected by resharding in all other shards
                 } else if transfer.sync {
-                    replica_set.set_replica_state(&transfer.to, ReplicaState::Dead)?;
+                    replica_set.set_replica_state(transfer.to, ReplicaState::Dead)?;
                 } else {
                     replica_set.remove_peer(transfer.to).await?;
                 }
@@ -362,7 +362,7 @@ impl Collection {
         async move {
             let shards_holder = shards_holder.read_owned().await;
 
-            let Some(replica_set) = shards_holder.get_shard(&shard_id) else {
+            let Some(replica_set) = shards_holder.get_shard(shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {shard_id} doesn't exist, repartition is not supported yet"
                 )));
@@ -390,7 +390,7 @@ impl Collection {
                 // We can guarantee that replica_set is not None, cause we checked it before
                 // and `shards_holder` is holding the lock.
                 // This is a workaround for lifetime checker.
-                let replica_set = shards_holder.get_shard(&shard_id).unwrap();
+                let replica_set = shards_holder.get_shard(shard_id).unwrap();
                 let shard_transfer_registered = shards_holder.shard_transfers.wait_for(
                     |shard_transfers| {
                         shard_transfers.iter().any(|shard_transfer| {
@@ -409,7 +409,7 @@ impl Collection {
                     && replica_set.wait_for_state_condition_sync(
                         |state| {
                             state
-                                .get_peer_state(&this_peer_id)
+                                .get_peer_state(this_peer_id)
                                 .map_or(false, |peer_state| peer_state.is_partial_or_recovery())
                         },
                         defaults::CONSENSUS_META_OP_WAIT,

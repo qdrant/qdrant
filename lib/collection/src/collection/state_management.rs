@@ -96,7 +96,7 @@ impl Collection {
         // and create new shards if needed
 
         for (shard_id, shard_info) in shards {
-            match self.shards_holder.read().await.get_shard(&shard_id) {
+            match self.shards_holder.read().await.get_shard(shard_id) {
                 Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
                 None => {
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
