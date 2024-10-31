@@ -55,8 +55,8 @@ impl ShardReplicaSet {
 
         let read_consistency = read_consistency.unwrap_or_default();
 
-        let local_count = usize::from(self.peer_state(&self.this_peer_id()).is_some());
-        let active_local_count = usize::from(self.peer_is_active(&self.this_peer_id()));
+        let local_count = usize::from(self.peer_state(self.this_peer_id()).is_some());
+        let active_local_count = usize::from(self.peer_is_active(self.this_peer_id()));
 
         let remotes = self.remotes.read().await;
 
@@ -65,7 +65,7 @@ impl ShardReplicaSet {
         // TODO(resharding): Handle resharded shard?
         let active_remotes_count = remotes
             .iter()
-            .filter(|remote| self.peer_is_active(&remote.peer_id))
+            .filter(|remote| self.peer_is_active(remote.peer_id))
             .count();
 
         let total_count = local_count + remotes_count;
@@ -159,7 +159,7 @@ impl ShardReplicaSet {
             Err(_) => (self.local.read().right_future(), false, None),
         };
 
-        let local_is_active = self.peer_is_active(&self.this_peer_id());
+        let local_is_active = self.peer_is_active(self.this_peer_id());
 
         let local_operation = if local_is_active {
             let local_operation = async {
@@ -183,7 +183,7 @@ impl ShardReplicaSet {
         // TODO(resharding): Handle resharded shard?
         let mut active_remotes: Vec<_> = remotes
             .iter()
-            .filter(|remote| self.peer_is_active(&remote.peer_id))
+            .filter(|remote| self.peer_is_active(remote.peer_id))
             .collect();
 
         active_remotes.shuffle(&mut rand::thread_rng());

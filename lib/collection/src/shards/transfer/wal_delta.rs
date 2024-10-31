@@ -98,7 +98,7 @@ pub(super) async fn transfer_wal_delta(
 
     let shard_holder_read = shard_holder.read().await;
 
-    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let transferring_shard = shard_holder_read.get_shard(shard_id);
     let Some(replica_set) = transferring_shard else {
         return Err(CollectionError::service_error(format!(
             "Shard {shard_id} cannot be queue proxied because it does not exist"

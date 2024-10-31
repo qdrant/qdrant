@@ -55,7 +55,7 @@ pub(super) async fn drive(
         loop {
             let shard_holder = shard_holder.read().await;
 
-            let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
+            let replica_set = shard_holder.get_shard(source_shard_id).ok_or_else(|| {
                 CollectionError::service_error(format!(
                     "Shard {source_shard_id} not found in the shard holder for resharding",
                 ))

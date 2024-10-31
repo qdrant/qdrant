@@ -132,12 +132,11 @@ async fn drive_up(
 
                 let source_peer_ids = {
                     let shard_holder = shard_holder.read().await;
-                    let replica_set =
-                        shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
-                            CollectionError::service_error(format!(
-                                "Shard {source_shard_id} not found in the shard holder for resharding",
-                            ))
-                        })?;
+                    let replica_set = shard_holder.get_shard(source_shard_id).ok_or_else(|| {
+                        CollectionError::service_error(format!(
+                            "Shard {source_shard_id} not found in the shard holder for resharding",
+                        ))
+                    })?;
 
                     let active_peer_ids = replica_set.active_shards().await;
                     if active_peer_ids.is_empty() {
@@ -147,13 +146,13 @@ async fn drive_up(
                     }
 
                     // Respect shard transfer limits, always allow local transfers
-                    let (incoming, _) = shard_holder.count_shard_transfer_io(&this_peer_id);
+                    let (incoming, _) = shard_holder.count_shard_transfer_io(this_peer_id);
                     if incoming < incoming_limit {
                         active_peer_ids
                             .into_iter()
-                            .filter(|peer_id| {
+                            .filter(|&peer_id| {
                                 let (_, outgoing) = shard_holder.count_shard_transfer_io(peer_id);
-                                outgoing < outgoing_limit || peer_id == &this_peer_id
+                                outgoing < outgoing_limit || peer_id == this_peer_id
                             })
                             .collect()
                     } else if active_peer_ids.contains(&this_peer_id) {
@@ -299,14 +298,14 @@ async fn drive_down(
 
             let source_replica_set =
                 shard_holder
-                    .get_shard(&reshard_key.shard_id)
+                    .get_shard(reshard_key.shard_id)
                     .ok_or_else(|| {
                         CollectionError::service_error(format!(
                             "Shard {} not found in the shard holder for resharding",
                             reshard_key.shard_id,
                         ))
                     })?;
-            let target_replica_set = shard_holder.get_shard(&target_shard_id).ok_or_else(|| {
+            let target_replica_set = shard_holder.get_shard(target_shard_id).ok_or_else(|| {
                 CollectionError::service_error(format!(
                     "Shard {target_shard_id} not found in the shard holder for resharding",
                 ))
@@ -415,7 +414,7 @@ async fn migrate_local(
     // Normally consensus takes care of this, but we don't use consensus here
     {
         let shard_holder = shard_holder.read().await;
-        let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
+        let replica_set = shard_holder.get_shard(source_shard_id).ok_or_else(|| {
             CollectionError::service_error(format!(
                 "Shard {source_shard_id} not found in the shard holder for resharding",
             ))

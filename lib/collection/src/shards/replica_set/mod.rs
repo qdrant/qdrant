@@ -236,7 +236,7 @@ impl ShardReplicaSet {
             replica_state
                 .write(|rs| {
                     let this_peer_id = rs.this_peer_id;
-                    let local_state = rs.remove_peer_state(&this_peer_id);
+                    let local_state = rs.remove_peer_state(this_peer_id);
                     if let Some(state) = local_state {
                         rs.set_peer_state(this_peer_id, state);
                     }
@@ -366,7 +366,7 @@ impl ShardReplicaSet {
         active_peers.len() == 1 && active_peers.contains(&peer_id)
     }
 
-    pub fn peer_state(&self, peer_id: &PeerId) -> Option<ReplicaState> {
+    pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
         self.replica_state.read().get_peer_state(peer_id).copied()
     }
 
@@ -376,7 +376,7 @@ impl ShardReplicaSet {
         replica_state
             .active_peers()
             .into_iter()
-            .filter(|peer_id| !self.is_locally_disabled(peer_id))
+            .filter(|&peer_id| !self.is_locally_disabled(peer_id))
             .collect()
     }
 
@@ -387,7 +387,7 @@ impl ShardReplicaSet {
         replica_state
             .active_peers()
             .into_iter()
-            .filter(|peer_id| !self.is_locally_disabled(peer_id) && *peer_id != this_peer_id)
+            .filter(|&peer_id| !self.is_locally_disabled(peer_id) && peer_id != this_peer_id)
             .collect()
     }
 
@@ -417,7 +417,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         self.wait_for(
             move |replica_set_state| {
-                replica_set_state.get_peer_state(&replica_set_state.this_peer_id) == Some(&state)
+                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(&state)
             },
             timeout,
         )
@@ -438,7 +438,7 @@ impl ShardReplicaSet {
         timeout: Duration,
     ) -> CollectionResult<()> {
         self.wait_for(
-            move |replica_set_state| replica_set_state.get_peer_state(&peer_id) == Some(&state),
+            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(&state),
             timeout,
         )
         .await
@@ -537,7 +537,7 @@ impl ShardReplicaSet {
         self.replica_state.write(|rs| {
             rs.is_local = false;
             let this_peer_id = rs.this_peer_id;
-            rs.remove_peer_state(&this_peer_id);
+            rs.remove_peer_state(this_peer_id);
         })?;
 
         self.update_locally_disabled(self.this_peer_id());
@@ -583,7 +583,7 @@ impl ShardReplicaSet {
 
     pub async fn remove_remote(&self, peer_id: PeerId) -> CollectionResult<()> {
         self.replica_state.write(|rs| {
-            rs.remove_peer_state(&peer_id);
+            rs.remove_peer_state(peer_id);
         })?;
 
         self.update_locally_disabled(peer_id);
@@ -597,19 +597,19 @@ impl ShardReplicaSet {
     /// Ensure that remote shard is initialized.
     pub async fn ensure_replica_with_state(
         &self,
-        peer_id: &PeerId,
+        peer_id: PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
-        if *peer_id == self.this_peer_id() {
+        if peer_id == self.this_peer_id() {
             self.set_replica_state(peer_id, state)?;
         } else {
             // Create remote shard if necessary
-            self.add_remote(*peer_id, state).await?;
+            self.add_remote(peer_id, state).await?;
         }
         Ok(())
     }
 
-    pub fn set_replica_state(&self, peer_id: &PeerId, state: ReplicaState) -> CollectionResult<()> {
+    pub fn set_replica_state(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
         log::debug!(
             "Changing local shard {}:{} state from {:?} to {state:?}",
             self.collection_id,
@@ -618,12 +618,12 @@ impl ShardReplicaSet {
         );
 
         self.replica_state.write(|rs| {
-            if rs.this_peer_id == *peer_id {
+            if rs.this_peer_id == peer_id {
                 rs.is_local = true;
             }
-            rs.set_peer_state(*peer_id, state);
+            rs.set_peer_state(peer_id, state);
         })?;
-        self.update_locally_disabled(*peer_id);
+        self.update_locally_disabled(peer_id);
         Ok(())
     }
 
@@ -877,11 +877,11 @@ impl ShardReplicaSet {
 
     /// Check whether a peer is registered as `active`.
     /// Unknown peers are not active.
-    fn peer_is_active(&self, peer_id: &PeerId) -> bool {
+    fn peer_is_active(&self, peer_id: PeerId) -> bool {
         self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
     }
 
-    fn peer_is_active_or_resharding(&self, peer_id: &PeerId) -> bool {
+    fn peer_is_active_or_resharding(&self, peer_id: PeerId) -> bool {
         let is_active_or_resharding = matches!(
             self.peer_state(peer_id),
             Some(ReplicaState::Active | ReplicaState::Resharding)
@@ -892,8 +892,8 @@ impl ShardReplicaSet {
         is_active_or_resharding && !is_locally_disabled
     }
 
-    fn is_locally_disabled(&self, peer_id: &PeerId) -> bool {
-        self.locally_disabled_peers.read().is_disabled(*peer_id)
+    fn is_locally_disabled(&self, peer_id: PeerId) -> bool {
+        self.locally_disabled_peers.read().is_disabled(peer_id)
     }
 
     /// Locally disable given peer
@@ -1007,16 +1007,16 @@ pub struct ReplicaSetState {
 }
 
 impl ReplicaSetState {
-    pub fn get_peer_state(&self, peer_id: &PeerId) -> Option<&ReplicaState> {
-        self.peers.get(peer_id)
+    pub fn get_peer_state(&self, peer_id: PeerId) -> Option<&ReplicaState> {
+        self.peers.get(&peer_id)
     }
 
     pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
         self.peers.insert(peer_id, state);
     }
 
-    pub fn remove_peer_state(&mut self, peer_id: &PeerId) -> Option<ReplicaState> {
-        self.peers.remove(peer_id)
+    pub fn remove_peer_state(&mut self, peer_id: PeerId) -> Option<ReplicaState> {
+        self.peers.remove(&peer_id)
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {

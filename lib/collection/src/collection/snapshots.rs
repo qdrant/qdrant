@@ -100,7 +100,7 @@ impl Collection {
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
                 let shard_snapshot_path =
-                    shard_versioning::versioned_shard_path(Path::new(""), *shard_id, 0);
+                    shard_versioning::versioned_shard_path(Path::new(""), shard_id, 0);
 
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
@@ -284,7 +284,7 @@ impl Collection {
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
             Arc::clone(&self.shards_holder).read_owned().await,
-            |x| x.get_shard(&shard_id),
+            |x| x.get_shard(shard_id),
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 

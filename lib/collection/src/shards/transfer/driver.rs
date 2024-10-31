@@ -166,7 +166,7 @@ pub async fn revert_proxy_shard_to_local(
     shard_holder: &ShardHolder,
     shard_id: ShardId,
 ) -> CollectionResult<bool> {
-    let replica_set = match shard_holder.get_shard(&shard_id) {
+    let replica_set = match shard_holder.get_shard(shard_id) {
         None => return Ok(false),
         Some(replica_set) => replica_set,
     };
@@ -241,7 +241,7 @@ where
 
             if is_err || is_cancelled {
                 // Revert queue proxy if we still have any to prepare for the next attempt
-                if let Some(shard) = shards_holder.read().await.get_shard(&transfer.shard_id) {
+                if let Some(shard) = shards_holder.read().await.get_shard(transfer.shard_id) {
                     shard.revert_queue_proxy_local().await;
                 }
             }

@@ -65,7 +65,7 @@ pub(super) async fn drive(
 
             // Ensure we don't exceed the outgoing transfer limits
             let shard_holder = shard_holder.read().await;
-            let (_, outgoing) = shard_holder.count_shard_transfer_io(&this_peer_id);
+            let (_, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
             if outgoing >= outgoing_limit {
                 log::trace!("Postponing resharding replication transfer to stay below transfer limit (outgoing: {outgoing})");
                 sleep(SHARD_TRANSFER_IO_LIMIT_RETRY_INTERVAL).await;
@@ -73,7 +73,7 @@ pub(super) async fn drive(
             }
 
             // Select peers that don't have this replica yet
-            let Some(replica_set) = shard_holder.get_shard(&reshard_key.shard_id) else {
+            let Some(replica_set) = shard_holder.get_shard(reshard_key.shard_id) else {
                 return Err(CollectionError::service_error(format!(
                     "Shard {} not found in the shard holder for resharding",
                     reshard_key.shard_id,
@@ -99,9 +99,9 @@ pub(super) async fn drive(
                 .unwrap();
             let candidate_peers: Vec<_> = candidate_peers
                 .into_iter()
-                .filter(|(peer_id, shard_count)| {
+                .filter(|&(peer_id, shard_count)| {
                     let (incoming, _) = shard_holder.count_shard_transfer_io(peer_id);
-                    lowest_shard_count == *shard_count && incoming < incoming_limit
+                    lowest_shard_count == shard_count && incoming < incoming_limit
                 })
                 .map(|(peer_id, _)| peer_id)
                 .collect();
@@ -188,7 +188,7 @@ async fn has_enough_replicas(
         .get();
     let current_replication_factor = {
         let shard_holder_read = shard_holder.read().await;
-        let Some(replica_set) = shard_holder_read.get_shard(&reshard_key.shard_id) else {
+        let Some(replica_set) = shard_holder_read.get_shard(reshard_key.shard_id) else {
             return Err(CollectionError::service_error(format!(
                 "Shard {} not found in the shard holder for resharding",
                 reshard_key.shard_id,
