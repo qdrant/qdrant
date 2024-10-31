@@ -1,3 +1,4 @@
+import time
 from time import sleep
 import hashlib
 import os
@@ -6,8 +7,7 @@ import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
-
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
+from .helpers.settings import QDRANT_HOST
 
 collection_name = 'test_collection_snapshot'
 
@@ -371,7 +371,7 @@ def test_full_snapshot_security():
     # ensure we cannot do simple arbitrary path traversal
     snapshot_name = "/etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/snapshots/{snapshot_name}",
+        f"{QDRANT_HOST}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
@@ -379,7 +379,7 @@ def test_full_snapshot_security():
 
     snapshot_name = "../../../../../../../etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/snapshots/{snapshot_name}",
+        f"{QDRANT_HOST}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
@@ -399,7 +399,7 @@ def test_collection_snapshot_security():
     # ensure we cannot do simple arbitrary path traversal
     snapshot_name = "/etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
+        f"{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
@@ -407,7 +407,7 @@ def test_collection_snapshot_security():
 
     snapshot_name = "../../../../../../../etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
+        f"{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
