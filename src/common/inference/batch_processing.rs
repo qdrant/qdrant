@@ -77,7 +77,7 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
                 }
             }
         }
-        _ => {}
+        Query::OrderBy(_) | Query::Fusion(_) | Query::Sample(_) => {}
     }
 }
 
