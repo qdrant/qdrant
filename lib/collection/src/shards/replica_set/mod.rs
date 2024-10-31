@@ -368,7 +368,7 @@ impl ShardReplicaSet {
     }
 
     pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
-        self.replica_state.read().get_peer_state(peer_id).copied()
+        self.replica_state.read().get_peer_state(peer_id)
     }
 
     /// List the peer IDs on which this shard is active, both the local and remote peers.
@@ -418,7 +418,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         self.wait_for(
             move |replica_set_state| {
-                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(&state)
+                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(state)
             },
             timeout,
         )
@@ -439,7 +439,7 @@ impl ShardReplicaSet {
         timeout: Duration,
     ) -> CollectionResult<()> {
         self.wait_for(
-            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(&state),
+            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(state),
             timeout,
         )
         .await
@@ -1015,8 +1015,8 @@ pub struct ReplicaSetState {
 }
 
 impl ReplicaSetState {
-    pub fn get_peer_state(&self, peer_id: PeerId) -> Option<&ReplicaState> {
-        self.peers.get(&peer_id)
+    pub fn get_peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
+        self.peers.get(&peer_id).copied()
     }
 
     pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {

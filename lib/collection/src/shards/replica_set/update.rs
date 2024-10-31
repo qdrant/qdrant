@@ -101,7 +101,7 @@ impl ShardReplicaSet {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
                         let replica_state = self.replica_state.read();
-                        let from_state = replica_state.get_peer_state(&leader_peer).cloned();
+                        let from_state = replica_state.get_peer_state(leader_peer);
                         self.add_locally_disabled(&replica_state, leader_peer, from_state);
 
                         // Return service error
@@ -456,7 +456,7 @@ impl ShardReplicaSet {
                 self.shard_id,
             );
 
-            let Some(&peer_state) = state.get_peer_state(*peer_id) else {
+            let Some(peer_state) = state.get_peer_state(*peer_id) else {
                 continue;
             };
 
