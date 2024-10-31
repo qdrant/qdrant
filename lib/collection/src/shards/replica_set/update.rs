@@ -100,7 +100,9 @@ impl ShardReplicaSet {
                 .map_err(|err| {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
-                        self.add_locally_disabled(&self.replica_state.read(), leader_peer, None);
+                        let replica_state = self.replica_state.read();
+                        let from_state = replica_state.get_peer_state(&leader_peer).cloned();
+                        self.add_locally_disabled(&replica_state, leader_peer, from_state);
 
                         // Return service error
                         CollectionError::service_error(format!(

@@ -737,7 +737,6 @@ impl ShardReplicaSet {
             .collect();
 
         for (failed_peer_id, from_state) in peers_to_notify {
-            // TODO: Only `notify_peer_failure` if `failed_peer` is *not* the last `Active` peer? 🤔
             self.notify_peer_failure(failed_peer_id, from_state);
 
             for transfer in get_shard_transfers(self.shard_id, failed_peer_id) {
