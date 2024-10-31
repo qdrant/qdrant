@@ -7,6 +7,7 @@ use std::thread;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
+use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
@@ -335,7 +336,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let visited_pool = VisitedPool::new();
         let mut block_filter_list = visited_pool.get(total_vector_count);
-        let visits_iteration = block_filter_list.get_current_iteration_id();
 
         let payload_m = config.payload_m.unwrap_or(config.m);
 
@@ -345,6 +345,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let average_links_per_0_level =
                 graph_layers_builder.get_average_connectivity_on_level(0);
             let average_links_per_0_level_int = (average_links_per_0_level as usize).max(1);
+
+            let mut indexed_vectors_set = if config.m != 0 {
+                // Every vector is already indexed in the main graph, so skip counting.
+                BitVec::new()
+            } else {
+                BitVec::repeat(false, total_vector_count)
+            };
 
             for (field, _) in payload_index.indexed_fields() {
                 debug!("building additional index for field {}", &field);
@@ -385,12 +392,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         &mut additional_graph,
                         payload_block.condition,
                         &mut block_filter_list,
+                        &mut indexed_vectors_set,
                     )?;
                     graph_layers_builder.merge_from_other(additional_graph);
                 }
             }
 
-            let indexed_payload_vectors = block_filter_list.count_visits_since(visits_iteration);
+            let indexed_payload_vectors = indexed_vectors_set.count_ones();
 
             debug_assert!(indexed_vectors >= indexed_payload_vectors || config.m == 0);
             indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
@@ -429,6 +437,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedListHandle,
+        indexed_vectors_set: &mut BitVec,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
 
@@ -450,6 +459,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
+            if !indexed_vectors_set.is_empty() {
+                indexed_vectors_set.set(block_point_id as usize, true);
+            }
         }
 
         let insert_points = |block_point_id| {

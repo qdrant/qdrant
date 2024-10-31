@@ -17,8 +17,8 @@ pub struct VisitedListHandle<'a> {
 /// and reuse same counter for multiple queries.
 #[derive(Debug)]
 struct VisitedList {
-    current_iter: usize,
-    visit_counters: Vec<usize>,
+    current_iter: u8,
+    visit_counters: Vec<u8>,
 }
 
 impl Default for VisitedList {
@@ -54,41 +54,31 @@ impl<'a> VisitedListHandle<'a> {
         }
     }
 
-    pub fn get_current_iteration_id(&self) -> usize {
-        self.visited_list.current_iter
-    }
-
-    // Count how many points were visited since the given iteration
-    pub fn count_visits_since(&self, iteration_id: usize) -> usize {
-        self.visited_list
-            .visit_counters
-            .iter()
-            .filter(|x| **x >= iteration_id)
-            .count()
-    }
-
     /// Return `true` if visited
     pub fn check(&self, point_id: PointOffsetType) -> bool {
         self.visited_list
             .visit_counters
             .get(point_id as usize)
-            .map_or(false, |x| *x >= self.visited_list.current_iter)
+            .map_or(false, |x| *x == self.visited_list.current_iter)
     }
 
     /// Updates visited list
     /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
-        let idx = point_id as usize;
-        if idx >= self.visited_list.visit_counters.len() {
-            self.visited_list.visit_counters.resize(idx + 1, 0);
-        }
-        let prev_value = self.visited_list.visit_counters[idx];
-        self.visited_list.visit_counters[idx] = self.visited_list.current_iter;
-        prev_value >= self.visited_list.current_iter
+        std::mem::replace(
+            &mut self.visited_list.visit_counters[point_id as usize],
+            self.visited_list.current_iter,
+        ) == self.visited_list.current_iter
     }
 
     pub fn next_iteration(&mut self) {
-        self.visited_list.current_iter += 1;
+        self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
+        if self.visited_list.current_iter == 0 {
+            self.visited_list
+                .visit_counters
+                .iter_mut()
+                .for_each(|x| *x = u8::MAX);
+        }
     }
 }
 
@@ -132,5 +122,30 @@ impl VisitedPool {
 impl Default for VisitedPool {
     fn default() -> Self {
         VisitedPool::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visited_list() {
+        let pool = VisitedPool::new();
+        let mut visited_list = pool.get(10);
+
+        for _ in 0..2 {
+            assert!(!visited_list.check(0));
+            assert!(!visited_list.check_and_update_visited(0));
+            assert!(visited_list.check(0));
+
+            assert!(visited_list.check_and_update_visited(0));
+            assert!(visited_list.check(0));
+
+            for _ in 0..260 {
+                visited_list.next_iteration();
+                assert!(!visited_list.check(0));
+            }
+        }
     }
 }
