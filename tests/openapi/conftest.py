@@ -2,7 +2,10 @@ import http.server
 import pytest
 import socketserver
 import threading
+import os
 
+
+HTTP_SERVER_HOST = os.environ.get("HTTP_SERVER_HOST", "localhost")
 
 @pytest.fixture(params=[False, True], scope="module")
 def on_disk_vectors(request):
@@ -30,7 +33,7 @@ def http_server(tmpdir):
             # Silence logging
             pass
 
-    with socketserver.TCPServer(("127.0.0.1", 0), Handler) as httpd:
+    with socketserver.TCPServer(("0.0.0.0", 0), Handler) as httpd:
         httpd.allow_reuse_address = True
         thread = threading.Thread(
             target=httpd.serve_forever,
@@ -38,6 +41,6 @@ def http_server(tmpdir):
             kwargs={"poll_interval": 0.1},
         )
         thread.start()
-        yield (tmpdir, f"http://127.0.0.1:{httpd.server_address[1]}")
+        yield (tmpdir, f"http://{HTTP_SERVER_HOST}:{httpd.server_address[1]}")
         httpd.shutdown()
         thread.join()

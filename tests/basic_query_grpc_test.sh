@@ -6,15 +6,21 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-QDRANT_HOST='localhost:6334'
+QDRANT_HOST=${QDRANT_HOST:-'localhost:6334'}
 
-docker_grpcurl="docker run --rm --network=host -v ${PWD}/lib/api/src/grpc/proto:/proto fullstorydev/grpcurl -plaintext -import-path /proto -proto qdrant.proto"
+docker_grpcurl=("docker" "run" "--rm" "--network=host" "-v" "${PWD}/lib/api/src/grpc/proto:/proto" "fullstorydev/grpcurl" "-plaintext" "-import-path" "/proto" "-proto" "qdrant.proto")
 
-$docker_grpcurl -d '{
+if [ -n "${QDRANT_HOST_HEADERS}" ]; then
+  while read h; do
+    docker_grpcurl+=("-H" "$h")
+  done <<<  $(echo "${QDRANT_HOST_HEADERS}" | jq -r 'to_entries|map("\(.key): \(.value)")[]')
+fi
+
+"${docker_grpcurl[@]}" -d '{
    "collection_name": "test_collection"
 }' $QDRANT_HOST qdrant.Collections/Delete
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
    "collection_name": "test_collection",
    "vectors_config": {
       "params": {
@@ -24,9 +30,9 @@ $docker_grpcurl -d '{
    }
 }' $QDRANT_HOST qdrant.Collections/Create
 
-$docker_grpcurl -d '{}' $QDRANT_HOST qdrant.Collections/List
+"${docker_grpcurl[@]}" -d '{}' $QDRANT_HOST qdrant.Collections/List
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "wait": true,
   "ordering": null,
@@ -50,7 +56,7 @@ $docker_grpcurl -d '{
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "query": {
     "nearest": {
@@ -62,7 +68,7 @@ $docker_grpcurl -d '{
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Query
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "query_points": [
     {
@@ -79,7 +85,7 @@ $docker_grpcurl -d '{
   ]
 }' $QDRANT_HOST qdrant.Points/QueryBatch
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "query": {
     "nearest": {
@@ -94,7 +100,7 @@ $docker_grpcurl -d '{
 }' $QDRANT_HOST qdrant.Points/QueryGroups
 
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "filter": {
     "should": [
@@ -118,7 +124,7 @@ $docker_grpcurl -d '{
   "limit": 3
 }' $QDRANT_HOST qdrant.Points/Query
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "limit": 2,
   "with_vectors": {"enable": true},
@@ -136,7 +142,7 @@ $docker_grpcurl -d '{
   }
 }' $QDRANT_HOST qdrant.Points/Query
 
-$docker_grpcurl -d '{
+"${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
   "query": {
     "recommend": {
