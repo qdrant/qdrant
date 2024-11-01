@@ -412,9 +412,7 @@ impl ShardReplicaSet {
             return Ok(());
         };
 
-        proxy.transfer_all_missed_updates().await?;
-
-        Ok(())
+        proxy.transfer_all_missed_updates().await
     }
 
     /// Send all queue proxy updates to remote and transform into forward proxy

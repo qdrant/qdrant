@@ -136,6 +136,10 @@ impl ProxyShard {
     pub fn update_tracker(&self) -> &UpdateTracker {
         self.wrapped_shard.update_tracker()
     }
+
+    pub fn set_clocks_enabled(&self, enabled: bool) {
+        self.wrapped_shard.set_clocks_enabled(enabled);
+    }
 }
 
 #[async_trait]

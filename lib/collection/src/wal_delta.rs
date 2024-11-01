@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{Mutex as ParkingMutex, MutexGuard as ParkingMutexGuard};
@@ -28,6 +29,13 @@ pub struct RecoverableWal {
     ///   - (so if we advance these clocks, we have to advance `newest_clocks` as well)
     /// - this WAL cannot resolve any delta below any of these clocks
     pub(super) oldest_clocks: Arc<Mutex<ClockMap>>,
+
+    /// Whether clock tags are enabled.
+    ///
+    /// If enabled, the newest seen clocks are updated and operations with old clock tags may be
+    /// rejected. If not enabled, all operations will be accepted without affecting the newest
+    /// clocks.
+    clocks_enabled: AtomicBool,
 }
 
 impl RecoverableWal {
@@ -40,6 +48,7 @@ impl RecoverableWal {
             wal,
             newest_clocks: highest_clocks,
             oldest_clocks: cutoff_clocks,
+            clocks_enabled: AtomicBool::new(true),
         }
     }
 
@@ -55,18 +64,17 @@ impl RecoverableWal {
         operation: &mut OperationWithClockTag,
     ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
-        if let Some(clock_tag) = &mut operation.clock_tag {
-            // TODO: Do not manually advance here!
-            //
-            // TODO: What does the above `TODO` mean? "Make sure to call `advance_clock_and_correct_tag`, but not `advance_clock`?"
-            let operation_accepted = self
-                .newest_clocks
-                .lock()
-                .await
-                .advance_clock_and_correct_tag(clock_tag);
+        if self.clocks_enabled.load(Ordering::Acquire) {
+            if let Some(clock_tag) = &mut operation.clock_tag {
+                let operation_accepted = self
+                    .newest_clocks
+                    .lock()
+                    .await
+                    .advance_clock_and_correct_tag(clock_tag);
 
-            if !operation_accepted {
-                return Err(crate::wal::WalError::ClockRejected);
+                if !operation_accepted {
+                    return Err(crate::wal::WalError::ClockRejected);
+                }
             }
         }
 
@@ -145,6 +153,11 @@ impl RecoverableWal {
             let (_, _) = self.lock_and_write(update).await?;
         }
         Ok(())
+    }
+
+    // TODO(timvisee): provide a better interface for this, pass param into `lock_and_write` instead?
+    pub fn set_clocks_enabled(&self, enabled: bool) {
+        self.clocks_enabled.store(enabled, Ordering::Release);
     }
 }
 

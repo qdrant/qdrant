@@ -65,6 +65,8 @@ pub async fn transfer_shard(
                 progress,
                 local_shard_id,
                 remote_shard,
+                channel_service,
+                consensus,
                 &collection_id,
             )
             .await?;
