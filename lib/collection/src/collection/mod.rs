@@ -39,7 +39,9 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
-use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
+use crate::shards::replica_set::{
+    ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
+};
 use crate::shards::resharding::tasks_pool::ReshardTasksPool;
 use crate::shards::resharding::ReshardKey;
 use crate::shards::shard::{PeerId, ShardId};
@@ -65,7 +67,7 @@ pub struct Collection {
     transfer_tasks: Mutex<TransferTasksPool>,
     reshard_tasks: Mutex<ReshardTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
-    notify_peer_failure_cb: ChangePeerState,
+    notify_peer_failure_cb: ChangePeerFromState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
     init_time: Duration,
     // One-way boolean flag that is set to true when the collection is fully initialized
@@ -98,7 +100,7 @@ impl Collection {
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
-        on_replica_failure: ChangePeerState,
+        on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
@@ -185,7 +187,7 @@ impl Collection {
         snapshots_path: &Path,
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
-        on_replica_failure: replica_set::ChangePeerState,
+        on_replica_failure: replica_set::ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,

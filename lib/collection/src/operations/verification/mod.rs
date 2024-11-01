@@ -258,7 +258,7 @@ mod test {
     use crate::optimizers_builder::OptimizersConfig;
     use crate::shards::channel_service::ChannelService;
     use crate::shards::collection_shard_distribution::CollectionShardDistribution;
-    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 
     const UNINDEXED_KEY: &str = "key";
     const INDEXED_KEY: &str = "num";
@@ -457,8 +457,8 @@ mod test {
         collection
     }
 
-    pub fn dummy_on_replica_failure() -> ChangePeerState {
-        Arc::new(move |_peer_id, _shard_id| {})
+    pub fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
     }
 
     pub fn dummy_request_shard_transfer() -> RequestShardTransfer {

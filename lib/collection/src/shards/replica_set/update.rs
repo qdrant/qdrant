@@ -100,7 +100,9 @@ impl ShardReplicaSet {
                 .map_err(|err| {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
-                        self.add_locally_disabled(&self.replica_state.read(), leader_peer);
+                        let replica_state = self.replica_state.read();
+                        let from_state = replica_state.get_peer_state(leader_peer);
+                        self.add_locally_disabled(&replica_state, leader_peer, from_state);
 
                         // Return service error
                         CollectionError::service_error(format!(
@@ -454,7 +456,7 @@ impl ShardReplicaSet {
                 self.shard_id,
             );
 
-            let Some(&peer_state) = state.get_peer_state(*peer_id) else {
+            let Some(peer_state) = state.get_peer_state(*peer_id) else {
                 continue;
             };
 
@@ -490,10 +492,14 @@ impl ShardReplicaSet {
             log::debug!(
                 "Deactivating peer {peer_id} because of failed update of shard {}:{}",
                 self.collection_id,
-                self.shard_id
+                self.shard_id,
             );
 
-            self.add_locally_disabled(state, *peer_id);
+            // Deactivate replica in consensus if it matches the state we expect
+            // Always deactivate the replica if its in a shard transfer related state
+            let from_state = Some(peer_state).filter(|state| !state.is_partial_or_recovery());
+
+            self.add_locally_disabled(state, *peer_id, from_state);
         }
 
         wait_for_deactivation
@@ -546,7 +552,7 @@ mod tests {
     use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
     use crate::save_on_disk::SaveOnDisk;
-    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
+    use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 
     #[tokio::test]
     async fn test_highest_replica_peer_id() {
@@ -633,8 +639,8 @@ mod tests {
         .unwrap()
     }
 
-    fn dummy_on_replica_failure() -> ChangePeerState {
-        Arc::new(move |_peer_id, _shard_id| {})
+    fn dummy_on_replica_failure() -> ChangePeerFromState {
+        Arc::new(move |_peer_id, _shard_id, _from_state| {})
     }
 
     fn dummy_abort_shard_transfer() -> AbortShardTransfer {

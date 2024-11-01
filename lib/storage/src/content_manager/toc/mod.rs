@@ -137,11 +137,10 @@ impl TableOfContent {
                     .to_shared_storage_config(is_distributed)
                     .into(),
                 channel_service.clone(),
-                Self::change_peer_state_callback(
+                Self::change_peer_from_state_callback(
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                     ReplicaState::Dead,
-                    None,
                 ),
                 Self::request_shard_transfer_callback(
                     consensus_proposal_sender.clone(),
@@ -479,7 +478,17 @@ impl TableOfContent {
         state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> replica_set::ChangePeerState {
-        Arc::new(move |peer_id, shard_id| {
+        let callback =
+            Self::change_peer_from_state_callback(proposal_sender, collection_name, state);
+        Arc::new(move |peer_id, shard_id| callback(peer_id, shard_id, from_state))
+    }
+
+    fn change_peer_from_state_callback(
+        proposal_sender: Option<OperationSender>,
+        collection_name: String,
+        state: ReplicaState,
+    ) -> replica_set::ChangePeerFromState {
+        Arc::new(move |peer_id, shard_id, from_state| {
             if let Some(proposal_sender) = &proposal_sender {
                 if let Err(send_error) = Self::send_set_replica_state_proposal_op(
                     proposal_sender,
@@ -489,13 +498,7 @@ impl TableOfContent {
                     state,
                     from_state,
                 ) {
-                    log::error!(
-                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
-                        peer_id,
-                        shard_id,
-                        collection_name,
-                        send_error
-                    );
+                    log::error!("Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}");
                 }
             } else {
                 log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
