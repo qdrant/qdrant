@@ -74,6 +74,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     }
 
     /// Shrinks the range of values-to-points by one.
+    ///
     /// Returns true if the last element was removed.
     fn shrink_value_range(
         value_to_points: &mut HashMap<N::Owned, ContainerSegment>,
@@ -136,8 +137,9 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
                 deleted_value_to_points_container.resize(pos + 1, false);
             }
 
-            // TODO: add debug assertion to ensure we actually flip a bit here?
-            deleted_value_to_points_container.set(pos, true);
+            #[allow(unused_variables)]
+            let did_exist = !deleted_value_to_points_container.replace(pos, true);
+            debug_assert!(did_exist, "value {value} was already deleted");
         }
 
         if Self::shrink_value_range(value_to_points, value) {
@@ -231,6 +233,12 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
                 value.borrow(),
             ) {
                 slice.sort_unstable();
+            } else {
+                debug_assert!(
+                    false,
+                    "value {} not found in value_to_points",
+                    value.borrow(),
+                );
             }
         }
 
