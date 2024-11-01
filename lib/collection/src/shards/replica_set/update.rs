@@ -424,12 +424,9 @@ impl ShardReplicaSet {
             Some(ReplicaState::Partial) => true,
             Some(ReplicaState::Initializing) => true,
             Some(ReplicaState::Listener) => true,
-            // Recovery: keep sending updates to prevent a data race
-            // The replica on the peer may still be active for some time if its consensus is slow.
-            // The peer may respond to read requests until it switches to recovery state too. We
-            // must keep sending updates to prevent those reads being stale.
-            // See: <https://github.com/qdrant/qdrant/pull/5298>
-            Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => true,
+            // We must not send updates to replicas in recovery state.
+            // If we do we might create gaps in WAL clock tags.
+            Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => false,
             Some(ReplicaState::Resharding) => true,
             Some(ReplicaState::Dead) | None => false,
         };
@@ -563,10 +560,12 @@ mod tests {
         // at build time the replicas are all dead, they need to be activated
         assert_eq!(rs.highest_alive_replica_peer_id(), None);
 
-        rs.set_replica_state(1, ReplicaState::Active).unwrap();
-        rs.set_replica_state(3, ReplicaState::Active).unwrap();
-        rs.set_replica_state(4, ReplicaState::Active).unwrap();
-        rs.set_replica_state(5, ReplicaState::Partial).unwrap();
+        rs.set_replica_state(1, ReplicaState::Active).await.unwrap();
+        rs.set_replica_state(3, ReplicaState::Active).await.unwrap();
+        rs.set_replica_state(4, ReplicaState::Active).await.unwrap();
+        rs.set_replica_state(5, ReplicaState::Partial)
+            .await
+            .unwrap();
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));

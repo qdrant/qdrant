@@ -1093,6 +1093,10 @@ impl LocalShard {
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
         self.wal.update_cutoff(cutoff).await
     }
+
+    pub fn set_clocks_enabled(&self, enabled: bool) {
+        self.wal.set_clocks_enabled(enabled);
+    }
 }
 
 impl Drop for LocalShard {

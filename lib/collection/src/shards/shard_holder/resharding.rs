@@ -306,7 +306,7 @@ impl ShardHolder {
                 // Revert replicas in `Resharding` state back into `Active` state
                 for (peer, state) in shard.peers() {
                     if state == ReplicaState::Resharding {
-                        shard.set_replica_state(peer, ReplicaState::Active)?;
+                        shard.set_replica_state(peer, ReplicaState::Active).await?;
                     }
                 }
 
