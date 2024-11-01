@@ -201,6 +201,12 @@ impl QueueProxyShard {
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
+
+    pub fn set_clocks_enabled(&self, enabled: bool) {
+        self.inner_unchecked()
+            .wrapped_shard
+            .set_clocks_enabled(enabled);
+    }
 }
 
 #[async_trait]
