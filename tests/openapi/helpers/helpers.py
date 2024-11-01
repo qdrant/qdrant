@@ -1,7 +1,9 @@
 import json
+from logging import warning
 from typing import Any, Dict, List
 import jsonschema
 import requests
+import warnings
 from schemathesis.models import APIOperation
 from schemathesis.specs.openapi.references import ConvertingResolver
 from schemathesis.specs.openapi.schemas import OpenApi30
@@ -74,6 +76,10 @@ def request_with_validation(
 
     if not action:
         raise RuntimeError(f"Method {method} does not exists")
+
+    if api.endswith("/delete") and method == "POST" and "wait" not in query_params:
+        warnings.warn(f"Delete call for {api} missing wait=true param, adding it")
+        query_params["wait"] = "true"
 
     response = action(
         url=get_api_string(QDRANT_HOST, api, path_params),
