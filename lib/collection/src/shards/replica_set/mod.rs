@@ -601,7 +601,7 @@ impl ShardReplicaSet {
         state: ReplicaState,
     ) -> CollectionResult<()> {
         if peer_id == self.this_peer_id() {
-            self.set_replica_state(peer_id, state)?;
+            self.set_replica_state(peer_id, state).await?;
         } else {
             // Create remote shard if necessary
             self.add_remote(peer_id, state).await?;
@@ -609,7 +609,11 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub fn set_replica_state(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
+    pub async fn set_replica_state(
+        &self,
+        peer_id: PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
         log::debug!(
             "Changing local shard {}:{} state from {:?} to {state:?}",
             self.collection_id,
@@ -623,6 +627,12 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(peer_id, state);
         })?;
+
+        // Disable WAL clocks only if the replica is in Partial state
+        if let Some(local) = self.local.read().await.as_ref() {
+            local.set_clocks_enabled(state != ReplicaState::Partial);
+        }
+
         self.update_locally_disabled(peer_id);
         Ok(())
     }
