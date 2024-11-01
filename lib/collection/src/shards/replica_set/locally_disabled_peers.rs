@@ -2,11 +2,18 @@ use std::cmp;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use super::ReplicaState;
 use crate::shards::shard::PeerId;
 
 #[derive(Clone, Debug, Default)]
 pub struct Registry {
-    locally_disabled_peers: HashMap<PeerId, Backoff>,
+    /// List of disabled peer IDs and a backoff to prevent spamming consensus.
+    ///
+    /// Each peer optionally specifies what state it was in when it was disabled. They're send
+    /// along with the consensus proposal and prevents accidentally killing replicas if the current
+    /// peer is slow to catch up with consensus.
+    /// See: <https://github.com/qdrant/qdrant/pull/5343>
+    locally_disabled_peers: HashMap<PeerId, (Backoff, Option<ReplicaState>)>,
 }
 
 impl Registry {
@@ -24,11 +31,20 @@ impl Registry {
         self.locally_disabled_peers.entry(peer_id).or_default();
     }
 
-    pub fn disable_peer_and_notify_if_elapsed(&mut self, peer_id: PeerId) -> bool {
-        self.locally_disabled_peers
+    pub fn disable_peer_and_notify_if_elapsed(
+        &mut self,
+        peer_id: PeerId,
+        from_state: Option<ReplicaState>,
+    ) -> bool {
+        let (backoff, _from_state) = self
+            .locally_disabled_peers
             .entry(peer_id)
-            .or_default()
-            .retry_if_elapsed()
+            // Update from state if changed on already disabled peers
+            .and_modify(|(_backoff, value_from_state)| {
+                *value_from_state = from_state;
+            })
+            .or_insert_with(|| (Backoff::default(), from_state));
+        backoff.retry_if_elapsed()
     }
 
     pub fn enable_peer(&mut self, peer_id: PeerId) {
@@ -39,15 +55,11 @@ impl Registry {
         self.locally_disabled_peers.clear();
     }
 
-    pub fn notify_elapsed(&mut self) -> impl Iterator<Item = PeerId> + '_ {
+    pub fn notify_elapsed(&mut self) -> impl Iterator<Item = (PeerId, Option<ReplicaState>)> + '_ {
         self.locally_disabled_peers
             .iter_mut()
-            .filter_map(|(&peer_id, backoff)| {
-                if backoff.retry_if_elapsed() {
-                    Some(peer_id)
-                } else {
-                    None
-                }
+            .filter_map(|(&peer_id, (backoff, from_state))| {
+                backoff.retry_if_elapsed().then_some((peer_id, *from_state))
             })
     }
 }

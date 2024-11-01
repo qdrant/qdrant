@@ -94,7 +94,7 @@ pub struct ShardReplicaSet {
     locally_disabled_peers: parking_lot::RwLock<locally_disabled_peers::Registry>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
-    notify_peer_failure_cb: ChangePeerState,
+    notify_peer_failure_cb: ChangePeerFromState,
     abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
     collection_id: CollectionId,
@@ -113,6 +113,7 @@ pub struct ShardReplicaSet {
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
 pub type ChangePeerState = Arc<dyn Fn(PeerId, ShardId) + Send + Sync>;
+pub type ChangePeerFromState = Arc<dyn Fn(PeerId, ShardId, Option<ReplicaState>) + Send + Sync>;
 
 const REPLICA_STATE_FILE: &str = "replica_state.json";
 
@@ -125,7 +126,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         local: bool,
         remotes: HashSet<PeerId>,
-        on_peer_failure: ChangePeerState,
+        on_peer_failure: ChangePeerFromState,
         abort_shard_transfer: AbortShardTransfer,
         collection_path: &Path,
         collection_config: Arc<RwLock<CollectionConfig>>,
@@ -222,7 +223,7 @@ impl ShardReplicaSet {
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         channel_service: ChannelService,
-        on_peer_failure: ChangePeerState,
+        on_peer_failure: ChangePeerFromState,
         abort_shard_transfer: AbortShardTransfer,
         this_peer_id: PeerId,
         update_runtime: Handle,
@@ -367,7 +368,7 @@ impl ShardReplicaSet {
     }
 
     pub fn peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
-        self.replica_state.read().get_peer_state(peer_id).copied()
+        self.replica_state.read().get_peer_state(peer_id)
     }
 
     /// List the peer IDs on which this shard is active, both the local and remote peers.
@@ -417,7 +418,7 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         self.wait_for(
             move |replica_set_state| {
-                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(&state)
+                replica_set_state.get_peer_state(replica_set_state.this_peer_id) == Some(state)
             },
             timeout,
         )
@@ -438,7 +439,7 @@ impl ShardReplicaSet {
         timeout: Duration,
     ) -> CollectionResult<()> {
         self.wait_for(
-            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(&state),
+            move |replica_set_state| replica_set_state.get_peer_state(peer_id) == Some(state),
             timeout,
         )
         .await
@@ -686,7 +687,7 @@ impl ShardReplicaSet {
                         // No way we can provide up-to-date replica right away at this point,
                         // so we report a failure to consensus
                         self.set_local(local_shard, Some(state)).await?;
-                        self.notify_peer_failure(peer_id);
+                        self.notify_peer_failure(peer_id, Some(state));
                     }
 
                     ReplicaState::Dead
@@ -735,16 +736,15 @@ impl ShardReplicaSet {
             .notify_elapsed()
             .collect();
 
-        for failed_peer in peers_to_notify {
-            // TODO: Only `notify_peer_failure` if `failed_peer` is *not* the last `Active` peer? 🤔
-            self.notify_peer_failure(failed_peer);
+        for (failed_peer_id, from_state) in peers_to_notify {
+            self.notify_peer_failure(failed_peer_id, from_state);
 
-            for transfer in get_shard_transfers(self.shard_id, failed_peer) {
+            for transfer in get_shard_transfers(self.shard_id, failed_peer_id) {
                 self.abort_shard_transfer(
                     transfer,
                     &format!(
-                        "{failed_peer}/{}:{} replica failed",
-                        self.collection_id, self.shard_id
+                        "{failed_peer_id}/{}:{} replica failed",
+                        self.collection_id, self.shard_id,
                     ),
                 );
             }
@@ -901,7 +901,15 @@ impl ShardReplicaSet {
     /// Disables the peer and notifies consensus periodically.
     ///
     /// Prevents disabling the last peer (according to consensus).
-    fn add_locally_disabled(&self, state: &ReplicaSetState, peer_id: PeerId) {
+    ///
+    /// If `from_state` is given, the peer will only be disabled if the given state matches
+    /// consensus.
+    fn add_locally_disabled(
+        &self,
+        state: &ReplicaSetState,
+        peer_id: PeerId,
+        from_state: Option<ReplicaState>,
+    ) {
         let other_peers = state
             .active_or_resharding_peers()
             .filter(|id| id != &peer_id);
@@ -919,8 +927,8 @@ impl ShardReplicaSet {
         }
 
         locally_disabled_peers_guard.with_upgraded(|locally_disabled_peers| {
-            if locally_disabled_peers.disable_peer_and_notify_if_elapsed(peer_id) {
-                self.notify_peer_failure(peer_id);
+            if locally_disabled_peers.disable_peer_and_notify_if_elapsed(peer_id, from_state) {
+                self.notify_peer_failure(peer_id, from_state);
             }
         });
     }
@@ -940,9 +948,9 @@ impl ShardReplicaSet {
         }
     }
 
-    fn notify_peer_failure(&self, peer_id: PeerId) {
+    fn notify_peer_failure(&self, peer_id: PeerId, from_state: Option<ReplicaState>) {
         log::debug!("Notify peer failure: {}", peer_id);
-        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id)
+        self.notify_peer_failure_cb.deref()(peer_id, self.shard_id, from_state)
     }
 
     fn abort_shard_transfer(&self, transfer: ShardTransfer, reason: &str) {
@@ -1007,8 +1015,8 @@ pub struct ReplicaSetState {
 }
 
 impl ReplicaSetState {
-    pub fn get_peer_state(&self, peer_id: PeerId) -> Option<&ReplicaState> {
-        self.peers.get(&peer_id)
+    pub fn get_peer_state(&self, peer_id: PeerId) -> Option<ReplicaState> {
+        self.peers.get(&peer_id).copied()
     }
 
     pub fn set_peer_state(&mut self, peer_id: PeerId, state: ReplicaState) {
