@@ -235,7 +235,7 @@ async fn _do_recover_from_snapshot(
                 .await?;
 
             if !recovered {
-                log::debug!("Shard {} if not in snapshot", shard_id);
+                log::debug!("Shard {} is not in snapshot", shard_id);
                 continue;
             }
 
