@@ -467,7 +467,7 @@ mod tests {
             negative: rest::VectorInput::DenseVector(vec![4.0, 5.0, 6.0]),
         };
 
-        let result = context_pair_from_rest(input).await.unwrap();
+        let result = context_pair_from_rest(input).unwrap();
 
         match (result.positive, result.negative) {
             (
@@ -484,7 +484,7 @@ mod tests {
     #[tokio::test]
     async fn test_convert_vector_input_dense() {
         let input = rest::VectorInput::DenseVector(vec![1.0, 2.0, 3.0]);
-        match convert_vector_input(input).await.unwrap() {
+        match convert_vector_input(input).unwrap() {
             VectorInputInternal::Vector(VectorInternal::Dense(vec)) => {
                 assert_eq!(vec, vec![1.0, 2.0, 3.0]);
             }

@@ -131,3 +131,181 @@ pub fn collect_query_groups_request(request: &QueryGroupsRequestInternal) -> Bat
 
     batch
 }
+
+#[cfg(test)]
+mod tests {
+    use api::rest::schema::{DiscoverQuery, Document, Image, InferenceObject, NearestQuery};
+    use api::rest::QueryBaseGroupRequest;
+    use serde_json::json;
+
+    use super::*;
+
+    fn create_test_document(text: &str) -> Document {
+        Document {
+            text: text.to_string(),
+            model: Some("test-model".to_string()),
+            options: Default::default(),
+        }
+    }
+
+    fn create_test_image(url: &str) -> Image {
+        Image {
+            image: url.to_string(),
+            model: Some("test-model".to_string()),
+            options: Default::default(),
+        }
+    }
+
+    fn create_test_object(data: &str) -> InferenceObject {
+        InferenceObject {
+            object: json!({"data": data}),
+            model: Some("test-model".to_string()),
+            options: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_batch_accum_basic() {
+        let mut batch = BatchAccum::new();
+        assert!(batch.objects.is_empty());
+
+        let doc = InferenceData::Document(create_test_document("test"));
+        batch.add(doc.clone());
+        assert_eq!(batch.objects.len(), 1);
+
+        batch.add(doc);
+        assert_eq!(batch.objects.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_accum_extend() {
+        let mut batch1 = BatchAccum::new();
+        let mut batch2 = BatchAccum::new();
+
+        let doc1 = InferenceData::Document(create_test_document("test1"));
+        let doc2 = InferenceData::Document(create_test_document("test2"));
+
+        batch1.add(doc1);
+        batch2.add(doc2);
+
+        batch1.extend(batch2);
+        assert_eq!(batch1.objects.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplication() {
+        let mut batch = BatchAccum::new();
+
+        let doc1 = InferenceData::Document(create_test_document("same"));
+        let doc2 = InferenceData::Document(create_test_document("same"));
+
+        batch.add(doc1);
+        batch.add(doc2);
+
+        assert_eq!(batch.objects.len(), 1);
+    }
+
+    #[test]
+    fn test_collect_vector_input() {
+        let mut batch = BatchAccum::new();
+
+        let doc_input = VectorInput::Document(create_test_document("test"));
+        let img_input = VectorInput::Image(create_test_image("test.jpg"));
+        let obj_input = VectorInput::Object(create_test_object("test"));
+
+        collect_vector_input(&doc_input, &mut batch);
+        collect_vector_input(&img_input, &mut batch);
+        collect_vector_input(&obj_input, &mut batch);
+
+        assert_eq!(batch.objects.len(), 3);
+    }
+
+    #[test]
+    fn test_collect_prefetch() {
+        let prefetch = Prefetch {
+            query: Some(QueryInterface::Nearest(VectorInput::Document(
+                create_test_document("test"),
+            ))),
+            prefetch: Some(vec![Prefetch {
+                query: Some(QueryInterface::Nearest(VectorInput::Image(
+                    create_test_image("nested.jpg"),
+                ))),
+                prefetch: None,
+                using: None,
+                filter: None,
+                params: None,
+                score_threshold: None,
+                limit: None,
+                lookup_from: None,
+            }]),
+            using: None,
+            filter: None,
+            params: None,
+            score_threshold: None,
+            limit: None,
+            lookup_from: None,
+        };
+
+        let mut batch = BatchAccum::new();
+        collect_prefetch(&prefetch, &mut batch);
+        assert_eq!(batch.objects.len(), 2);
+    }
+
+    #[test]
+    fn test_collect_query_groups_request() {
+        let request = QueryGroupsRequestInternal {
+            query: Some(QueryInterface::Query(Query::Nearest(NearestQuery {
+                nearest: VectorInput::Document(create_test_document("test")),
+            }))),
+            prefetch: Some(vec![Prefetch {
+                query: Some(QueryInterface::Query(Query::Discover(DiscoverQuery {
+                    discover: DiscoverInput {
+                        target: VectorInput::Image(create_test_image("test.jpg")),
+                        context: Some(vec![ContextPair {
+                            positive: VectorInput::Document(create_test_document("pos")),
+                            negative: VectorInput::Image(create_test_image("neg.jpg")),
+                        }]),
+                    },
+                }))),
+                prefetch: None,
+                using: None,
+                filter: None,
+                params: None,
+                score_threshold: None,
+                limit: None,
+                lookup_from: None,
+            }]),
+            using: None,
+            filter: None,
+            params: None,
+            score_threshold: None,
+            with_vector: None,
+            with_payload: None,
+            lookup_from: None,
+            group_request: QueryBaseGroupRequest {
+                group_by: "test".parse().unwrap(),
+                group_size: None,
+                limit: None,
+                with_lookup: None,
+            },
+        };
+
+        let batch = collect_query_groups_request(&request);
+        assert_eq!(batch.objects.len(), 4);
+    }
+
+    #[test]
+    fn test_different_model_same_content() {
+        let mut batch = BatchAccum::new();
+
+        let mut doc1 = create_test_document("same");
+        let mut doc2 = create_test_document("same");
+        doc1.model = Some("model1".to_string());
+        doc2.model = Some("model2".to_string());
+
+        batch.add(InferenceData::Document(doc1));
+        batch.add(InferenceData::Document(doc2));
+
+        assert_eq!(batch.objects.len(), 2);
+    }
+}
