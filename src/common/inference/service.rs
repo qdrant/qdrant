@@ -1,17 +1,18 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::sync::Arc;
 use std::time::Duration;
 
-use api::rest::{Document, Image, InferenceObject};
-use collection::operations::point_ops::VectorPersisted;
+use parking_lot::RwLock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use storage::content_manager::errors::StorageError;
-use tokio::sync::{RwLock, RwLockReadGuard};
 
-use crate::common::inference::batch_processing::BatchAccum;
+use api::rest::{Document, Image, InferenceObject};
+use collection::operations::point_ops::VectorPersisted;
+use storage::content_manager::errors::StorageError;
+
 use crate::common::inference::config::InferenceConfig;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
@@ -121,7 +122,7 @@ pub struct InferenceService {
     pub(crate) client: Client,
 }
 
-static INFERENCE_SERVICE: RwLock<Option<InferenceService>> = RwLock::new(None);
+static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
 
 impl InferenceService {
     pub fn new(config: InferenceConfig) -> Self {
@@ -134,8 +135,8 @@ impl InferenceService {
         }
     }
 
-    pub async fn init_global(config: InferenceConfig) -> Result<(), StorageError> {
-        let mut inference_service = INFERENCE_SERVICE.write().await;
+    pub fn init_global(config: InferenceConfig) -> Result<(), StorageError> {
+        let mut inference_service = INFERENCE_SERVICE.write();
 
         if config.token.is_none() {
             return Err(StorageError::service_error(
@@ -149,12 +150,12 @@ impl InferenceService {
             ));
         }
 
-        *inference_service = Some(Self::new(config));
+        *inference_service = Some(Arc::new(Self::new(config)));
         Ok(())
     }
 
-    pub async fn get_global() -> RwLockReadGuard<'static, Option<InferenceService>> {
-        INFERENCE_SERVICE.read().await
+    pub fn get_global() -> Option<Arc<InferenceService>> {
+        INFERENCE_SERVICE.read().as_ref().cloned()
     }
 
     pub(crate) fn validate(&self) -> Result<(), StorageError> {

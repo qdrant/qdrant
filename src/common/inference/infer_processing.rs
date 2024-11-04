@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 
 use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
@@ -28,13 +27,10 @@ impl BatchAccumInferred {
             return Ok(Self::new());
         }
 
-        let guard = InferenceService::get_global().await;
-
-        let service = match guard.deref() {
-            None => return Err(StorageError::service_error(
+        let Some(service) = InferenceService::get_global() else {
+            return Err(StorageError::service_error(
                 "InferenceService is not initialized. Please check if it was properly configured and initialized during startup."
-            )),
-            Some(service) => service
+            ));
         };
 
         service.validate()?;

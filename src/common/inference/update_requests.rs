@@ -6,7 +6,6 @@ use collection::operations::point_ops::{
     VectorStructPersisted,
 };
 use collection::operations::vector_ops::PointVectorsPersisted;
-use log::{debug, warn};
 use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::batch_processing::BatchAccum;
