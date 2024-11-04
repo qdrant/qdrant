@@ -56,6 +56,7 @@ use tonic::{Response, Status};
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
+use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::points::{
     do_clear_payload, do_core_search_points, do_count_points, do_create_index,
@@ -169,7 +170,7 @@ pub async fn sync(
 
     // No actual inference should happen here, as we are just syncing existing points
     // So this function is used for consistency only
-    let points = convert_point_struct(point_structs?).await?;
+    let points = convert_point_struct(point_structs?, InferenceType::Update).await?;
 
     let operation = PointSyncOperation {
         points,
