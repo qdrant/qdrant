@@ -434,7 +434,7 @@ fn main() -> anyhow::Result<()> {
     // Inference Service
     //
     if let Some(inference_config) = settings.inference.clone() {
-        match InferenceService::init(inference_config) {
+        match InferenceService::init_global(inference_config) {
             Ok(_) => {
                 log::info!("Inference service is configured.");
             }

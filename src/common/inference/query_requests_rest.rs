@@ -5,15 +5,14 @@ use collection::operations::universal_query::collection_query::{
     VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
-use log::{debug, warn};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::batch_processing::{collect_query_groups_request, BatchAccum};
+use crate::common::inference::batch_processing::collect_query_groups_request;
 use crate::common::inference::infer_processing::BatchAccumInferred;
-use crate::common::inference::service::InferenceData;
+use crate::common::inference::service::{InferenceData, InferenceType};
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
@@ -32,7 +31,7 @@ pub async fn convert_query_groups_request_from_rest(
         group_request,
     } = request;
 
-    let inferred = BatchAccumInferred::from_batch_accum(&batch).await?;
+    let inferred = BatchAccumInferred::from_batch_accum(batch, InferenceType::Search).await?;
     let query = query
         .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
@@ -254,30 +253,6 @@ fn convert_vector_input(vector: rest::VectorInput) -> Result<VectorInputInternal
             "Inference is not supported in sync context",
         )),
     }
-}
-
-async fn convert_inference_data(data: InferenceData) -> Result<VectorInputInternal, StorageError> {
-    let input_type = data.type_name();
-    let mut batch = BatchAccum::new();
-    batch.add(data.clone());
-
-    debug!("Starting inference processing for {input_type}");
-
-    let inferred = BatchAccumInferred::from_batch_accum(&batch).await?;
-
-    let vector = inferred.get_vector(&data)
-        .ok_or_else(|| {
-            warn!("Empty vector array for {input_type}. Content: {data:?}");
-            StorageError::inference_error(format!(
-                "Inference service returned empty result for {input_type}. This might indicate an issue with the input format or the inference service configuration."
-            ))
-        })?;
-
-    debug!("Successfully processed {input_type} inference");
-
-    Ok(VectorInputInternal::Vector(VectorInternal::from(
-        vector.clone(),
-    )))
 }
 
 /// Circular dependencies prevents us from implementing `From` directly

@@ -15,6 +15,7 @@ use crate::common::inference::service::{InferenceData, InferenceType};
 
 pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
+    inference_type: InferenceType,
 ) -> Result<Vec<PointStructPersisted>, StorageError> {
     let mut batch_accum = BatchAccum::new();
 
@@ -40,7 +41,7 @@ pub async fn convert_point_struct(
     }
 
     let inferred = if !batch_accum.objects.is_empty() {
-        Some(BatchAccumInferred::from_batch_accum(&batch_accum).await?)
+        Some(BatchAccumInferred::from_batch_accum(batch_accum, inference_type).await?)
     } else {
         None
     };
@@ -159,7 +160,7 @@ pub async fn convert_batch(batch: Batch) -> Result<BatchPersisted, StorageError>
                 let mut named_vectors = HashMap::new();
 
                 for (name, vectors) in named {
-                    let converted_vectors = convert_vectors(vectors).await?;
+                    let converted_vectors = convert_vectors(vectors, InferenceType::Update).await?;
                     named_vectors.insert(name, converted_vectors);
                 }
 
@@ -189,6 +190,7 @@ pub async fn convert_batch(batch: Batch) -> Result<BatchPersisted, StorageError>
 
 pub async fn convert_point_vectors(
     point_vectors_list: Vec<PointVectors>,
+    inference_type: InferenceType,
 ) -> Result<Vec<PointVectorsPersisted>, StorageError> {
     let mut converted_point_vectors = Vec::new();
     let mut batch_accum = BatchAccum::new();
@@ -207,7 +209,7 @@ pub async fn convert_point_vectors(
     }
 
     let inferred = if !batch_accum.objects.is_empty() {
-        Some(BatchAccumInferred::from_batch_accum(&batch_accum).await?)
+        Some(BatchAccumInferred::from_batch_accum(batch_accum, inference_type).await?)
     } else {
         None
     };
@@ -266,26 +268,6 @@ pub async fn convert_point_vectors(
     }
 
     Ok(converted_point_vectors)
-}
-
-async fn convert_inference_data(
-    data: InferenceData,
-    _inference_type: InferenceType,
-) -> Result<VectorPersisted, StorageError> {
-    let input_type = data.type_name();
-    let mut batch = BatchAccum::new();
-    batch.add(data.clone());
-    debug!("Starting inference processing for {input_type}");
-    let inferred = BatchAccumInferred::from_batch_accum(&batch).await?;
-    let vector = inferred.get_vector(&data)
-        .ok_or_else(|| {
-            warn!("Empty vector array for {input_type}. Content: {data:?}");
-            StorageError::inference_error(format!(
-                "Inference service returned empty result for {input_type}. This might indicate an issue with the input format or the inference service configuration."
-            ))
-        })?.clone();
-    debug!("Successfully processed {input_type} inference");
-    Ok(vector)
 }
 
 fn convert_point_struct_with_inferred(
@@ -358,7 +340,10 @@ fn convert_point_struct_with_inferred(
         .collect()
 }
 
-pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted>, StorageError> {
+pub async fn convert_vectors(
+    vectors: Vec<Vector>,
+    inference_type: InferenceType,
+) -> Result<Vec<VectorPersisted>, StorageError> {
     let mut batch_accum = BatchAccum::new();
     for vector in &vectors {
         match vector {
@@ -370,7 +355,7 @@ pub async fn convert_vectors(vectors: Vec<Vector>) -> Result<Vec<VectorPersisted
     }
 
     let inferred = if !batch_accum.objects.is_empty() {
-        Some(BatchAccumInferred::from_batch_accum(&batch_accum).await?)
+        Some(BatchAccumInferred::from_batch_accum(batch_accum, inference_type).await?)
     } else {
         None
     };

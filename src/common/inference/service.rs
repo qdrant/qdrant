@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
-use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
 use api::rest::{Document, Image, InferenceObject};
@@ -10,6 +9,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use crate::common::inference::batch_processing::BatchAccum;
 use crate::common::inference::config::InferenceConfig;
@@ -116,7 +116,6 @@ impl From<InferenceData> for InferenceInput {
     }
 }
 
-#[derive(Clone)]
 pub struct InferenceService {
     pub(crate) config: InferenceConfig,
     pub(crate) client: Client,
@@ -135,12 +134,8 @@ impl InferenceService {
         }
     }
 
-    pub fn init(config: InferenceConfig) -> Result<(), StorageError> {
-        let mut inference_service = INFERENCE_SERVICE.write().map_err(|e| {
-            StorageError::service_error(format!(
-                "Failed to acquire write lock for InferenceService: {e}",
-            ))
-        })?;
+    pub async fn init_global(config: InferenceConfig) -> Result<(), StorageError> {
+        let mut inference_service = INFERENCE_SERVICE.write().await;
 
         if config.token.is_none() {
             return Err(StorageError::service_error(
@@ -158,13 +153,11 @@ impl InferenceService {
         Ok(())
     }
 
-    pub fn global() -> RwLockReadGuard<'static, Option<InferenceService>> {
-        INFERENCE_SERVICE
-            .read()
-            .expect("Failed to acquire read lock for InferenceService - possible deadlock")
+    pub async fn get_global() -> RwLockReadGuard<'static, Option<InferenceService>> {
+        INFERENCE_SERVICE.read().await
     }
 
-    pub(crate) fn validate_and_create(&self) -> Result<InferenceService, StorageError> {
+    pub(crate) fn validate(&self) -> Result<(), StorageError> {
         if self
             .config
             .address
@@ -175,20 +168,19 @@ impl InferenceService {
                 "InferenceService configuration error: address is missing or empty",
             ));
         }
-        Ok(InferenceService {
-            config: self.config.clone(),
-            client: self.client.clone(),
-        })
+        Ok(())
     }
 
     pub async fn infer(
         &self,
-        batch: &BatchAccum,
+        inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
     ) -> Result<Vec<VectorPersisted>, StorageError> {
-        let mut request = InferenceRequest::from(batch);
-        request.inference = Some(inference_type);
-        request.token = self.config.token.clone();
+        let request = InferenceRequest {
+            inputs: inference_inputs,
+            inference: Some(inference_type),
+            token: self.config.token.clone(),
+        };
 
         let url = self.config.address.as_ref().ok_or_else(|| {
             StorageError::service_error(

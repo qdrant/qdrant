@@ -5,7 +5,7 @@ use api::rest::{
     QueryInterface, RecommendInput, VectorInput,
 };
 
-use super::service::{InferenceData, InferenceRequest};
+use super::service::{InferenceData, InferenceInput, InferenceRequest};
 
 pub struct BatchAccum {
     pub(crate) objects: HashSet<InferenceData>,
@@ -34,7 +34,7 @@ impl BatchAccum {
 impl From<&BatchAccum> for InferenceRequest {
     fn from(batch: &BatchAccum) -> Self {
         Self {
-            inputs: batch.objects.iter().cloned().map(Into::into).collect(),
+            inputs: batch.objects.iter().cloned().map(InferenceInput::from).collect(),
             inference: None,
             token: None,
         }
@@ -105,11 +105,22 @@ fn collect_query_interface(query: &QueryInterface, batch: &mut BatchAccum) {
 }
 
 fn collect_prefetch(prefetch: &Prefetch, batch: &mut BatchAccum) {
-    if let Some(query) = &prefetch.query {
+    let Prefetch {
+        prefetch,
+        query,
+        using: _,
+        filter: _,
+        params: _,
+        score_threshold: _,
+        limit: _,
+        lookup_from: _,
+    } = prefetch;
+
+    if let Some(query) = query {
         collect_query_interface(query, batch);
     }
 
-    if let Some(prefetches) = &prefetch.prefetch {
+    if let Some(prefetches) = prefetch {
         for p in prefetches {
             collect_prefetch(p, batch);
         }
@@ -119,11 +130,24 @@ fn collect_prefetch(prefetch: &Prefetch, batch: &mut BatchAccum) {
 pub fn collect_query_groups_request(request: &QueryGroupsRequestInternal) -> BatchAccum {
     let mut batch = BatchAccum::new();
 
-    if let Some(query) = &request.query {
+    let QueryGroupsRequestInternal {
+        query,
+        prefetch,
+        using: _,
+        filter: _,
+        params: _,
+        score_threshold: _,
+        with_vector: _,
+        with_payload: _,
+        lookup_from: _,
+        group_request: _,
+    } = request;
+
+    if let Some(query) = query {
         collect_query_interface(query, &mut batch);
     }
 
-    if let Some(prefetches) = &request.prefetch {
+    if let Some(prefetches) = prefetch {
         for prefetch in prefetches {
             collect_prefetch(prefetch, &mut batch);
         }
