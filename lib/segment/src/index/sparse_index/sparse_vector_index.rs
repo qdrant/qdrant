@@ -320,7 +320,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     pub fn search_plain(
         &self,
-        sparse_vector: SparseVector,
+        sparse_vector: &SparseVector,
         filter: &Filter,
         top: usize,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
@@ -334,7 +334,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let ids = match prefiltered_points {
@@ -349,7 +349,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .filter(|&idx| check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice))
         .collect_vec();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector);
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -366,7 +366,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     // search using sparse vector inverted index
     fn search_sparse(
         &self,
-        sparse_vector: SparseVector,
+        sparse_vector: &SparseVector,
         filter: Option<&Filter>,
         top: usize,
         vector_query_context: &VectorQueryContext,
@@ -375,7 +375,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let id_tracker = self.id_tracker.borrow();
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or(id_tracker.deleted_point_bitslice());
+            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let not_deleted_condition = |idx: PointOffsetType| -> bool {
@@ -384,7 +384,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector);
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -424,8 +424,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         if vector.is_empty() {
             return Ok(vec![]);
         }
-        let mut vector = vector.clone();
-        vector.sort_by_indices();
 
         match filter {
             Some(filter) => {

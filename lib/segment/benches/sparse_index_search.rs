@@ -163,7 +163,7 @@ fn sparse_vector_index_search_benchmark_impl(
                     let mut prefiltered_points = None;
                     let results = sparse_vector_index
                         .search_plain(
-                            vec.clone(),
+                            vec,
                             &filter,
                             TOP,
                             &mut prefiltered_points,
@@ -211,7 +211,7 @@ fn sparse_vector_index_search_benchmark_impl(
                     let mut prefiltered_points = None;
                     let results = sparse_vector_index
                         .search_plain(
-                            vec.clone(),
+                            vec,
                             &filter,
                             TOP,
                             &mut prefiltered_points,
