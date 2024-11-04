@@ -23,7 +23,11 @@ impl ShardTransferConsensus for TocDispatcher {
     }
 
     fn consensus_commit_term(&self) -> (u64, u64) {
-        self.consensus_state.0.persistent.read().applied_commit_term()
+        self.consensus_state
+            .0
+            .persistent
+            .read()
+            .applied_commit_term()
     }
 
     fn recovered_switch_to_partial(
