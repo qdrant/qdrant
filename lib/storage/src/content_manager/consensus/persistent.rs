@@ -35,7 +35,7 @@ pub struct Persistent {
     /// for this last snapshot ID (term + commit)
     #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     pub latest_snapshot_meta: SnapshotMetadataSer,
-    /// Operations to applied, consensus consider them committed, but this peer didn't apply them yet
+    /// Operations to be applied, consensus considers them committed, but this peer didn't apply them yet
     #[serde(default)]
     pub apply_progress_queue: EntryApplyProgressQueue,
     #[serde(default, skip_serializing_if = "Option::is_none")]
