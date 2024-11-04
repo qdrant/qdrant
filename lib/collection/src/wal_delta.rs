@@ -63,18 +63,21 @@ impl RecoverableWal {
         &'a self,
         operation: &mut OperationWithClockTag,
     ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
-        // Update last seen clock map and correct clock tag if necessary
-        if self.clocks_enabled.load(Ordering::Acquire) {
-            if let Some(clock_tag) = &mut operation.clock_tag {
-                let operation_accepted = self
-                    .newest_clocks
-                    .lock()
-                    .await
-                    .advance_clock_and_correct_tag(clock_tag);
+        // If clcoks are disabled, remove the clock tag from the operation and always accept it
+        if !self.clocks_enabled.load(Ordering::Acquire) {
+            operation.clock_tag.take();
+        }
 
-                if !operation_accepted {
-                    return Err(crate::wal::WalError::ClockRejected);
-                }
+        // Update last seen clock map and correct clock tag if necessary
+        if let Some(clock_tag) = &mut operation.clock_tag {
+            let operation_accepted = self
+                .newest_clocks
+                .lock()
+                .await
+                .advance_clock_and_correct_tag(clock_tag);
+
+            if !operation_accepted {
+                return Err(crate::wal::WalError::ClockRejected);
             }
         }
 
