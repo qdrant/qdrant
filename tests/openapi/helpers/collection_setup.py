@@ -1,7 +1,9 @@
-
+from retry import retry
 from .helpers import request_with_validation
+from requests.exceptions import ConnectionError
 
 
+@retry(ConnectionError, delay=1, tries=5, backoff=2)
 def drop_collection(collection_name='test_collection'):
     response = request_with_validation(
         api='/collections/{collection_name}',
