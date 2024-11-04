@@ -4,13 +4,12 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::rest::{Document, Image, InferenceObject};
+use collection::operations::point_ops::VectorPersisted;
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use api::rest::{Document, Image, InferenceObject};
-use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::config::InferenceConfig;
