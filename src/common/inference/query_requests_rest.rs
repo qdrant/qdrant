@@ -6,7 +6,7 @@ use collection::operations::universal_query::collection_query::{
 };
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
+use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 

@@ -34,7 +34,12 @@ impl BatchAccum {
 impl From<&BatchAccum> for InferenceRequest {
     fn from(batch: &BatchAccum) -> Self {
         Self {
-            inputs: batch.objects.iter().cloned().map(InferenceInput::from).collect(),
+            inputs: batch
+                .objects
+                .iter()
+                .cloned()
+                .map(InferenceInput::from)
+                .collect(),
             inference: None,
             token: None,
         }
