@@ -228,7 +228,10 @@ impl Persistent {
     /// Get the last applied commit and term, reflected in our current state.
     pub fn applied_commit_term(&self) -> (u64, u64) {
         let hard_state = &self.state().hard_state;
-        let last_commit = self.last_applied_entry().unwrap_or(hard_state.commit);
+
+        // Fall back to 0 because it's always less than any commit
+        let last_commit = self.last_applied_entry().unwrap_or(0);
+
         (last_commit, hard_state.term)
     }
 
