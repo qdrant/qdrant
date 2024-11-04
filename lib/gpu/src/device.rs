@@ -37,7 +37,7 @@ pub struct Device {
 
     /// Maximum work group size for compute shaders.
     /// It's used in bounds checking in Context.
-    max_compute_work_group_size: [usize; 3],
+    max_compute_work_group_count: [usize; 3],
 
     /// Selected queue index to use.
     queue_index: usize,
@@ -151,16 +151,16 @@ impl Device {
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
         let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();
 
-        let max_compute_work_group_size;
+        let max_compute_work_group_count;
         let mut is_dynamic_subgroup_size = false;
         let subgroup_size = unsafe {
             let props = instance
                 .vk_instance()
                 .get_physical_device_properties(vk_physical_device.vk_physical_device);
-            max_compute_work_group_size = [
-                props.limits.max_compute_work_group_size[0] as usize,
-                props.limits.max_compute_work_group_size[1] as usize,
-                props.limits.max_compute_work_group_size[2] as usize,
+            max_compute_work_group_count = [
+                props.limits.max_compute_work_group_count[0] as usize,
+                props.limits.max_compute_work_group_count[1] as usize,
+                props.limits.max_compute_work_group_count[2] as usize,
             ];
             let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
             let mut vulkan_1_3_properties = vk::PhysicalDeviceVulkan13Properties::default();
@@ -290,7 +290,7 @@ impl Device {
             compute_queues,
             _transfer_queues: transfer_queues,
             subgroup_size,
-            max_compute_work_group_size,
+            max_compute_work_group_count,
             is_dynamic_subgroup_size,
             queue_index,
         }))
@@ -345,8 +345,8 @@ impl Device {
         self.is_dynamic_subgroup_size
     }
 
-    pub fn max_compute_work_group_size(&self) -> [usize; 3] {
-        self.max_compute_work_group_size
+    pub fn max_compute_work_group_count(&self) -> [usize; 3] {
+        self.max_compute_work_group_count
     }
 
     pub fn compute_queue(&self) -> &Queue {

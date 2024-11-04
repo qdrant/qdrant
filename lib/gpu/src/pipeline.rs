@@ -65,17 +65,20 @@ impl Pipeline {
     }
 
     pub(crate) fn new(device: Arc<Device>, builder: &PipelineBuilder) -> GpuResult<Self> {
-        let descriptor_set_layouts = builder
-            .descriptor_set_layouts
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // Get Vulkan handles to create pipeline layout.
-        let vk_descriptor_set_layouts = descriptor_set_layouts
-            .iter()
-            .map(|set| set.vk_descriptor_set_layout())
-            .collect::<Vec<_>>();
+        let vk_descriptor_set_layouts = (0..builder.descriptor_set_layouts.len())
+            .map(|descriptor_set_index| {
+                if let Some(descriptor_set_layouts) =
+                    builder.descriptor_set_layouts.get(&descriptor_set_index)
+                {
+                    Ok(descriptor_set_layouts.vk_descriptor_set_layout())
+                } else {
+                    Err(GpuError::Other(format!(
+                        "Descriptor set layout {} is missing",
+                        descriptor_set_index
+                    )))
+                }
+            })
+            .collect::<GpuResult<Vec<_>>>()?;
 
         // Create a Vulkan pipeline layout.
         let vk_pipeline_layout_create_info = vk::PipelineLayoutCreateInfo::default()
@@ -143,7 +146,11 @@ impl Pipeline {
                     _shader: shader,
                     vk_pipeline_layout,
                     vk_pipeline,
-                    descriptor_set_layouts,
+                    descriptor_set_layouts: builder
+                        .descriptor_set_layouts
+                        .values()
+                        .cloned()
+                        .collect(),
                 })
             }
             Err(error) => {

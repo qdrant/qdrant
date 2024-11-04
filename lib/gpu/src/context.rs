@@ -51,8 +51,9 @@ impl Context {
         };
 
         // Create fence to wait for GPU execution.
+        // We create fence as signaled because we reset fence before start.
         let fence_create_info =
-            vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::default());
+            vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let vk_fence = unsafe {
             device
                 .vk_device()
@@ -90,10 +91,10 @@ impl Context {
             self.init_command_buffer()?;
         }
 
-        let max_compute_work_group_size = self.device.max_compute_work_group_size();
-        if x > max_compute_work_group_size[0]
-            || y > max_compute_work_group_size[1]
-            || z > max_compute_work_group_size[2]
+        let max_compute_work_group_count = self.device.max_compute_work_group_count();
+        if x > max_compute_work_group_count[0]
+            || y > max_compute_work_group_count[1]
+            || z > max_compute_work_group_count[2]
         {
             return Err(GpuError::OutOfBounds(
                 "Dispatch work group size is out of bounds".to_string(),
@@ -247,6 +248,13 @@ impl Context {
             return Err(GpuError::from(e));
         }
 
+        // Reset fence to unsignaled state.
+        let fence_reset_result = unsafe { self.device.vk_device().reset_fences(&[self.vk_fence]) };
+        if let Err(e) = fence_reset_result {
+            self.destroy_command_buffer();
+            return Err(GpuError::from(e));
+        }
+
         // Start execution of recorded commands.
         let submit_buffers = [self.vk_command_buffer];
         let submit_info = vec![vk::SubmitInfo::default().command_buffers(&submit_buffers)];
@@ -273,30 +281,46 @@ impl Context {
             return Ok(());
         }
 
-        // Wait for GPU execution finish.
-        let wait_result = unsafe {
-            self.device.vk_device().wait_for_fences(
-                &[self.vk_fence],
-                true,
-                timeout.as_nanos() as u64,
-            )
+        // Get the current status of fence.
+        let fence_status = unsafe {
+            self.device
+                .vk_device()
+                .get_fence_status(self.vk_fence)
+                .map_err(GpuError::from)
         };
 
-        // If wait failed, return error.
-        // This check also handles timeout.
-        if let Err(e) = wait_result {
-            return Err(GpuError::from(e));
+        match fence_status {
+            Ok(true) => {
+                // GPU execution finished already, clear command buffer and return.
+                self.destroy_command_buffer();
+                Ok(())
+            }
+            Ok(false) => {
+                // GPU is processing. Wait for signal with timeout.
+                let wait_result = unsafe {
+                    self.device
+                        .vk_device()
+                        .wait_for_fences(&[self.vk_fence], true, timeout.as_nanos() as u64)
+                        .map_err(GpuError::from)
+                };
+
+                if matches!(wait_result, Err(GpuError::Timeout)) {
+                    // If we detect timeout, don't clear command buffer, just return a timeout error.
+                    Err(GpuError::Timeout)
+                } else {
+                    // If the error is not a timeout, clear command buffer.
+                    self.destroy_command_buffer();
+                    wait_result
+                }
+            }
+            Err(e) => {
+                // By Vulkan specification, error while getting fence status
+                // may happen is special cases like hardware device lost.
+                // In this cases we don't care about status of gpu execution and just clear resources.
+                self.destroy_command_buffer();
+                Err(e)
+            }
         }
-
-        self.destroy_command_buffer();
-
-        // Reset fence. Do it after command buffer destruction to avoid
-        // resources leak in case of reset error.
-        unsafe {
-            self.device.vk_device().reset_fences(&[self.vk_fence])?;
-        }
-
-        Ok(())
     }
 
     fn init_command_buffer(&mut self) -> GpuResult<()> {

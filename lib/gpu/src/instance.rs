@@ -252,9 +252,8 @@ impl Instance {
         defines: Option<&HashMap<String, Option<String>>>,
         includes: Option<&HashMap<String, String>>,
     ) -> GpuResult<Vec<u8>> {
-        let mut options = shaderc::CompileOptions::new().ok_or_else(|| {
-            GpuError::Other("Failed to create shaderc compile options".to_string())
-        })?;
+        let mut options = shaderc::CompileOptions::new()
+            .ok_or_else(|| GpuError::Other(format!("Failed to create shaderc compile options")))?;
         options.set_optimization_level(shaderc::OptimizationLevel::Performance);
         options.set_target_env(
             shaderc::TargetEnv::Vulkan,
