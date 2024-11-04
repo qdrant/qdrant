@@ -225,6 +225,13 @@ impl Persistent {
         self.apply_progress_queue.get_last_applied()
     }
 
+    /// Get the last applied commit and term, reflected in our current state.
+    pub fn applied_commit_term(&self) -> (u64, u64) {
+        let hard_state = &self.state().hard_state;
+        let last_commit = self.last_applied_entry().unwrap_or(hard_state.commit);
+        (last_commit, hard_state.term)
+    }
+
     pub fn first_voter(&self) -> Option<PeerId> {
         self.first_voter
     }
