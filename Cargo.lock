@@ -1673,7 +1673,7 @@ dependencies = [
  "anyhow",
  "flate2",
  "indicatif",
- "reqwest 0.12.8",
+ "reqwest 0.12.9",
 ]
 
 [[package]]
@@ -3880,7 +3880,7 @@ dependencies = [
  "percent-encoding",
  "quick-xml 0.36.0",
  "rand 0.8.5",
- "reqwest 0.12.8",
+ "reqwest 0.12.9",
  "ring 0.17.5",
  "serde",
  "serde_json",
@@ -4664,7 +4664,7 @@ dependencies = [
  "raft",
  "raft-proto",
  "rand 0.8.5",
- "reqwest 0.12.8",
+ "reqwest 0.12.9",
  "rstack-self",
  "rustls 0.23.15",
  "rustls-pemfile 2.2.0",
@@ -5056,9 +5056,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.8"
+version = "0.12.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f713147fbe92361e52392c73b8c9e48c04c6625bce969ef54dc901e58e042a7b"
+checksum = "a77c62af46e79de0a562e1a9849205ffcb7fc1238876e9bd743357570e04046f"
 dependencies = [
  "base64 0.22.0",
  "bytes",
@@ -6138,7 +6138,7 @@ dependencies = [
  "protobuf",
  "raft",
  "rand 0.8.5",
- "reqwest 0.12.8",
+ "reqwest 0.12.9",
  "schemars",
  "segment",
  "serde",
