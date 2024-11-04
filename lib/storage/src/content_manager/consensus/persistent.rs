@@ -35,7 +35,7 @@ pub struct Persistent {
     /// for this last snapshot ID (term + commit)
     #[serde(default)] // TODO quick fix to avoid breaking the compat. with 0.8.1
     pub latest_snapshot_meta: SnapshotMetadataSer,
-    /// Operations to applied, consensus consider them committed, but this peer didn't apply them yet
+    /// Operations to be applied, consensus considers them committed, but this peer didn't apply them yet
     #[serde(default)]
     pub apply_progress_queue: EntryApplyProgressQueue,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -223,6 +223,16 @@ impl Persistent {
 
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.apply_progress_queue.get_last_applied()
+    }
+
+    /// Get the last applied commit and term, reflected in our current state.
+    pub fn applied_commit_term(&self) -> (u64, u64) {
+        let hard_state = &self.state().hard_state;
+
+        // Fall back to 0 because it's always less than any commit
+        let last_commit = self.last_applied_entry().unwrap_or(0);
+
+        (last_commit, hard_state.term)
     }
 
     pub fn first_voter(&self) -> Option<PeerId> {
