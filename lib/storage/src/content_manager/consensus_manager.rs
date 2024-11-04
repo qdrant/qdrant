@@ -670,22 +670,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // TODO: naive approach with spinlock for waiting on commit/term, find better way
         while start.elapsed() < timeout {
-            let state = &self.hard_state();
-
-            let last_applied_commit = self.persistent.read().last_applied_entry();
-
-            let is_commit_ok = last_applied_commit
-                .map(|applied| applied >= commit)
-                .unwrap_or(false);
+            let (current_commit, current_term) = self.persistent.read().applied_commit_term();
 
             // Okay if on the same term and have at least the specified commit
-            let is_ok = state.term == term && is_commit_ok;
+            let is_ok = current_term == term && current_commit >= commit;
             if is_ok {
                 return Ok(());
             }
 
             // Fail if on a newer term
-            let is_fail = state.term > term;
+            let is_fail = current_term > term;
             if is_fail {
                 return Err(());
             }
