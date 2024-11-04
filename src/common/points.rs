@@ -48,6 +48,7 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
 
+use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::{
     convert_batch, convert_point_struct, convert_point_vectors,
 };
@@ -240,7 +241,9 @@ pub async fn do_upsert_points(
         ),
         PointInsertOperations::PointsList(PointsList { points, shard_key }) => (
             shard_key,
-            PointInsertOperationsInternal::PointsList(convert_point_struct(points).await?),
+            PointInsertOperationsInternal::PointsList(
+                convert_point_struct(points, InferenceType::Update).await?,
+            ),
         ),
     };
 
@@ -306,7 +309,7 @@ pub async fn do_update_vectors(
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
-    let persisted_points = convert_point_vectors(points).await?;
+    let persisted_points = convert_point_vectors(points, InferenceType::Update).await?;
 
     let collection_operation = CollectionUpdateOperations::VectorOperation(
         VectorOperations::UpdateVectors(UpdateVectorsOp {

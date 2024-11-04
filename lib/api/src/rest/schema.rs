@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use common::types::ScoreType;
 use common::validation::validate_multi_vector;
@@ -139,10 +140,31 @@ impl Validate for VectorStruct {
     }
 }
 
+#[derive(Clone, Default, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct Options {
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub options: Option<HashMap<String, Value>>,
+}
+
+impl Hash for Options {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Order of keys in the map should not affect the hash
+        if let Some(options) = &self.options {
+            let mut keys: Vec<_> = options.keys().collect();
+            keys.sort();
+            for key in keys {
+                key.hash(state);
+                options.get(key).unwrap().hash(state);
+            }
+        }
+    }
+}
+
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Text document for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 pub struct Document {
     /// Text of the document
     /// This field will be used as input for the embedding model
@@ -150,15 +172,14 @@ pub struct Document {
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
     pub model: Option<String>,
-    /// Parameters for the model
-    /// Values of the parameters are model-specific
-    pub options: Option<HashMap<String, Value>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Image object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 pub struct Image {
     /// Image data: base64 encoded image or an URL
     pub image: String,
@@ -167,13 +188,14 @@ pub struct Image {
     pub model: Option<String>,
     /// Parameters for the model
     /// Values of the parameters are model-specific
-    pub options: Option<HashMap<String, Value>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Custom object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 pub struct InferenceObject {
     /// Arbitrary data, used as input for the embedding model
     /// Used if the model requires more than one input or a custom input
@@ -183,7 +205,8 @@ pub struct InferenceObject {
     pub model: Option<String>,
     /// Parameters for the model
     /// Values of the parameters are model-specific
-    pub options: Option<HashMap<String, Value>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
