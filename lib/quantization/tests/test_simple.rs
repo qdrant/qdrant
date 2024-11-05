@@ -260,11 +260,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &HardwareCounterCell::new());
+            let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
+        counter.discard_results();
     }
 
     #[test]
@@ -295,11 +297,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &HardwareCounterCell::new());
+            let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
+        counter.discard_results();
     }
 
     #[test]
