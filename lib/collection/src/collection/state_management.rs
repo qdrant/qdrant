@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::mem;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
@@ -71,7 +72,9 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
+    async fn apply_config(&self, mut new_config: CollectionConfig) -> CollectionResult<()> {
+        let recreate_optimizers;
+
         {
             let mut config = self.collection_config.write().await;
 
@@ -83,11 +86,51 @@ impl Collection {
                 return Err(CollectionError::service_error(err.to_string()));
             }
 
+            // Temporarily take `wal_config` and `strict_mode_config` out of `new_config`, so that
+            // we can compare "core" config independently from `wal_config`/`strict_mode_config`
+            let new_wal_config =
+                mem::replace(&mut new_config.wal_config, config.wal_config.clone());
+
+            let new_strict_mode_config = mem::replace(
+                &mut new_config.strict_mode_config,
+                config.strict_mode_config.clone(),
+            );
+
+            // Compare configs
+            let is_core_config_updated = *config != new_config;
+            let is_wal_config_updated = config.wal_config != new_wal_config;
+            let is_strict_mode_config_updated = config.strict_mode_config != new_strict_mode_config;
+
+            // Put `new_wal_config`/`new_strict_mode_config` back into `new_config`
+            new_config.wal_config = new_wal_config;
+            new_config.strict_mode_config = new_strict_mode_config;
+
+            let is_config_updated =
+                is_core_config_updated || is_wal_config_updated || is_strict_mode_config_updated;
+
+            if !is_config_updated {
+                return Ok(());
+            }
+
+            if is_wal_config_updated {
+                log::warn!(
+                    "WAL config of collection {} updated when applying Raft snapshot, \
+                     but updated WAL config will only be applied on Qdrant restart",
+                    self.id,
+                );
+            }
+
             *config = new_config;
+
+            // We need to recreate optimizers, if "core" config was updated
+            recreate_optimizers = is_core_config_updated;
         }
 
         self.collection_config.read().await.save(&self.path)?;
-        self.recreate_optimizers_blocking().await?;
+
+        if recreate_optimizers {
+            self.recreate_optimizers_blocking().await?;
+        }
 
         Ok(())
     }
