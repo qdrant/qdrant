@@ -118,10 +118,43 @@ impl CollectionParams {
     }
 
     pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
-        self.vectors.check_compatible(&other.vectors)?;
+        let CollectionParams {
+            vectors,
+            shard_number: _, // Maybe be updated by resharding, assume local shards needs to be dropped
+            sharding_method, // Not changeable
+            replication_factor: _, // May be changed
+            write_consistency_factor: _, // May be changed
+            read_fan_out_factor: _, // May be changed
+            on_disk_payload: _, // May be changed
+            sparse_vectors,  // Parameters may be changes, but not the structure
+        } = other;
+
+        self.vectors.check_compatible(vectors)?;
+
+        let mut this_sparse_vectors: Vec<_> = if let Some(sparse_vectors) = &self.sparse_vectors {
+            sparse_vectors.keys().collect()
+        } else {
+            vec![]
+        };
+        this_sparse_vectors.sort();
+
+        let mut other_sparse_vectors: Vec<_> = if let Some(sparse_vectors) = sparse_vectors {
+            sparse_vectors.keys().collect()
+        } else {
+            vec![]
+        };
+        other_sparse_vectors.sort();
+
+        if this_sparse_vectors != other_sparse_vectors {
+            return Err(CollectionError::bad_input(format!(
+                "sparse vectors are incompatible: \
+                 origin sparse vectors: {this_sparse_vectors:?}, \
+                 while other sparse vectors: {other_sparse_vectors:?}",
+            )));
+        }
 
         let this_sharding_method = self.sharding_method.unwrap_or_default();
-        let other_sharding_method = self.sharding_method.unwrap_or_default();
+        let other_sharding_method = sharding_method.unwrap_or_default();
 
         if this_sharding_method != other_sharding_method {
             return Err(CollectionError::bad_input(format!(
