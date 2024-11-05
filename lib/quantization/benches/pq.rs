@@ -36,13 +36,16 @@ fn encode_bench(c: &mut Criterion) {
 
     let mut total = 0.0;
 
+    let hardware_counter = HardwareCounterCell::new();
+
     group.bench_function("score random access pq", |b| {
         b.iter(|| {
             let random_idx = rand::random::<u32>() % vectors_count as u32;
-            total +=
-                pq_encoded.score_point(&encoded_query, random_idx, &HardwareCounterCell::new());
+            total += pq_encoded.score_point(&encoded_query, random_idx, &hardware_counter);
         });
     });
+
+    hardware_counter.discard_results();
 
     println!("total: {total}");
 }
