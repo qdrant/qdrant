@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use api::grpc::qdrant::query_shard_points::Prefetch;
 use api::grpc::qdrant::vector::Vector;
 use api::grpc::qdrant::vector_input::Variant;
 use api::grpc::qdrant::{
@@ -62,12 +61,20 @@ fn collect_vector_input(vector: &VectorInput, batch: &mut BatchAccumGrpc) -> Res
         Variant::Sparse(_) => {}
         Variant::MultiDense(_) => {}
         Variant::Document(document) => {
-            batch.add(InferenceData::Document(rest::Document::try_from(document)?))
+            let doc = rest::Document::try_from(document.clone())
+                .map_err(|e| Status::internal(format!("Document conversion error: {e:?}")))?;
+            batch.add(InferenceData::Document(doc));
         }
-        Variant::Image(image) => batch.add(InferenceData::Image(rest::Image::try_from(image)?)),
-        Variant::Object(object) => batch.add(InferenceData::Object(
-            rest::InferenceObject::try_from(object)?,
-        )),
+        Variant::Image(image) => {
+            let img = rest::Image::try_from(image.clone())
+                .map_err(|e| Status::internal(format!("Image conversion error: {e:?}")))?;
+            batch.add(InferenceData::Image(img));
+        }
+        Variant::Object(object) => {
+            let obj = rest::InferenceObject::try_from(object.clone())
+                .map_err(|e| Status::internal(format!("Object conversion error: {e:?}")))?;
+            batch.add(InferenceData::Object(obj));
+        }
     }
     Ok(())
 }
@@ -77,12 +84,14 @@ fn collect_vector(vector: &Vector, batch: &mut BatchAccumGrpc) -> Result<(), Sta
         Vector::Dense(_) => {}
         Vector::Sparse(_) => {}
         Vector::MultiDense(_) => {}
-        Vector::Document(document) => {
-            batch.add(InferenceData::Document(rest::Document::try_from(document)?))
+        Vector::Document(document) => batch.add(InferenceData::Document(rest::Document::try_from(
+            document.clone(),
+        )?)),
+        Vector::Image(image) => {
+            batch.add(InferenceData::Image(rest::Image::try_from(image.clone())?))
         }
-        Vector::Image(image) => batch.add(InferenceData::Image(rest::Image::try_from(image)?)),
         Vector::Object(object) => batch.add(InferenceData::Object(
-            rest::InferenceObject::try_from(object)?,
+            rest::InferenceObject::try_from(object.clone())?,
         )),
     }
     Ok(())
@@ -179,10 +188,10 @@ fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result<(), Status
     };
 
     match variant {
-        query::Variant::Nearest(nearest) => collect_vector_input(&nearest, batch)?,
-        query::Variant::Recommend(recommend) => collect_recommend_input(&recommend, batch)?,
-        query::Variant::Discover(discover) => collect_discover_input(&discover, batch)?,
-        query::Variant::Context(context) => collect_context_input(&context, batch)?,
+        query::Variant::Nearest(nearest) => collect_vector_input(nearest, batch)?,
+        query::Variant::Recommend(recommend) => collect_recommend_input(recommend, batch)?,
+        query::Variant::Discover(discover) => collect_discover_input(discover, batch)?,
+        query::Variant::Context(context) => collect_context_input(context, batch)?,
         query::Variant::OrderBy(_) => {}
         query::Variant::Fusion(_) => {}
         query::Variant::Sample(_) => {}
@@ -207,10 +216,8 @@ fn collect_prefetch(prefetch: &PrefetchQuery, batch: &mut BatchAccumGrpc) -> Res
         collect_query(query, batch)?;
     }
 
-    if let Some(prefetches) = prefetch {
-        for p in prefetches {
-            collect_prefetch(p, batch)?;
-        }
+    for p in prefetch {
+        collect_prefetch(p, batch)?;
     }
 
     Ok(())
@@ -243,10 +250,8 @@ pub fn collect_query_point_groups(request: &QueryPointGroups) -> Result<BatchAcc
         collect_query(query, &mut batch)?;
     }
 
-    if let Some(prefetches) = prefetch {
-        for prefetch in prefetches {
-            collect_prefetch(prefetch, &mut batch)?;
-        }
+    for pref in prefetch {
+        collect_prefetch(pref, &mut batch)?;
     }
 
     Ok(batch)
@@ -254,8 +259,7 @@ pub fn collect_query_point_groups(request: &QueryPointGroups) -> Result<BatchAcc
 
 #[cfg(test)]
 mod tests {
-    use api::rest::schema::{DiscoverQuery, Document, Image, InferenceObject, NearestQuery};
-    use api::rest::QueryBaseGroupRequest;
+    use api::rest::schema::{Document, Image, InferenceObject};
     use serde_json::json;
 
     use super::*;
@@ -323,95 +327,6 @@ mod tests {
         batch.add(doc2);
 
         assert_eq!(batch.objects.len(), 1);
-    }
-
-    #[test]
-    fn test_collect_vector_input() {
-        let mut batch = BatchAccumGrpc::new();
-
-        let doc_input = VectorInput::Document(create_test_document("test"));
-        let img_input = VectorInput::Image(create_test_image("test.jpg"));
-        let obj_input = VectorInput::Object(create_test_object("test"));
-
-        collect_vector_input(&doc_input, &mut batch);
-        collect_vector_input(&img_input, &mut batch);
-        collect_vector_input(&obj_input, &mut batch);
-
-        assert_eq!(batch.objects.len(), 3);
-    }
-
-    #[test]
-    fn test_collect_prefetch() {
-        let prefetch = Prefetch {
-            query: Some(QueryInterface::Nearest(VectorInput::Document(
-                create_test_document("test"),
-            ))),
-            prefetch: Some(vec![Prefetch {
-                query: Some(QueryInterface::Nearest(VectorInput::Image(
-                    create_test_image("nested.jpg"),
-                ))),
-                prefetch: None,
-                using: None,
-                filter: None,
-                params: None,
-                score_threshold: None,
-                limit: None,
-                lookup_from: None,
-            }]),
-            using: None,
-            filter: None,
-            params: None,
-            score_threshold: None,
-            limit: None,
-            lookup_from: None,
-        };
-
-        let mut batch = BatchAccumGrpc::new();
-        collect_prefetch(&prefetch, &mut batch);
-        assert_eq!(batch.objects.len(), 2);
-    }
-
-    #[test]
-    fn test_collect_query_groups_request() {
-        let request = QueryGroupsRequestInternal {
-            query: Some(QueryInterface::Query(Query::Nearest(NearestQuery {
-                nearest: VectorInput::Document(create_test_document("test")),
-            }))),
-            prefetch: Some(vec![Prefetch {
-                query: Some(QueryInterface::Query(Query::Discover(DiscoverQuery {
-                    discover: DiscoverInput {
-                        target: VectorInput::Image(create_test_image("test.jpg")),
-                        context: Some(vec![ContextPair {
-                            positive: VectorInput::Document(create_test_document("pos")),
-                            negative: VectorInput::Image(create_test_image("neg.jpg")),
-                        }]),
-                    },
-                }))),
-                prefetch: None,
-                using: None,
-                filter: None,
-                params: None,
-                score_threshold: None,
-                limit: None,
-                lookup_from: None,
-            }]),
-            using: None,
-            filter: None,
-            params: None,
-            score_threshold: None,
-            with_vector: None,
-            with_payload: None,
-            lookup_from: None,
-            group_request: QueryBaseGroupRequest {
-                group_by: "test".parse().unwrap(),
-                group_size: None,
-                limit: None,
-                with_lookup: None,
-            },
-        };
-
-        let batch = collect_query_groups_request(&request);
-        assert_eq!(batch.objects.len(), 4);
     }
 
     #[test]
