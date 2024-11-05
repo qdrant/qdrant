@@ -3,6 +3,7 @@ mod metrics;
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -260,7 +261,7 @@ mod tests {
         .unwrap();
 
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32);
+            let score = encoded.score_internal(0, i as u32, &HardwareCounterCell::new());
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
@@ -295,7 +296,7 @@ mod tests {
         .unwrap();
 
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32);
+            let score = encoded.score_internal(0, i as u32, &HardwareCounterCell::new());
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }

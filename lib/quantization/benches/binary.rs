@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -51,7 +52,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = encoded_u128.score_point(&encoded_query, i);
+                _s = encoded_u128.score_point(&encoded_query, i, &HardwareCounterCell::new());
             }
         });
     });
@@ -63,7 +64,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = encoded_u128.score_point(&encoded_query, i);
+                _s = encoded_u128.score_point(&encoded_query, i, &HardwareCounterCell::new());
             }
         });
     });
@@ -88,7 +89,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = encoded_u8.score_point(&encoded_query, i);
+                _s = encoded_u8.score_point(&encoded_query, i, &HardwareCounterCell::new());
             }
         });
     });
@@ -100,7 +101,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = encoded_u8.score_point(&encoded_query, i);
+                _s = encoded_u8.score_point(&encoded_query, i, &HardwareCounterCell::new());
             }
         });
     });

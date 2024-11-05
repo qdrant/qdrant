@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_vectors::validate_vector_parameters;
@@ -292,16 +293,25 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Self::encode_vector(query)
     }
 
-    fn score_point(&self, query: &EncodedBinVector<TBitsStoreType>, i: u32) -> f32 {
+    fn score_point(
+        &self,
+        query: &EncodedBinVector<TBitsStoreType>,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         let vector_data_1 = self
             .encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size());
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
 
+        hw_counter
+            .cpu_counter()
+            .incr_delta(query.encoded_vector.len());
+
         self.calculate_metric(vector_data_usize_1, &query.encoded_vector)
     }
 
-    fn score_internal(&self, i: u32, j: u32) -> f32 {
+    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
         let vector_data_1 = self
             .encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size());
@@ -311,6 +321,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
         let vector_data_usize_2 = transmute_from_u8_to_slice(vector_data_2);
+
+        hw_counter
+            .cpu_counter()
+            .incr_delta(vector_data_usize_2.len());
 
         self.calculate_metric(vector_data_usize_1, vector_data_usize_2)
     }

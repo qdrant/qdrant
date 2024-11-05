@@ -22,6 +22,8 @@ rand = { workspace = true }
 rayon = { workspace = true }
 num-traits = { workspace = true }
 
+common = { path = "../common/common" }
+
 [dev-dependencies]
 criterion = { workspace = true }
 num_threads = "0.1.6"
