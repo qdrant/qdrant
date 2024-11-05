@@ -3885,12 +3885,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "mmap-payload-storage"
+name = "mmap-value-storage"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#259373fdf04f3b0b830e456a7438b36f7a8f77fb"
+source = "git+https://github.com/qdrant/mmap-payload-storage#2937942b740c9d0acab75d88fc4435ace5bed9dc"
 dependencies = [
  "bitvec",
- "ciborium",
  "itertools 0.13.0",
  "log",
  "lz4_flex",
@@ -4498,17 +4497,6 @@ checksum = "8d3928fb5db768cb86f891ff014f0144589297e3c6a1aba6ed7cecfdace270c7"
 dependencies = [
  "proc-macro2",
  "syn 2.0.87",
-]
-
-[[package]]
-name = "priority-queue"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "714c75db297bc88a63783ffc6ab9f830698a6705aa0201416931759ef4c8183d"
-dependencies = [
- "autocfg",
- "equivalent",
- "indexmap 2.6.0",
 ]
 
 [[package]]
@@ -5504,7 +5492,7 @@ dependencies = [
  "relative-path",
  "rustc_version",
  "syn 2.0.87",
-"unicode-ident",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -5920,7 +5908,7 @@ dependencies = [
  "memmap2 0.9.5",
  "memory",
  "merge",
- "mmap-payload-storage",
+ "mmap-value-storage",
  "nom",
  "num-cmp",
  "num-derive",
@@ -5975,9 +5963,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.211"
+version = "1.0.214"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac55e59090389fb9f0dd9e0f3c09615afed1d19094284d0b200441f13550793"
+checksum = "f55c3193aca71c12ad7890f1785d2b73e1b9f63a0bbc353c08ef26fe03fc56b5"
 dependencies = [
  "serde_derive",
 ]
@@ -6015,9 +6003,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.211"
+version = "1.0.214"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54be4f245ce16bc58d57ef2716271d0d4519e0f6defa147f6e081005bcb278ff"
+checksum = "de523f781f095e28fa605cdce0f8307e451cc0fd14e2eb4cd2e98a355b147766"
 dependencies = [
  "proc-macro2",
  "quote",
