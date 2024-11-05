@@ -239,8 +239,14 @@ impl TableOfContent {
                 }
             }
 
-            // Remove collections that are present locally but are not in the snapshot state
-            for collection_name in collections.keys() {
+            // Collect names of collections that are present locally
+            let collection_names: Vec<_> = collections.keys().cloned().collect();
+
+            // Drop `collections` lock
+            drop(collections);
+
+            // Remove collections that are present locally, but are not in the snapshot state
+            for collection_name in &collection_names {
                 if !data.collections.contains_key(collection_name) {
                     log::debug!(
                         "Deleting collection {collection_name} \
