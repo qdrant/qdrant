@@ -35,4 +35,7 @@ pub trait ChunkedVectorStorage<T> {
     fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
 
     fn max_vector_size_bytes(&self) -> usize;
+
+    /// True, if this storage is on-disk by default.
+    fn is_on_disk(&self) -> bool;
 }
