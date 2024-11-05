@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::num::NonZeroU32;
@@ -131,19 +131,17 @@ impl CollectionParams {
 
         self.vectors.check_compatible(vectors)?;
 
-        let mut this_sparse_vectors: Vec<_> = if let Some(sparse_vectors) = &self.sparse_vectors {
+        let this_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = &self.sparse_vectors {
             sparse_vectors.keys().collect()
         } else {
-            vec![]
+            HashSet::new()
         };
-        this_sparse_vectors.sort();
 
-        let mut other_sparse_vectors: Vec<_> = if let Some(sparse_vectors) = sparse_vectors {
+        let other_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = sparse_vectors {
             sparse_vectors.keys().collect()
         } else {
-            vec![]
+            HashSet::new()
         };
-        other_sparse_vectors.sort();
 
         if this_sparse_vectors != other_sparse_vectors {
             return Err(CollectionError::bad_input(format!(
