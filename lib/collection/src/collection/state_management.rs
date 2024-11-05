@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::mem;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
@@ -72,7 +71,7 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, mut new_config: CollectionConfig) -> CollectionResult<()> {
+    async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
@@ -86,24 +85,26 @@ impl Collection {
                 return Err(CollectionError::service_error(err.to_string()));
             }
 
-            // Temporarily take `wal_config` and `strict_mode_config` out of `new_config`, so that
-            // we can compare "core" config independently from `wal_config`/`strict_mode_config`
-            let new_wal_config =
-                mem::replace(&mut new_config.wal_config, config.wal_config.clone());
+            // Destructure `new_config`, to ensure we compare all config fields. Compiler would
+            // complain, if new field is added to `CollectionConfig` struct, but not destructured
+            // explicitly. We have to explicitly compare config fields, because we want to compare
+            // `wal_config` and `strict_mode_config` independently of other fields.
+            let CollectionConfig {
+                params,
+                hnsw_config,
+                optimizer_config,
+                wal_config,
+                quantization_config,
+                strict_mode_config,
+            } = &new_config;
 
-            let new_strict_mode_config = mem::replace(
-                &mut new_config.strict_mode_config,
-                config.strict_mode_config.clone(),
-            );
+            let is_core_config_updated = params != &config.params
+                || hnsw_config != &config.hnsw_config
+                || optimizer_config != &config.optimizer_config
+                || quantization_config != &config.quantization_config;
 
-            // Compare configs
-            let is_core_config_updated = *config != new_config;
-            let is_wal_config_updated = config.wal_config != new_wal_config;
-            let is_strict_mode_config_updated = config.strict_mode_config != new_strict_mode_config;
-
-            // Put `new_wal_config`/`new_strict_mode_config` back into `new_config`
-            new_config.wal_config = new_wal_config;
-            new_config.strict_mode_config = new_strict_mode_config;
+            let is_wal_config_updated = wal_config != &config.wal_config;
+            let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
 
             let is_config_updated =
                 is_core_config_updated || is_wal_config_updated || is_strict_mode_config_updated;
