@@ -116,6 +116,23 @@ impl CollectionParams {
             PayloadStorageType::InMemory
         }
     }
+
+    pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
+        self.vectors.check_compatible(&other.vectors)?;
+
+        let this_sharding_method = self.sharding_method.unwrap_or_default();
+        let other_sharding_method = self.sharding_method.unwrap_or_default();
+
+        if this_sharding_method != other_sharding_method {
+            return Err(CollectionError::bad_input(format!(
+                "sharding method is incompatible: \
+                 origin sharding method: {this_sharding_method:?}, \
+                 while other sharding method: {other_sharding_method:?}",
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 impl Anonymize for CollectionParams {

@@ -4,7 +4,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
@@ -64,17 +64,21 @@ impl Collection {
     }
 
     async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
-        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
-        self.update_optimizer_params(new_config.optimizer_config)
-            .await?;
-
-        // Update replication factor
         {
             let mut config = self.collection_config.write().await;
-            config.params.replication_factor = new_config.params.replication_factor;
-            config.params.write_consistency_factor = new_config.params.write_consistency_factor;
+
+            if let Err(err) = config.params.check_compatible(&new_config.params) {
+                // Stop consensus with a service error, if new config is incompatible with current one.
+                //
+                // We expect that `apply_config` is only called when configs are compatible, otherwise
+                // collection have to be *recreated*.
+                return Err(CollectionError::service_error(err.to_string()));
+            }
+
+            *config = new_config;
         }
 
+        self.collection_config.read().await.save(&self.path)?;
         self.recreate_optimizers_blocking().await?;
 
         Ok(())
