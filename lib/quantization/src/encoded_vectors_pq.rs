@@ -513,7 +513,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
                 * self
                     .metadata
                     .vector_division
-                    .get(0)
+                    .first()
                     .map(|i| i.len())
                     .unwrap_or(1),
         );
