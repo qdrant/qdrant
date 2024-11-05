@@ -5,7 +5,9 @@ use api::rest::{
     QueryInterface, RecommendInput, VectorInput,
 };
 
-use super::service::{InferenceData, InferenceInput, InferenceRequest};
+use super::service::{
+    InferenceData, InferenceInput, InferenceRequest, UnifiedDocument, UnifiedImage, UnifiedObject,
+};
 
 pub struct BatchAccum {
     pub(crate) objects: HashSet<InferenceData>,
@@ -48,9 +50,15 @@ impl From<&BatchAccum> for InferenceRequest {
 
 fn collect_vector_input(vector: &VectorInput, batch: &mut BatchAccum) {
     match vector {
-        VectorInput::Document(doc) => batch.add(InferenceData::Document(doc.clone())),
-        VectorInput::Image(img) => batch.add(InferenceData::Image(img.clone())),
-        VectorInput::Object(obj) => batch.add(InferenceData::Object(obj.clone())),
+        VectorInput::Document(doc) => batch.add(InferenceData::Document(
+            UnifiedDocument::Document(doc.clone()),
+        )),
+        VectorInput::Image(img) => {
+            batch.add(InferenceData::Image(UnifiedImage::Image(img.clone())))
+        }
+        VectorInput::Object(obj) => {
+            batch.add(InferenceData::Object(UnifiedObject::Object(obj.clone())))
+        }
         // types that are not supported in the Inference Service
         VectorInput::DenseVector(_) => {}
         VectorInput::SparseVector(_) => {}
@@ -198,7 +206,7 @@ mod tests {
         let mut batch = BatchAccum::new();
         assert!(batch.objects.is_empty());
 
-        let doc = InferenceData::Document(create_test_document("test"));
+        let doc = InferenceData::Document(UnifiedDocument::Document(create_test_document("test")));
         batch.add(doc.clone());
         assert_eq!(batch.objects.len(), 1);
 
@@ -211,8 +219,10 @@ mod tests {
         let mut batch1 = BatchAccum::new();
         let mut batch2 = BatchAccum::new();
 
-        let doc1 = InferenceData::Document(create_test_document("test1"));
-        let doc2 = InferenceData::Document(create_test_document("test2"));
+        let doc1 =
+            InferenceData::Document(UnifiedDocument::Document(create_test_document("test1")));
+        let doc2 =
+            InferenceData::Document(UnifiedDocument::Document(create_test_document("test2")));
 
         batch1.add(doc1);
         batch2.add(doc2);
@@ -225,8 +235,8 @@ mod tests {
     fn test_deduplication() {
         let mut batch = BatchAccum::new();
 
-        let doc1 = InferenceData::Document(create_test_document("same"));
-        let doc2 = InferenceData::Document(create_test_document("same"));
+        let doc1 = InferenceData::Document(UnifiedDocument::Document(create_test_document("same")));
+        let doc2 = InferenceData::Document(UnifiedDocument::Document(create_test_document("same")));
 
         batch.add(doc1);
         batch.add(doc2);
@@ -332,8 +342,8 @@ mod tests {
         doc1.model = Some("model1".to_string());
         doc2.model = Some("model2".to_string());
 
-        batch.add(InferenceData::Document(doc1));
-        batch.add(InferenceData::Document(doc2));
+        batch.add(InferenceData::Document(UnifiedDocument::Document(doc1)));
+        batch.add(InferenceData::Document(UnifiedDocument::Document(doc2)));
 
         assert_eq!(batch.objects.len(), 2);
     }

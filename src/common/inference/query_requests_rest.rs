@@ -12,7 +12,9 @@ use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::batch_processing::collect_query_groups_request;
 use crate::common::inference::infer_processing::BatchAccumInferred;
-use crate::common::inference::service::{InferenceData, InferenceType};
+use crate::common::inference::service::{
+    InferenceData, InferenceType, UnifiedDocument, UnifiedImage, UnifiedObject,
+};
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
@@ -283,7 +285,7 @@ fn convert_vector_input_with_inferred(
             VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(multi_dense)),
         )),
         rest::VectorInput::Document(doc) => {
-            let data = InferenceData::Document(doc);
+            let data = InferenceData::Document(UnifiedDocument::Document(doc));
             let vector = inferred.get_vector(&data).ok_or_else(|| {
                 StorageError::inference_error("Missing inferred vector for document")
             })?;
@@ -292,7 +294,7 @@ fn convert_vector_input_with_inferred(
             )))
         }
         rest::VectorInput::Image(img) => {
-            let data = InferenceData::Image(img);
+            let data = InferenceData::Image(UnifiedImage::Image(img));
             let vector = inferred.get_vector(&data).ok_or_else(|| {
                 StorageError::inference_error("Missing inferred vector for image")
             })?;
@@ -301,7 +303,7 @@ fn convert_vector_input_with_inferred(
             )))
         }
         rest::VectorInput::Object(obj) => {
-            let data = InferenceData::Object(obj);
+            let data = InferenceData::Object(UnifiedObject::Object(obj));
             let vector = inferred.get_vector(&data).ok_or_else(|| {
                 StorageError::inference_error("Missing inferred vector for object")
             })?;

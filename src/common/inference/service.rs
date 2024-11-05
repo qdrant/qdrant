@@ -54,10 +54,28 @@ pub(crate) struct InferenceResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
-pub enum InferenceData {
+pub enum UnifiedDocument {
     Document(Document),
+    GrpcDocument(api::grpc::qdrant::Document),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum UnifiedImage {
     Image(Image),
+    GrpcImage(api::grpc::qdrant::Image),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum UnifiedObject {
     Object(InferenceObject),
+    GrpcObject(api::grpc::qdrant::InferenceObject),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum InferenceData {
+    Document(UnifiedDocument),
+    Image(UnifiedImage),
+    Object(UnifiedObject),
 }
 
 impl InferenceData {

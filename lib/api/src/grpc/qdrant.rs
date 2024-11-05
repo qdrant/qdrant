@@ -3680,7 +3680,7 @@ pub mod collections_internal_server {
 /// The JSON representation for `Struct` is a JSON object.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Hash, ::prost::Message)]
 pub struct Struct {
     /// Unordered map of dynamically typed values.
     #[prost(map = "string, message", tag = "1")]
@@ -3694,7 +3694,7 @@ pub struct Struct {
 /// The JSON representation for `Value` is a JSON value.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Value {
     /// The kind of value.
     #[prost(oneof = "value::Kind", tags = "1, 2, 3, 4, 5, 6, 7")]
@@ -3705,7 +3705,7 @@ pub mod value {
     /// The kind of value.
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, Hash, ::prost::Oneof)]
     pub enum Kind {
         /// Represents a null value.
         #[prost(enumeration = "super::NullValue", tag = "1")]
@@ -3735,7 +3735,7 @@ pub mod value {
 /// The JSON representation for `ListValue` is a JSON array.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListValue {
     /// Repeated field of dynamically typed values.
     #[prost(message, repeated, tag = "1")]
@@ -3869,6 +3869,28 @@ pub struct InferenceObject {
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+
+#[derive(Clone, Default, Debug, Eq, PartialEq,)]
+pub struct Options {
+    /// Parameters for the model
+    /// Values of the parameters are model-specific
+    pub options: Option<HashMap<String, Value>>,
+}
+
+impl Hash for Options {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Order of keys in the map should not affect the hash
+        if let Some(options) = &self.options {
+            let mut keys: Vec<_> = options.keys().collect();
+            keys.sort();
+            for key in keys {
+                key.hash(state);
+                options.get(key).unwrap().hash(state);
+            }
+        }
+    }
+}
+
 /// Legacy vector format, which determines the vector type by the configuration of its fields.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -13813,5 +13835,8 @@ pub mod qdrant_server {
         const NAME: &'static str = "qdrant.Qdrant";
     }
 }
+
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use super::validate::ValidateExt;
 use validator::Validate;

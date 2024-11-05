@@ -10,7 +10,9 @@ use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::batch_processing::BatchAccum;
 use crate::common::inference::infer_processing::BatchAccumInferred;
-use crate::common::inference::service::{InferenceData, InferenceType};
+use crate::common::inference::service::{
+    InferenceData, InferenceType, UnifiedDocument, UnifiedImage, UnifiedObject,
+};
 
 pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
@@ -23,18 +25,27 @@ pub async fn convert_point_struct(
             VectorStruct::Named(named) => {
                 for vector in named.values() {
                     match vector {
-                        Vector::Document(doc) => {
-                            batch_accum.add(InferenceData::Document(doc.clone()))
+                        Vector::Document(doc) => batch_accum.add(InferenceData::Document(
+                            UnifiedDocument::Document(doc.clone()),
+                        )),
+                        Vector::Image(img) => {
+                            batch_accum.add(InferenceData::Image(UnifiedImage::Image(img.clone())))
                         }
-                        Vector::Image(img) => batch_accum.add(InferenceData::Image(img.clone())),
-                        Vector::Object(obj) => batch_accum.add(InferenceData::Object(obj.clone())),
+                        Vector::Object(obj) => batch_accum
+                            .add(InferenceData::Object(UnifiedObject::Object(obj.clone()))),
                         Vector::Dense(_) | Vector::Sparse(_) | Vector::MultiDense(_) => {}
                     }
                 }
             }
-            VectorStruct::Document(doc) => batch_accum.add(InferenceData::Document(doc.clone())),
-            VectorStruct::Image(img) => batch_accum.add(InferenceData::Image(img.clone())),
-            VectorStruct::Object(obj) => batch_accum.add(InferenceData::Object(obj.clone())),
+            VectorStruct::Document(doc) => batch_accum.add(InferenceData::Document(
+                UnifiedDocument::Document(doc.clone()),
+            )),
+            VectorStruct::Image(img) => {
+                batch_accum.add(InferenceData::Image(UnifiedImage::Image(img.clone())))
+            }
+            VectorStruct::Object(obj) => {
+                batch_accum.add(InferenceData::Object(UnifiedObject::Object(obj.clone())))
+            }
             VectorStruct::MultiDense(_) | VectorStruct::Single(_) => {}
         }
     }
@@ -198,9 +209,15 @@ pub async fn convert_point_vectors(
         if let VectorStruct::Named(named) = &point_vectors.vector {
             for vector in named.values() {
                 match vector {
-                    Vector::Document(doc) => batch_accum.add(InferenceData::Document(doc.clone())),
-                    Vector::Image(img) => batch_accum.add(InferenceData::Image(img.clone())),
-                    Vector::Object(obj) => batch_accum.add(InferenceData::Object(obj.clone())),
+                    Vector::Document(doc) => batch_accum.add(InferenceData::Document(
+                        UnifiedDocument::Document(doc.clone()),
+                    )),
+                    Vector::Image(img) => {
+                        batch_accum.add(InferenceData::Image(UnifiedImage::Image(img.clone())))
+                    }
+                    Vector::Object(obj) => {
+                        batch_accum.add(InferenceData::Object(UnifiedObject::Object(obj.clone())))
+                    }
                     Vector::Dense(_) | Vector::Sparse(_) | Vector::MultiDense(_) => {}
                 }
             }
@@ -346,9 +363,15 @@ pub async fn convert_vectors(
     let mut batch_accum = BatchAccum::new();
     for vector in &vectors {
         match vector {
-            Vector::Document(doc) => batch_accum.add(InferenceData::Document(doc.clone())),
-            Vector::Image(img) => batch_accum.add(InferenceData::Image(img.clone())),
-            Vector::Object(obj) => batch_accum.add(InferenceData::Object(obj.clone())),
+            Vector::Document(doc) => batch_accum.add(InferenceData::Document(
+                UnifiedDocument::Document(doc.clone()),
+            )),
+            Vector::Image(img) => {
+                batch_accum.add(InferenceData::Image(UnifiedImage::Image(img.clone())))
+            }
+            Vector::Object(obj) => {
+                batch_accum.add(InferenceData::Object(UnifiedObject::Object(obj.clone())))
+            }
             Vector::Dense(_) | Vector::Sparse(_) | Vector::MultiDense(_) => {}
         }
     }
@@ -386,20 +409,20 @@ fn convert_vector_with_inferred(
         Vector::Sparse(sparse) => Ok(VectorPersisted::Sparse(sparse)),
         Vector::MultiDense(multi) => Ok(VectorPersisted::MultiDense(multi)),
         Vector::Document(doc) => {
-            let data = InferenceData::Document(doc);
+            let data = InferenceData::Document(UnifiedDocument::Document(doc));
             inferred.get_vector(&data).cloned().ok_or_else(|| {
                 StorageError::inference_error("Missing inferred vector for document")
             })
         }
         Vector::Image(img) => {
-            let data = InferenceData::Image(img);
+            let data = InferenceData::Image(UnifiedImage::Image(img));
             inferred
                 .get_vector(&data)
                 .cloned()
                 .ok_or_else(|| StorageError::inference_error("Missing inferred vector for image"))
         }
         Vector::Object(obj) => {
-            let data = InferenceData::Object(obj);
+            let data = InferenceData::Object(UnifiedObject::Object(obj));
             inferred
                 .get_vector(&data)
                 .cloned()
