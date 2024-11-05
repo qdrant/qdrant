@@ -153,6 +153,7 @@ impl ShardOperation for ProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
         // to completion, so this method is not cancel safe.
@@ -196,7 +197,9 @@ impl ShardOperation for ProxyShard {
 
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
-            local_shard.update(operation, wait).await
+            local_shard
+                .update(operation, wait, ignore_local_clocks)
+                .await
         }
     }
 

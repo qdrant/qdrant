@@ -38,6 +38,7 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
@@ -58,6 +59,12 @@ impl ShardOperation for LocalShard {
             return Err(CollectionError::service_error(
                 "No space left on device: WAL buffer size exceeds available disk space".to_string(),
             ));
+        }
+
+        // When locally ignoring clocks remove it from the operation
+        // Prevents operation rejection by its clock and will not write clocks to local WAL
+        if ignore_local_clocks {
+            operation.clock_tag.take();
         }
 
         let operation_id = {

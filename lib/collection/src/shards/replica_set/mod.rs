@@ -1120,6 +1120,24 @@ impl ReplicaState {
             | ReplicaState::Listener => false,
         }
     }
+
+    /// Check whether this is a state in which we ignore local clocks.
+    ///
+    /// During some replica states, using clocks may create gaps. That'll be problematic if WAL
+    /// delta recovery is used later, resulting in missing opeartions. In these states we ignore
+    /// clocks all together to prevent this problem.
+    pub fn is_ignore_local_clocks(self) -> bool {
+        match self {
+            ReplicaState::Partial => true,
+            ReplicaState::Active
+            | ReplicaState::Listener
+            | ReplicaState::Resharding
+            | ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery => false,
+        }
+    }
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`
