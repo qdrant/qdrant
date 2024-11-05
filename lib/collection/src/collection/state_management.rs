@@ -11,6 +11,14 @@ use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
+    pub async fn check_config_compatible(&self, config: &CollectionConfig) -> CollectionResult<()> {
+        self.collection_config
+            .read()
+            .await
+            .params
+            .check_compatible(&config.params)
+    }
+
     pub async fn apply_state(
         &self,
         state: State,

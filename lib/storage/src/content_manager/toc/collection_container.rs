@@ -133,6 +133,24 @@ impl TableOfContent {
             let mut collections = self.collections.write().await;
 
             for (id, state) in &data.collections {
+                if let Some(collection) = collections.get(id) {
+                    if let Err(err) = collection.check_config_compatible(&state.config).await {
+                        log::warn!(
+                            "Recreating collection {id}, because collection config is incompatible: \
+                             {err}",
+                        );
+
+                        // Drop `collections` lock
+                        drop(collections);
+
+                        // Delete collection
+                        self.delete_collection(id).await?;
+
+                        // Re-acquire `collections` lock 🙄
+                        collections = self.collections.write().await;
+                    }
+                }
+
                 let collection_exists = collections.contains_key(id);
 
                 // Create collection if not present locally
