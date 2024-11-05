@@ -151,7 +151,7 @@ impl PayloadStorage for MmapPayloadStorage {
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.read().iter(|point_id, payload| {
-            match callback(point_id, &payload) {
+            match callback(point_id, payload) {
                 Ok(true) => Ok(true),
                 Ok(false) => Ok(false),
                 Err(e) => {
