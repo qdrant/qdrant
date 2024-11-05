@@ -18,6 +18,7 @@ pub trait ShardOperation {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult>;
 
     #[allow(clippy::too_many_arguments)]

@@ -50,7 +50,7 @@ async fn test_shard_query_rrf_rescoring() {
 
     let upsert_ops = upsert_operation();
 
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    shard.update(upsert_ops.into(), true, false).await.unwrap();
 
     // RRF query without prefetches
     let query = ShardQueryRequest {
@@ -255,7 +255,7 @@ async fn test_shard_query_vector_rescoring() {
 
     let upsert_ops = upsert_operation();
 
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    shard.update(upsert_ops.into(), true, false).await.unwrap();
 
     let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
@@ -402,7 +402,7 @@ async fn test_shard_query_payload_vector() {
 
     let upsert_ops = upsert_operation();
 
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    shard.update(upsert_ops.into(), true, false).await.unwrap();
 
     let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
