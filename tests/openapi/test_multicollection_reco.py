@@ -3,18 +3,19 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_reco'
-collection_name2 = 'test_collection_reco2'
+@pytest.fixture(scope='module', autouse=True)
+def collection_name2(collection_name):
+    return f"{collection_name}_2"
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_recommend_with_wrong_vector_size(on_disk_vectors):
+def test_recommend_with_wrong_vector_size(on_disk_vectors, collection_name, collection_name2):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
@@ -76,7 +77,7 @@ def test_recommend_with_wrong_vector_size(on_disk_vectors):
     assert response.status_code == 400, response.text
 
 
-def test_recommend_from_another_collection(on_disk_vectors):
+def test_recommend_from_another_collection(on_disk_vectors, collection_name, collection_name2):
     # Create another collection with the same vector size.
     # Use vectors from the second collection to search in the first collection.
 
@@ -241,7 +242,7 @@ def test_recommend_from_another_collection(on_disk_vectors):
     assert response.ok
 
 
-def test_recommend_lookup():
+def test_recommend_lookup(collection_name, collection_name2):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',

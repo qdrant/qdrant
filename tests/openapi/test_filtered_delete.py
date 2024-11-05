@@ -6,10 +6,8 @@ import random
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_delete_by_filter'
 
-
-def setup_big_collection(num_points, dim, keywords=5):
+def setup_big_collection(collection_name, num_points, dim, keywords=5):
     drop_collection(collection_name)
 
     response = request_with_validation(
@@ -73,7 +71,7 @@ def setup_big_collection(num_points, dim, keywords=5):
         assert response.ok
 
 
-def wait_collection_green():
+def wait_collection_green(collection_name):
     while True:
         response = request_with_validation(
             api='/collections/{collection_name}',
@@ -90,14 +88,14 @@ def wait_collection_green():
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
-    setup_big_collection(num_points=3000, dim=4)
-    wait_collection_green()
+def setup(on_disk_vectors, collection_name):
+    setup_big_collection(collection_name=collection_name, num_points=3000, dim=4)
+    wait_collection_green(collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def delete_payload(payload_value):
+def delete_payload(collection_name, payload_value):
     response = request_with_validation(
         api='/collections/{collection_name}/points/delete',
         method="POST",
@@ -117,12 +115,12 @@ def delete_payload(payload_value):
     assert response.ok
 
 
-def test_delete_by_payload_filter():
-    delete_payload("keyword_0")
-    delete_payload("keyword_1")
-    delete_payload("keyword_2")
-    delete_payload("keyword_3")
-    delete_payload("keyword_4")
+def test_delete_by_payload_filter(collection_name):
+    delete_payload(collection_name, "keyword_0")
+    delete_payload(collection_name, "keyword_1")
+    delete_payload(collection_name, "keyword_2")
+    delete_payload(collection_name, "keyword_3")
+    delete_payload(collection_name, "keyword_4")
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/query',

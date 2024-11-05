@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import multivec_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_filter_has_vector'
-
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_filter_has_vector():
+def test_filter_has_vector(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/query',
         method="POST",

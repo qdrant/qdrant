@@ -6,14 +6,19 @@ import pytest
 from .helpers.collection_setup import drop_collection, full_collection_setup
 from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
 
-collection_name = "test_query"
-lookup_collection_name = "test_collection_lookup"
+
 uuid_1 = str(uuid.uuid4())
 uuid_2 = str(uuid.uuid4())
 uuid_3 = str(uuid.uuid4())
 
+
+@pytest.fixture(scope='module', autouse=True)
+def lookup_collection_name(collection_name):
+    return f"{collection_name}_lookup"
+
+
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     full_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
 
     # keyword index on `city`
@@ -72,7 +77,7 @@ def setup(on_disk_vectors):
     drop_collection(collection_name=collection_name)
 
 
-def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=None):
+def root_and_rescored_query(collection_name, query, using, filter=None, limit=None, with_payload=None):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -109,7 +114,7 @@ def root_and_rescored_query(query, using, filter=None, limit=None, with_payload=
     return root_query_result
 
 
-def test_query_validation():
+def test_query_validation(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -128,7 +133,7 @@ def test_query_validation():
     assert response.json()["status"]["error"] == "Bad request: Fusion queries cannot be combined with the 'using' field."
 
 
-def test_query_by_vector():
+def test_query_by_vector(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -144,15 +149,15 @@ def test_query_by_vector():
     assert response.ok, response.text
     search_result = response.json()["result"]
 
-    default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image")
+    default_query_result = root_and_rescored_query(collection_name, [0.1, 0.2, 0.3, 0.4], "dense-image")
 
-    nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image")
+    nearest_query_result = root_and_rescored_query(collection_name, {"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image")
 
     assert search_result == default_query_result
     assert search_result == nearest_query_result
 
 
-def test_query_by_id():
+def test_query_by_id(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -169,7 +174,7 @@ def test_query_by_id():
     assert top["id"] != 2  # id 2 is excluded from the results
 
 
-def test_filtered_query():
+def test_filtered_query(collection_name):
     filters = [
         {
             "must": [
@@ -238,15 +243,15 @@ def test_filtered_query():
         assert response.ok, response.text
         search_result = response.json()["result"]
 
-        default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter)
+        default_query_result = root_and_rescored_query(collection_name, [0.1, 0.2, 0.3, 0.4], "dense-image", filter)
 
-        nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter)
+        nearest_query_result = root_and_rescored_query(collection_name, {"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter)
 
         assert search_result == default_query_result
         assert search_result == nearest_query_result
 
 
-def test_uuid_index_filtered_query():
+def test_uuid_index_filtered_query(collection_name):
     filters_arr = get_uuid_index_filters()
 
     for item in filters_arr:
@@ -263,15 +268,15 @@ def test_uuid_index_filtered_query():
         assert response.ok, f"{response.text}\n{item}"
         search_result = response.json()["result"]
 
-        default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4], "dense-image", filter=item)
+        default_query_result = root_and_rescored_query(collection_name, [0.1, 0.2, 0.3, 0.4], "dense-image", filter=item)
 
-        nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter=item)
+        nearest_query_result = root_and_rescored_query(collection_name, {"nearest": [0.1, 0.2, 0.3, 0.4]}, "dense-image", filter=item)
 
         assert search_result == default_query_result
         assert search_result == nearest_query_result
 
 
-def test_scroll():
+def test_scroll(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",
@@ -297,7 +302,7 @@ def test_scroll():
         assert record.get("payload") == scored_point.get("payload")
 
 
-def test_filtered_scroll():
+def test_filtered_scroll(collection_name):
     filter = {
         "must": [
             {
@@ -378,7 +383,7 @@ def get_uuid_index_filters():
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
-def test_recommend_avg(query_filter):
+def test_recommend_avg(query_filter, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
@@ -394,7 +399,7 @@ def test_recommend_avg(query_filter):
     assert response.ok, response.text
     recommend_result = response.json()["result"]
 
-    query_result = root_and_rescored_query(
+    query_result = root_and_rescored_query(collection_name,
         {
             "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},
         },
@@ -405,7 +410,7 @@ def test_recommend_avg(query_filter):
     assert recommend_result == query_result
 
 
-def test_recommend_lookup_validations():
+def test_recommend_lookup_validations(collection_name, lookup_collection_name):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -608,7 +613,7 @@ def test_recommend_lookup_validations():
     assert response.json()["status"]["error"] == "Wrong input: Not existing vector name error: non-existing-vector"
 
 
-def test_recommend_lookup():
+def test_recommend_lookup(collection_name, lookup_collection_name):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -753,7 +758,7 @@ def test_recommend_lookup():
     assert nested_query_result_id == nested_query_result_vector, f"{nested_query_result_id} != {nested_query_result_vector}"
 
 
-def test_recommend_best_score():
+def test_recommend_best_score(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
@@ -791,7 +796,7 @@ def test_recommend_best_score():
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
-def test_discover(query_filter):
+def test_discover(query_filter, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover",
         method="POST",
@@ -807,7 +812,7 @@ def test_discover(query_filter):
     assert response.ok, response.text
     discover_result = response.json()["result"]
 
-    query_result = root_and_rescored_query(
+    query_result = root_and_rescored_query(collection_name,
         {
             "discover": {
                 "target": 2,
@@ -821,7 +826,7 @@ def test_discover(query_filter):
     assert discover_result == query_result
 
 
-def test_context():
+def test_context(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover",
         method="POST",
@@ -853,7 +858,7 @@ def test_context():
     assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
 
 
-def test_order_by():
+def test_order_by(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",
@@ -865,14 +870,14 @@ def test_order_by():
     assert response.ok, response.text
     scroll_result = response.json()["result"]["points"]
 
-    query_result = root_and_rescored_query({"order_by": "count"}, "dense-image", with_payload=True)
+    query_result = root_and_rescored_query(collection_name, {"order_by": "count"}, "dense-image", with_payload=True)
 
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
         assert record.get("payload") == scored_point.get("payload")
 
 
-def test_rrf():
+def test_rrf(collection_name):
     filter = {
         "must": [
             {
@@ -1039,7 +1044,7 @@ def test_rrf():
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
 
 
-def test_sparse_dense_rerank_colbert():
+def test_sparse_dense_rerank_colbert(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -1072,7 +1077,7 @@ def test_sparse_dense_rerank_colbert():
     assert rerank_result[2]["id"] == 1
 
 
-def test_nearest_query_group():
+def test_nearest_query_group(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
         method="POST",
@@ -1120,7 +1125,7 @@ def test_nearest_query_group():
     "best_score",
     "average_vector",
 ])
-def test_recommend_group(strategy):
+def test_recommend_group(strategy, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend/groups",
         method="POST",
@@ -1168,7 +1173,7 @@ def test_recommend_group(strategy):
     "asc",
     "desc",
 ])
-def test_order_by_group(direction):
+def test_order_by_group(direction, collection_name):
     # will check equivalence of scroll and query result with order_by group
     # where query uses a single result per group
 
@@ -1228,7 +1233,7 @@ def test_order_by_group(direction):
         assert record.get("payload") == scored_point.get("payload")
 
 
-def test_discover_group():
+def test_discover_group(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
         method="POST",
@@ -1269,7 +1274,7 @@ def test_discover_group():
     assert groups[1]["hits"][0]["payload"]["city"] == ["Berlin", "London"]
 
 
-def test_recommend_lookup_group():
+def test_recommend_lookup_group(collection_name, lookup_collection_name):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -1422,7 +1427,7 @@ def test_recommend_lookup_group():
     assert nested_query_result_id == nested_query_result_vector, f"{nested_query_result_id} != {nested_query_result_vector}"
 
 
-def test_random_rescore_with_offset():
+def test_random_rescore_with_offset(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",
@@ -1464,7 +1469,7 @@ def test_random_rescore_with_offset():
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
-def test_nearest_query_batch(query_filter):
+def test_nearest_query_batch(query_filter, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search/batch",
         method="POST",
@@ -1526,7 +1531,7 @@ def test_nearest_query_batch(query_filter):
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
-def test_recommend_batch(query_filter):
+def test_recommend_batch(query_filter, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend/batch",
         method="POST",
@@ -1586,7 +1591,7 @@ def test_recommend_batch(query_filter):
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])
-def test_discover_batch(query_filter):
+def test_discover_batch(query_filter, collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/discover/batch",
         method="POST",
@@ -1658,7 +1663,7 @@ def test_discover_batch(query_filter):
 # Qdrant did panic for some Query API requests when using a vector name that is not existing
 # for the given point. This tests ensures that a proper error response gets returned.
 # See https://github.com/qdrant/qdrant/issues/5208 for more details.
-def test_query_with_missing_vector():
+def test_query_with_missing_vector(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/query",
         method="POST",

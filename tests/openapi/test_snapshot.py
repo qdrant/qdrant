@@ -9,11 +9,9 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 from .helpers.settings import QDRANT_HOST
 
-collection_name = 'test_collection_snapshot'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, wal_capacity=1)
     yield
     drop_snapshots(collection_name)
@@ -39,7 +37,7 @@ def drop_snapshots(collection_name: str) -> None:
         assert response.ok
 
 
-def test_collection_snapshot_operations(http_server):
+def test_collection_snapshot_operations(http_server, collection_name):
     (srv_dir, srv_url) = http_server
 
     # no snapshot on collection
@@ -210,7 +208,7 @@ def test_full_snapshot_operations():
 
 
 @pytest.mark.timeout(30)
-def test_snapshot_operations_non_wait():
+def test_snapshot_operations_non_wait(collection_name):
     # there no snapshot on collection
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots',
@@ -329,7 +327,7 @@ def test_snapshot_operations_non_wait():
             continue
 
 
-def test_snapshot_invalid_file_uri():
+def test_snapshot_invalid_file_uri(collection_name):
     # Invalid file:// host
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots/recover',
@@ -395,7 +393,7 @@ def test_full_snapshot_security():
     assert response.status_code == 404
 
 
-def test_collection_snapshot_security():
+def test_collection_snapshot_security(collection_name):
     # ensure we cannot do simple arbitrary path traversal
     snapshot_name = "/etc/passwd"
     response = requests.get(

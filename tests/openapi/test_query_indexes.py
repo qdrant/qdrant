@@ -5,14 +5,13 @@ import pytest
 from .helpers.collection_setup import drop_collection, full_collection_setup
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_query"
-lookup_collection_name = "test_collection_lookup"
 uuid_1 = str(uuid.uuid4())
 uuid_2 = str(uuid.uuid4())
 uuid_3 = str(uuid.uuid4())
 
+
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     full_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
 
     def set_payload(payload, points):
@@ -117,7 +116,7 @@ def get_index_filters(filed_name):
     "default query", "nearest query", "query by id",
     "recommend", "discover", "context"
 ])
-def test_filtered_query_results_same_for_different_indexes(query):
+def test_filtered_query_results_same_for_different_indexes(query, collection_name):
     for uuid_filter, keyword_filter in zip([None, *get_index_filters("uuid")], [None, *get_index_filters("keyword")]):
         uuid_response = request_with_validation(
             api="/collections/{collection_name}/points/query",
@@ -152,7 +151,7 @@ def test_filtered_query_results_same_for_different_indexes(query):
         assert uuid_query_result == keyword_query_result, uuid_filter
 
 
-def test_filtered_query_groups_results_same_for_different_indexes():
+def test_filtered_query_groups_results_same_for_different_indexes(collection_name):
     for uuid_filter, keyword_filter in zip([None, *get_index_filters("uuid")], [None, *get_index_filters("keyword")]):
         uuid_response = request_with_validation(
             api="/collections/{collection_name}/points/query/groups",
@@ -193,7 +192,7 @@ def test_filtered_query_groups_results_same_for_different_indexes():
         assert uuid_query_result == keyword_query_result, uuid_filter
 
 
-def test_filtered_query_batches_results_same_for_different_indexes():
+def test_filtered_query_batches_results_same_for_different_indexes(collection_name):
     for uuid_filter, keyword_filter in zip([None, *get_index_filters("uuid")], [None, *get_index_filters("keyword")]):
         uuid_response = request_with_validation(
             api="/collections/{collection_name}/points/query/batch",

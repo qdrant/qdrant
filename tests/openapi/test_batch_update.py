@@ -5,18 +5,16 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_batch_update'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors, on_disk_payload):
+def setup(on_disk_vectors, on_disk_payload, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors,
                            on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def assert_points(points, nonexisting_ids=None, with_vectors=False):
+def assert_points(collection_name, points, nonexisting_ids=None, with_vectors=False):
     ids = [point['id'] for point in points]
     ids.extend(nonexisting_ids or [])
 
@@ -41,7 +39,7 @@ def assert_points(points, nonexisting_ids=None, with_vectors=False):
         assert point.get('vector') == expected.get('vector')
 
 
-def test_batch_update():
+def test_batch_update(collection_name):
     # Upsert and delete points
     response = request_with_validation(
         api="/collections/{collection_name}/points/batch",
@@ -106,8 +104,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": [2.0, 1.0, 3.0, 4.0],
@@ -118,8 +116,8 @@ def test_batch_update():
         with_vectors=True,
     )
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 9,
                 "vector":  {
@@ -168,8 +166,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": [9.0, 2.0, 4.0, 2.0],
@@ -210,8 +208,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": [9.0, 2.0, 4.0, 2.0],
@@ -228,7 +226,7 @@ def test_batch_update():
     )
 
 
-def test_batch_update_payload():
+def test_batch_update_payload(collection_name):
     # Batch on multiple points
     response = request_with_validation(
         api="/collections/{collection_name}/points/batch",
@@ -257,8 +255,8 @@ def test_batch_update_payload():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 1,
                 "payload": {
@@ -299,8 +297,8 @@ def test_batch_update_payload():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 1,
                 "payload": {},
@@ -350,8 +348,8 @@ def test_batch_update_payload():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 1,
                 "payload": {

@@ -361,6 +361,20 @@ test = ["certifi", "cryptography-vectors (==43.0.3)", "pretend", "pytest (>=6.2.
 test-randomorder = ["pytest-randomly"]
 
 [[package]]
+name = "decopatch"
+version = "1.4.10"
+description = "Create decorators easily in python."
+optional = false
+python-versions = "*"
+files = [
+    {file = "decopatch-1.4.10-py2.py3-none-any.whl", hash = "sha256:e151f7f93de2b1b3fd3f3272dcc7cefd1a69f68ec1c2d8e288ecd9deb36dc5f7"},
+    {file = "decopatch-1.4.10.tar.gz", hash = "sha256:957f49c93f4150182c23f8fb51d13bb3213e0f17a79e09c8cca7057598b55720"},
+]
+
+[package.dependencies]
+makefun = ">=1.5.0"
+
+[[package]]
 name = "decorator"
 version = "5.1.1"
 description = "Decorators for Humans"
@@ -784,6 +798,23 @@ files = [
 ]
 
 [[package]]
+name = "jsons"
+version = "1.6.3"
+description = "For serializing Python objects to JSON (dicts) and back"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "jsons-1.6.3-py3-none-any.whl", hash = "sha256:f07f8919316f72a3843c7ca6cc6c900513089f10092626934d1bfe4b5cf15401"},
+    {file = "jsons-1.6.3.tar.gz", hash = "sha256:cd5815c7c6790ae11c70ad9978e0aa850d0d08a643a5105cc604eac8b29a30d7"},
+]
+
+[package.dependencies]
+typish = ">=1.9.2"
+
+[package.extras]
+test = ["attrs", "codecov", "coverage", "dataclasses", "pytest", "scons", "tzdata"]
+
+[[package]]
 name = "jsonschema"
 version = "4.23.0"
 description = "An implementation of JSON Schema validation for Python"
@@ -839,6 +870,17 @@ files = [
 
 [package.dependencies]
 six = "*"
+
+[[package]]
+name = "makefun"
+version = "1.15.6"
+description = "Small library to dynamically create python functions."
+optional = false
+python-versions = "*"
+files = [
+    {file = "makefun-1.15.6-py2.py3-none-any.whl", hash = "sha256:e69b870f0bb60304765b1e3db576aaecf2f9b3e5105afe8cfeff8f2afe6ad067"},
+    {file = "makefun-1.15.6.tar.gz", hash = "sha256:26bc63442a6182fb75efed8b51741dd2d1db2f176bec8c64e20a586256b8f149"},
+]
 
 [[package]]
 name = "markupsafe"
@@ -1295,6 +1337,22 @@ tomli = {version = ">=1.0.0", markers = "python_version < \"3.11\""}
 
 [package.extras]
 testing = ["argcomplete", "attrs (>=19.2.0)", "hypothesis (>=3.56)", "mock", "nose", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
+
+[[package]]
+name = "pytest-cases"
+version = "3.8.6"
+description = "Separate test code from test cases in pytest."
+optional = false
+python-versions = "*"
+files = [
+    {file = "pytest_cases-3.8.6-py2.py3-none-any.whl", hash = "sha256:564c722492ea7e7ec3ac433fd14070180e65866f49fa35bfe938c0d5d9afba67"},
+    {file = "pytest_cases-3.8.6.tar.gz", hash = "sha256:5c24e0ab0cb6f8e802a469b7965906a333d3babb874586ebc56f7e2cbe1a7c44"},
+]
+
+[package.dependencies]
+decopatch = "*"
+makefun = ">=1.15.1"
+packaging = "*"
 
 [[package]]
 name = "pytest-subtests"
@@ -1754,6 +1812,19 @@ files = [
 ]
 
 [[package]]
+name = "typish"
+version = "1.9.3"
+description = "Functionality for types"
+optional = false
+python-versions = "*"
+files = [
+    {file = "typish-1.9.3-py3-none-any.whl", hash = "sha256:03cfee5e6eb856dbf90244e18f4e4c41044c8790d5779f4e775f63f982e2f896"},
+]
+
+[package.extras]
+test = ["codecov", "coverage", "mypy", "nptyping (>=1.3.0)", "numpy", "pycodestyle", "pylint", "pytest"]
+
+[[package]]
 name = "uri-template"
 version = "1.3.0"
 description = "RFC 6570 URI Template Processor"
@@ -1801,13 +1872,13 @@ tests = ["coverage[toml]"]
 
 [[package]]
 name = "werkzeug"
-version = "3.1.1"
+version = "3.1.2"
 description = "The comprehensive WSGI web application library."
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "werkzeug-3.1.1-py3-none-any.whl", hash = "sha256:a71124d1ef06008baafa3d266c02f56e1836a5984afd6dd6c9230669d60d9fb5"},
-    {file = "werkzeug-3.1.1.tar.gz", hash = "sha256:8cd39dfbdfc1e051965f156163e2974e52c210f130810e9ad36858f0fd3edad4"},
+    {file = "werkzeug-3.1.2-py3-none-any.whl", hash = "sha256:4f7d1a5de312c810a8a2c6f0b47e9f6a7cffb7c8322def35e4d4d9841ff85597"},
+    {file = "werkzeug-3.1.2.tar.gz", hash = "sha256:f471a4cd167233077e9d2a8190c3471c5bc520c636a9e3c1e9300c33bced03bc"},
 ]
 
 [package.dependencies]
@@ -1915,4 +1986,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "f3fa9574b3842bad7d087cba8f0558cfe1ddb0de5c127c84c0a0312e757dc19a"
+content-hash = "89a5d700766b8b489111114ffa9becc991261cfcc78002611999d3b793b49b09"

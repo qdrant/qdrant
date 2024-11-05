@@ -44,3 +44,8 @@ def http_server(tmpdir):
         yield (tmpdir, f"http://{HTTP_SERVER_HOST}:{httpd.server_address[1]}")
         httpd.shutdown()
         thread.join()
+
+
+@pytest.fixture(scope='module', autouse=True)
+def collection_name(request):
+    return request.node.name.removesuffix(".py")

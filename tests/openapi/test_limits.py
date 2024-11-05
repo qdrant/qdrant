@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_limits'
-
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup(collection_name):
     yield
     drop_collection(collection_name=collection_name)
 
 
 # Tests vulnerability related limits, see: <https://github.com/qdrant/qdrant/pull/2544>
-def test_vector_dimension_limit():
+def test_vector_dimension_limit(collection_name):
     dim_max = 65536
 
     drop_collection(collection_name)

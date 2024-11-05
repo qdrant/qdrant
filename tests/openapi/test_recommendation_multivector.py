@@ -3,10 +3,9 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_recommend_multivector"
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multivector_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
@@ -78,7 +77,7 @@ def multivector_collection_setup(
     )
     assert response.ok
 
-def test_multi_default_is_avg_vector():
+def test_multi_default_is_avg_vector(collection_name):
     params = {
         "positive": [[1, 2]],
         "negative": [[3, 4]],
@@ -114,7 +113,7 @@ def test_multi_default_is_avg_vector():
     assert default_response.json()["result"] == avg_response.json()["result"]
 
 
-def test_multi_single_vs_batch():
+def test_multi_single_vs_batch(collection_name):
     # Bunch of valid examples
     params_list = [
         {
@@ -160,7 +159,7 @@ def test_multi_single_vs_batch():
         assert single_response.json()["result"] == batch_response.json()["result"][i]
 
 
-def test_multi_without_positives():
+def test_multi_without_positives(collection_name):
     def req_with_positives(positive, strategy=None):
         if strategy is None:
             strat_dict = {}
@@ -194,7 +193,7 @@ def test_multi_without_positives():
     assert response.status_code == 400
 
 
-def test_multi_best_score_works_with_only_negatives():
+def test_multi_best_score_works_with_only_negatives(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",

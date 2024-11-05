@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import multipayload_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_filter_min_should'
-
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multipayload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_min_should():
+def test_min_should(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -64,7 +62,7 @@ def test_min_should():
     assert 8 in ids
 
 
-def test_min_should_combined_with_must():
+def test_min_should_combined_with_must(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -121,7 +119,7 @@ def test_min_should_combined_with_must():
     assert 8 in ids
 
 
-def test_nested_min_should():
+def test_nested_min_should(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -171,7 +169,7 @@ def test_nested_min_should():
     assert 3 in ids
 
 
-def test_missing_min_count():
+def test_missing_min_count(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",

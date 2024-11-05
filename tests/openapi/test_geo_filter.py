@@ -3,17 +3,15 @@ import pytest
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import geo_collection_setup, drop_collection
 
-collection_name = "test_geo_filter"
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     geo_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_geo_polygon_simple():
+def test_geo_polygon_simple(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
         method="POST",
@@ -164,7 +162,7 @@ def test_geo_polygon_simple():
     assert 4 in ids
 
 
-def test_geo_polygon_with_interiors():
+def test_geo_polygon_with_interiors(collection_name):
     # a polygon with interior
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
@@ -213,7 +211,7 @@ def test_geo_polygon_with_interiors():
     assert 1 in ids
 
 
-def test_geo_polygon_invalid():
+def test_geo_polygon_invalid(collection_name):
     # invalid polygons should be rejected
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",
@@ -271,7 +269,7 @@ def test_geo_polygon_invalid():
     assert not response.ok
 
 
-def test_geo_polygon_multiple():
+def test_geo_polygon_multiple(collection_name):
     # multiple polygons
     response = request_with_validation(
         api="/collections/{collection_name}/points/search",

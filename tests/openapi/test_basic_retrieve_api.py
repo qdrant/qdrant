@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection'
-
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_points_retrieve():
+def test_points_retrieve(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
@@ -85,7 +83,7 @@ def test_points_retrieve():
     assert len(response.json()['result']['points']) == 2
 
 
-def test_exclude_payload():
+def test_exclude_payload(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -114,7 +112,7 @@ def test_exclude_payload():
         assert 'city' not in result['payload']
 
 
-def test_batch_search():
+def test_batch_search(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/search/batch",
         method="POST",
@@ -150,7 +148,7 @@ def test_batch_search():
     assert len(response.json()["result"]) == 0
 
 
-def test_is_empty_condition():
+def test_is_empty_condition(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -183,7 +181,7 @@ def test_is_empty_condition():
     assert 8 in ids
 
 
-def test_is_null_condition():
+def test_is_null_condition(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -248,7 +246,7 @@ def test_is_null_condition():
     must_not_is_null("city[]")
 
 
-def test_recommendation():
+def test_recommendation(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend',
         method="POST",
@@ -266,7 +264,7 @@ def test_recommendation():
     assert response.ok
 
 
-def test_query_single_condition():
+def test_query_single_condition(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -289,7 +287,7 @@ def test_query_single_condition():
     assert len(response.json()['result']) == 2
 
 
-def test_query_nested():
+def test_query_nested(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -336,7 +334,7 @@ def test_query_nested():
     assert len(response.json()['result']['points']) == 1
 
 
-def test_with_vectors_alias_of_with_vector():
+def test_with_vectors_alias_of_with_vector(collection_name):
     database_id = "8594ff5d-265f-adfh-a9f5-b3b4b9665506"
     vector = [0.15, 0.31, 0.76, 0.74]
 

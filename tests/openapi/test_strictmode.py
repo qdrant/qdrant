@@ -1,19 +1,18 @@
 import pytest
 
+from .conftest import collection_name
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_strict_mode"
-
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup(collection_name):
     basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def set_strict_mode(strict_mode_config):
+def set_strict_mode(collection_name, strict_mode_config):
     request_with_validation(
         api="/collections/{collection_name}",
         method="PATCH",
@@ -24,7 +23,7 @@ def set_strict_mode(strict_mode_config):
     ).raise_for_status()
 
 
-def get_strict_mode():
+def get_strict_mode(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -39,15 +38,15 @@ def get_strict_mode():
         return config['strict_mode_config']
 
 
-def strict_mode_enabled() -> bool:
-    strict_mode = get_strict_mode()
+def strict_mode_enabled(collection_name) -> bool:
+    strict_mode = get_strict_mode(collection_name)
     return strict_mode is not None and strict_mode['enabled']
 
 
-def test_patch_collection_full():
-    assert not strict_mode_enabled()
+def test_patch_collection_full(collection_name):
+    assert not strict_mode_enabled(collection_name)
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "max_query_limit": 10,
         "max_timeout": 2,
@@ -76,10 +75,10 @@ def test_patch_collection_full():
     assert new_strict_mode_config['search_max_oversampling'] == 1.5
 
 
-def test_patch_collection_partially():
-    assert not strict_mode_enabled()
+def test_patch_collection_partially(collection_name):
+    assert not strict_mode_enabled(collection_name)
 
-    set_strict_mode({
+    set_strict_mode(collection_name,{
         "enabled": True,
         "max_query_limit": 10,
         "search_max_oversampling": 1.5,
@@ -98,7 +97,7 @@ def test_patch_collection_partially():
     assert new_strict_mode_config['search_max_oversampling'] == 1.5
 
 
-def test_strict_mode_query_limit_validation():
+def test_strict_mode_query_limit_validation(collection_name):
     def search_request():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -112,14 +111,14 @@ def test_strict_mode_query_limit_validation():
 
     search_request().raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "max_query_limit": 4,
     })
     
     search_request().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "max_query_limit": 3,
     })
 
@@ -129,7 +128,7 @@ def test_strict_mode_query_limit_validation():
     assert not search_fail.ok
 
 
-def test_strict_mode_timeout_validation():
+def test_strict_mode_timeout_validation(collection_name):
     def search_request_with_timeout(timeout):
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -144,7 +143,7 @@ def test_strict_mode_timeout_validation():
 
     search_request_with_timeout(3).raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "max_timeout": 2,
     })
@@ -157,7 +156,7 @@ def test_strict_mode_timeout_validation():
     assert not search_fail.ok
 
 
-def test_strict_mode_unindexed_filter_read_validation():
+def test_strict_mode_unindexed_filter_read_validation(collection_name):
     def search_request_with_filter():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -181,14 +180,14 @@ def test_strict_mode_unindexed_filter_read_validation():
 
     search_request_with_filter().raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "unindexed_filtering_retrieve": True,
     })
     
     search_request_with_filter().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "unindexed_filtering_retrieve": False,
     })
 
@@ -212,7 +211,7 @@ def test_strict_mode_unindexed_filter_read_validation():
     search_request_with_filter().raise_for_status()
 
 
-def test_strict_mode_unindexed_filter_write_validation():
+def test_strict_mode_unindexed_filter_write_validation(collection_name):
     def update_request_with_filter():
         return request_with_validation(
             api='/collections/{collection_name}/points/delete',
@@ -237,14 +236,14 @@ def test_strict_mode_unindexed_filter_write_validation():
     # Reset any changes
     basic_collection_setup(collection_name=collection_name)
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "unindexed_filtering_update": True,
     })
     
     update_request_with_filter().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "unindexed_filtering_update": False,
     })
 
@@ -268,7 +267,7 @@ def test_strict_mode_unindexed_filter_write_validation():
     update_request_with_filter().raise_for_status()
 
 
-def test_strict_mode_max_ef_hnsw_validation():
+def test_strict_mode_max_ef_hnsw_validation(collection_name):
     def search_request():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -285,14 +284,14 @@ def test_strict_mode_max_ef_hnsw_validation():
 
     search_request().raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "search_max_hnsw_ef": 5,
     })
     
     search_request().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "search_max_hnsw_ef": 4,
     })
 
@@ -302,7 +301,7 @@ def test_strict_mode_max_ef_hnsw_validation():
     assert not search_fail.ok
 
 
-def test_strict_mode_allow_exact_validation():
+def test_strict_mode_allow_exact_validation(collection_name):
     def search_request():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -319,14 +318,14 @@ def test_strict_mode_allow_exact_validation():
 
     search_request().raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "search_allow_exact": True,
     })
     
     search_request().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "search_allow_exact": False,
     })
 
@@ -336,7 +335,7 @@ def test_strict_mode_allow_exact_validation():
     assert not search_fail.ok
 
 
-def test_strict_mode_search_max_oversampling_validation():
+def test_strict_mode_search_max_oversampling_validation(collection_name):
     def search_request():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -355,14 +354,14 @@ def test_strict_mode_search_max_oversampling_validation():
 
     search_request().raise_for_status()
 
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "search_max_oversampling": 2.0,
     })
     
     search_request().raise_for_status()
     
-    set_strict_mode({
+    set_strict_mode(collection_name, {
         "enabled": True,
         "search_max_oversampling": 1.9,
     })

@@ -6,8 +6,10 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_discovery"
-colection_name_lookup = "test_discovery_lookup"
+
+@pytest.fixture(scope='module', autouse=True)
+def collection_name_lookup(collection_name):
+    return f"{collection_name}_lookup"
 
 
 def random_vector(dim=4):
@@ -33,14 +35,14 @@ def count_ids_in_examples(context, target) -> int:
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
 # Context is when we don't include a target vector
-def test_context():
+def test_context(collection_name):
     context = [
         {"positive": random_example(), "negative": random_example()},
         {"positive": random_example(), "negative": random_example()},
@@ -66,7 +68,7 @@ def test_context():
 
 
 # When we only use target, it should be the exact same as search
-def test_only_target_is_search_with_different_scoring():
+def test_only_target_is_search_with_different_scoring(collection_name):
     target = random_vector()
 
     # First, search
@@ -107,7 +109,7 @@ def test_only_target_is_search_with_different_scoring():
 
 
 # Only when we use both target and context, we are doing discovery
-def test_discover_same_context():
+def test_discover_same_context(collection_name):
     target1 = random_example()
     context = [
         {"positive": random_example(), "negative": random_example()},
@@ -172,7 +174,7 @@ def test_discover_same_context():
                 assert not math.isclose(target_score1, target_score2, rel_tol=1e-5)
 
 
-def test_discover_same_target():
+def test_discover_same_target(collection_name):
     target = random_example()
 
     context1 = [
@@ -230,7 +232,7 @@ def test_discover_same_target():
             assert math.isclose(target_score1, target_score2, rel_tol=1e-5)
 
 
-def test_discover_batch():
+def test_discover_batch(collection_name):
     targets = []
     contexts = []
     single_results = []
@@ -286,7 +288,7 @@ def test_discover_batch():
         assert single_result == batch_result
 
 
-def test_null_offset():
+def test_null_offset(collection_name):
     target = random_example()
 
     response = request_with_validation(
@@ -302,12 +304,12 @@ def test_null_offset():
     assert response.ok, response.json()
 
 
-def test_discovery_lookup():
+def test_discovery_lookup(collection_name, collection_name_lookup):
     # delete lookup collection if exists
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
-        path_params={'collection_name': colection_name_lookup},
+        path_params={'collection_name': collection_name_lookup},
     )
     assert response.ok, response.text
 
@@ -315,7 +317,7 @@ def test_discovery_lookup():
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PUT",
-        path_params={'collection_name': colection_name_lookup},
+        path_params={'collection_name': collection_name_lookup},
         body={
             "vectors": {
                 "other": {
@@ -331,7 +333,7 @@ def test_discovery_lookup():
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
-        path_params={'collection_name': colection_name_lookup},
+        path_params={'collection_name': collection_name_lookup},
         query_params={'wait': 'true'},
         body={
             "points": [
@@ -363,7 +365,7 @@ def test_discovery_lookup():
             ],
             "limit": 10,
             "lookup_from": {
-                "collection": colection_name_lookup,
+                "collection": collection_name_lookup,
                 "vector": "other"
             }
         },
