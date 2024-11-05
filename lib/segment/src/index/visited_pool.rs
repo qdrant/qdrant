@@ -74,11 +74,18 @@ impl<'a> VisitedListHandle<'a> {
     pub fn next_iteration(&mut self) {
         self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
         if self.visited_list.current_iter == 0 {
+            self.visited_list.current_iter = 1;
             self.visited_list
                 .visit_counters
                 .iter_mut()
-                .for_each(|x| *x = u8::MAX);
+                .for_each(|x| *x = 0);
         }
+    }
+
+    fn resize(&mut self, num_points: usize) {
+        // `self.current_iter` is never 0, so it's safe to use 0 as a default
+        // value.
+        self.visited_list.visit_counters.resize(num_points, 0);
     }
 }
 
@@ -102,9 +109,9 @@ impl VisitedPool {
         // This limit is implemented to prevent memory leakage.
         match self.pool.write().pop() {
             None => VisitedListHandle::new(self, VisitedList::new(num_points)),
-            Some(mut data) => {
-                data.visit_counters.resize(num_points, 0);
+            Some(data) => {
                 let mut visited_list = VisitedListHandle::new(self, data);
+                visited_list.resize(num_points);
                 visited_list.next_iteration();
                 visited_list
             }
@@ -142,7 +149,7 @@ mod tests {
             assert!(visited_list.check_and_update_visited(0));
             assert!(visited_list.check(0));
 
-            for _ in 0..260 {
+            for _ in 0..(u8::MAX as usize * 2 + 10) {
                 visited_list.next_iteration();
                 assert!(!visited_list.check(0));
             }
