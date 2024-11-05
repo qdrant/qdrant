@@ -287,6 +287,7 @@ message QueryResultInternal {
 message QueryBatchResponseInternal {
   repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
+  optional HardwareUsage usage = 5;
 }
 
 message FacetCountsInternal {

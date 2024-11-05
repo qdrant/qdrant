@@ -6,17 +6,18 @@ use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints,
     DiscoverBatchPoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, FacetCounts,
-    FacetResponse, GetPoints, GetResponse, PointsOperationResponse, QueryBatchPoints,
-    QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints, QueryResponse,
-    RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse, RecommendPointGroups,
-    RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse, SearchBatchPoints,
-    SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsets, SearchMatrixOffsetsResponse,
-    SearchMatrixPairs, SearchMatrixPairsResponse, SearchMatrixPoints, SearchPointGroups,
-    SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints, UpdateBatchResponse,
-    UpdatePointVectors, UpsertPoints,
+    FacetResponse, GetPoints, GetResponse, HardwareUsage, PointsOperationResponse,
+    QueryBatchPoints, QueryBatchResponse, QueryGroupsResponse, QueryPointGroups, QueryPoints,
+    QueryResponse, RecommendBatchPoints, RecommendBatchResponse, RecommendGroupsResponse,
+    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
+    SearchBatchPoints, SearchBatchResponse, SearchGroupsResponse, SearchMatrixOffsets,
+    SearchMatrixOffsetsResponse, SearchMatrixPairs, SearchMatrixPairsResponse, SearchMatrixPoints,
+    SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
+    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -25,6 +26,7 @@ use super::points_common::{
     recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
 };
 use super::validate;
+use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
     clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
     delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
@@ -35,11 +37,15 @@ use crate::tonic::verification::StrictModeCheckedTocProvider;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
+    service_config: ServiceConfig,
 }
 
 impl PointsService {
-    pub fn new(dispatcher: Arc<Dispatcher>) -> Self {
-        Self { dispatcher }
+    pub fn new(dispatcher: Arc<Dispatcher>, service_config: ServiceConfig) -> Self {
+        Self {
+            dispatcher,
+            service_config,
+        }
     }
 }
 
@@ -277,6 +283,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             access,
+            &self.service_config,
         )
         .await
     }
@@ -316,6 +323,7 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout,
+            &self.service_config,
         )
         .await
     }
@@ -331,6 +339,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             access,
+            &self.service_config,
         )
         .await
     }
@@ -362,6 +371,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            &self.service_config,
         )
         .await
     }
@@ -386,6 +396,7 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout.map(Duration::from_secs),
+            &self.service_config,
         )
         .await
     }
@@ -402,6 +413,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            &self.service_config,
         )
         .await
     }
@@ -418,6 +430,7 @@ impl Points for PointsService {
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            &self.service_config,
         )
         .await
     }
@@ -444,6 +457,7 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout.map(Duration::from_secs),
+            &self.service_config,
         )
         .await
     }
@@ -461,6 +475,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             &access,
+            &self.service_config,
         )
         .await
     }
@@ -476,6 +491,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             access,
+            &self.service_config,
         )
         .await
     }
@@ -501,6 +517,7 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout,
+            &self.service_config,
         )
         .await
     }
@@ -515,6 +532,7 @@ impl Points for PointsService {
             request.into_inner(),
             None,
             access,
+            &self.service_config,
         )
         .await
     }
@@ -539,15 +557,21 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
+        let hw_measurement_acc = HwMeasurementAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            hw_measurement_acc.clone(),
         )
         .await?;
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
+            usage: self
+                .service_config
+                .hardware_reporting()
+                .then(|| HardwareUsage::from(hw_measurement_acc)),
         };
         Ok(Response::new(pairs_response))
     }
@@ -559,15 +583,21 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
+        let hw_measurement_acc = HwMeasurementAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            hw_measurement_acc.clone(),
         )
         .await?;
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
+            usage: self
+                .service_config
+                .hardware_reporting()
+                .then(|| HardwareUsage::from(hw_measurement_acc)),
         };
         Ok(Response::new(offsets_response))
     }
