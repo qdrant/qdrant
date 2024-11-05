@@ -1,5 +1,8 @@
 use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant as grpc;
+use api::grpc::qdrant::query::Variant;
+use api::grpc::qdrant::RecommendInput;
+use api::rest;
 use api::rest::RecommendStrategy;
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
@@ -10,6 +13,12 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
+
+use crate::common::inference::batch_processing_grpc::{
+    collect_prefetch, collect_query, BatchAccumGrpc,
+};
+use crate::common::inference::infer_processing_grpc::BatchAccumInferredGrpc;
+use crate::common::inference::service::{InferenceData, InferenceType};
 
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_point_groups_from_grpc(
@@ -35,12 +44,39 @@ pub async fn convert_query_point_groups_from_grpc(
         shard_key_selector: _,
     } = query;
 
-    let prefetch: Result<_, _> = prefetch.into_iter().map(convert_prefetch_query).collect();
+    let mut batch = BatchAccumGrpc::new();
 
-    let query = query.map(convert_query).transpose()?;
+    if let Some(q) = &query {
+        collect_query(q, &mut batch)?;
+    }
+
+    for p in &prefetch {
+        collect_prefetch(p, &mut batch)?;
+    }
+
+    let inferred = if !batch.is_empty() {
+        Some(
+            BatchAccumInferredGrpc::from_batch_accum(batch, InferenceType::Search)
+                .await
+                .map_err(|e| Status::internal(format!("Inference error: {e}")))?,
+        )
+    } else {
+        None
+    };
+
+    let query = if let Some(q) = query {
+        Some(convert_query_with_inferred(q, &inferred)?)
+    } else {
+        None
+    };
+
+    let prefetch = prefetch
+        .into_iter()
+        .map(|p| convert_prefetch_with_inferred(p, &inferred))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let request = CollectionQueryGroupsRequest {
-        prefetch: prefetch?,
+        prefetch,
         query,
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
         filter: filter.map(TryFrom::try_from).transpose()?,
@@ -63,6 +99,7 @@ pub async fn convert_query_point_groups_from_grpc(
         params: params.map(From::from),
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
     };
+
     Ok(request)
 }
 
@@ -174,7 +211,7 @@ fn convert_query(query: grpc::Query) -> Result<Query, Status> {
 fn convert_recommend_input(
     value: grpc::RecommendInput,
 ) -> Result<VectorQuery<VectorInputInternal>, Status> {
-    let grpc::RecommendInput {
+    let RecommendInput {
         positive,
         negative,
         strategy,
@@ -193,8 +230,8 @@ fn convert_recommend_input(
 
     let strategy = strategy
         .and_then(|x|
-        // XXX: Invalid values silently converted to None
-        grpc::RecommendStrategy::try_from(x).ok())
+            // XXX: Invalid values silently converted to None
+            grpc::RecommendStrategy::try_from(x).ok())
         .map(RecommendStrategy::from)
         .unwrap_or_default();
 
@@ -302,5 +339,226 @@ fn context_pair_from_grpc(
     Ok(ContextPair {
         positive: convert_vector_input(positive)?,
         negative: convert_vector_input(negative)?,
+    })
+}
+
+fn convert_prefetch_with_inferred(
+    prefetch: grpc::PrefetchQuery,
+    inferred: &Option<BatchAccumInferredGrpc>,
+) -> Result<CollectionPrefetch, Status> {
+    let grpc::PrefetchQuery {
+        prefetch,
+        query,
+        using,
+        filter,
+        params,
+        score_threshold,
+        limit,
+        lookup_from,
+    } = prefetch;
+
+    let nested_prefetches = prefetch
+        .into_iter()
+        .map(|p| convert_prefetch_with_inferred(p, inferred))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let query = query
+        .map(|q| convert_query_with_inferred(q, inferred))
+        .transpose()?;
+
+    Ok(CollectionPrefetch {
+        prefetch: nested_prefetches,
+        query,
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        filter: filter.map(TryFrom::try_from).transpose()?,
+        score_threshold,
+        limit: limit
+            .map(|l| l as usize)
+            .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+        params: params.map(From::from),
+        lookup_from: lookup_from.map(From::from),
+    })
+}
+
+fn convert_query_with_inferred(
+    query: grpc::Query,
+    inferred: &Option<BatchAccumInferredGrpc>,
+) -> Result<Query, Status> {
+    let variant = query
+        .variant
+        .ok_or_else(|| Status::invalid_argument("Query variant is missing"))?;
+
+    let query = match variant {
+        Variant::Nearest(nearest) => {
+            let vector = convert_vector_input_with_inferred(nearest, inferred)?;
+            Query::Vector(VectorQuery::Nearest(vector))
+        }
+        Variant::Recommend(recommend) => {
+            let RecommendInput {
+                positive,
+                negative,
+                strategy,
+            } = recommend;
+
+            let positives = positive
+                .into_iter()
+                .map(|v| convert_vector_input_with_inferred(v, inferred))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let negatives = negative
+                .into_iter()
+                .map(|v| convert_vector_input_with_inferred(v, inferred))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let reco_query = RecoQuery::new(positives, negatives);
+
+            let strategy = strategy
+                .and_then(|x| grpc::RecommendStrategy::try_from(x).ok())
+                .map(RecommendStrategy::from)
+                .unwrap_or_default();
+
+            match strategy {
+                RecommendStrategy::AverageVector => {
+                    Query::Vector(VectorQuery::RecommendAverageVector(reco_query))
+                }
+                RecommendStrategy::BestScore => {
+                    Query::Vector(VectorQuery::RecommendBestScore(reco_query))
+                }
+            }
+        }
+        Variant::Discover(discover) => {
+            let grpc::DiscoverInput { target, context } = discover;
+
+            let target = target
+                .map(|t| convert_vector_input_with_inferred(t, inferred))
+                .transpose()?
+                .ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?;
+
+            let grpc::ContextInput { pairs } = context
+                .ok_or_else(|| Status::invalid_argument("DiscoverInput context is missing"))?;
+
+            let context = pairs
+                .into_iter()
+                .map(|pair| context_pair_from_grpc_with_inferred(pair, inferred))
+                .collect::<Result<_, _>>()?;
+
+            Query::Vector(VectorQuery::Discover(DiscoveryQuery::new(target, context)))
+        }
+        Variant::Context(context) => {
+            let context_query = context_query_from_grpc_with_inferred(context, inferred)?;
+            Query::Vector(VectorQuery::Context(context_query))
+        }
+        Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
+        Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
+        Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
+    };
+
+    Ok(query)
+}
+
+fn convert_vector_input_with_inferred(
+    vector: grpc::VectorInput,
+    inferred: &Option<BatchAccumInferredGrpc>,
+) -> Result<VectorInputInternal, Status> {
+    use api::grpc::qdrant::vector_input::Variant;
+
+    let variant = vector
+        .variant
+        .ok_or_else(|| Status::invalid_argument("VectorInput variant is missing"))?;
+
+    match variant {
+        Variant::Id(id) => Ok(VectorInputInternal::Id(TryFrom::try_from(id)?)),
+        Variant::Dense(dense) => Ok(VectorInputInternal::Vector(VectorInternal::Dense(
+            From::from(dense),
+        ))),
+        Variant::Sparse(sparse) => Ok(VectorInputInternal::Vector(VectorInternal::Sparse(
+            From::from(sparse),
+        ))),
+        Variant::MultiDense(multi_dense) => Ok(VectorInputInternal::Vector(
+            VectorInternal::MultiDense(From::from(multi_dense)),
+        )),
+        Variant::Document(doc) => {
+            let inferred = inferred.as_ref().ok_or_else(|| {
+                Status::internal("Inference required but service returned no results")
+            })?;
+
+            let doc: rest::Document = doc
+                .try_into()
+                .map_err(|e| Status::internal(format!("Document conversion error: {e}")))?;
+            let data = InferenceData::Document(doc);
+            let vector = inferred
+                .get_vector(&data)
+                .ok_or_else(|| Status::internal("Missing inferred vector for document"))?;
+
+            Ok(VectorInputInternal::Vector(VectorInternal::from(
+                vector.clone(),
+            )))
+        }
+        Variant::Image(img) => {
+            let inferred = inferred.as_ref().ok_or_else(|| {
+                Status::internal("Inference required but service returned no results")
+            })?;
+
+            let img: api::rest::Image = img
+                .try_into()
+                .map_err(|e| Status::internal(format!("Image conversion error: {e}",)))?;
+            let data = InferenceData::Image(img);
+
+            let vector = inferred
+                .get_vector(&data)
+                .ok_or_else(|| Status::internal("Missing inferred vector for image"))?;
+
+            Ok(VectorInputInternal::Vector(VectorInternal::from(
+                vector.clone(),
+            )))
+        }
+        Variant::Object(obj) => {
+            let inferred = inferred.as_ref().ok_or_else(|| {
+                Status::internal("Inference required but service returned no results")
+            })?;
+
+            let obj: rest::InferenceObject = obj
+                .try_into()
+                .map_err(|e| Status::internal(format!("Object conversion error: {e}")))?;
+            let data = InferenceData::Object(obj);
+            let vector = inferred
+                .get_vector(&data)
+                .ok_or_else(|| Status::internal("Missing inferred vector for object"))?;
+
+            Ok(VectorInputInternal::Vector(VectorInternal::from(
+                vector.clone(),
+            )))
+        }
+    }
+}
+
+fn context_query_from_grpc_with_inferred(
+    value: grpc::ContextInput,
+    inferred: &Option<BatchAccumInferredGrpc>,
+) -> Result<ContextQuery<VectorInputInternal>, Status> {
+    let grpc::ContextInput { pairs } = value;
+
+    Ok(ContextQuery {
+        pairs: pairs
+            .into_iter()
+            .map(|pair| context_pair_from_grpc_with_inferred(pair, inferred))
+            .collect::<Result<_, _>>()?,
+    })
+}
+
+fn context_pair_from_grpc_with_inferred(
+    value: grpc::ContextInputPair,
+    inferred: &Option<BatchAccumInferredGrpc>,
+) -> Result<ContextPair<VectorInputInternal>, Status> {
+    let grpc::ContextInputPair { positive, negative } = value;
+
+    let positive =
+        positive.ok_or_else(|| Status::invalid_argument("ContextPair positive is missing"))?;
+    let negative =
+        negative.ok_or_else(|| Status::invalid_argument("ContextPair negative is missing"))?;
+
+    Ok(ContextPair {
+        positive: convert_vector_input_with_inferred(positive, inferred)?,
+        negative: convert_vector_input_with_inferred(negative, inferred)?,
     })
 }

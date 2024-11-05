@@ -115,7 +115,10 @@ fn collect_context_pair(pair: &ContextPair, batch: &mut BatchAccumGrpc) -> Resul
     Ok(())
 }
 
-fn collect_context_input(context: &ContextInput, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
+pub(crate) fn collect_context_input(
+    context: &ContextInput,
+    batch: &mut BatchAccumGrpc,
+) -> Result<(), Status> {
     let ContextInput { pairs } = context;
 
     for pair in pairs {
@@ -142,7 +145,7 @@ fn collect_context_input_pair(
     Ok(())
 }
 
-fn collect_discover_input(
+pub(crate) fn collect_discover_input(
     discover: &DiscoverInput,
     batch: &mut BatchAccumGrpc,
 ) -> Result<(), Status> {
@@ -161,7 +164,7 @@ fn collect_discover_input(
     Ok(())
 }
 
-fn collect_recommend_input(
+pub(crate) fn collect_recommend_input(
     recommend: &RecommendInput,
     batch: &mut BatchAccumGrpc,
 ) -> Result<(), Status> {
@@ -182,7 +185,7 @@ fn collect_recommend_input(
     Ok(())
 }
 
-fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
+pub(crate) fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
     let Some(variant) = &query.variant else {
         return Ok(());
     };
@@ -200,7 +203,10 @@ fn collect_query(query: &Query, batch: &mut BatchAccumGrpc) -> Result<(), Status
     Ok(())
 }
 
-fn collect_prefetch(prefetch: &PrefetchQuery, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
+pub(crate) fn collect_prefetch(
+    prefetch: &PrefetchQuery,
+    batch: &mut BatchAccumGrpc,
+) -> Result<(), Status> {
     let PrefetchQuery {
         prefetch,
         query,
