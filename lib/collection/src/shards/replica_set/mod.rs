@@ -1086,7 +1086,8 @@ pub enum ReplicaState {
 
 impl ReplicaState {
     /// Check whether the replica state is active or listener or resharding.
-    pub fn is_active_or_listener_or_resharding(self) -> bool {
+    #[inline]
+    pub const fn is_active_or_listener_or_resharding(self) -> bool {
         match self {
             ReplicaState::Active | ReplicaState::Listener | ReplicaState::Resharding => true,
 
@@ -1101,7 +1102,8 @@ impl ReplicaState {
     /// Check whether the replica state is partial or partial-like.
     ///
     /// In other words: is the state related to shard transfers?
-    pub fn is_partial_or_recovery(self) -> bool {
+    #[inline]
+    pub const fn is_partial_or_recovery(self) -> bool {
         match self {
             ReplicaState::Partial
             | ReplicaState::PartialSnapshot
@@ -1120,7 +1122,8 @@ impl ReplicaState {
     /// During some replica states, using clocks may create gaps. That'll be problematic if WAL
     /// delta recovery is used later, resulting in missing opeartions. In these states we ignore
     /// clocks all together to prevent this problem.
-    pub fn is_ignore_local_clocks(self) -> bool {
+    #[inline]
+    pub const fn is_ignore_local_clocks(self) -> bool {
         match self {
             ReplicaState::Initializing | ReplicaState::Partial => true,
             ReplicaState::Active
