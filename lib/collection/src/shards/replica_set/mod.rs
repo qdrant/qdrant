@@ -628,12 +628,6 @@ impl ShardReplicaSet {
             }
             rs.set_peer_state(peer_id, state);
         })?;
-
-        // Disable WAL clocks only if the replica is in Partial state
-        if let Some(local) = self.local.read().await.as_ref() {
-            local.set_clocks_enabled(state != ReplicaState::Partial);
-        }
-
         self.update_locally_disabled(peer_id);
         Ok(())
     }
