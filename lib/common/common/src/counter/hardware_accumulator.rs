@@ -15,6 +15,12 @@ impl HwMeasurementAcc {
         Self::default()
     }
 
+    pub fn new_with_values(cpu: usize) -> Self {
+        Self {
+            cpu_counter: Arc::new(AtomicUsize::new(cpu)),
+        }
+    }
+
     pub fn get_cpu(&self) -> usize {
         self.cpu_counter.load(Ordering::Relaxed)
     }
@@ -26,8 +32,8 @@ impl HwMeasurementAcc {
     }
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
-    pub fn merge_from_cell(&self, hw_counter_cell: HardwareCounterCell) {
-        let HardwareCounterCell { ref cpu_counter } = hw_counter_cell;
+    pub fn merge_from_cell(&self, hw_counter_cell: impl Into<HardwareCounterCell>) {
+        let HardwareCounterCell { ref cpu_counter } = hw_counter_cell.into();
 
         self.cpu_counter
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);

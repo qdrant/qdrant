@@ -83,3 +83,12 @@ impl Drop for HardwareCounterCell {
         }
     }
 }
+
+impl<T> Into<HardwareCounterCell> for Option<T>
+where
+    T: Into<HardwareCounterCell>,
+{
+    fn into(self) -> HardwareCounterCell {
+        self.map(|i| i.into()).unwrap_or_default()
+    }
+}
