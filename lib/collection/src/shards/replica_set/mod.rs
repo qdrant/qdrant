@@ -1128,12 +1128,11 @@ impl ReplicaState {
     /// clocks all together to prevent this problem.
     pub fn is_ignore_local_clocks(self) -> bool {
         match self {
-            ReplicaState::Partial => true,
+            ReplicaState::Initializing | ReplicaState::Partial => true,
             ReplicaState::Active
             | ReplicaState::Listener
             | ReplicaState::Resharding
             | ReplicaState::Dead
-            | ReplicaState::Initializing
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery => false,
         }
