@@ -3885,9 +3885,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "mmap-value-storage"
+name = "mmap-payload-storage"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#08d00249580e7b5d94118e5ac329e0d5ffd08a11"
+source = "git+https://github.com/qdrant/mmap-payload-storage#926ed5e47b9da3aeb00405dfda8d77cb7d66d9cb"
 dependencies = [
  "bitvec",
  "ciborium",
@@ -3896,7 +3896,6 @@ dependencies = [
  "lz4_flex",
  "memmap2 0.9.5",
  "parking_lot",
- "proptest",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -5921,7 +5920,7 @@ dependencies = [
  "memmap2 0.9.5",
  "memory",
  "merge",
- "mmap-value-storage",
+ "mmap-payload-storage",
  "nom",
  "num-cmp",
  "num-derive",
@@ -5976,9 +5975,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.213"
+version = "1.0.211"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ea7893ff5e2466df8d720bb615088341b295f849602c6956047f8f80f0e9bc1"
+checksum = "1ac55e59090389fb9f0dd9e0f3c09615afed1d19094284d0b200441f13550793"
 dependencies = [
  "serde_derive",
 ]
@@ -6016,9 +6015,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.213"
+version = "1.0.211"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e85ad2009c50b58e87caa8cd6dac16bdf511bbfb7af6c33df902396aa480fa5"
+checksum = "54be4f245ce16bc58d57ef2716271d0d4519e0f6defa147f6e081005bcb278ff"
 dependencies = [
  "proc-macro2",
  "quote",
