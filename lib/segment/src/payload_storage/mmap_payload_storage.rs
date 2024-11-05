@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
-use mmap_value_storage::ValueStorage as CratePayloadStorage;
+use mmap_value_storage::value::Value as StorageValue;
+use mmap_value_storage::ValueStorage;
 use parking_lot::RwLock;
 use serde_json::Value;
 
@@ -14,9 +15,19 @@ use crate::types::{Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
 
+impl StorageValue for Payload {
+    fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap()
+    }
+
+    fn from_bytes(data: &[u8]) -> Self {
+        serde_json::from_slice(data).unwrap()
+    }
+}
+
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
-    storage: Arc<RwLock<CratePayloadStorage<mmap_value_storage::payload::Payload>>>,
+    storage: Arc<RwLock<ValueStorage<Payload>>>,
 }
 
 impl MmapPayloadStorage {
@@ -34,7 +45,7 @@ impl MmapPayloadStorage {
     }
 
     fn open(path: PathBuf) -> OperationResult<Self> {
-        if let Some(storage) = CratePayloadStorage::open(path, None) {
+        if let Some(storage) = ValueStorage::open(path, None) {
             let storage = Arc::new(RwLock::new(storage));
             Ok(Self { storage })
         } else {
@@ -45,49 +56,27 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf) -> Self {
-        let storage = CratePayloadStorage::new(path, None);
+        let storage = ValueStorage::new(path, None);
         let storage = Arc::new(RwLock::new(storage));
         Self { storage }
     }
 }
 
-// TODO delete this after integration
-impl From<mmap_value_storage::payload::Payload> for Payload {
-    fn from(payload: mmap_value_storage::payload::Payload) -> Self {
-        Payload(payload.0)
-    }
-}
-
-// TODO delete this after integration
-impl From<Payload> for mmap_value_storage::payload::Payload {
-    fn from(payload: Payload) -> Self {
-        mmap_value_storage::payload::Payload(payload.0)
-    }
-}
-
-// TODO delete this after integration
-impl From<&Payload> for mmap_value_storage::payload::Payload {
-    fn from(payload: &Payload) -> Self {
-        mmap_value_storage::payload::Payload(payload.clone().0)
-    }
-}
-
 impl PayloadStorage for MmapPayloadStorage {
     fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.storage.write().put_value(point_id, &payload.into());
+        self.storage.write().put_value(point_id, payload);
         Ok(())
     }
 
     fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         let mut guard = self.storage.write();
         match guard.get_value(point_id) {
-            Some(point_payload) => {
-                let mut converted = Payload::from(point_payload);
-                converted.merge(payload);
-                guard.put_value(point_id, &converted.into());
+            Some(mut point_payload) => {
+                point_payload.merge(payload);
+                guard.put_value(point_id, &point_payload);
             }
             None => {
-                guard.put_value(point_id, &payload.into());
+                guard.put_value(point_id, payload);
             }
         }
         Ok(())
@@ -101,15 +90,14 @@ impl PayloadStorage for MmapPayloadStorage {
     ) -> OperationResult<()> {
         let mut guard = self.storage.write();
         match guard.get_value(point_id) {
-            Some(point_payload) => {
-                let mut converted = Payload::from(point_payload);
-                converted.merge_by_key(payload, key);
-                guard.put_value(point_id, &converted.into());
+            Some(mut point_payload) => {
+                point_payload.merge_by_key(payload, key);
+                guard.put_value(point_id, &point_payload);
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                guard.put_value(point_id, &dest_payload.into());
+                guard.put_value(point_id, &dest_payload);
             }
         }
         Ok(())
@@ -117,7 +105,7 @@ impl PayloadStorage for MmapPayloadStorage {
 
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.storage.read().get_value(point_id) {
-            Some(payload) => Ok(payload.into()),
+            Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
@@ -129,11 +117,10 @@ impl PayloadStorage for MmapPayloadStorage {
     ) -> OperationResult<Vec<Value>> {
         let mut guard = self.storage.write();
         match guard.get_value(point_id) {
-            Some(payload) => {
-                let mut converted = Payload::from(payload);
-                let res = converted.remove(key);
+            Some(mut payload) => {
+                let res = payload.remove(key);
                 if !res.is_empty() {
-                    guard.put_value(point_id, &converted.into());
+                    guard.put_value(point_id, &payload);
                 }
                 Ok(res)
             }
@@ -143,7 +130,7 @@ impl PayloadStorage for MmapPayloadStorage {
 
     fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.storage.write().delete_value(point_id);
-        Ok(res.map(|payload| payload.into()))
+        Ok(res)
     }
 
     fn wipe(&mut self) -> OperationResult<()> {
@@ -164,7 +151,7 @@ impl PayloadStorage for MmapPayloadStorage {
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.read().iter(|point_id, payload| {
-            match callback(point_id, &payload.clone().into()) {
+            match callback(point_id, &payload) {
                 Ok(true) => Ok(true),
                 Ok(false) => Ok(false),
                 Err(e) => {
