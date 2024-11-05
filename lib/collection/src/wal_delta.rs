@@ -1178,7 +1178,7 @@ mod tests {
         let delta_from = b_wal.resolve_wal_delta(a_recovery_point.clone()).await;
 
         // No diff expected
-        assert_eq!(delta_from, Ok(None));
+        assert_eq!(delta_from, Err(WalDeltaError::UnknownClocks));
 
         let op7 = mock_operation(7);
         // Add operation to B but not A
