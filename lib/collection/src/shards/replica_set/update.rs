@@ -39,19 +39,29 @@ impl ShardReplicaSet {
         if let Some(local_shard) = local.deref() {
             match self.peer_state(self.this_peer_id()) {
                 Some(
-                    ReplicaState::Active
+                    state @ (ReplicaState::Active
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
-                    | ReplicaState::Resharding,
-                ) => Ok(Some(local_shard.get().update(operation, wait).await?)),
-                Some(ReplicaState::Listener) => {
-                    Ok(Some(local_shard.get().update(operation, false).await?))
+                    | ReplicaState::Resharding),
+                ) => {
+                    let ignore_local_clocks = state.is_ignore_local_clocks();
+                    Ok(Some(
+                        local_shard
+                            .get()
+                            .update(operation, wait, ignore_local_clocks)
+                            .await?,
+                    ))
                 }
+                Some(ReplicaState::Listener) => Ok(Some(
+                    local_shard.get().update(operation, false, false).await?,
+                )),
                 // In recovery state, only allow operations with force flag
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
                     if operation.clock_tag.map_or(false, |tag| tag.force) =>
                 {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                    Ok(Some(
+                        local_shard.get().update(operation, wait, false).await?,
+                    ))
                 }
                 Some(
                     ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
@@ -230,18 +240,21 @@ impl ShardReplicaSet {
 
         if let Some(local) = local.deref() {
             if self.is_peer_updatable(this_peer_id) {
-                let local_wait = if self.peer_state(this_peer_id) == Some(ReplicaState::Listener) {
+                let peer_state = self.peer_state(this_peer_id);
+                let local_wait = if peer_state == Some(ReplicaState::Listener) {
                     false
                 } else {
                     wait
                 };
+                let ignore_local_clocks =
+                    peer_state.map_or(false, ReplicaState::is_ignore_local_clocks);
 
                 let operation = operation.clone();
 
                 let local_update = async move {
                     local
                         .get()
-                        .update(operation, local_wait)
+                        .update(operation, local_wait, ignore_local_clocks)
                         .await
                         .map(|ok| (this_peer_id, ok))
                         .map_err(|err| (this_peer_id, err))
@@ -256,7 +269,7 @@ impl ShardReplicaSet {
 
             let remote_update = async move {
                 remote
-                    .update(operation, wait)
+                    .update(operation, wait, false)
                     .await
                     .map(|ok| (remote.peer_id, ok))
                     .map_err(|err| (remote.peer_id, err))

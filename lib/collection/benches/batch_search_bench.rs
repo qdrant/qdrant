@@ -112,7 +112,7 @@ fn batch_search_bench(c: &mut Criterion) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), true))
+        .block_on(shard.update(rnd_batch.into(), true, false))
         .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");

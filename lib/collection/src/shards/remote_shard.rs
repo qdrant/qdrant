@@ -644,6 +644,7 @@ impl ShardOperation for RemoteShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        _ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
