@@ -4,13 +4,21 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfig;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
+    pub async fn check_config_compatible(&self, config: &CollectionConfig) -> CollectionResult<()> {
+        self.collection_config
+            .read()
+            .await
+            .params
+            .check_compatible(&config.params)
+    }
+
     pub async fn apply_state(
         &self,
         state: State,
@@ -64,18 +72,66 @@ impl Collection {
     }
 
     async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
-        log::warn!("Applying only optimizers config snapshot. Other config updates are not yet implemented.");
-        self.update_optimizer_params(new_config.optimizer_config)
-            .await?;
+        let recreate_optimizers;
 
-        // Update replication factor
         {
             let mut config = self.collection_config.write().await;
-            config.params.replication_factor = new_config.params.replication_factor;
-            config.params.write_consistency_factor = new_config.params.write_consistency_factor;
+
+            if let Err(err) = config.params.check_compatible(&new_config.params) {
+                // Stop consensus with a service error, if new config is incompatible with current one.
+                //
+                // We expect that `apply_config` is only called when configs are compatible, otherwise
+                // collection have to be *recreated*.
+                return Err(CollectionError::service_error(err.to_string()));
+            }
+
+            // Destructure `new_config`, to ensure we compare all config fields. Compiler would
+            // complain, if new field is added to `CollectionConfig` struct, but not destructured
+            // explicitly. We have to explicitly compare config fields, because we want to compare
+            // `wal_config` and `strict_mode_config` independently of other fields.
+            let CollectionConfig {
+                params,
+                hnsw_config,
+                optimizer_config,
+                wal_config,
+                quantization_config,
+                strict_mode_config,
+            } = &new_config;
+
+            let is_core_config_updated = params != &config.params
+                || hnsw_config != &config.hnsw_config
+                || optimizer_config != &config.optimizer_config
+                || quantization_config != &config.quantization_config;
+
+            let is_wal_config_updated = wal_config != &config.wal_config;
+            let is_strict_mode_config_updated = strict_mode_config != &config.strict_mode_config;
+
+            let is_config_updated =
+                is_core_config_updated || is_wal_config_updated || is_strict_mode_config_updated;
+
+            if !is_config_updated {
+                return Ok(());
+            }
+
+            if is_wal_config_updated {
+                log::warn!(
+                    "WAL config of collection {} updated when applying Raft snapshot, \
+                     but updated WAL config will only be applied on Qdrant restart",
+                    self.id,
+                );
+            }
+
+            *config = new_config;
+
+            // We need to recreate optimizers, if "core" config was updated
+            recreate_optimizers = is_core_config_updated;
         }
 
-        self.recreate_optimizers_blocking().await?;
+        self.collection_config.read().await.save(&self.path)?;
+
+        if recreate_optimizers {
+            self.recreate_optimizers_blocking().await?;
+        }
 
         Ok(())
     }

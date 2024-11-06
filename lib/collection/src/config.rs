@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::num::NonZeroU32;
@@ -115,6 +115,54 @@ impl CollectionParams {
         } else {
             PayloadStorageType::InMemory
         }
+    }
+
+    pub fn check_compatible(&self, other: &CollectionParams) -> CollectionResult<()> {
+        let CollectionParams {
+            vectors,
+            shard_number: _, // Maybe be updated by resharding, assume local shards needs to be dropped
+            sharding_method, // Not changeable
+            replication_factor: _, // May be changed
+            write_consistency_factor: _, // May be changed
+            read_fan_out_factor: _, // May be changed
+            on_disk_payload: _, // May be changed
+            sparse_vectors,  // Parameters may be changes, but not the structure
+        } = other;
+
+        self.vectors.check_compatible(vectors)?;
+
+        let this_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = &self.sparse_vectors {
+            sparse_vectors.keys().collect()
+        } else {
+            HashSet::new()
+        };
+
+        let other_sparse_vectors: HashSet<_> = if let Some(sparse_vectors) = sparse_vectors {
+            sparse_vectors.keys().collect()
+        } else {
+            HashSet::new()
+        };
+
+        if this_sparse_vectors != other_sparse_vectors {
+            return Err(CollectionError::bad_input(format!(
+                "sparse vectors are incompatible: \
+                 origin sparse vectors: {this_sparse_vectors:?}, \
+                 while other sparse vectors: {other_sparse_vectors:?}",
+            )));
+        }
+
+        let this_sharding_method = self.sharding_method.unwrap_or_default();
+        let other_sharding_method = sharding_method.unwrap_or_default();
+
+        if this_sharding_method != other_sharding_method {
+            return Err(CollectionError::bad_input(format!(
+                "sharding method is incompatible: \
+                 origin sharding method: {this_sharding_method:?}, \
+                 while other sharding method: {other_sharding_method:?}",
+            )));
+        }
+
+        Ok(())
     }
 }
 
