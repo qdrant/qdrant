@@ -334,7 +334,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+            .unwrap_or(id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let ids = match prefiltered_points {
@@ -375,7 +375,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let id_tracker = self.id_tracker.borrow();
         let deleted_point_bitslice = vector_query_context
             .deleted_points()
-            .unwrap_or_else(|| id_tracker.deleted_point_bitslice());
+            .unwrap_or(id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let not_deleted_condition = |idx: PointOffsetType| -> bool {
