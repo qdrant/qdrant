@@ -66,12 +66,7 @@ impl DummyShard {
 
 #[async_trait]
 impl ShardOperation for DummyShard {
-    async fn update(
-        &self,
-        _: OperationWithClockTag,
-        _: bool,
-        _: bool,
-    ) -> CollectionResult<UpdateResult> {
+    async fn update(&self, _: OperationWithClockTag, _: bool) -> CollectionResult<UpdateResult> {
         self.dummy()
     }
 

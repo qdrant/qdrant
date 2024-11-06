@@ -251,4 +251,14 @@ impl Shard {
             }
         }
     }
+
+    pub fn set_clocks_enabled(&self, enabled: bool) {
+        match self {
+            Self::Local(local_shard) => local_shard.set_clocks_enabled(enabled),
+            Self::Proxy(proxy_shard) => proxy_shard.set_clocks_enabled(enabled),
+            Self::ForwardProxy(proxy_shard) => proxy_shard.set_clocks_enabled(enabled),
+            Self::QueueProxy(proxy_shard) => proxy_shard.set_clocks_enabled(enabled),
+            Self::Dummy(_) => (),
+        }
+    }
 }
