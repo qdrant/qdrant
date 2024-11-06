@@ -573,12 +573,10 @@ mod tests {
         // at build time the replicas are all dead, they need to be activated
         assert_eq!(rs.highest_alive_replica_peer_id(), None);
 
-        rs.set_replica_state(1, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(3, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(4, ReplicaState::Active).await.unwrap();
-        rs.set_replica_state(5, ReplicaState::Partial)
-            .await
-            .unwrap();
+        rs.set_replica_state(1, ReplicaState::Active).unwrap();
+        rs.set_replica_state(3, ReplicaState::Active).unwrap();
+        rs.set_replica_state(4, ReplicaState::Active).unwrap();
+        rs.set_replica_state(5, ReplicaState::Partial).unwrap();
 
         assert_eq!(rs.highest_replica_peer_id(), Some(5));
         assert_eq!(rs.highest_alive_replica_peer_id(), Some(4));
