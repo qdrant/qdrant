@@ -3,11 +3,9 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_sparse_dense_collection_setup'
-
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup(collection_name):
     sparse_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
@@ -36,7 +34,7 @@ def sparse_collection_setup(
     assert response.ok
 
 
-def test_sparse_dense_updates():
+def test_sparse_dense_updates(collection_name):
 
     response = request_with_validation(
         api='/collections/{collection_name}/points',

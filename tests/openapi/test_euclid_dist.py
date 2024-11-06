@@ -3,8 +3,6 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_euclid'
-
 
 def basic_collection_setup(
     collection_name='test_collection',
@@ -67,13 +65,13 @@ def basic_collection_setup(
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_search_with_threshold():
+def test_search_with_threshold(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",

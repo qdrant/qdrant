@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_recommend"
-
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_default_is_avg_vector():
+def test_default_is_avg_vector(collection_name):
     params = {
         "positive": [1, 2],
         "negative": [3, 4],
@@ -49,7 +47,7 @@ def test_default_is_avg_vector():
     assert default_response.json()["result"] == avg_response.json()["result"]
 
 
-def test_single_vs_batch():
+def test_single_vs_batch(collection_name):
     # Bunch of valid examples
     params_list = [
         {
@@ -113,7 +111,7 @@ def test_single_vs_batch():
         assert single_response.json()["result"] == batch_response.json()["result"][i]
 
 
-def test_without_positives():
+def test_without_positives(collection_name):
     def req_with_positives(positive, strategy=None):
         if strategy is None:
             strat_dict = {}
@@ -147,7 +145,7 @@ def test_without_positives():
     assert response.status_code == 400
 
 
-def test_best_score_works_with_only_negatives():
+def test_best_score_works_with_only_negatives(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
@@ -166,7 +164,7 @@ def test_best_score_works_with_only_negatives():
         assert result["score"] < 0
 
 
-def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
+def test_only_1_positive_in_best_score_is_equivalent_to_normal_search(collection_name):
     limit = 4
 
     # recommendation response
@@ -185,7 +183,7 @@ def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
     assert len(reco_response.json()["result"]) == limit
 
     # Get vector from point 1
-    vector = get_points([1])[0]["vector"]
+    vector = get_points(collection_name, [1])[0]["vector"]
 
     # Use normal search with that vector
     search_response = request_with_validation(
@@ -210,7 +208,7 @@ def test_only_1_positive_in_best_score_is_equivalent_to_normal_search():
     assert reco_ids == search_ids
 
 
-def get_points(ids: list):
+def get_points(collection_name, ids: list):
     response = request_with_validation(
         api="/collections/{collection_name}/points",
         method="POST",
@@ -224,8 +222,8 @@ def get_points(ids: list):
     return response.json()["result"]
 
 
-def test_raw_vectors():
-    points = get_points([1, 2, 3, 4, 5, 6, 7, 8])
+def test_raw_vectors(collection_name):
+    points = get_points(collection_name, [1, 2, 3, 4, 5, 6, 7, 8])
 
     # Assert using ids is the same as using the raw vectors
     response_ids = request_with_validation(

@@ -4,17 +4,16 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
 default_name = ""
-collection_name = 'test_collection_uuid'
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_collection_update():
+def test_collection_update(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PATCH",
@@ -74,7 +73,7 @@ def test_collection_update():
     assert response.ok
 
 
-def test_edit_collection_params(on_disk_vectors, on_disk_payload):
+def test_edit_collection_params(on_disk_vectors, on_disk_payload, collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",

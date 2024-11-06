@@ -5,11 +5,8 @@ from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
 
-collection_name = 'test_multi_vector_persistence'
-
-
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multivector_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
@@ -47,7 +44,7 @@ def multivector_collection_setup(
     assert response.ok
 
 
-def test_multi_vector_float_persisted():
+def test_multi_vector_float_persisted(collection_name):
     # batch upsert
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -138,7 +135,7 @@ def test_multi_vector_float_persisted():
     assert not response.ok
 
 
-def test_multi_vector_validation():
+def test_multi_vector_validation(collection_name):
     # fails because it uses and empty multi vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -230,7 +227,7 @@ def test_multi_vector_validation():
 
 
 # allow multivec upsert on legacy API by emulating a multivec input with a single dense vector
-def test_upsert_legacy_api():
+def test_upsert_legacy_api(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -285,7 +282,7 @@ def test_upsert_legacy_api():
 
 
 # allow multivec search on legacy API by emulating a multivec input with a single dense vector
-def test_search_legacy_api():
+def test_search_legacy_api(collection_name):
     # validate input size
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',

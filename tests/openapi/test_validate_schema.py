@@ -1,18 +1,16 @@
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection'
-
 
 # validate that malformed conditions raise a JsonSchema ValidationError
 
-def test_malformed_condition():
+def test_malformed_condition(collection_name):
     # Should raise a ValidationError because the condition key is not defined
     # see https://github.com/qdrant/qdrant/issues/1664
     # with pytest.raises(jsonschema.exceptions.ValidationError):
-    malformed_condition()
+    malformed_condition(collection_name)
 
 
-def malformed_condition():
+def malformed_condition(collection_name):
     request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",

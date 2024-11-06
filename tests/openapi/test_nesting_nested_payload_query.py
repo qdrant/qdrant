@@ -3,8 +3,6 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_nesting_nested_payload_query'
-
 
 def nesting_nested_payload_collection_setup(collection_name, on_disk_vectors, on_disk_payload):
     response = request_with_validation(
@@ -89,13 +87,13 @@ def nesting_nested_payload_collection_setup(collection_name, on_disk_vectors, on
 
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors, on_disk_payload):
+def setup(on_disk_vectors, on_disk_payload, collection_name):
     nesting_nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_nesting_nested_payload_query_operations():
+def test_nesting_nested_payload_query_operations(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",

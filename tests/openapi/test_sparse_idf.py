@@ -3,11 +3,9 @@ import pytest
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_sparse_idf'
-
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup(collection_name):
     idf_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
@@ -107,7 +105,7 @@ def idf_collection_setup(
     assert response.ok
 
 
-def test_collection_request_with_idf():
+def test_collection_request_with_idf(collection_name):
     query = ["i", "is", "not", "television", "channel"]
 
     response = request_with_validation(

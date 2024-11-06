@@ -3,11 +3,9 @@ import pytest
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors, on_disk_payload):
+def setup(on_disk_vectors, on_disk_payload, collection_name):
     multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload, distance='Dot')
     yield
     drop_collection(collection_name=collection_name)
@@ -22,7 +20,7 @@ def compare_vectors(v1, v2):
     return True
 
 
-def test_delete_and_search():
+def test_delete_and_search(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
@@ -52,7 +50,7 @@ def test_delete_and_search():
     assert response.ok
 
 
-def test_retrieve_deleted_vector():
+def test_retrieve_deleted_vector(collection_name):
     # Delete vector
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
@@ -96,7 +94,7 @@ def test_retrieve_deleted_vector():
     assert id_to_result[4]["vector"].get("text") is not None
 
 
-def test_upsert_partial_vectors():
+def test_upsert_partial_vectors(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -162,7 +160,7 @@ def test_upsert_partial_vectors():
     assert "text" not in result["vector"]
 
 
-def test_update_vectors():
+def test_update_vectors(collection_name):
     POINT_ID = 1000
 
     # Put empty vector first
@@ -292,7 +290,7 @@ def test_update_vectors():
     assert compare_vectors(result["vector"]["text"], text_vector)
 
 
-def test_update_empty_vectors():
+def test_update_empty_vectors(collection_name):
     """
     Remove all named vectors for a point. Then add named vectors and test
     against it.
@@ -383,7 +381,7 @@ def test_update_empty_vectors():
     assert compare_vectors(result["vector"]["text"], text_vector)
 
 
-def test_update_vectors_unknown_point():
+def test_update_vectors_unknown_point(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -414,7 +412,7 @@ def test_update_vectors_unknown_point():
     assert error == "Not found: No point with id 424242424242424242 found"
 
 
-def test_update_vectors_same_point_in_batch():
+def test_update_vectors_same_point_in_batch(collection_name):
     POINT_ID = 1000
 
     response = request_with_validation(
@@ -550,7 +548,7 @@ def test_update_vectors_same_point_in_batch():
     assert result["vector"].get("image") == [0.4, 0.5, 0.6, 0.2]
 
 
-def test_no_vectors():
+def test_no_vectors(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors',
         method="PUT",
@@ -572,13 +570,13 @@ def test_no_vectors():
         "Validation error in JSON body: [points[0].vector: must specify vectors to update for point]")
 
 
-def test_delete_vectors():
-    delete_vectors()
+def test_delete_vectors(collection_name):
+    delete_vectors(collection_name)
     # Deleting a second time should work fine
-    delete_vectors()
+    delete_vectors(collection_name)
 
 
-def delete_vectors():
+def delete_vectors(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
@@ -632,7 +630,7 @@ def delete_vectors():
     assert "text" not in result["vector"]
 
 
-def test_delete_all_vectors():
+def test_delete_all_vectors(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
@@ -645,7 +643,7 @@ def test_delete_all_vectors():
     assert response.ok
 
 
-def test_delete_unknown_vectors():
+def test_delete_unknown_vectors(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",

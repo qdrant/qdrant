@@ -5,17 +5,15 @@ from .helpers.collection_setup import multivec_collection_setup, drop_collection
 
 from operator import itemgetter
 
-collection_name = 'test_collection_batch_update_multivec'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, distance="Dot")
     yield
     drop_collection(collection_name=collection_name)
 
 
-def assert_points(points, nonexisting_ids=None, with_vectors=False):
+def assert_points(collection_name, points, nonexisting_ids=None, with_vectors=False):
     ids = [point['id'] for point in points]
     ids.extend(nonexisting_ids or [])
 
@@ -36,7 +34,7 @@ def assert_points(points, nonexisting_ids=None, with_vectors=False):
     )
 
 
-def test_batch_update():
+def test_batch_update(collection_name):
     # Upsert and delete points
     response = request_with_validation(
         api="/collections/{collection_name}/points/batch",
@@ -90,8 +88,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": {
@@ -143,8 +141,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": {
@@ -211,8 +209,8 @@ def test_batch_update():
     )
     assert response.ok
 
-    assert_points(
-        [
+    assert_points(collection_name,
+                  [
             {
                 "id": 7,
                 "vector": {

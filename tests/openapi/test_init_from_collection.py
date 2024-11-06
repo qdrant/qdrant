@@ -1,15 +1,25 @@
 import pytest
+import jsons
+from pytest_cases import parametrize, fixture_ref
 
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
 
-collection_name = 'test_collection'
-source_collection_name = 'source_collection'
+@pytest.fixture(scope='module', autouse=True)
+def source_collection_name(collection_name):
+    return f"source_{collection_name}"
+
+
+@pytest.fixture(scope='module', autouse=True)
+def set_serializer(source_collection_name):
+    def custom_serializer(obj: fixture_ref, **kwargs) -> str:
+        return source_collection_name
+    jsons.set_serializer(custom_serializer, fixture_ref)
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup():
+def setup(collection_name):
     yield
     drop_collection(collection_name=collection_name)
     drop_collection(collection_name=source_collection_name)
@@ -94,7 +104,7 @@ def create_from_collection(collection_name, source_collection_name, size, distan
             },
             "on_disk_payload": on_disk_payload,
             "init_from": {
-                "collection": source_collection_name
+                "collection": jsons.load(jsons.dump(source_collection_name))
             }
         }
     )
@@ -124,12 +134,14 @@ def create_multi_from_collection(collection_name, source_collection_name, vector
 
 
 @pytest.mark.parametrize("ok,source,size,distance", [
-    (True, source_collection_name, 4, 'Dot'), # ok
+    (True, fixture_ref(source_collection_name), 4, 'Dot'), # ok
     (False, "i-do-not-exist", 4, 'Dot'), # fail: nonexistent source collection
-    (False, source_collection_name, 8, 'Dot'), # fail: bad size
-    (False, source_collection_name, 4, 'Cosine'), # fail: bad distance
+    (False, fixture_ref(source_collection_name), 8, 'Dot'), # fail: bad size
+    (False, fixture_ref(source_collection_name), 4, 'Cosine'), # fail: bad distance
 ])
 def test_init_from_collection(
+    collection_name,
+    source_collection_name,
     ok,
     source,
     size,
@@ -142,7 +154,7 @@ def test_init_from_collection(
     assert response.ok == ok
 
 
-def test_init_from_collection_multivec(on_disk_vectors):
+def test_init_from_collection_multivec(on_disk_vectors, collection_name, source_collection_name):
     config = {
         "image": {
             "size": 4,

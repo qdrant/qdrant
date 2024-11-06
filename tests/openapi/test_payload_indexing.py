@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_payload_indexing'
-
 
 @pytest.fixture(autouse=True)
-def setup():
+def setup(collection_name):
     basic_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_payload_indexing_operations():
+def test_payload_indexing_operations(collection_name):
     # create payload
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
@@ -75,7 +73,7 @@ def test_payload_indexing_operations():
     assert len(response.json()['result']['payload_schema']) == 0
 
 
-def set_payload(payload, points):
+def set_payload(collection_name, payload, points):
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
         method="POST",
@@ -88,7 +86,7 @@ def set_payload(payload, points):
     )
     assert response.ok
 
-def test_index_with_numeric_key():
+def test_index_with_numeric_key(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/index',
         method="PUT",
@@ -102,12 +100,12 @@ def test_index_with_numeric_key():
     assert response.ok
 
 
-def test_boolean_index():
+def test_boolean_index(collection_name):
     bool_key = "boolean_payload"
     # create payload
-    set_payload({bool_key: False}, [1, 2, 3, 4])
-    set_payload({bool_key: [True, False]}, [5])
-    set_payload({bool_key: True}, [6, 7])
+    set_payload(collection_name, {bool_key: False}, [1, 2, 3, 4])
+    set_payload(collection_name, {bool_key: [True, False]}, [5])
+    set_payload(collection_name, {bool_key: True}, [6, 7])
 
     # Create index
     response = request_with_validation(
@@ -151,11 +149,11 @@ def test_boolean_index():
     assert len(response.json()['result']['payload_schema']) == 0
 
 
-def test_datetime_indexing():
+def test_datetime_indexing(collection_name):
     datetime_key = "datetime_payload"
     # create payload
-    set_payload({datetime_key: "2015-01-01T00:00:00Z"}, [1])
-    set_payload({datetime_key: "2015-02-01T08:00:00+02:00"}, [2])
+    set_payload(collection_name, {datetime_key: "2015-01-01T00:00:00Z"}, [1])
+    set_payload(collection_name, {datetime_key: "2015-02-01T08:00:00+02:00"}, [2])
 
     # Create index
     response = request_with_validation(
@@ -229,7 +227,7 @@ def test_datetime_indexing():
         assert not response.ok
 
 
-def test_update_payload_on_indexed_field():
+def test_update_payload_on_indexed_field(collection_name):
     keyword_field = "city"
 
     response = request_with_validation(
@@ -274,7 +272,7 @@ def test_update_payload_on_indexed_field():
 
     # 2: city: [Berlin, London]
     # 4: city: [London, Moscow]
-    set_payload({"foo": "bar"}, [2, 4])
+    set_payload(collection_name, {"foo": "bar"}, [2, 4])
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
@@ -293,7 +291,7 @@ def test_update_payload_on_indexed_field():
     assert [p['id'] for p in response.json()['result']['points']] == [1, 2, 3]
 
 
-def test_payload_schemas():
+def test_payload_schemas(collection_name):
     FIELDS = [
         "keyword",
         "integer",
