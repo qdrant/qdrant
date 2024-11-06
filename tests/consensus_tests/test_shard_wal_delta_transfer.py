@@ -1,6 +1,7 @@
 import multiprocessing
 import pathlib
 import random
+from operator import itemgetter
 from time import sleep
 
 from .fixtures import upsert_random_points, create_collection
@@ -39,12 +40,17 @@ def check_data_consistency(data):
         data_j = data[j]
 
         if data_i != data_j:
-            ids_i = set(x.id for x in data_i["points"])
-            ids_j = set(x.id for x in data_j["points"])
+            ids_i = set(x['id'] for x in data_i["points"])
+            ids_j = set(x['id'] for x in data_j["points"])
 
             diff = ids_i - ids_j
 
-            if len(diff) < 100:
+            if len(diff) == 0:
+                i_points, j_points = [sorted(l, key=itemgetter('id')) for l in (data_i["points"], data_j["points"])]
+                pairs = zip(i_points, j_points)
+                diff = [(x, y) for x, y in pairs if x != y]
+                print(f'Points between {i} and {j} are not equal, diff: "{diff}"')
+            elif len(diff) < 100:
                 print(f"Diff between {i} and {j}: {diff}")
             else:
                 print(f"Diff len between {i} and {j}: {len(diff)}")
