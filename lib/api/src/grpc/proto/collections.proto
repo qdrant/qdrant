@@ -340,6 +340,7 @@ message CreateCollection {
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
   optional StrictModeConfig strict_mode_config = 17; // Configuration for strict mode
+  optional bytes uuid = 18; // UUID of the collection
 }
 
 message UpdateCollection {
@@ -391,6 +392,7 @@ message CollectionConfig {
   WalConfigDiff wal_config = 4; // Configuration of the Write-Ahead-Log
   optional QuantizationConfig quantization_config = 5; // Configuration of the vector quantization
   optional StrictModeConfig strict_mode_config = 6; // Configuration of strict mode.
+  optional bytes uuid = 7; // UUID of the collection
 }
 
 enum TokenizerType {

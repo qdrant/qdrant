@@ -134,12 +134,29 @@ impl TableOfContent {
 
             for (id, state) in &data.collections {
                 if let Some(collection) = collections.get(id) {
-                    if let Err(err) = collection.check_config_compatible(&state.config).await {
+                    let collection_uuid = collection.uuid().await;
+
+                    let recreate_collection = if collection_uuid != state.config.uuid {
+                        log::warn!(
+                            "Recreating collection {id}, because collection UUID is different: \
+                             existing collection UUID: {collection_uuid:?}, \
+                             Raft snapshot collection UUID: {:?}",
+                            state.config.uuid,
+                        );
+
+                        true
+                    } else if let Err(err) = collection.check_config_compatible(&state.config).await {
                         log::warn!(
                             "Recreating collection {id}, because collection config is incompatible: \
                              {err}",
                         );
 
+                        true
+                    } else {
+                        false
+                    };
+
+                    if recreate_collection {
                         // Drop `collections` lock
                         drop(collections);
 

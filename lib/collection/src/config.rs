@@ -17,6 +17,7 @@ use segment::types::{
     VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 use wal::WalOptions;
 
@@ -209,10 +210,12 @@ pub struct CollectionConfig {
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
     #[schemars(skip)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strict_mode_config: Option<StrictModeConfig>,
+    pub uuid: Option<Uuid>,
 }
 
 impl CollectionConfig {
