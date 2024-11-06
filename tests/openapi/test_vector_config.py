@@ -13,7 +13,7 @@ def setup(on_disk_vectors, on_disk_payload, collection_name):
     drop_collection(collection_name=collection_name)
 
 
-def multivec_collection_setup(collection_name='test_collection', on_disk_vectors=False, on_disk_payload=False):
+def multivec_collection_setup(collection_name='test_collection', on_disk_vectors=False, on_disk_payload=True):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",

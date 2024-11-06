@@ -151,7 +151,7 @@ texts = [
 def basic_collection_setup(
     collection_name='test_collection',
     on_disk_vectors=False,
-    on_disk_payload=False,
+    on_disk_payload=True,
 ):
     response = request_with_validation(
         api='/collections/{collection_name}',

@@ -15,7 +15,7 @@ def drop_collection(collection_name='test_collection'):
 
 def geo_collection_setup(
         collection_name='test_collection',
-        on_disk_payload=False,
+        on_disk_payload=True,
         on_disk_vectors=False,
 ):
     response = request_with_validation(
@@ -226,7 +226,7 @@ def basic_collection_setup(
 
 def multipayload_collection_setup(
     collection_name='test_collection',
-    on_disk_payload=False,
+    on_disk_payload=True,
     on_disk_vectors=False,
 ):
     drop_collection(collection_name)
@@ -311,7 +311,7 @@ def multipayload_collection_setup(
 
 def multivec_collection_setup(
         collection_name='test_collection',
-        on_disk_payload=False,
+        on_disk_payload=True,
         on_disk_vectors=False,
         distance=None,
 ):
@@ -444,7 +444,7 @@ def multivec_collection_setup(
 
 def full_collection_setup(
         collection_name='test_collection',
-        on_disk_payload=False,
+        on_disk_payload=True,
         on_disk_vectors=False,
         distance=None,
 ):

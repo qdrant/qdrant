@@ -13,7 +13,7 @@ def setup(collection_name):
 
 def mix_collection_setup(
         collection_name='test_collection',
-        on_disk_payload=False,
+        on_disk_payload=True,
 ):
     response = request_with_validation(
         api='/collections/{collection_name}',
