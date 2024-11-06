@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
@@ -477,7 +478,11 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         EncodedQueryPQ { lut }
     }
 
-    fn score_point(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
+    fn score_point(&self, query: &EncodedQueryPQ, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_division.len());
+
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
             return unsafe { self.score_point_sse(query, i) };
@@ -494,13 +499,25 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
     /// Score two points inside endoded data by their indexes
     /// To find score, this method decode both encoded vectors.
     /// Decocing in PQ is a replacing centroid index by centroid position
-    fn score_internal(&self, i: u32, j: u32) -> f32 {
+    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
         let centroids_i = self
             .encoded_vectors
             .get_vector_data(i as usize, self.metadata.vector_division.len());
         let centroids_j = self
             .encoded_vectors
             .get_vector_data(j as usize, self.metadata.vector_division.len());
+
+        hw_counter.cpu_counter().incr_delta(
+            centroids_i.len()
+            // Chunk size
+                * self
+                    .metadata
+                    .vector_division
+                    .first()
+                    .map(|i| i.len())
+                    .unwrap_or(1),
+        );
+
         let distance: f32 = centroids_i
             .iter()
             .zip(centroids_j)

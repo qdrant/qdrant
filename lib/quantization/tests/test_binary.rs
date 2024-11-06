@@ -3,6 +3,7 @@ mod metrics;
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
     use rand::{Rng, SeedableRng};
@@ -61,11 +62,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_u8 = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32);
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
+        counter.discard_results();
     }
 
     #[test]
@@ -107,11 +110,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_u8 = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32);
+            let score = encoded.score_point(&query_u8, index as u32, &counter);
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
+        counter.discard_results();
     }
 
     #[test]
@@ -150,11 +155,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32);
+            let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
+        counter.discard_results();
     }
 
     #[test]
@@ -193,11 +200,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32);
+            let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
+        counter.discard_results();
     }
 
     #[test]
@@ -238,11 +247,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -299,11 +310,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -357,11 +370,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -415,11 +430,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -476,11 +493,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -537,11 +556,13 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_point(&query_b, i as u32), i))
+            .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -595,11 +616,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -653,11 +676,13 @@ mod tests {
         )
         .unwrap();
 
+        let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, _)| (encoded.score_internal(0, i as u32), i))
+            .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
+        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 

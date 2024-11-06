@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
@@ -331,7 +332,11 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         }
     }
 
-    fn score_point(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+    fn score_point(&self, query: &EncodedQueryU8, i: u32, hw_counter: &HardwareCounterCell) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
         let q_ptr = query.encoded_query.as_ptr();
         let (vector_offset, v_ptr) = self.get_vec_ptr(i);
 
@@ -386,7 +391,11 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         self.score_point_simple(query, i)
     }
 
-    fn score_internal(&self, i: u32, j: u32) -> f32 {
+    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
+        hw_counter
+            .cpu_counter()
+            .incr_delta(self.metadata.vector_parameters.dim);
+
         let (query_offset, q_ptr) = self.get_vec_ptr(i);
         let (vector_offset, v_ptr) = self.get_vec_ptr(j);
         let diff = self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset;

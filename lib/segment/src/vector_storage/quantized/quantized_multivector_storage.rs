@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
 use memory::mmap_type::MmapSlice;
@@ -151,6 +152,7 @@ where
         &self,
         query: &Vec<TEncodedQuery>,
         vector_index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let offset = self.offsets.get_offset(vector_index);
         let mut sum = 0.0;
@@ -158,9 +160,9 @@ where
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for i in 0..offset.count {
-                let sim = self
-                    .quantized_storage
-                    .score_point(inner_query, offset.start + i);
+                let sim =
+                    self.quantized_storage
+                        .score_point(inner_query, offset.start + i, hw_counter);
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -176,6 +178,7 @@ where
         &self,
         vector_a_index: PointOffsetType,
         vector_b_index: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
@@ -184,9 +187,11 @@ where
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for b in 0..offset_b.count {
-                let sim = self
-                    .quantized_storage
-                    .score_internal(offset_a.start + a, offset_b.start + b);
+                let sim = self.quantized_storage.score_internal(
+                    offset_a.start + a,
+                    offset_b.start + b,
+                    hw_counter,
+                );
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -232,15 +237,25 @@ where
             .collect()
     }
 
-    fn score_point(&self, query: &Vec<TEncodedQuery>, i: PointOffsetType) -> ScoreType {
+    fn score_point(
+        &self,
+        query: &Vec<TEncodedQuery>,
+        i: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
         match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i),
+            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i, hw_counter),
         }
     }
 
-    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {
+    fn score_internal(
+        &self,
+        i: PointOffsetType,
+        j: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> ScoreType {
         match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j),
+            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j, hw_counter),
         }
     }
 }
