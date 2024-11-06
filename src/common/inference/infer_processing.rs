@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
@@ -17,12 +17,10 @@ impl BatchAccumInferred {
         }
     }
 
-    pub async fn from_batch_accum(
-        batch: BatchAccum,
+    pub async fn from_objects(
+        objects: HashSet<InferenceData>,
         inference_type: InferenceType,
     ) -> Result<Self, StorageError> {
-        let BatchAccum { objects } = batch;
-
         if objects.is_empty() {
             return Ok(Self::new());
         }
@@ -58,6 +56,14 @@ impl BatchAccumInferred {
         let objects = objects_serialized.into_iter().zip(vectors).collect();
 
         Ok(Self { objects })
+    }
+
+    pub async fn from_batch_accum(
+        batch: BatchAccum,
+        inference_type: InferenceType,
+    ) -> Result<Self, StorageError> {
+        let BatchAccum { objects } = batch;
+        Self::from_objects(objects, inference_type).await
     }
 
     pub fn get_vector(&self, data: &InferenceData) -> Option<&VectorPersisted> {
