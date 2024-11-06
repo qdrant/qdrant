@@ -313,7 +313,11 @@ pub trait GraphLinks: Sized {
 
     fn num_points(&self) -> usize;
 
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType];
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType>;
 
     fn point_level(&self, point_id: PointOffsetType) -> usize;
 }
@@ -373,7 +377,11 @@ impl GraphLinks for GraphLinksRam {
         self.header.point_count as usize
     }
 
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType> {
         self.view().links(point_id, level)
     }
 
@@ -438,7 +446,11 @@ impl GraphLinks for GraphLinksMmap {
         self.header.point_count as usize
     }
 
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &[PointOffsetType] {
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType> {
         self.view().links(point_id, level)
     }
 
@@ -455,14 +467,18 @@ struct GraphLinksView<'a> {
 }
 
 impl<'a> GraphLinksView<'a> {
-    fn links(&self, point_id: PointOffsetType, level: usize) -> &'a [PointOffsetType] {
+    fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         let idx = if level == 0 {
             point_id as usize
         } else {
             self.level_offsets[level] as usize + self.reindex(point_id) as usize
         };
         let links_range = self.get_links_range(idx);
-        self.get_links(links_range)
+        self.get_links(links_range).iter().copied()
     }
 
     fn point_level(&self, point_id: PointOffsetType) -> usize {
@@ -528,6 +544,7 @@ impl<'a> GraphLinksView<'a> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools as _;
     use rand::Rng;
     use tempfile::Builder;
 
@@ -540,7 +557,7 @@ mod tests {
             let mut layers = Vec::new();
             let num_levels = links.point_level(i as PointOffsetType) + 1;
             for level in 0..num_levels {
-                let links = links.links(i as PointOffsetType, level).to_vec();
+                let links = links.links(i as PointOffsetType, level).collect_vec();
                 layers.push(links);
             }
             result.push(layers);

@@ -98,7 +98,7 @@ fn test_graph_connectivity() {
             .links
             .links(point_id as PointOffsetType, 0);
         for link in links {
-            reverse_links[*link as usize].push(point_id);
+            reverse_links[link as usize].push(point_id);
         }
     }
 
