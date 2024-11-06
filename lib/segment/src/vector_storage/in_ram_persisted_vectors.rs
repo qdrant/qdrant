@@ -86,4 +86,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     fn max_vector_size_bytes(&self) -> usize {
         self.mmap_storage.max_vector_size_bytes()
     }
+
+    fn is_on_disk(&self) -> bool {
+        false
+    }
 }
