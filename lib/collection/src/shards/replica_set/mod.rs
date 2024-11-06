@@ -1116,8 +1116,8 @@ impl ReplicaState {
     /// Check whether this is a state in which we ignore local clocks.
     ///
     /// During some replica states, using clocks may create gaps. That'll be problematic if WAL
-    /// clocks all together to prevent this problem.
     /// delta recovery is used later, resulting in missing operations. In these states we ignore
+    /// clocks all together to prevent this problem.
     #[inline]
     pub const fn is_ignore_local_clocks(self) -> bool {
         match self {
