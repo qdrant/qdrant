@@ -349,8 +349,6 @@ impl Collection {
             }
         }
 
-        log::debug!("Finished abort shard transfer {transfer_key:?}");
-
         Ok(())
     }
 
