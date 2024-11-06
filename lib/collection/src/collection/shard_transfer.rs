@@ -279,6 +279,8 @@ impl Collection {
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
+        log::debug!("Aborting shard transfer {transfer_key:?}");
+
         let _transfer_result = self
             .transfer_tasks
             .lock()
