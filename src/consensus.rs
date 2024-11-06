@@ -1486,6 +1486,7 @@ mod tests {
                             quantization_config: None,
                             sharding_method: None,
                             strict_mode_config: None,
+                            uuid: None,
                         },
                     )),
                     Access::full("For test"),

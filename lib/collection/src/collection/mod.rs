@@ -313,6 +313,10 @@ impl Collection {
         self.id.clone()
     }
 
+    pub async fn uuid(&self) -> Option<uuid::Uuid> {
+        self.collection_config.read().await.uuid
+    }
+
     pub async fn get_shard_keys(&self) -> Vec<ShardKey> {
         self.shards_holder
             .read()

@@ -18,6 +18,7 @@ use segment::types::{
     PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -173,6 +174,8 @@ pub struct CreateCollection {
     /// Strict-mode config.
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -409,6 +412,7 @@ impl From<CollectionConfig> for CreateCollection {
             quantization_config: value.quantization_config,
             sparse_vectors: value.params.sparse_vectors,
             strict_mode_config: value.strict_mode_config,
+            uuid: value.uuid,
         }
     }
 }

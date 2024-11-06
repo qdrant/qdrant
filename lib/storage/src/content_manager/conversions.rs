@@ -68,6 +68,14 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     .map(sharding_method_from_proto)
                     .transpose()?,
                 strict_mode_config: value.strict_mode_config.map(strict_mode_from_api),
+                uuid: value
+                    .uuid
+                    .map(|uuid| {
+                        uuid.try_into().map_err(|err| {
+                            tonic::Status::invalid_argument(format!("failed to parse UUID: {err}"))
+                        })
+                    })
+                    .transpose()?,
             },
         )))
     }

@@ -77,6 +77,17 @@ impl Collection {
         {
             let mut config = self.collection_config.write().await;
 
+            if config.uuid != new_config.uuid {
+                return Err(CollectionError::service_error(format!(
+                    "collection {} UUID mismatch: \
+                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
+                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
+                    self.id,
+                    config.uuid,
+                    new_config.uuid,
+                )));
+            }
+
             if let Err(err) = config.params.check_compatible(&new_config.params) {
                 // Stop consensus with a service error, if new config is incompatible with current one.
                 //
@@ -96,6 +107,7 @@ impl Collection {
                 wal_config,
                 quantization_config,
                 strict_mode_config,
+                uuid: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params
