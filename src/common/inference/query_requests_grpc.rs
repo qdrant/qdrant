@@ -17,7 +17,7 @@ use tonic::Status;
 use crate::common::inference::batch_processing_grpc::{
     collect_prefetch, collect_query, BatchAccumGrpc,
 };
-use crate::common::inference::infer_processing_grpc::BatchAccumInferredGrpc;
+use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
 /// ToDo: this function is supposed to call an inference endpoint internally
@@ -54,15 +54,11 @@ pub async fn convert_query_point_groups_from_grpc(
         collect_prefetch(p, &mut batch)?;
     }
 
-    let inferred = if !batch.is_empty() {
-        Some(
-            BatchAccumInferredGrpc::from_batch_accum(batch, InferenceType::Search)
-                .await
-                .map_err(|e| Status::internal(format!("Inference error: {e}")))?,
-        )
-    } else {
-        None
-    };
+    let BatchAccumGrpc { objects } = batch;
+
+    let inferred = BatchAccumInferred::from_objects(objects, InferenceType::Search)
+        .await
+        .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let query = if let Some(q) = query {
         Some(convert_query_with_inferred(q, &inferred)?)
@@ -344,7 +340,7 @@ fn context_pair_from_grpc(
 
 fn convert_prefetch_with_inferred(
     prefetch: grpc::PrefetchQuery,
-    inferred: &Option<BatchAccumInferredGrpc>,
+    inferred: &BatchAccumInferred,
 ) -> Result<CollectionPrefetch, Status> {
     let grpc::PrefetchQuery {
         prefetch,
@@ -382,7 +378,7 @@ fn convert_prefetch_with_inferred(
 
 fn convert_query_with_inferred(
     query: grpc::Query,
-    inferred: &Option<BatchAccumInferredGrpc>,
+    inferred: &BatchAccumInferred,
 ) -> Result<Query, Status> {
     let variant = query
         .variant
@@ -458,7 +454,7 @@ fn convert_query_with_inferred(
 
 fn convert_vector_input_with_inferred(
     vector: grpc::VectorInput,
-    inferred: &Option<BatchAccumInferredGrpc>,
+    inferred: &BatchAccumInferred,
 ) -> Result<VectorInputInternal, Status> {
     use api::grpc::qdrant::vector_input::Variant;
 
@@ -478,10 +474,6 @@ fn convert_vector_input_with_inferred(
             VectorInternal::MultiDense(From::from(multi_dense)),
         )),
         Variant::Document(doc) => {
-            let inferred = inferred.as_ref().ok_or_else(|| {
-                Status::internal("Inference required but service returned no results")
-            })?;
-
             let doc: rest::Document = doc
                 .try_into()
                 .map_err(|e| Status::internal(format!("Document conversion error: {e}")))?;
@@ -495,11 +487,7 @@ fn convert_vector_input_with_inferred(
             )))
         }
         Variant::Image(img) => {
-            let inferred = inferred.as_ref().ok_or_else(|| {
-                Status::internal("Inference required but service returned no results")
-            })?;
-
-            let img: api::rest::Image = img
+            let img: rest::Image = img
                 .try_into()
                 .map_err(|e| Status::internal(format!("Image conversion error: {e}",)))?;
             let data = InferenceData::Image(img);
@@ -513,10 +501,6 @@ fn convert_vector_input_with_inferred(
             )))
         }
         Variant::Object(obj) => {
-            let inferred = inferred.as_ref().ok_or_else(|| {
-                Status::internal("Inference required but service returned no results")
-            })?;
-
             let obj: rest::InferenceObject = obj
                 .try_into()
                 .map_err(|e| Status::internal(format!("Object conversion error: {e}")))?;
@@ -534,7 +518,7 @@ fn convert_vector_input_with_inferred(
 
 fn context_query_from_grpc_with_inferred(
     value: grpc::ContextInput,
-    inferred: &Option<BatchAccumInferredGrpc>,
+    inferred: &BatchAccumInferred,
 ) -> Result<ContextQuery<VectorInputInternal>, Status> {
     let grpc::ContextInput { pairs } = value;
 
@@ -548,7 +532,7 @@ fn context_query_from_grpc_with_inferred(
 
 fn context_pair_from_grpc_with_inferred(
     value: grpc::ContextInputPair,
-    inferred: &Option<BatchAccumInferredGrpc>,
+    inferred: &BatchAccumInferred,
 ) -> Result<ContextPair<VectorInputInternal>, Status> {
     let grpc::ContextInputPair { positive, negative } = value;
 
