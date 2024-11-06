@@ -1,7 +1,6 @@
 use std::ops::{Index, Range};
 
-use geo::algorithm::haversine_distance::HaversineDistance;
-use geo::{Coord, Intersects, LineString, Point, Polygon};
+use geo::{Coord, Distance, Haversine, Intersects, LineString, Point, Polygon};
 use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
 use itertools::Itertools;
 use smol_str::SmolStr;
@@ -359,10 +358,13 @@ fn check_circle_intersection(geohash: &str, circle: &GeoRadius) -> bool {
     let c1 = rect.max();
 
     let bbox_center = Point::new((c0.x + c1.x) / 2f64, (c0.y + c1.y) / 2f64);
-    let half_diagonal = bbox_center.haversine_distance(&Point(c0));
+    let half_diagonal = Haversine::distance(bbox_center, Point(c0));
 
     half_diagonal + circle.radius
-        > bbox_center.haversine_distance(&Point::new(circle.center.lon, circle.center.lat))
+        > Haversine::distance(
+            bbox_center,
+            Point::new(circle.center.lon, circle.center.lat),
+        )
 }
 
 /// Check if geohash tile intersects the polygon
