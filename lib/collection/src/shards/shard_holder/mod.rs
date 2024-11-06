@@ -701,7 +701,6 @@ impl ShardHolder {
                     log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
                     replica_set
                         .set_replica_state(local_peer_id, ReplicaState::Active)
-                        .await
                         .expect("Failed to set local shard state");
                 }
                 let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
