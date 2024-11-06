@@ -61,6 +61,7 @@ pub fn make_db_options() -> Options {
     options.create_missing_column_families(true);
     options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
     options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    options.set_manual_wal_flush(true);
 
     // Qdrant relies on it's own WAL for durability
     options.set_wal_recovery_mode(DBRecoveryMode::TolerateCorruptedTailRecords);
@@ -210,6 +211,10 @@ impl DatabaseColumnWrapper {
             db.flush_cf(column_family).map_err(|err| {
                 OperationError::service_error(format!("RocksDB flush_cf error: {err}"))
             })?;
+            db.flush_wal(false).map_err(|err| {
+                OperationError::service_error(format!("RocksDB flush_wal error: {err}"))
+            })?;
+
             Ok(())
         })
     }
