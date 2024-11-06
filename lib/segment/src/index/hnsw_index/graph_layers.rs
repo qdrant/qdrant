@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::max;
 use std::path::{Path, PathBuf};
 
@@ -24,27 +25,33 @@ pub type LayersContainer = Vec<LinkContainer>;
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 pub const HNSW_LINKS_FILE: &str = "links.bin";
 
+/// Contents of the `graph.bin` file.
 #[derive(Deserialize, Serialize, Debug)]
-pub struct GraphLayersBackwardCompatibility {
-    pub(super) max_level: usize,
-    pub(super) m: usize,
-    pub(super) m0: usize,
-    pub(super) ef_construct: usize,
-    pub(super) links_layers: Vec<LayersContainer>,
-    pub(super) entry_points: EntryPoints,
+struct GraphLayerData<'a> {
+    m: usize,
+    m0: usize,
+    ef_construct: usize,
+    entry_points: Cow<'a, EntryPoints>,
 }
 
+/// Contents of the `graph.bin` file (Qdrant 0.8.4).
 #[derive(Deserialize, Serialize, Debug)]
+struct GraphLayersBackwardCompatibility {
+    max_level: usize,
+    m: usize,
+    m0: usize,
+    ef_construct: usize,
+    links_layers: Vec<LayersContainer>,
+    entry_points: EntryPoints,
+}
+
+#[derive(Debug)]
 pub struct GraphLayers<TGraphLinks: GraphLinks> {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-
-    #[serde(skip)]
     pub(super) links: TGraphLinks,
     pub(super) entry_points: EntryPoints,
-
-    #[serde(skip)]
     pub(super) visited_pool: VisitedPool,
 }
 
@@ -239,7 +246,7 @@ where
     TGraphLinks: GraphLinks,
 {
     pub fn load(graph_path: &Path, links_path: &Path) -> OperationResult<Self> {
-        let try_self: Result<Self, FileStorageError> = if links_path.exists() {
+        let try_data: Result<GraphLayerData, FileStorageError> = if links_path.exists() {
             read_bin(graph_path)
         } else {
             Err(FileStorageError::generic(format!(
@@ -247,11 +254,17 @@ where
             )))
         };
 
-        match try_self {
-            Ok(mut slf) => {
+        match try_data {
+            Ok(data) => {
                 let links = TGraphLinks::load_from_file(links_path)?;
-                slf.links = links;
-                Ok(slf)
+                Ok(Self {
+                    m: data.m,
+                    m0: data.m0,
+                    ef_construct: data.ef_construct,
+                    links,
+                    entry_points: data.entry_points.into_owned(),
+                    visited_pool: VisitedPool::new(),
+                })
             }
             Err(err) => {
                 let try_legacy: Result<GraphLayersBackwardCompatibility, _> = read_bin(graph_path);
@@ -280,7 +293,16 @@ where
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
-        Ok(atomic_save_bin(path, self)?)
+        Ok(atomic_save_bin(path, &self.data())?)
+    }
+
+    fn data(&self) -> GraphLayerData {
+        GraphLayerData {
+            m: self.m,
+            m0: self.m0,
+            ef_construct: self.ef_construct,
+            entry_points: Cow::Borrowed(&self.entry_points),
+        }
     }
 }
 
@@ -491,7 +513,7 @@ mod tests {
             None,
         );
 
-        let graph_json = serde_json::to_string_pretty(&graph_layers).unwrap();
+        let graph_json = serde_json::to_string_pretty(&graph_layers.data()).unwrap();
 
         let vectors_json = serde_json::to_string_pretty(
             &(0..vector_holder.vectors.len() as PointOffsetType)
