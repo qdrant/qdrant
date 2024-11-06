@@ -1288,10 +1288,10 @@ mod tests {
 
     #[test]
     fn long_overflow_distance() {
-        let dist = Point::new(-179.999, 66.0).haversine_distance(&Point::new(179.999, 66.0));
+        let dist = Haversine::distance(Point::new(-179.999, 66.0), Point::new(179.999, 66.0));
         eprintln!("dist` = {dist:#?}");
         assert_eq!(dist, 90.45422731917998);
-        let dist = Point::new(0.99, 90.).haversine_distance(&Point::new(0.99, -90.0));
+        let dist = Haversine::distance(Point::new(0.99, 90.), Point::new(0.99, -90.0));
         assert_eq!(dist, 20015114.442035925);
     }
 
