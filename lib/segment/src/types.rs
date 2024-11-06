@@ -10,8 +10,7 @@ use std::sync::Arc;
 
 use common::types::ScoreType;
 use fnv::FnvBuildHasher;
-use geo::prelude::HaversineDistance;
-use geo::{Contains, Coord, LineString, Point, Polygon};
+use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use merge::Merge;
@@ -1752,7 +1751,7 @@ pub struct GeoRadius {
 impl GeoRadius {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::new(self.center.lon, self.center.lat);
-        query_center.haversine_distance(&Point::new(point.lon, point.lat)) < self.radius
+        Haversine::distance(query_center, Point::new(point.lon, point.lat)) < self.radius
     }
 }
 
