@@ -27,6 +27,7 @@ where
     phantom: PhantomData<TEncodedQuery>,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors, TQuery>
@@ -76,6 +77,7 @@ where
             phantom: PhantomData,
             metric: PhantomData,
             element: PhantomData,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 
@@ -124,6 +126,7 @@ where
             phantom: PhantomData,
             metric: PhantomData,
             element: PhantomData,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 }
@@ -137,8 +140,10 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.query
-            .score_by(|this| self.quantized_storage.score_point(this, idx))
+        self.query.score_by(|this| {
+            self.quantized_storage
+                .score_point(this, idx, &self.hardware_counter)
+        })
     }
 
     fn score(&self, _v2: &[TElement]) -> ScoreType {
@@ -150,7 +155,12 @@ where
     }
 
     fn take_hardware_counter(&self) -> HardwareCounterCell {
-        // ToDO: implement
-        HardwareCounterCell::new()
+        let mut counter = self.hardware_counter.take();
+
+        counter
+            .cpu_counter_mut()
+            .multiplied_mut(size_of::<TElement>());
+
+        counter
     }
 }

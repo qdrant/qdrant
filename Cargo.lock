@@ -4905,6 +4905,7 @@ name = "quantization"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "common",
  "criterion",
  "num-traits",
  "num_threads",

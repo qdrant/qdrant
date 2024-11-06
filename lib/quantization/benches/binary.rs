@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -47,11 +48,13 @@ fn binary_bench(c: &mut Criterion) {
     let query = generate_vector(vector_dim, &mut rng);
     let encoded_query = encoded_u128.encode_query(&query);
 
+    let hardware_counter = HardwareCounterCell::new();
+
     group.bench_function("score binary linear access u128", |b| {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = encoded_u128.score_point(&encoded_query, i);
+                _s = encoded_u128.score_point(&encoded_query, i, &hardware_counter);
             }
         });
     });
@@ -63,7 +66,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = encoded_u128.score_point(&encoded_query, i);
+                _s = encoded_u128.score_point(&encoded_query, i, &hardware_counter);
             }
         });
     });
@@ -88,7 +91,7 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = encoded_u8.score_point(&encoded_query, i);
+                _s = encoded_u8.score_point(&encoded_query, i, &hardware_counter);
             }
         });
     });
@@ -100,10 +103,12 @@ fn binary_bench(c: &mut Criterion) {
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = encoded_u8.score_point(&encoded_query, i);
+                _s = encoded_u8.score_point(&encoded_query, i, &hardware_counter);
             }
         });
     });
+
+    hardware_counter.discard_results();
 }
 
 criterion_group! {
