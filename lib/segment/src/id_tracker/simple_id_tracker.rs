@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::common::operation_error::OperationResult;
-use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
@@ -89,7 +88,7 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 #[derive(Debug)]
 pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
-    mapping_db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+    mapping_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     versions_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     mappings: PointMappings,
 }
@@ -101,7 +100,7 @@ impl SimpleIdTracker {
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
 
-        let mapping_db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(
+        let mapping_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store.clone(), DB_MAPPING_CF),
         );
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
