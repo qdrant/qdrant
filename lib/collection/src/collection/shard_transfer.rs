@@ -279,6 +279,8 @@ impl Collection {
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
+        log::debug!("Starting abort shard transfer {transfer_key:?}");
+
         let _transfer_result = self
             .transfer_tasks
             .lock()
@@ -346,6 +348,8 @@ impl Collection {
                 self.abort_resharding(state.key(), false).await?;
             }
         }
+
+        log::debug!("Finished abort shard transfer {transfer_key:?}");
 
         Ok(())
     }
