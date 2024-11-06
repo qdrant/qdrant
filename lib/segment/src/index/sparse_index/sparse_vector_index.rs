@@ -349,7 +349,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .filter(|&idx| check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice))
         .collect_vec();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -384,7 +384,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
+        let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
         let mut search_context = SearchContext::new(
             sparse_vector,
@@ -424,8 +424,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         if vector.is_empty() {
             return Ok(vec![]);
         }
-        let mut vector = vector.clone();
-        vector.sort_by_indices();
 
         match filter {
             Some(filter) => {
@@ -439,7 +437,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
                     self.search_plain(
-                        &vector,
+                        vector,
                         filter,
                         top,
                         prefiltered_points,
@@ -448,12 +446,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
-                    Ok(self.search_sparse(&vector, Some(filter), top, vector_query_context))
+                    Ok(self.search_sparse(vector, Some(filter), top, vector_query_context))
                 }
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-                Ok(self.search_sparse(&vector, filter, top, vector_query_context))
+                Ok(self.search_sparse(vector, filter, top, vector_query_context))
             }
         }
     }
