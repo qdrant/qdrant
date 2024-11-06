@@ -3,17 +3,15 @@ import pytest
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 
-collection_name = 'test_collection_uuid'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_uuid_operations():
+def test_uuid_operations(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",

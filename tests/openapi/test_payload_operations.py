@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_payload'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_payload_operations():
+def test_payload_operations(collection_name):
     # create payload
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
@@ -467,7 +465,7 @@ def test_payload_operations():
     assert len(response.json()['result']['points']) == 0
 
 
-def test_payload_index_overwrite():
+def test_payload_index_overwrite(collection_name):
     drop_collection(collection_name)
     response = request_with_validation(
         api="/collections/{collection_name}",

@@ -5,13 +5,12 @@ import pytest
 from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import drop_collection
 
-collection_name = 'test_collection_timeout'
 num_vectors = 200000
 dims = 1024
 
 @pytest.skip("Too big for CI, requires bfb installed", allow_module_level=True)
 @pytest.fixture(autouse=True, scope='module')
-def setup():
+def setup(collection_name):
     drop_collection(collection_name)
     
     response = request_with_validation(
@@ -36,7 +35,7 @@ def setup():
     yield
     drop_collection(collection_name=collection_name)
 
-def test_search_timeout():
+def test_search_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
         method="POST",
@@ -63,7 +62,7 @@ def test_search_timeout():
     assert response.status_code == 500
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
 
-def test_search_batch_timeout():
+def test_search_batch_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/batch',
         method="POST",
@@ -98,7 +97,7 @@ def test_search_batch_timeout():
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
-def test_search_groups_timeout():
+def test_search_groups_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/search/groups',
         method="POST",
@@ -118,7 +117,7 @@ def test_search_groups_timeout():
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'GroupBy' timed out after 1 seconds")
     
 
-def test_recommend_timeout():
+def test_recommend_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend',
         method="POST",
@@ -137,7 +136,7 @@ def test_recommend_timeout():
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
-def test_recommend_batch_timeout():
+def test_recommend_batch_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend/batch',
         method="POST",
@@ -166,7 +165,7 @@ def test_recommend_batch_timeout():
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
 
-def test_recommend_groups_timeout():
+def test_recommend_groups_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/recommend/groups',
         method="POST",
@@ -187,7 +186,7 @@ def test_recommend_groups_timeout():
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'GroupBy' timed out after 1 seconds")
     
     
-def test_discover_timeout():
+def test_discover_timeout(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/discover',
         method="POST",

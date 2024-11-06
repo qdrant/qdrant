@@ -4,17 +4,15 @@ from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 from .test_nested_payload_indexing import nested_payload_collection_setup
 
-collection_name = 'test_collection_nested_payload_query'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors, on_disk_payload):
+def setup(on_disk_vectors, on_disk_payload, collection_name):
     nested_payload_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_nested_payload_indexing_operations():
+def test_nested_payload_indexing_operations(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",

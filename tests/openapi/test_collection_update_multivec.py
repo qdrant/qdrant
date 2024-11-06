@@ -3,17 +3,15 @@ import pytest
 from .helpers.collection_setup import drop_collection, multivec_collection_setup
 from .helpers.helpers import request_with_validation
 
-collection_name = 'test_collection_update_multivec'
-
 
 @pytest.fixture(autouse=True)
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_collection_update_multivec():
+def test_collection_update_multivec(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PATCH",
@@ -68,7 +66,7 @@ def test_collection_update_multivec():
     assert response.ok
 
 
-def test_edit_collection_params(on_disk_vectors, on_disk_payload):
+def test_edit_collection_params(on_disk_vectors, on_disk_payload, collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="GET",
@@ -211,7 +209,7 @@ def test_edit_collection_params(on_disk_vectors, on_disk_payload):
     assert config["params"]["vectors"]["text"].get("quantization_config") is None
 
 
-def test_invalid_vector_name():
+def test_invalid_vector_name(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="PATCH",

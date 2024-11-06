@@ -8,7 +8,6 @@ from more_itertools import batched
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_collection_order_by"
 total_points = 300
 
 
@@ -72,7 +71,7 @@ def create_payload_index(collection_name, field_name, field_schema):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     upsert_points(collection_name=collection_name, amount=total_points)
     create_payload_index(
@@ -101,7 +100,7 @@ def setup(on_disk_vectors):
     drop_collection(collection_name=collection_name)
 
 
-def test_order_by_int_ascending():
+def test_order_by_int_ascending(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",
@@ -122,7 +121,7 @@ def test_order_by_int_ascending():
     assert result["next_page_offset"] == None
 
 
-def test_order_by_int_descending():
+def test_order_by_int_descending(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",
@@ -146,7 +145,7 @@ def test_order_by_int_descending():
     assert result["next_page_offset"] == None
 
 
-def paginate_whole_collection(key, direction, must=None):
+def paginate_whole_collection(collection_name, key, direction, must=None):
     limit = 23
     pages = 0
     points_count = 0
@@ -250,8 +249,8 @@ def paginate_whole_collection(key, direction, must=None):
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
-def test_paginate_whole_collection(key, direction):
-    paginate_whole_collection(key, direction)
+def test_paginate_whole_collection(collection_name, key, direction):
+    paginate_whole_collection(collection_name, key, direction)
 
 
 @pytest.mark.parametrize(
@@ -270,7 +269,7 @@ def test_paginate_whole_collection(key, direction):
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
-def test_order_by_pagination_with_filters(key, direction):
+def test_order_by_pagination_with_filters(collection_name, key, direction):
     musts = [
         [
             {
@@ -291,10 +290,10 @@ def test_order_by_pagination_with_filters(key, direction):
     ]
 
     for must in musts:
-        paginate_whole_collection(key, direction, must)
+        paginate_whole_collection(collection_name, key, direction, must)
 
 
-def test_multi_values_appear_multiple_times():
+def test_multi_values_appear_multiple_times(collection_name):
     limit = total_points * 2
 
     response = request_with_validation(
@@ -322,7 +321,7 @@ def test_multi_values_appear_multiple_times():
     assert all([count == 2 for count in freqs.values()])
 
 
-def test_cannot_use_offset_with_order_by():
+def test_cannot_use_offset_with_order_by(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",

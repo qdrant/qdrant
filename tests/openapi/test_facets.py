@@ -3,11 +3,9 @@ import pytest
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
-collection_name = "test_facets"
-
 
 @pytest.fixture(autouse=True, scope="module")
-def setup(on_disk_vectors):
+def setup(on_disk_vectors, collection_name):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
 
     # add extra fields with other datatypes
@@ -142,7 +140,7 @@ def setup(on_disk_vectors):
     drop_collection(collection_name=collection_name)
 
 
-def test_basic_facet():
+def test_basic_facet(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
         method="POST",
@@ -166,7 +164,7 @@ def test_basic_facet():
     }
 
 
-def test_integer_facet():
+def test_integer_facet(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
         method="POST",
@@ -190,7 +188,7 @@ def test_integer_facet():
     }
 
 
-def test_uuid_facet():
+def test_uuid_facet(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
         method="POST",
@@ -212,7 +210,7 @@ def test_uuid_facet():
     }
 
 
-def test_boolean_facet():
+def test_boolean_facet(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
         method="POST",
