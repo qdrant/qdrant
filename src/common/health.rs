@@ -287,9 +287,8 @@ impl Task {
         self.consensus_state
             .persistent
             .read()
-            .state
-            .hard_state
-            .commit
+            .last_applied_entry()
+            .unwrap_or(0)
     }
 
     /// List shards that are unhealthy, which may undergo automatic recovery.
