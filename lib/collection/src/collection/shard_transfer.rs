@@ -279,7 +279,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
-        log::debug!("Starting abort shard transfer {transfer_key:?}");
+        log::debug!("Aborting shard transfer {transfer_key:?}");
 
         let _transfer_result = self
             .transfer_tasks
