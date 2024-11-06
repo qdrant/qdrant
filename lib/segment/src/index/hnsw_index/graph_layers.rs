@@ -307,7 +307,7 @@ where
 }
 
 impl GraphLayers<GraphLinksMmap> {
-    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
+    pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
         self.links.prefault_mmap_pages(path)
     }
 }
@@ -364,20 +364,18 @@ mod tests {
         let vector_holder =
             TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
 
-        let mut graph_layers = GraphLayers {
-            m,
-            m0: 2 * m,
-            ef_construct,
-            links: GraphLinksRam::default(),
-            entry_points: EntryPoints::new(entry_points_num),
-            visited_pool: VisitedPool::new(),
-        };
-
         let mut graph_links = vec![vec![Vec::new()]; num_vectors];
         graph_links[0][0] = vec![1, 2, 3, 4, 5, 6];
 
-        graph_layers.links =
-            GraphLinksRam::from_converter(GraphLinksConverter::new(graph_links.clone())).unwrap();
+        let graph_layers = GraphLayers {
+            m,
+            m0: 2 * m,
+            ef_construct,
+            links: GraphLinksRam::from_converter(GraphLinksConverter::new(graph_links.clone()))
+                .unwrap(),
+            entry_points: EntryPoints::new(entry_points_num),
+            visited_pool: VisitedPool::new(),
+        };
 
         let linking_idx: PointOffsetType = 7;
 

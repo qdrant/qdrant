@@ -335,7 +335,7 @@ impl GraphLinksConverter {
     }
 }
 
-pub trait GraphLinks: Default {
+pub trait GraphLinks: Sized {
     fn load_from_file(path: &Path) -> OperationResult<Self>;
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self>;
@@ -400,7 +400,7 @@ pub trait GraphLinks: Default {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GraphLinksRam {
     // all flattened links of all levels
     links: Vec<PointOffsetType>,
@@ -500,28 +500,20 @@ impl GraphLinks for GraphLinksRam {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct GraphLinksMmap {
-    mmap: Option<Arc<Mmap>>,
+    mmap: Arc<Mmap>,
     header: GraphLinksFileHeader,
     level_offsets: Vec<u64>,
 }
 
 impl GraphLinksMmap {
     fn get_reindex_slice(&self) -> &[PointOffsetType] {
-        if let Some(mmap) = &self.mmap {
-            get_reindex_slice(mmap, &self.header)
-        } else {
-            panic!("{}", MMAP_PANIC_MESSAGE);
-        }
+        get_reindex_slice(&self.mmap, &self.header)
     }
 
     fn get_links_slice(&self) -> &[PointOffsetType] {
-        if let Some(mmap) = &self.mmap {
-            get_links_slice(mmap, &self.header)
-        } else {
-            panic!("{}", MMAP_PANIC_MESSAGE);
-        }
+        get_links_slice(&self.mmap, &self.header)
     }
 
     fn get_links_offset(offsets_data: &[u8], idx: usize) -> usize {
@@ -533,8 +525,8 @@ impl GraphLinksMmap {
         u64::from_ne_bytes(bytes) as usize
     }
 
-    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
-        mmap_ops::PrefaultMmapPages::new(self.mmap.clone()?, Some(path)).into()
+    pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
+        mmap_ops::PrefaultMmapPages::new(Arc::clone(&self.mmap), Some(path))
     }
 }
 
@@ -553,7 +545,7 @@ impl GraphLinks for GraphLinksMmap {
         let level_offsets = get_level_offsets(&mmap, &header).to_vec();
 
         Ok(Self {
-            mmap: Some(Arc::new(mmap)),
+            mmap: Arc::new(mmap),
             header,
             level_offsets,
         })
@@ -583,12 +575,7 @@ impl GraphLinks for GraphLinksMmap {
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
         let offsets_range = self.header.get_offsets_range();
-        let mmap: &[u8] = if let Some(mmap) = &self.mmap {
-            &mmap[offsets_range]
-        } else {
-            panic!("{}", MMAP_PANIC_MESSAGE);
-        };
-
+        let mmap: &[u8] = &self.mmap[offsets_range];
         Self::get_links_offset(mmap, idx)..Self::get_links_offset(mmap, idx + 1)
     }
 
