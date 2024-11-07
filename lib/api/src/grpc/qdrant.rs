@@ -512,9 +512,6 @@ pub struct CreateCollection {
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
-    /// UUID of the collection
-    #[prost(bytes = "vec", optional, tag = "18")]
-    pub uuid: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -656,9 +653,6 @@ pub struct CollectionConfig {
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
-    /// UUID of the collection
-    #[prost(bytes = "vec", optional, tag = "7")]
-    pub uuid: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

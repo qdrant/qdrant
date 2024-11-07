@@ -173,6 +173,7 @@ pub struct CreateCollection {
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
+    #[schemars(skip)]
     pub uuid: Option<Uuid>,
 }
 
