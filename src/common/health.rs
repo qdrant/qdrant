@@ -13,6 +13,7 @@ use collection::shards::CollectionId;
 use common::defaults;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
+use itertools::Itertools;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -218,13 +219,10 @@ impl Task {
 
         let mut requests = peer_address_by_id
             .iter()
-            .filter_map(|(&peer_id, uri)| {
-                if peer_id != this_peer_id {
-                    Some(get_consensus_commit(transport_channel_pool, uri))
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(&peer_id, uri)| (peer_id != this_peer_id).then_some(uri))
+            // Historic peers might use the same URLs as our current peers, request each URI once
+            .unique()
+            .map(|uri| get_consensus_commit(transport_channel_pool, uri))
             .collect::<FuturesUnordered<_>>()
             .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
