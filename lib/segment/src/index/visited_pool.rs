@@ -75,10 +75,7 @@ impl<'a> VisitedListHandle<'a> {
         self.visited_list.current_iter = self.visited_list.current_iter.wrapping_add(1);
         if self.visited_list.current_iter == 0 {
             self.visited_list.current_iter = 1;
-            self.visited_list
-                .visit_counters
-                .iter_mut()
-                .for_each(|x| *x = 0);
+            self.visited_list.visit_counters.fill(0);
         }
     }
 
