@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use blob_store::{Blob, BlobStore};
 use common::types::PointOffsetType;
-use mmap_value_storage::value::Value as StorageValue;
-use mmap_value_storage::ValueStorage;
 use parking_lot::RwLock;
 use serde_json::Value;
 
@@ -15,7 +14,7 @@ use crate::types::{Payload, PayloadKeyTypeRef};
 
 const STORAGE_PATH: &str = "payload_storage";
 
-impl StorageValue for Payload {
+impl Blob for Payload {
     fn to_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(self).unwrap()
     }
@@ -27,7 +26,7 @@ impl StorageValue for Payload {
 
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
-    storage: Arc<RwLock<ValueStorage<Payload>>>,
+    storage: Arc<RwLock<BlobStore<Payload>>>,
 }
 
 impl MmapPayloadStorage {
@@ -45,7 +44,7 @@ impl MmapPayloadStorage {
     }
 
     fn open(path: PathBuf) -> OperationResult<Self> {
-        if let Some(storage) = ValueStorage::open(path, None) {
+        if let Some(storage) = BlobStore::open(path, None) {
             let storage = Arc::new(RwLock::new(storage));
             Ok(Self { storage })
         } else {
@@ -56,7 +55,7 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf) -> Self {
-        let storage = ValueStorage::new(path, None);
+        let storage = BlobStore::new(path, None);
         let storage = Arc::new(RwLock::new(storage));
         Self { storage }
     }
