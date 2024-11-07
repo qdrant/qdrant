@@ -163,10 +163,10 @@ impl Task {
             // If not:
             //
             // - Check if this is the only node in the cluster
-            let Some(_) = self.cluster_commit_index().await else {
+            if self.consensus_state.peer_count() <= 1 {
                 self.set_ready();
                 return;
-            };
+            }
 
             // TODO: Do we want to update `cluster_commit_index` here?
             //
