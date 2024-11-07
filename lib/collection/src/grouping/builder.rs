@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{group_by, GroupRequest};
+use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
@@ -26,7 +26,7 @@ where
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 }
 
 impl<'a, F, Fut> GroupBy<'a, F, Fut>
@@ -39,7 +39,7 @@ where
         group_by: GroupRequest,
         collection: &'a Collection,
         collection_by_name: F,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> Self {
         Self {
             group_by,

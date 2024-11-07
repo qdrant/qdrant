@@ -3,7 +3,6 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use api::rest::OrderByInterface;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use rand::{thread_rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
@@ -13,6 +12,7 @@ use segment::types::{
 use serde_json::{Map, Value};
 use tempfile::Builder;
 
+use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
@@ -259,7 +259,7 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await
         .expect("failed to search");

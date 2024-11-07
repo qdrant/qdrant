@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::NamedQuery;
@@ -8,6 +7,7 @@ use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
 use tokio::sync::RwLockReadGuard;
 
+use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
@@ -131,7 +131,7 @@ pub async fn discover<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -161,7 +161,7 @@ pub async fn discover_batch<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,

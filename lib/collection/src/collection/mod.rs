@@ -1,4 +1,5 @@
 mod collection_ops;
+pub mod common;
 pub mod distance_matrix;
 mod facet;
 pub mod payload_index_schema;
@@ -17,8 +18,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::cpu::CpuBudget;
-use common::types::TelemetryDetail;
+use ::common::counter::hardware_accumulator::HwMeasurementAcc;
+use ::common::cpu::CpuBudget;
+use ::common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
@@ -32,7 +34,7 @@ use crate::config::CollectionConfig;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::operations::types::{CollectionError, CollectionResult, HardwareInfo, NodeType};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -82,6 +84,7 @@ pub struct Collection {
     // Search runtime handle.
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
+    hardware_usage: HwMeasurementAcc,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -176,6 +179,7 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
+            hardware_usage: HwMeasurementAcc::new_unchecked(),
         })
     }
 
@@ -285,6 +289,7 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
+            hardware_usage: HwMeasurementAcc::new_unchecked(),
         }
     }
 
@@ -754,6 +759,9 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
+            hardware_usage: HardwareInfo {
+                cpu: self.hardware_usage.get_cpu(),
+            },
         }
     }
 

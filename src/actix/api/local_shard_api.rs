@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use actix_web::{post, web, Responder};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
 };
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, Filter};
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
@@ -144,7 +144,7 @@ async fn count_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
 
     helpers::time_and_hardware_opt(
@@ -178,7 +178,7 @@ async fn count_points(
             )
             .await
         },
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await

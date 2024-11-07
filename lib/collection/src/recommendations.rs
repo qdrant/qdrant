@@ -3,7 +3,6 @@ use std::iter::Peekable;
 use std::time::Duration;
 
 use api::rest::RecommendStrategy;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::vectors::{
     DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector, VectorElementType,
@@ -16,6 +15,7 @@ use segment::vector_storage::query::RecoQuery;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 
+use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
@@ -152,7 +152,7 @@ pub async fn recommend_by<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -242,7 +242,7 @@ pub async fn recommend_batch_by<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,

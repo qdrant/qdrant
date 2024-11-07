@@ -2134,6 +2134,7 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
 
 impl From<HwMeasurementAcc> for HardwareUsage {
     fn from(value: HwMeasurementAcc) -> Self {
+        value.set_applied();
         Self {
             cpu: value.get_cpu() as u64,
         }

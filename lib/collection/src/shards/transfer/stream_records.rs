@@ -60,7 +60,7 @@ pub(super) async fn transfer_stream_records(
                     exact: true,
                 }),
                 None, // no timeout
-                HwMeasurementAcc::new(),
+                HwMeasurementAcc::new_unchecked(),
             )
             .await?
         else {

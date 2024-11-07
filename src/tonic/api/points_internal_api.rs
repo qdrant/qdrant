@@ -13,10 +13,10 @@ use api::grpc::qdrant::{
     ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
     SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
@@ -77,7 +77,7 @@ pub async fn query_batch_internal(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let batch_response = toc
         .query_batch_internal(
@@ -104,7 +104,7 @@ pub async fn query_batch_internal(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))

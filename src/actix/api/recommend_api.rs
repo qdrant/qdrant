@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
@@ -58,7 +58,7 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
 
     helpers::time_and_hardware_opt(
         dispatcher
@@ -78,7 +78,7 @@ async fn recommend_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -91,7 +91,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -139,7 +139,7 @@ async fn recommend_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_recommend_batch_points(
@@ -162,7 +162,7 @@ async fn recommend_batch_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -200,7 +200,7 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     helpers::time_and_hardware_opt(
         crate::common::points::do_recommend_point_groups(
             dispatcher.toc(&access, &pass),
@@ -212,7 +212,7 @@ async fn recommend_point_groups(
             params.timeout(),
             hw_measurement_acc.clone(),
         ),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await

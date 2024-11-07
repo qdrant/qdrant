@@ -14,6 +14,7 @@ use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
+use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
@@ -43,7 +44,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -67,11 +68,13 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
+
+        let tmp_hw_accumulator = HwMeasurementAcc::new();
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             let shard_key = shard_key.cloned();
@@ -81,7 +84,7 @@ impl Collection {
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
-                    hw_measurement_acc.clone(),
+                    tmp_hw_accumulator.clone(),
                 )
                 .and_then(move |mut shard_responses| async move {
                     if shard_key.is_none() {
@@ -96,7 +99,9 @@ impl Collection {
                     Ok(shard_responses)
                 })
         });
-        future::try_join_all(all_searches).await
+        let res = future::try_join_all(all_searches).await?;
+        self.accumulate_hw_counter(tmp_hw_accumulator, &hw_measurement_acc);
+        Ok(res)
     }
 
     /// This function is used to query the collection. It will return a list of scored points.
@@ -106,7 +111,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
@@ -195,7 +200,7 @@ impl Collection {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
@@ -280,7 +285,7 @@ impl Collection {
         requests: Vec<ShardQueryRequest>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let requests_arc = Arc::new(requests);
 

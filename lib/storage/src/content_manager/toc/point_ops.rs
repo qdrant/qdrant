@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -13,7 +14,6 @@ use collection::operations::types::*;
 use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -43,7 +43,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -78,7 +78,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -124,7 +124,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for request in &mut request.searches {
@@ -168,7 +168,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<CountResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -223,7 +223,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<GroupsResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -252,7 +252,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -277,7 +277,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -337,7 +337,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -391,7 +391,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> Result<CollectionSearchMatrixResponse, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 

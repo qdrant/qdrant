@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use api::rest::schema::{PointInsertOperations, PointsBatch, PointsList};
 use api::rest::{SearchGroupsRequestInternal, ShardKeySelector, UpdateVectors};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -34,7 +35,6 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint, StrictModeConfig};
@@ -844,7 +844,7 @@ pub async fn do_core_search_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
         toc,
@@ -872,7 +872,7 @@ pub async fn do_search_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
         (CoreSearchRequest, ShardSelectorInternal),
@@ -923,7 +923,7 @@ pub async fn do_core_search_batch_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
         collection_name,
@@ -946,7 +946,7 @@ pub async fn do_search_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -969,7 +969,7 @@ pub async fn do_recommend_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -990,7 +990,7 @@ pub async fn do_discover_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -1025,7 +1025,7 @@ pub async fn do_count_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<CountResult, StorageError> {
     toc.count(
         collection_name,
@@ -1088,7 +1088,7 @@ pub async fn do_query_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
     let batch_res = toc
@@ -1115,7 +1115,7 @@ pub async fn do_query_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.query_batch(
         collection_name,
@@ -1137,7 +1137,7 @@ pub async fn do_query_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -1160,7 +1160,7 @@ pub async fn do_search_points_matrix(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<CollectionSearchMatrixResponse, StorageError> {
     toc.search_points_matrix(
         collection_name,

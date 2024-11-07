@@ -767,7 +767,7 @@ mod tests {
             &Handle::current(),
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -827,7 +827,7 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
-            let hw_measurement_acc = HwMeasurementAcc::new();
+            let hw_measurement_acc = HwMeasurementAcc::new_unchecked();
 
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),

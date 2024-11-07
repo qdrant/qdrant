@@ -331,6 +331,12 @@ pub struct ReshardingInfo {
     pub comment: Option<String>,
 }
 
+#[derive(Debug, Serialize, JsonSchema, Default, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct HardwareInfo {
+    pub cpu: usize,
+}
+
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LocalShardInfo {

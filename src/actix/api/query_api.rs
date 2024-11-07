@@ -1,8 +1,8 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -48,7 +48,7 @@ async fn query_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
@@ -80,7 +80,7 @@ async fn query_points(
 
             Ok(QueryResponse { points })
         },
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -110,7 +110,7 @@ async fn query_points_batch(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
@@ -151,7 +151,7 @@ async fn query_points_batch(
                 .collect_vec();
             Ok(res)
         },
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -184,7 +184,7 @@ async fn query_points_groups(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
 
     helpers::time_and_hardware_opt(
@@ -209,7 +209,7 @@ async fn query_points_groups(
             )
             .await
         },
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await

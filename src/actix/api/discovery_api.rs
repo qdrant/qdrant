@@ -1,8 +1,8 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -50,7 +50,7 @@ async fn discover_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
 
     helpers::time_and_hardware_opt(
         dispatcher
@@ -70,7 +70,7 @@ async fn discover_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -100,7 +100,7 @@ async fn discover_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_discover_batch_points(
@@ -123,7 +123,7 @@ async fn discover_batch_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await

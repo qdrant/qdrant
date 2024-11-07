@@ -15,9 +15,9 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::types::CoreSearchRequest;
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -557,7 +557,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let hw_measurement_acc = HwMeasurementAcc::new();
+        let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -571,7 +571,7 @@ impl Points for PointsService {
             usage: self
                 .service_config
                 .hardware_reporting()
-                .then(|| HardwareUsage::from(hw_measurement_acc)),
+                .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
         };
         Ok(Response::new(pairs_response))
     }
@@ -583,7 +583,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let hw_measurement_acc = HwMeasurementAcc::new();
+        let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -597,7 +597,7 @@ impl Points for PointsService {
             usage: self
                 .service_config
                 .hardware_reporting()
-                .then(|| HardwareUsage::from(hw_measurement_acc)),
+                .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
         };
         Ok(Response::new(offsets_response))
     }

@@ -341,7 +341,11 @@ impl Collection {
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
                 let count_result = replica_set
-                    .count_local(count_request.clone(), None, HwMeasurementAcc::new())
+                    .count_local(
+                        count_request.clone(),
+                        None,
+                        HwMeasurementAcc::new_unchecked(),
+                    )
                     .await
                     .unwrap_or_default();
                 let points_count = count_result.map(|x| x.count).unwrap_or(0);

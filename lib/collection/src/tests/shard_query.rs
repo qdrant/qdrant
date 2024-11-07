@@ -70,7 +70,7 @@ async fn test_shard_query_rrf_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await;
     let expected_error =
@@ -109,7 +109,7 @@ async fn test_shard_query_rrf_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -160,7 +160,7 @@ async fn test_shard_query_rrf_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -208,7 +208,7 @@ async fn test_shard_query_rrf_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -291,7 +291,7 @@ async fn test_shard_query_vector_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -322,7 +322,7 @@ async fn test_shard_query_vector_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -356,7 +356,7 @@ async fn test_shard_query_vector_rescoring() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()
@@ -428,7 +428,7 @@ async fn test_shard_query_payload_vector() {
             Arc::new(vec![query]),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::new_unchecked(),
         )
         .await
         .unwrap()

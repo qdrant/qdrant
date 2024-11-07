@@ -1,8 +1,8 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
@@ -46,7 +46,7 @@ async fn count_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_count_points(
@@ -59,7 +59,7 @@ async fn count_points(
             access,
             hw_measurement_acc.clone(),
         ),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await

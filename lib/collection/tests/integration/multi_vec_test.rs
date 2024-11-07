@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use api::rest::SearchRequestInternal;
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::Collection;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
@@ -16,7 +17,6 @@ use collection::operations::types::{
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStructInternal};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
@@ -128,7 +128,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -163,7 +163,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await;
 
@@ -193,7 +193,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -246,7 +246,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
+        CollectionAppliedHardwareAcc::new_unchecked(),
     )
     .await;
 
@@ -273,7 +273,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
+        CollectionAppliedHardwareAcc::new_unchecked(),
     )
     .await
     .unwrap();

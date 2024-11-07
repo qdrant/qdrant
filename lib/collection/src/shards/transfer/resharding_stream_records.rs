@@ -70,7 +70,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: true,
                 }),
                 None,
-                HwMeasurementAcc::new(),
+                HwMeasurementAcc::new_unchecked(),
             )
             .await?
         else {

@@ -3,7 +3,6 @@ use std::future::Future;
 use std::time::Duration;
 
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::JsonPath;
@@ -16,6 +15,7 @@ use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
 use super::types::QueryGroupRequest;
+use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::common::fetch_vectors;
 use crate::common::fetch_vectors::build_vector_resolver_query;
@@ -147,7 +147,7 @@ impl QueryGroupRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
@@ -313,7 +313,7 @@ pub async fn group_by(
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();

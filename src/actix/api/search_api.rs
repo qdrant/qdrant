@@ -1,12 +1,12 @@
 use actix_web::{post, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -56,7 +56,7 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_core_search_points(
@@ -75,7 +75,7 @@ async fn search_points(
                 .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -122,7 +122,7 @@ async fn batch_search_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_search_batch_points(
@@ -145,7 +145,7 @@ async fn batch_search_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -183,7 +183,7 @@ async fn search_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_search_point_groups(
@@ -196,7 +196,7 @@ async fn search_point_groups(
             params.timeout(),
             hw_measurement_acc.clone(),
         ),
-        hw_measurement_acc,
+        hw_measurement_acc.into_hw_measurement_acc(),
         service_config.hardware_reporting(),
     )
     .await
@@ -236,7 +236,7 @@ async fn search_points_matrix_pairs(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
@@ -253,7 +253,7 @@ async fn search_points_matrix_pairs(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then_some(hw_measurement_acc);
+        .then(|| hw_measurement_acc.into_hw_measurement_acc());
 
     process_response(response, timing, hw_measurements)
 }
@@ -292,7 +292,7 @@ async fn search_points_matrix_offsets(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
@@ -309,7 +309,7 @@ async fn search_points_matrix_offsets(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then_some(hw_measurement_acc);
+        .then(|| hw_measurement_acc.into_hw_measurement_acc());
 
     process_response(response, timing, hw_measurements)
 }

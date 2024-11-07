@@ -161,7 +161,7 @@ fn batch_search_bench(c: &mut Criterion) {
                                 }),
                                 search_runtime_handle,
                                 None,
-                                HwMeasurementAcc::new(),
+                                HwMeasurementAcc::new_unchecked(),
                             )
                             .await
                             .unwrap();
@@ -197,7 +197,7 @@ fn batch_search_bench(c: &mut Criterion) {
                             Arc::new(search_query),
                             search_runtime_handle,
                             None,
-                            HwMeasurementAcc::new(),
+                            HwMeasurementAcc::new_unchecked(),
                         )
                         .await
                         .unwrap();

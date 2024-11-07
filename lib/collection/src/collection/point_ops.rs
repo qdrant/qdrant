@@ -9,6 +9,7 @@ use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 
+use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
@@ -377,13 +378,14 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<CountResult> {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
 
         let request = Arc::new(request);
 
+        let tmp_hardware_acc = HwMeasurementAcc::new();
         let mut requests: FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
@@ -393,10 +395,12 @@ impl Collection {
                     read_consistency,
                     timeout,
                     shard_selection.is_shard_id(),
-                    hw_measurement_acc.clone(),
+                    tmp_hardware_acc.clone(),
                 )
             })
             .collect();
+
+        self.accumulate_hw_counter(tmp_hardware_acc, &hw_measurement_acc);
 
         let mut count = 0;
         while let Some(response) = requests.try_next().await? {

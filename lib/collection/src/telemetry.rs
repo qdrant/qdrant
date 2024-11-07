@@ -3,7 +3,7 @@ use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 
 use crate::config::CollectionConfig;
-use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
+use crate::operations::types::{HardwareInfo, ReshardingInfo, ShardTransferInfo};
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -14,6 +14,7 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
+    pub hardware_usage: HardwareInfo,
 }
 
 impl CollectionTelemetry {
@@ -36,6 +37,7 @@ impl Anonymize for CollectionTelemetry {
             shards: self.shards.anonymize(),
             transfers: vec![],
             resharding: vec![],
+            hardware_usage: HardwareInfo::default(),
         }
     }
 }

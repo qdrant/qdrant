@@ -1,9 +1,9 @@
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -34,7 +34,7 @@ async fn distance_matrix_empty() {
             ShardSelectorInternal::All,
             None,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -89,7 +89,7 @@ async fn distance_matrix_anonymous_vector() {
             ShardSelectorInternal::All,
             None,
             None,
-            HwMeasurementAcc::new(),
+            CollectionAppliedHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();

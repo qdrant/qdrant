@@ -21,6 +21,7 @@ use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{
     OrderByInterface, PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct,
 };
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
@@ -40,7 +41,6 @@ use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
@@ -1057,7 +1057,7 @@ pub async fn search(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let timing = Instant::now();
     let scored_points = do_core_search_points(
@@ -1080,7 +1080,7 @@ pub async fn search(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1107,7 +1107,7 @@ pub async fn core_search_batch(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
 
     let scored_points = do_search_batch_points(
@@ -1131,7 +1131,7 @@ pub async fn core_search_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1169,7 +1169,7 @@ pub async fn core_search_list(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let scored_points = toc
         .core_search_batch(
             &collection_name,
@@ -1192,7 +1192,7 @@ pub async fn core_search_list(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1228,7 +1228,7 @@ pub async fn search_groups(
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
-    let hw_measuerement_acc = HwMeasurementAcc::new();
+    let hw_measuerement_acc = CollectionAppliedHardwareAcc::new();
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
@@ -1251,7 +1251,7 @@ pub async fn search_groups(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measuerement_acc)),
+            .then(|| HardwareUsage::from(hw_measuerement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1337,7 +1337,7 @@ pub async fn recommend(
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
     let timeout = timeout.map(Duration::from_secs);
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
     let recommended_points = toc
         .recommend(
@@ -1359,7 +1359,7 @@ pub async fn recommend(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1396,7 +1396,7 @@ pub async fn recommend_batch(
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
     let scored_points = toc
         .recommend_batch(
@@ -1419,7 +1419,7 @@ pub async fn recommend_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1454,7 +1454,7 @@ pub async fn recommend_groups(
 
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_recommend_point_groups(
@@ -1477,7 +1477,7 @@ pub async fn recommend_groups(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1503,7 +1503,7 @@ pub async fn discover(
 
     let timing = Instant::now();
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     let discovered_points = toc
@@ -1526,7 +1526,7 @@ pub async fn discover(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1562,7 +1562,7 @@ pub async fn discover_batch(
         )
         .await?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
     let scored_points = toc
         .discover_batch(
@@ -1585,7 +1585,7 @@ pub async fn discover_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1703,7 +1703,7 @@ pub async fn count(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let count_result = do_count_points(
         toc,
@@ -1722,7 +1722,7 @@ pub async fn count(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1819,7 +1819,7 @@ pub async fn query(
 
     let timeout = timeout.map(Duration::from_secs);
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
     let scored_points = do_query_points(
         toc,
@@ -1841,7 +1841,7 @@ pub async fn query(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1875,7 +1875,7 @@ pub async fn query_batch(
         )
         .await?;
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let timing = Instant::now();
     let scored_points = do_query_batch_points(
         toc,
@@ -1898,7 +1898,7 @@ pub async fn query_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -1934,7 +1934,7 @@ pub async fn query_groups(
     let timeout = timeout.map(Duration::from_secs);
     let timing = Instant::now();
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
     let groups_result = do_query_point_groups(
         toc,
         &collection_name,
@@ -1955,7 +1955,7 @@ pub async fn query_groups(
         time: timing.elapsed().as_secs_f64(),
         usage: service_config
             .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
     };
 
     Ok(Response::new(response))
@@ -2028,7 +2028,7 @@ pub async fn search_points_matrix(
     toc_provider: impl CheckedTocProvider,
     search_matrix_points: SearchMatrixPoints,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
 ) -> Result<CollectionSearchMatrixResponse, Status> {
     let SearchMatrixPoints {
         collection_name,

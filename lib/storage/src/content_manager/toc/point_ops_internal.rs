@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
+use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::UpdateResult;
 use collection::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 
 use super::TableOfContent;
@@ -20,7 +20,7 @@ impl TableOfContent {
         requests: Vec<ShardQueryRequest>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> StorageResult<Vec<ShardQueryResponse>> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 

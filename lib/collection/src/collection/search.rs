@@ -12,6 +12,7 @@ use segment::types::{
 };
 use tokio::time::Instant;
 
+use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
@@ -25,7 +26,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -52,7 +53,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = Instant::now();
         // shortcuts batch if all requests with limit=0
@@ -147,11 +148,13 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: CollectionAppliedHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
         let instant = Instant::now();
+
+        let tmp_hw_accumulator = HwMeasurementAcc::new();
 
         // query all shards concurrently
         let all_searches_res = {
@@ -165,7 +168,7 @@ impl Collection {
                         read_consistency,
                         shard_selection.is_shard_id(),
                         timeout,
-                        hw_measurement_acc.clone(),
+                        tmp_hw_accumulator.clone(),
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
@@ -181,6 +184,8 @@ impl Collection {
             });
             future::try_join_all(all_searches).await?
         };
+
+        self.accumulate_hw_counter(tmp_hw_accumulator, &hw_measurement_acc);
 
         let result = self
             .merge_from_shards(
