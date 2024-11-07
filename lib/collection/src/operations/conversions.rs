@@ -437,7 +437,6 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 strict_mode_config: config
                     .strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
-                uuid: config.uuid.map(|uuid| uuid.into_bytes().into()),
             }),
             payload_schema: payload_schema
                 .into_iter()
@@ -779,14 +778,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                 }
             },
             strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
-            uuid: config
-                .uuid
-                .map(|uuid| {
-                    uuid.try_into().map_err(|err| {
-                        tonic::Status::invalid_argument(format!("failed to parse UUID: {err}"))
-                    })
-                })
-                .transpose()?,
+            uuid: None,
         })
     }
 }
