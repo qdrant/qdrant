@@ -160,6 +160,9 @@ impl Task {
 
         // Check if *local* commit index >= *cluster* commit index...
         while self.commit_index() < cluster_commit_index {
+            // Wait for `/readyz` signal
+            self.check_ready_signal.notified().await;
+
             // If not:
             //
             // - Check if this is the only node in the cluster
