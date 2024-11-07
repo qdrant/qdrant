@@ -804,7 +804,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 }
 
 impl HNSWIndex<GraphLinksMmap> {
-    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
+    pub fn prefault_mmap_pages(&self) -> mmap_ops::PrefaultMmapPages {
         self.graph.prefault_mmap_pages(&self.path)
     }
 }
