@@ -78,7 +78,8 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
-        let payload_storage = create_payload_storage(database.clone(), segment_config)?;
+        let payload_storage =
+            create_payload_storage(database.clone(), segment_config, segment_path)?;
 
         let mut vector_storages = HashMap::new();
 
