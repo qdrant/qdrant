@@ -212,14 +212,15 @@ impl Task {
         }
 
         // Get *cluster* commit index
-        let this_peer_id = self.toc.this_peer_id;
-        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
-
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
+        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
+        let this_peer_id = self.toc.this_peer_id;
+        let this_peer_uri = peer_address_by_id.get(&this_peer_id);
 
         let mut requests = peer_address_by_id
-            .iter()
-            .filter_map(|(&peer_id, uri)| (peer_id != this_peer_id).then_some(uri))
+            .values()
+            // Do not get the current commit from ourselves
+            .filter(|&uri| Some(uri) != this_peer_uri)
             // Historic peers might use the same URLs as our current peers, request each URI once
             .unique()
             .map(|uri| get_consensus_commit(transport_channel_pool, uri))
