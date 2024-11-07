@@ -125,7 +125,7 @@ fn default_snapshots_path() -> String {
 }
 
 const fn default_on_disk_payload() -> bool {
-    false
+    true
 }
 
 const fn default_mmap_advice() -> madvise::Advice {
