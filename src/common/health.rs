@@ -13,6 +13,7 @@ use collection::shards::CollectionId;
 use common::defaults;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
+use itertools::Itertools;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -160,13 +161,16 @@ impl Task {
 
         // Check if *local* commit index >= *cluster* commit index...
         while self.commit_index() < cluster_commit_index {
+            // Wait for `/readyz` signal
+            self.check_ready_signal.notified().await;
+
             // If not:
             //
             // - Check if this is the only node in the cluster
-            let Some(_) = self.cluster_commit_index().await else {
+            if self.consensus_state.peer_count() <= 1 {
                 self.set_ready();
                 return;
-            };
+            }
 
             // TODO: Do we want to update `cluster_commit_index` here?
             //
@@ -208,20 +212,18 @@ impl Task {
         }
 
         // Get *cluster* commit index
-        let this_peer_id = self.toc.this_peer_id;
-        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
-
         let peer_address_by_id = self.consensus_state.peer_address_by_id();
+        let transport_channel_pool = &self.toc.get_channel_service().channel_pool;
+        let this_peer_id = self.toc.this_peer_id;
+        let this_peer_uri = peer_address_by_id.get(&this_peer_id);
 
         let mut requests = peer_address_by_id
-            .iter()
-            .filter_map(|(&peer_id, uri)| {
-                if peer_id != this_peer_id {
-                    Some(get_consensus_commit(transport_channel_pool, uri))
-                } else {
-                    None
-                }
-            })
+            .values()
+            // Do not get the current commit from ourselves
+            .filter(|&uri| Some(uri) != this_peer_uri)
+            // Historic peers might use the same URLs as our current peers, request each URI once
+            .unique()
+            .map(|uri| get_consensus_commit(transport_channel_pool, uri))
             .collect::<FuturesUnordered<_>>()
             .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
