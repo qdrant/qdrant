@@ -123,9 +123,9 @@ impl Dispatcher {
                              new random UUID will be generated instead",
                             op.collection_name,
                         );
-
-                        op.create_collection.uuid = Some(uuid::Uuid::new_v4());
                     }
+
+                    op.create_collection.uuid = Some(uuid::Uuid::new_v4());
 
                     CollectionMetaOperations::CreateCollection(op)
                 }
