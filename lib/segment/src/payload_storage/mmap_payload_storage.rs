@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use blob_store::config::StorageOptions;
 use blob_store::{Blob, BlobStore};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -44,7 +45,7 @@ impl MmapPayloadStorage {
     }
 
     fn open(path: PathBuf) -> OperationResult<Self> {
-        if let Some(storage) = BlobStore::open(path, None) {
+        if let Some(storage) = BlobStore::open(path) {
             let storage = Arc::new(RwLock::new(storage));
             Ok(Self { storage })
         } else {
@@ -55,7 +56,7 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf) -> Self {
-        let storage = BlobStore::new(path, None);
+        let storage = BlobStore::new(path, StorageOptions::default()).unwrap();
         let storage = Arc::new(RwLock::new(storage));
         Self { storage }
     }

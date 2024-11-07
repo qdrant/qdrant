@@ -834,13 +834,16 @@ dependencies = [
 [[package]]
 name = "blob_store"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/mmap-payload-storage#35cc627956c9e4e04f76040a7fea9945c145553a"
+source = "git+https://github.com/qdrant/mmap-payload-storage#713a15833f073010171443db651b80e2ce75929e"
 dependencies = [
+ "atomicwrites",
+ "bincode",
  "bitvec",
  "itertools 0.13.0",
  "log",
  "lz4_flex",
  "memmap2",
+ "nix 0.29.0",
  "parking_lot",
  "rand 0.8.5",
  "serde",
@@ -2722,9 +2725,9 @@ checksum = "347c253b4748a1a28baf94c9ce133b6b166f08573157e05afe718812bc599fcd"
 
 [[package]]
 name = "i_overlay"
-version = "1.7.2"
+version = "1.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a469f68cb8a7cef375b2b0f581faf5859b4b50600438c00d46b71acc25ebbd0c"
+checksum = "b1d5024b4346ff4699e2db65674bbcb3a7cb8c5a820e9745ec777a7cb2bb5f42"
 dependencies = [
  "i_float",
  "i_key_sort",
@@ -3215,9 +3218,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.161"
+version = "0.2.162"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e9489c2807c139ffd9c1794f4af0ebe86a828db53ecdc7fea2111d0fed085d1"
+checksum = "18d287de67fe55fd7e1581fe933d965a5a9477b38e949cfa9f8574ef01506398"
 
 [[package]]
 name = "libflate"
@@ -6313,9 +6316,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "symbolic-common"
-version = "12.12.0"
+version = "12.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "366f1b4c6baf6cfefc234bbd4899535fca0b06c74443039a73f6dfb2fad88d77"
+checksum = "3d4d73159efebfb389d819fd479afb2dbd57dcb3e3f4b7fcfa0e675f5a46c1cb"
 dependencies = [
  "debugid",
  "memmap2",
@@ -6325,9 +6328,9 @@ dependencies = [
 
 [[package]]
 name = "symbolic-demangle"
-version = "12.12.0"
+version = "12.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aba05ba5b9962ea5617baf556293720a8b2d0a282aa14ee4bf10e22efc7da8c8"
+checksum = "a767859f6549c665011970874c3f541838b4835d5aaaa493d3ee383918be9f10"
 dependencies = [
  "cpp_demangle",
  "rustc-demangle",
@@ -6503,9 +6506,9 @@ dependencies = [
 
 [[package]]
 name = "thread-priority"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d3b04d33c9633b8662b167b847c7ab521f83d1ae20f2321b65b5b925e532e36"
+checksum = "cfe075d7053dae61ac5413a34ea7d4913b6e6207844fd726bdd858b37ff72bf5"
 dependencies = [
  "bitflags 2.6.0",
  "cfg-if",
@@ -6633,9 +6636,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.41.0"
+version = "1.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "145f3413504347a2be84393cc8a7d2fb4d863b375909ea59f2158261aa258bbb"
+checksum = "22cfb5bee7a6a52939ca9224d6ac897bb669134078daa8735560897f69de4d33"
 dependencies = [
  "backtrace",
  "bytes",
