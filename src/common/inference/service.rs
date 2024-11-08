@@ -93,7 +93,7 @@ impl From<InferenceData> for InferenceInput {
                     options,
                 } = img;
                 InferenceInput {
-                    data: Value::String(image),
+                    data: image,
                     data_type: IMAGE_DATA_TYPE.to_string(),
                     model: model.unwrap_or_default(),
                     options: options.options,
