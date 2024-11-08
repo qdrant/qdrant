@@ -154,32 +154,32 @@ impl Task {
         self.check_ready_signal.notify_one();
 
         // Get *cluster* commit index, or check if this is the only node in the cluster
-        let Some(cluster_commit_index) = self.cluster_commit_index().await else {
+        let Some(mut cluster_commit_index) = self.cluster_commit_index().await else {
             self.set_ready();
             return;
         };
 
-        // Check if *local* commit index >= *cluster* commit index...
-        while self.commit_index() < cluster_commit_index {
-            // Wait for `/readyz` signal
-            self.check_ready_signal.notified().await;
+        // Wait until local peer has reached cluster commit
+        loop {
+            while self.commit_index() < cluster_commit_index {
+                // Wait for `/readyz` signal
+                self.check_ready_signal.notified().await;
 
-            // If not:
-            //
-            // - Check if this is the only node in the cluster
-            if self.consensus_state.peer_count() <= 1 {
-                self.set_ready();
-                return;
+                // Ensure we're not the only peer left
+                if self.consensus_state.peer_count() <= 1 {
+                    self.set_ready();
+                    return;
+                }
             }
 
-            // TODO: Do we want to update `cluster_commit_index` here?
-            //
-            // I.e.:
-            // - If we *don't* update `cluster_commit_index`, then we will only wait till the node
-            //   catch up with the cluster commit index *at the moment the node has been started*
-            // - If we *do* update `cluster_commit_index`, then we will keep track of cluster
-            //   commit index updates and wait till the node *completely* catch up with the leader,
-            //   which might be hard (if not impossible) in some situations
+            match self.cluster_commit_index().await {
+                // If cluster commit is still the same, we're done
+                Some(new_index) if cluster_commit_index == new_index => break,
+                // Cluster commit is newer, update it and wait again
+                Some(new_index) => cluster_commit_index = new_index,
+                // Failed to get cluster commit, assume we're done
+                None => break,
+            }
         }
 
         // Collect "unhealthy" shards list
