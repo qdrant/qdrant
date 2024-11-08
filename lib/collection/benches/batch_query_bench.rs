@@ -93,7 +93,7 @@ fn setup() -> (TempDir, LocalShard) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(rnd_batch.into(), true, false))
+        .block_on(shard.update(rnd_batch.into(), true))
         .unwrap();
 
     (storage_dir, shard)

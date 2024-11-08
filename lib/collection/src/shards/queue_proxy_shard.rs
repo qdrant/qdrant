@@ -214,12 +214,9 @@ impl ShardOperation for QueueProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
-        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // `Inner::update` is cancel safe, so this is also cancel safe.
-        self.inner_unchecked()
-            .update(operation, wait, ignore_local_clocks)
-            .await
+        self.inner_unchecked().update(operation, wait).await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
@@ -525,7 +522,6 @@ impl ShardOperation for Inner {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
-        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` is cancel safe, so this is also cancel safe.
 
@@ -534,9 +530,7 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard
-            .update(operation.clone(), wait, ignore_local_clocks)
-            .await
+        local_shard.update(operation.clone(), wait).await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`

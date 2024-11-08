@@ -56,6 +56,9 @@ impl RecoverableWal {
     ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
         if let Some(clock_tag) = &mut operation.clock_tag {
+            // TODO: Do not manually advance here!
+            //
+            // TODO: What does the above `TODO` mean? "Make sure to call `advance_clock_and_correct_tag`, but not `advance_clock`?"
             let operation_accepted = self
                 .newest_clocks
                 .lock()
