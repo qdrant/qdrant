@@ -599,7 +599,7 @@ fn test_point_vector_count_multivec() {
     segment
         .replace_all_vectors(
             internal_8,
-            NamedVectors::from_pairs([("a".into(), vec![0.1])]),
+            &NamedVectors::from_pairs([("a".into(), vec![0.1])]),
         )
         .unwrap();
     let segment_info = segment.info();
@@ -610,7 +610,7 @@ fn test_point_vector_count_multivec() {
     segment
         .replace_all_vectors(
             internal_8,
-            NamedVectors::from_pairs([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
+            &NamedVectors::from_pairs([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
         )
         .unwrap();
     let segment_info = segment.info();
@@ -762,11 +762,11 @@ fn test_vector_compatibility_checks() {
             .err()
             .unwrap();
         segment
-            .insert_new_vectors(point_id, vectors.clone())
+            .insert_new_vectors(point_id, &vectors)
             .err()
             .unwrap();
         segment
-            .replace_all_vectors(internal_id, vectors.clone())
+            .replace_all_vectors(internal_id, &vectors)
             .err()
             .unwrap();
     }

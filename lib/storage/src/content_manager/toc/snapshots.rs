@@ -14,7 +14,7 @@ use crate::rbac::CollectionPass;
 
 impl TableOfContent {
     pub fn get_snapshots_storage_manager(&self) -> Result<SnapshotStorageManager, StorageError> {
-        SnapshotStorageManager::new(self.storage_config.snapshots_config.clone()).map_err(|err| {
+        SnapshotStorageManager::new(&self.storage_config.snapshots_config).map_err(|err| {
             StorageError::service_error(format!(
                 "Can't create snapshot storage manager. Error: {err}"
             ))

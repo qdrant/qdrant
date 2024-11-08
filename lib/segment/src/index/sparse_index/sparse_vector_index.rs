@@ -111,8 +111,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // RAM mutable case - build inverted index from scratch and use provided config
             create_dir_all(path)?;
             let (inverted_index, indices_tracker) = Self::build_inverted_index(
-                id_tracker.clone(),
-                vector_storage.clone(),
+                &id_tracker,
+                &vector_storage,
                 path,
                 stopped,
                 tick_progress,
@@ -130,8 +130,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 create_dir_all(path)?;
 
                 let (inverted_index, indices_tracker) = Self::build_inverted_index(
-                    id_tracker.clone(),
-                    vector_storage.clone(),
+                    &id_tracker,
+                    &vector_storage,
                     path,
                     stopped,
                     tick_progress,
@@ -196,8 +196,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 
     fn build_inverted_index(
-        id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        id_tracker: &AtomicRefCell<IdTrackerSS>,
+        vector_storage: &AtomicRefCell<VectorStorageEnum>,
         path: &Path,
         stopped: &AtomicBool,
         mut tick_progress: impl FnMut(),

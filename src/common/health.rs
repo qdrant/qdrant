@@ -41,7 +41,7 @@ impl HealthChecker {
     pub fn spawn(
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
-        runtime: runtime::Handle,
+        runtime: &runtime::Handle,
         wait_for_bootstrap: bool,
     ) -> Self {
         let task = Task {

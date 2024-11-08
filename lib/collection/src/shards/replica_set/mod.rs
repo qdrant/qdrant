@@ -993,7 +993,7 @@ impl ShardReplicaSet {
     }
 
     pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
-        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
+        SnapshotStorageManager::new(&self.shared_storage_config.snapshots_config)
     }
 
     pub(crate) async fn trigger_optimizers(&self) -> bool {

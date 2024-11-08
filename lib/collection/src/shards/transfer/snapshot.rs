@@ -194,7 +194,7 @@ pub(super) async fn transfer_snapshot(
 
     // The ability to read streaming snapshot format is introduced in 1.12 (#5179).
     let use_streaming_endpoint =
-        channel_service.peer_is_at_version(remote_peer_id, Version::new(1, 12, 0));
+        channel_service.peer_is_at_version(remote_peer_id, &Version::new(1, 12, 0));
 
     let mut snapshot_temp_paths = Vec::new();
     let mut shard_download_url = local_rest_address;

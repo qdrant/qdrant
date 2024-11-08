@@ -603,7 +603,7 @@ fn new_multi_scorer_with_metric<
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
             MultiMetricQueryScorer::<VectorElementType, TMetric, _>::new(
-                vector.try_into()?,
+                &vector.try_into()?,
                 vector_storage,
             ),
             point_deleted,
@@ -699,7 +699,7 @@ fn new_multi_scorer_byte_with_metric<
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
             MultiMetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
-                vector.try_into()?,
+                &vector.try_into()?,
                 vector_storage,
             ),
             point_deleted,
@@ -795,7 +795,7 @@ fn new_multi_scorer_half_with_metric<
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
             MultiMetricQueryScorer::<VectorElementTypeHalf, TMetric, _>::new(
-                vector.try_into()?,
+                &vector.try_into()?,
                 vector_storage,
             ),
             point_deleted,

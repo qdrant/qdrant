@@ -110,7 +110,7 @@ impl PlannedQuery {
                     &mut self.scrolls,
                     prefetches,
                     offset,
-                    filter,
+                    &filter,
                     Some((with_payload, with_vector)),
                 )?;
 
@@ -126,7 +126,7 @@ impl PlannedQuery {
                     &mut self.scrolls,
                     prefetches,
                     offset,
-                    filter,
+                    &filter,
                     None,
                 )?;
 
@@ -232,7 +232,7 @@ fn recurse_prefetches(
     scrolls: &mut Vec<QueryScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
     root_offset: usize, // Offset is added to all prefetches, so we make sure we have enough
-    propagate_filter: Option<Filter>, // Global filter to apply to all prefetches
+    propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
     // Top-level fusion requests won't be merged on shard level, so we pass these params down one level to fetch on the sources.
     // Otherwise we would miss to fetch the payload and vector.
     with_payload_and_vector: Option<(WithPayloadInterface, WithVector)>,
@@ -265,7 +265,7 @@ fn recurse_prefetches(
                 scrolls,
                 prefetches,
                 root_offset,
-                filter,
+                &filter,
                 None,
             )?;
 

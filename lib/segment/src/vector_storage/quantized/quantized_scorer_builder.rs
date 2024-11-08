@@ -214,7 +214,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         match query {
             QueryVector::Nearest(vector) => {
                 let query_scorer = QuantizedQueryScorer::<TElement, TMetric, _, _>::new_multi(
-                    MultiDenseVectorInternal::try_from(vector)?,
+                    &MultiDenseVectorInternal::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
                 );

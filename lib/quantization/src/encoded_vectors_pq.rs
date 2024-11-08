@@ -73,9 +73,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         )?;
 
         // finally, encode data
-        #[allow(clippy::redundant_clone)]
         Self::encode_storage(
-            data.clone(),
+            data,
             &mut storage_builder,
             &vector_division,
             &centroids,

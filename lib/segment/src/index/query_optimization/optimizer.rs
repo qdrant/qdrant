@@ -88,7 +88,7 @@ impl StructPayloadIndex {
             must_not: filter.must_not.as_ref().and_then(|conditions| {
                 if !conditions.is_empty() {
                     let (optimized_conditions, estimation) =
-                        self.optimize_must_not(conditions, payload_provider.clone(), total);
+                        self.optimize_must_not(conditions, payload_provider, total);
                     filter_estimations.push(estimation);
                     Some(optimized_conditions)
                 } else {

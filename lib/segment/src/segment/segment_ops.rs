@@ -47,10 +47,10 @@ impl Segment {
     pub(super) fn replace_all_vectors(
         &mut self,
         internal_id: PointOffsetType,
-        vectors: NamedVectors,
+        vectors: &NamedVectors,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
-        check_named_vectors(&vectors, &self.segment_config)?;
+        check_named_vectors(vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
@@ -95,10 +95,10 @@ impl Segment {
     pub(super) fn insert_new_vectors(
         &mut self,
         point_id: PointIdType,
-        vectors: NamedVectors,
+        vectors: &NamedVectors,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
-        check_named_vectors(&vectors, &self.segment_config)?;
+        check_named_vectors(vectors, &self.segment_config)?;
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);

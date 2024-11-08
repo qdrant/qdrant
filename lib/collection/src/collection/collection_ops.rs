@@ -221,7 +221,7 @@ impl Collection {
 
             let all_nodes_cancel_transfers = self
                 .channel_service
-                .all_peers_at_version(ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION.clone());
+                .all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION);
             if all_nodes_cancel_transfers {
                 // Collect shard transfers related to removed shard...
                 let transfers = shard_holder

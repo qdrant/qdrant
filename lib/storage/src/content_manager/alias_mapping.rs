@@ -47,11 +47,11 @@ impl AliasPersistence {
         Ok(data_path)
     }
 
-    pub fn open(dir_path: PathBuf) -> Result<Self, StorageError> {
+    pub fn open(dir_path: &Path) -> Result<Self, StorageError> {
         if !dir_path.exists() {
-            fs::create_dir_all(&dir_path)?;
+            fs::create_dir_all(dir_path)?;
         }
-        let data_path = Self::init_file(&dir_path)?;
+        let data_path = Self::init_file(dir_path)?;
         let alias_mapping = AliasMapping::load(&data_path)?;
         Ok(AliasPersistence {
             data_path,
