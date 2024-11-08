@@ -21,10 +21,10 @@ use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{
     OrderByInterface, PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct,
 };
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,

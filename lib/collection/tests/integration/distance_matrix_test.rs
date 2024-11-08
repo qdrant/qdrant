@@ -1,5 +1,5 @@
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };

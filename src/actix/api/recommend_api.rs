@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{

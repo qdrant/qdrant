@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
 use api::rest::{OrderByInterface, SearchRequestInternal};
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,

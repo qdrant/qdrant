@@ -1,7 +1,7 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{

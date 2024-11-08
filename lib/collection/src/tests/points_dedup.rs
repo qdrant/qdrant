@@ -12,8 +12,8 @@ use segment::types::{
 use serde_json::{Map, Value};
 use tempfile::Builder;
 
-use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::{Collection, RequestShardTransfer};
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,

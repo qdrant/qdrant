@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{post, web, Responder};
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,

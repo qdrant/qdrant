@@ -20,7 +20,7 @@ fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
 
 mod group_by {
     use api::rest::SearchRequestInternal;
-    use collection::collection::common::CollectionAppliedHardwareAcc;
+    use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
     use collection::grouping::GroupBy;
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
@@ -462,7 +462,7 @@ mod group_by {
 /// Tests out the different features working together. The individual features are already tested in other places.
 mod group_by_builder {
     use api::rest::SearchRequestInternal;
-    use collection::collection::common::CollectionAppliedHardwareAcc;
+    use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
     use collection::grouping::GroupBy;
     use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;

@@ -15,13 +15,13 @@ use segment::vector_storage::query::RecoQuery;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 
-use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     convert_to_vectors, convert_to_vectors_owned, resolve_referenced_vectors_batch,
     ReferencedVectors,
 };
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;

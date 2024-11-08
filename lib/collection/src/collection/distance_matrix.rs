@@ -10,8 +10,8 @@ use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, WithVector,
 };
 
-use super::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;

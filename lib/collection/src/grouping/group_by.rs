@@ -15,10 +15,10 @@ use tokio::sync::RwLockReadGuard;
 
 use super::aggregator::GroupsAggregator;
 use super::types::QueryGroupRequest;
-use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
 use crate::common::fetch_vectors;
 use crate::common::fetch_vectors::build_vector_resolver_query;
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;

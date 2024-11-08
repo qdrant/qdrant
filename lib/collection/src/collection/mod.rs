@@ -1,5 +1,4 @@
 mod collection_ops;
-pub mod common;
 pub mod distance_matrix;
 mod facet;
 pub mod payload_index_schema;
@@ -84,7 +83,7 @@ pub struct Collection {
     // Search runtime handle.
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
-    hardware_usage: HwMeasurementAcc,
+    pub(crate) hardware_usage: HwMeasurementAcc,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;

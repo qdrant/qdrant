@@ -1,5 +1,5 @@
 use api::rest::SearchRequestInternal;
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,

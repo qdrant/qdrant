@@ -14,12 +14,12 @@ use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
-use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
 };
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;

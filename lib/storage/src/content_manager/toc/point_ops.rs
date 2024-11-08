@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
 use collection::collection::Collection;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
 use collection::operations::consistency_params::ReadConsistency;

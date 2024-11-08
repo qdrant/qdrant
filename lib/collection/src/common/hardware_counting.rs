@@ -1,6 +1,6 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 
-use super::Collection;
+use crate::collection::Collection;
 
 #[derive(Clone)]
 pub struct CollectionAppliedHardwareAcc(pub(crate) HwMeasurementAcc);

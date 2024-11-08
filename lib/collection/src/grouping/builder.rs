@@ -5,8 +5,8 @@ use itertools::Itertools;
 use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{group_by, GroupRequest};
-use crate::collection::common::CollectionAppliedHardwareAcc;
 use crate::collection::Collection;
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
 use crate::operations::consistency_params::ReadConsistency;

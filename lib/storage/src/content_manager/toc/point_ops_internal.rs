@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use collection::collection::common::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::UpdateResult;
 use collection::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};

@@ -12,8 +12,8 @@ use segment::types::{
 };
 use tokio::time::Instant;
 
-use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;

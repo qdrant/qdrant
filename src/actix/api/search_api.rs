@@ -1,8 +1,8 @@
 use actix_web::{post, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,

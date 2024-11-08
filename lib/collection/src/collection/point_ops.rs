@@ -9,8 +9,8 @@ use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 
-use super::common::CollectionAppliedHardwareAcc;
 use super::Collection;
+use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;

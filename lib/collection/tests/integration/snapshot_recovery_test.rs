@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::Collection;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,

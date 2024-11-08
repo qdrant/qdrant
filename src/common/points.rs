@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use api::rest::schema::{PointInsertOperations, PointsBatch, PointsList};
 use api::rest::{SearchGroupsRequestInternal, ShardKeySelector, UpdateVectors};
-use collection::collection::common::CollectionAppliedHardwareAcc;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
 use collection::collection::Collection;
 use collection::common::batching::batch_requests;
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
