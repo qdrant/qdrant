@@ -70,7 +70,7 @@ async fn discover_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -123,7 +123,7 @@ async fn discover_batch_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

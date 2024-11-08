@@ -80,7 +80,7 @@ async fn query_points(
 
             Ok(QueryResponse { points })
         },
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -151,7 +151,7 @@ async fn query_points_batch(
                 .collect_vec();
             Ok(res)
         },
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -209,7 +209,7 @@ async fn query_points_groups(
             )
             .await
         },
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

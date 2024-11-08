@@ -59,7 +59,7 @@ async fn count_points(
             access,
             hw_measurement_acc.clone(),
         ),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

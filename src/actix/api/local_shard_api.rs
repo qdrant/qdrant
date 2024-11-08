@@ -178,7 +178,7 @@ async fn count_points(
             )
             .await
         },
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

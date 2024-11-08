@@ -47,6 +47,15 @@ impl PointsService {
             service_config,
         }
     }
+
+    /// Converts `CollectionAppliedHardwareAcc` to `HardwareUsage` by respecting the configuration in ServiceConfig,
+    /// returning `None` if hardware reporting is disabled.
+    fn convert_api_hardware_usage_opt(
+        &self,
+        hw_measurements: CollectionAppliedHardwareAcc,
+    ) -> Option<HardwareUsage> {
+        super::points_common::convert_api_hardware_usage_opt(&self.service_config, hw_measurements)
+    }
 }
 
 #[tonic::async_trait]
@@ -568,10 +577,7 @@ impl Points for PointsService {
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: self
-                .service_config
-                .hardware_reporting()
-                .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+            usage: self.convert_api_hardware_usage_opt(hw_measurement_acc),
         };
         Ok(Response::new(pairs_response))
     }
@@ -594,10 +600,7 @@ impl Points for PointsService {
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: self
-                .service_config
-                .hardware_reporting()
-                .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+            usage: self.convert_api_hardware_usage_opt(hw_measurement_acc),
         };
         Ok(Response::new(offsets_response))
     }

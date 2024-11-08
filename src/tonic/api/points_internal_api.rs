@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, FacetCountsInternal,
-    FacetResponseInternal, GetPointsInternal, GetResponse, HardwareUsage, IntermediateResult,
+    FacetResponseInternal, GetPointsInternal, GetResponse, IntermediateResult,
     PointsOperationResponseInternal, QueryBatchPointsInternal, QueryBatchResponseInternal,
     QueryResultInternal, QueryShardPoints, RecommendPointsInternal, RecommendResponse,
     ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
@@ -25,7 +25,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
 
-use super::points_common::{core_search_list, scroll};
+use super::points_common::{convert_api_hardware_usage_opt, core_search_list, scroll};
 use super::validate_and_log;
 use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
@@ -102,9 +102,7 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))

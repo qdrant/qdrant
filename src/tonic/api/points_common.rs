@@ -41,6 +41,7 @@ use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
@@ -1078,9 +1079,7 @@ pub async fn search(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1129,9 +1128,7 @@ pub async fn core_search_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1190,9 +1187,7 @@ pub async fn core_search_list(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1228,7 +1223,7 @@ pub async fn search_groups(
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
-    let hw_measuerement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
 
     let timing = Instant::now();
     let groups_result = crate::common::points::do_search_point_groups(
@@ -1239,7 +1234,7 @@ pub async fn search_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
-        hw_measuerement_acc.clone(),
+        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -1249,9 +1244,7 @@ pub async fn search_groups(
     let response = SearchGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measuerement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1357,9 +1350,7 @@ pub async fn recommend(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1417,9 +1408,7 @@ pub async fn recommend_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1475,9 +1464,7 @@ pub async fn recommend_groups(
     let response = RecommendGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1524,9 +1511,7 @@ pub async fn discover(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1583,9 +1568,7 @@ pub async fn discover_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1720,9 +1703,7 @@ pub async fn count(
     let response = CountResponse {
         result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1839,9 +1820,7 @@ pub async fn query(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1896,9 +1875,7 @@ pub async fn query_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -1953,9 +1930,7 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc.into_hw_measurement_acc())),
+        usage: convert_api_hardware_usage_opt(service_config, hw_measurement_acc),
     };
 
     Ok(Response::new(response))
@@ -2083,4 +2058,15 @@ pub async fn search_points_matrix(
         .await?;
 
     Ok(search_matrix_response)
+}
+
+/// Converts `CollectionAppliedHardwareAcc` to `HardwareUsage` by respecting the configuration in ServiceConfig,
+/// returning `None` if hardware reporting is disabled.
+pub(crate) fn convert_api_hardware_usage_opt(
+    service_config: &ServiceConfig,
+    hw_measurements: CollectionAppliedHardwareAcc,
+) -> Option<HardwareUsage> {
+    service_config
+        .hardware_reporting()
+        .then(|| HardwareUsage::from(HwMeasurementAcc::from(hw_measurements)))
 }

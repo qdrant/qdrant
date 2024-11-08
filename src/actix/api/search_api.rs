@@ -75,7 +75,7 @@ async fn search_points(
                 .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         }),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -145,7 +145,7 @@ async fn batch_search_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -196,7 +196,7 @@ async fn search_point_groups(
             params.timeout(),
             hw_measurement_acc.clone(),
         ),
-        hw_measurement_acc.into_hw_measurement_acc(),
+        hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -253,7 +253,7 @@ async fn search_points_matrix_pairs(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then(|| hw_measurement_acc.into_hw_measurement_acc());
+        .then(|| hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }
@@ -309,7 +309,7 @@ async fn search_points_matrix_offsets(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then(|| hw_measurement_acc.into_hw_measurement_acc());
+        .then(|| hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }
