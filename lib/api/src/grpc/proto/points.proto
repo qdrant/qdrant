@@ -53,7 +53,7 @@ message Document {
 }
 
 message Image {
-  string image = 1; // Image data, either base64 encoded or URL
+  Value image = 1; // Image data, either base64 encoded or URL
   optional string model = 2; // Model name
   map<string, Value> options = 3; // Model options
 }

@@ -35,7 +35,7 @@ impl TryFrom<grpc::Document> for rest::Document {
 impl From<rest::Image> for grpc::Image {
     fn from(image: rest::Image) -> Self {
         Self {
-            image: image.image,
+            image: Some(json_to_proto(image.image)),
             model: image.model,
             options: image.options.options.map(dict_to_proto).unwrap_or_default(),
         }
@@ -46,11 +46,19 @@ impl TryFrom<grpc::Image> for rest::Image {
     type Error = Status;
 
     fn try_from(image: grpc::Image) -> Result<Self, Self::Error> {
+        let grpc::Image {
+            image,
+            model,
+            options,
+        } = image;
+
+        let image = image.ok_or_else(|| Status::invalid_argument("Empty image is not allowed"))?;
+
         Ok(Self {
-            image: image.image,
-            model: image.model,
+            image: proto_to_json(image)?,
+            model,
             options: Options {
-                options: Some(proto_dict_to_json(image.options)?),
+                options: Some(proto_dict_to_json(options)?),
             },
         })
     }
