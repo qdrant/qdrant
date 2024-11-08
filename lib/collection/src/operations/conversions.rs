@@ -1177,7 +1177,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                         QueryEnum::Nearest(api::grpc::conversions::into_named_vector_struct(
                             value.vector_name,
                             vector.data,
-                            vector.indices.clone(),
+                            vector.indices,
                         )?)
                     }
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {

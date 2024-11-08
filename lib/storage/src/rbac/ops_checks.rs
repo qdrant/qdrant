@@ -808,7 +808,7 @@ mod tests_ops {
         assert_allowed(
             &RecommendRequestInternal {
                 lookup_from: None,
-                ..op.clone()
+                ..op
             },
             &AccessCollectionBuilder::new()
                 .add("col", false, true)
@@ -1072,7 +1072,7 @@ mod tests_ops {
         assert_allowed(
             &DiscoverRequestInternal {
                 lookup_from: None,
-                ..op.clone()
+                ..op
             },
             &AccessCollectionBuilder::new()
                 .add("col", false, true)
@@ -1102,7 +1102,7 @@ mod tests_ops {
         );
 
         assert_allowed_rewrite(
-            &ScrollRequestInternal { ..op.clone() },
+            &ScrollRequestInternal { ..op },
             &AccessCollectionBuilder::new()
                 .add("col", false, false)
                 .into(),

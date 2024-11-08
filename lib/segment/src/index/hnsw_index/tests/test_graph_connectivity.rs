@@ -83,7 +83,7 @@ fn test_graph_connectivity() {
             .vector_storage
             .clone(),
         quantized_vectors: Default::default(),
-        payload_index: payload_index_ptr.clone(),
+        payload_index: payload_index_ptr,
         hnsw_config,
         permit: Some(permit),
         stopped: &stopped,

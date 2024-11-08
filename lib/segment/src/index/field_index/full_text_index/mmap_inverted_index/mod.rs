@@ -81,10 +81,10 @@ impl MmapInvertedIndex {
     }
 
     pub fn open(path: PathBuf, populate: bool) -> OperationResult<Self> {
-        let postings_path = path.clone().join(POSTINGS_FILE);
-        let vocab_path = path.clone().join(VOCAB_FILE);
-        let point_to_tokens_count_path = path.clone().join(POINT_TO_TOKENS_COUNT_FILE);
-        let deleted_points_path = path.clone().join(DELETED_POINTS_FILE);
+        let postings_path = path.join(POSTINGS_FILE);
+        let vocab_path = path.join(VOCAB_FILE);
+        let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
+        let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         let postings = MmapPostings::open(&postings_path, populate)?;
         let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path)?;

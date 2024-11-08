@@ -39,7 +39,7 @@ pub mod pyro {
                     let agent = PyroscopeState::build_agent(&pyro_config);
                     match agent {
                         Ok(agent) => Some(PyroscopeState {
-                            config: pyro_config.clone(),
+                            config: pyro_config,
                             agent: Some(agent),
                         }),
                         Err(err) => {

@@ -653,7 +653,7 @@ mod tests {
             .unwrap();
 
         let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
+        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);

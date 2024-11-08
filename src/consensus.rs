@@ -226,7 +226,7 @@ impl Consensus {
             Self::init(
                 &state_ref,
                 bootstrap_peer.clone(),
-                uri.clone(),
+                uri,
                 p2p_port,
                 &config,
                 tls_config.clone(),
