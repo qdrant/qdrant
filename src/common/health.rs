@@ -153,8 +153,8 @@ impl Task {
         // This allows to check the happy path without waiting for the first call.
         self.check_ready_signal.notify_one();
 
-        // Get *cluster* commit index, or check if this is the only node in the cluster
-        let Some(mut cluster_commit_index) = self.cluster_commit_index().await else {
+        // Get estimate of current cluster commit so we can wait for it
+        let Some(mut cluster_commit_index) = self.cluster_commit_index(true).await else {
             self.set_ready();
             return;
         };
@@ -172,8 +172,8 @@ impl Task {
                 }
             }
 
-            match self.cluster_commit_index().await {
-                // If cluster commit is still the same, we're done
+            match self.cluster_commit_index(false).await {
+                // If cluster commit is still the same, we caught up and we're done
                 Some(new_index) if cluster_commit_index == new_index => break,
                 // Cluster commit is newer, update it and wait again
                 Some(new_index) => cluster_commit_index = new_index,
@@ -202,7 +202,11 @@ impl Task {
         self.set_ready();
     }
 
-    async fn cluster_commit_index(&self) -> Option<u64> {
+    /// Get the highest consensus commit across cluster peers
+    ///
+    /// If `one_peer` is true the first fetched commit is returned. It may not necessarily be the
+    /// latest commit.
+    async fn cluster_commit_index(&self, one_peer: bool) -> Option<u64> {
         // Wait for `/readyz` signal
         self.check_ready_signal.notified().await;
 
@@ -256,7 +260,11 @@ impl Task {
         //
         // Total nodes: 5
         // Required: 5 / 2 = 2
-        let sufficient_commit_indices_count = peer_address_by_id.len() / 2;
+        let sufficient_commit_indices_count = if !one_peer {
+            peer_address_by_id.len() / 2
+        } else {
+            1
+        };
 
         // *Wait* for `total nodex / 2` successful responses...
         let mut commit_indices: Vec<_> = (&mut requests)
