@@ -253,7 +253,7 @@ async fn search_points_matrix_pairs(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then(|| hw_measurement_acc);
+        .then_some(hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }
@@ -309,7 +309,7 @@ async fn search_points_matrix_offsets(
 
     let hw_measurements = service_config
         .hardware_reporting()
-        .then(|| hw_measurement_acc);
+        .then_some(hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }

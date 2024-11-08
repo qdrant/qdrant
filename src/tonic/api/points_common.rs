@@ -2068,5 +2068,5 @@ pub(crate) fn convert_api_hardware_usage_opt(
 ) -> Option<HardwareUsage> {
     service_config
         .hardware_reporting()
-        .then(|| HardwareUsage::from(HwMeasurementAcc::from(hw_measurements)))
+        .then_some(HardwareUsage::from(HwMeasurementAcc::from(hw_measurements)))
 }
