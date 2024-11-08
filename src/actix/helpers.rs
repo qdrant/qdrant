@@ -71,6 +71,7 @@ where
     Fut: Future<Output = Result<T, StorageError>>,
     T: serde::Serialize,
 {
+    hw_measurement_acc.set_applied();
     if enabled {
         time_and_hardware_impl(async { future.await.map(Some) }, hw_measurement_acc).await
     } else {

@@ -10984,6 +10984,7 @@
         "type": "object",
         "required": [
           "config",
+          "hardware_usage",
           "id",
           "init_time_ms",
           "resharding",
@@ -11019,6 +11020,9 @@
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
             }
+          },
+          "hardware_usage": {
+            "$ref": "#/components/schemas/HardwareInfo"
           }
         }
       },
@@ -11758,6 +11762,19 @@
           },
           "updates": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "HardwareInfo": {
+        "type": "object",
+        "required": [
+          "cpu"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },

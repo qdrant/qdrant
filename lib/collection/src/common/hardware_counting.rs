@@ -19,6 +19,10 @@ impl CollectionAppliedHardwareAcc {
         Self(HwMeasurementAcc::new_unchecked())
     }
 
+    pub fn set_applied(&self) {
+        self.0.set_applied();
+    }
+
     fn apply(&self, src: HwMeasurementAcc, collection_counter: &HwMeasurementAcc) {
         self.0.merge(src.clone());
         collection_counter.merge(src);
