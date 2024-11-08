@@ -276,7 +276,7 @@ impl SegmentsSearcher {
                             res
                         }
                     });
-                    (segment.clone(), search)
+                    (segment, search)
                 })
                 .unzip()
         };

@@ -1359,8 +1359,8 @@ mod tests {
         };
 
         let sample_rectangle = GeoBoundingBox {
-            top_left: top_left.clone(),
-            bottom_right: bottom_right.clone(),
+            top_left,
+            bottom_right,
         };
         let rectangle_hashes = rectangle_hashes(&sample_rectangle, invalid_max_hashes);
         assert!(rectangle_hashes.is_err());

@@ -198,7 +198,7 @@ mod tests {
         .unwrap();
 
         let records = SegmentsSearcher::retrieve_blocking(
-            segments.clone(),
+            segments,
             &[1.into(), 2.into(), 500.into()],
             &WithPayload::from(true),
             &true.into(),
@@ -437,7 +437,7 @@ mod tests {
         .unwrap();
 
         let res = SegmentsSearcher::retrieve_blocking(
-            segments.clone(),
+            segments,
             &points,
             &WithPayload::from(true),
             &false.into(),

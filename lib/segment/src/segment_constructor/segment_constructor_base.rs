@@ -362,18 +362,16 @@ pub(crate) fn create_vector_index(
     stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
-        Indexes::Plain {} => VectorIndexEnum::Plain(PlainIndex::new(
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
-        )),
+        Indexes::Plain {} => {
+            VectorIndexEnum::Plain(PlainIndex::new(id_tracker, vector_storage, payload_index))
+        }
         Indexes::Hnsw(vector_hnsw_config) => {
             let args = HnswIndexOpenArgs {
                 path: vector_index_path,
-                id_tracker: id_tracker.clone(),
-                vector_storage: vector_storage.clone(),
-                quantized_vectors: quantized_vectors.clone(),
-                payload_index: payload_index.clone(),
+                id_tracker,
+                vector_storage,
+                quantized_vectors,
+                payload_index,
                 hnsw_config: vector_hnsw_config.clone(),
                 permit,
                 stopped,
