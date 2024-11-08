@@ -362,11 +362,9 @@ pub(crate) fn create_vector_index(
     stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
-        Indexes::Plain {} => VectorIndexEnum::Plain(PlainIndex::new(
-            id_tracker,
-            vector_storage,
-            payload_index,
-        )),
+        Indexes::Plain {} => {
+            VectorIndexEnum::Plain(PlainIndex::new(id_tracker, vector_storage, payload_index))
+        }
         Indexes::Hnsw(vector_hnsw_config) => {
             let args = HnswIndexOpenArgs {
                 path: vector_index_path,
