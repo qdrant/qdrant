@@ -179,7 +179,7 @@ mod tests {
 
     fn create_test_image(url: &str) -> Image {
         Image {
-            image: url.to_string(),
+            image: json!({"data": url.to_string()}),
             model: Some("test-model".to_string()),
             options: Default::default(),
         }
