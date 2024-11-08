@@ -106,15 +106,24 @@ impl Default for HwMeasurementAcc {
 }
 
 impl Drop for HwMeasurementAcc {
+    // `HwMeasurementAcc` holds collected hardware measurements for certain operations. To not accidentally lose measured values, we have
+    // this custom drop() function, panicking if it gets dropped while still holding values (in debug/test builds).
+    //
+    // If you encountered it panicking here, it means that you probably don't have propagated or handled some collected measurements properly,
+    // or didn't discard them when not needed.
+    // You can do so, by utilizing `merge_from_cell(other_cell)` or `merge(other)`, consuming the other counter, which then can be dropped safely.
+    //
+    // If you don't want this check to be enabled (eg. in a test), you can use `new_unchecked()` at creation, or set the measurements
+    // explicitly as applied using `set_applied()` after measuring.
     fn drop(&mut self) {
-        #[cfg(any(debug_assertions, test))] // We want this to fail in both, release and debug tests
+        #[cfg(any(debug_assertions, test))] // Fail in both, release and debug tests.
         {
             if !self.applied.load(Ordering::Relaxed)
             && self.has_values()
             // We don't create weak references so checking for strong count only is fine!
             && Arc::strong_count(&self.cpu_counter) == 1
             {
-                panic!("Hw Counter not applied")
+                panic!("HwMeasurementAcc dropped while still holding values!")
             }
         }
     }

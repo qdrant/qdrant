@@ -73,13 +73,22 @@ impl HardwareCounterCell {
 }
 
 impl Drop for HardwareCounterCell {
+    // `HardwareCounterCell` holds collected hardware measurements for certain operations. To not accidentally lose measured values, we have
+    // this custom drop() function, panicking if it gets dropped while still holding values (in debug/test builds).
+    //
+    // If you encountered it panicking here, it means that you probably don't have propagated or handled some collected measurements properly,
+    // or didn't discard them when not needed.
+    // You can do so, by utilizing `HardwareCounterCell::apply_from(other)` or `HwMeasurementAcc::merge_from_cell(cell)`,
+    // consuming the other counter, which then can be dropped safely.
+    //
+    // If you don't want this check to be enabled (eg. in a test), you can use `discard_results()` after collecting all measurements.
     fn drop(&mut self) {
         if self.has_values() {
             #[cfg(any(debug_assertions, test))] // We want this to fail in both, release and debug tests
-            panic!("Checked HardwareCounterCell dropped without consuming all values!");
+            panic!("HardwareCounterCell dropped while still holding values!");
 
             #[cfg(not(any(debug_assertions, test)))]
-            log::warn!("Hardware measurements not processed!")
+            log::warn!("HardwareCounterCell dropped while still holding values!")
         }
     }
 }
