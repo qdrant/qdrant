@@ -17,6 +17,7 @@ use tokio::time::Instant;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
+use crate::actix::api::apply_hw_measurement_settings;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response, process_response_error};
 use crate::common::points::{
@@ -251,9 +252,7 @@ async fn search_points_matrix_pairs(
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
+    let hw_measurements = apply_hw_measurement_settings(&service_config, hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }
@@ -307,9 +306,7 @@ async fn search_points_matrix_offsets(
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
+    let hw_measurements = apply_hw_measurement_settings(&service_config, hw_measurement_acc);
 
     process_response(response, timing, hw_measurements)
 }

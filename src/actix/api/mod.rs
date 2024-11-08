@@ -16,9 +16,12 @@ pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
 
+use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
 use common::validation::validate_collection_name;
 use serde::Deserialize;
 use validator::Validate;
+
+use crate::settings::ServiceConfig;
 
 /// A collection path with stricter validation
 ///
@@ -43,4 +46,14 @@ struct StrictCollectionPath {
 struct CollectionPath {
     #[validate(length(min = 1, max = 255))]
     name: String,
+}
+
+pub(crate) fn apply_hw_measurement_settings(
+    config: &ServiceConfig,
+    hw_measurement_acc: CollectionAppliedHardwareAcc,
+) -> Option<CollectionAppliedHardwareAcc> {
+    if !config.hardware_reporting() {
+        hw_measurement_acc.set_applied();
+    }
+    config.hardware_reporting().then_some(hw_measurement_acc)
 }

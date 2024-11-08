@@ -27,6 +27,10 @@ pub fn process_response<T>(
 where
     T: Serialize,
 {
+    if let Some(hw_measurements) = hw_measurement_acc.as_ref() {
+        hw_measurements.set_applied();
+    }
+
     match response {
         Ok(res) => HttpResponse::Ok().json(ApiResponse {
             result: Some(res),
@@ -40,7 +44,6 @@ where
 
 fn hardware_accumulator_to_api(acc: CollectionAppliedHardwareAcc) -> HardwareUsage {
     let acc = HwMeasurementAcc::from(acc);
-    acc.set_applied();
     HardwareUsage { cpu: acc.get_cpu() }
 }
 
@@ -72,6 +75,7 @@ where
     T: serde::Serialize,
 {
     hw_measurement_acc.set_applied();
+
     if enabled {
         time_and_hardware_impl(async { future.await.map(Some) }, hw_measurement_acc).await
     } else {
