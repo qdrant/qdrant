@@ -1,5 +1,12 @@
 use std::time::Duration;
 
+use futures::Future;
+use itertools::Itertools;
+use segment::data_types::vectors::NamedQuery;
+use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
+use tokio::sync::RwLockReadGuard;
+
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
@@ -14,12 +21,6 @@ use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     DiscoverRequestInternal,
 };
-use futures::Future;
-use itertools::Itertools;
-use segment::data_types::vectors::NamedQuery;
-use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
-use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
-use tokio::sync::RwLockReadGuard;
 
 fn discovery_into_core_search(
     collection_name: &str,
