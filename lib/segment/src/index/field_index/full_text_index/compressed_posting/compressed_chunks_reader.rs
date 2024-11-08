@@ -38,34 +38,30 @@ impl<'a> ChunkReader<'a> {
         in_chunks_range || in_noncompressed_range
     }
 
-    pub fn contains(&self, val: &PointOffsetType) -> bool {
-        if !self.is_in_postings_range(*val) {
+    pub fn contains(&self, val: PointOffsetType) -> bool {
+        if !self.is_in_postings_range(val) {
             return false;
         }
         // find the chunk that may contain the value and check if the value is in the chunk
         let chunk_index = self.find_chunk(val, None);
         if let Some(chunk_index) = chunk_index {
-            if self.chunks[chunk_index].initial == *val {
+            if self.chunks[chunk_index].initial == val {
                 return true;
             }
 
             let mut decompressed = [0u32; BitPackerImpl::BLOCK_LEN];
             self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
-            decompressed.binary_search(val).is_ok()
+            decompressed.binary_search(&val).is_ok()
         } else {
-            self.remainder_postings.binary_search(val).is_ok()
+            self.remainder_postings.binary_search(&val).is_ok()
         }
     }
 
-    pub fn find_chunk(
-        &self,
-        doc_id: &PointOffsetType,
-        start_chunk: Option<usize>,
-    ) -> Option<usize> {
+    pub fn find_chunk(&self, doc_id: PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
         let remainder_postings = self.remainder_postings;
         let chunks = self.chunks;
 
-        if !remainder_postings.is_empty() && doc_id >= remainder_postings.first().unwrap() {
+        if !remainder_postings.is_empty() && &doc_id >= remainder_postings.first().unwrap() {
             // doc_id is in the noncompressed postings range
             return None;
         }
@@ -75,7 +71,7 @@ impl<'a> ChunkReader<'a> {
         }
 
         let start_chunk = start_chunk.unwrap_or(0);
-        match chunks[start_chunk..].binary_search_by(|chunk| chunk.initial.cmp(doc_id)) {
+        match chunks[start_chunk..].binary_search_by(|chunk| chunk.initial.cmp(&doc_id)) {
             // doc_id is the initial value of the chunk with index idx
             Ok(idx) => Some(start_chunk + idx),
             // chunk idx has larger initial value than doc_id

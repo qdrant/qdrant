@@ -41,8 +41,8 @@ impl SimplePayloadStorage {
         })
     }
 
-    pub(crate) fn update_storage(&self, point_id: &PointOffsetType) -> OperationResult<()> {
-        match self.payload.get(point_id) {
+    pub(crate) fn update_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
+        match self.payload.get(&point_id) {
             None => self
                 .db_wrapper
                 .remove(serde_cbor::to_vec(&point_id).unwrap()),

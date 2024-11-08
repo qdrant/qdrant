@@ -62,7 +62,7 @@ impl MutableFullTextIndex {
         let document = self.inverted_index.document_from_tokens(&tokens);
         self.inverted_index.index_document(idx, document)?;
 
-        let db_idx = FullTextIndex::store_key(&idx);
+        let db_idx = FullTextIndex::store_key(idx);
         let db_document = FullTextIndex::serialize_document_tokens(tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
@@ -72,7 +72,7 @@ impl MutableFullTextIndex {
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         if self.inverted_index.remove_document(id) {
-            let db_doc_id = FullTextIndex::store_key(&id);
+            let db_doc_id = FullTextIndex::store_key(id);
             self.db_wrapper.remove(db_doc_id)?;
         }
 
