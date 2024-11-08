@@ -103,7 +103,6 @@ impl ForwardProxyShard {
                         }),
                     )),
                     false,
-                    false,
                 )
                 .await?;
         }
@@ -180,11 +179,7 @@ impl ForwardProxyShard {
 
         // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
-            .update(
-                OperationWithClockTag::from(insert_points_operation),
-                wait,
-                false,
-            ) // TODO: Assign clock tag!? 🤔
+            .update(OperationWithClockTag::from(insert_points_operation), wait) // TODO: Assign clock tag!? 🤔
             .await?;
 
         Ok(next_page_offset)
@@ -235,7 +230,6 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         operation: OperationWithClockTag,
         _wait: bool,
-        ignore_local_clocks: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
         // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
@@ -248,10 +242,7 @@ impl ShardOperation for ForwardProxyShard {
 
         // We always have to wait for the result of the update, cause after we release the lock,
         // the transfer needs to have access to the latest version of points.
-        let mut result = self
-            .wrapped_shard
-            .update(operation.clone(), true, ignore_local_clocks)
-            .await?;
+        let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
 
         let forward_operation = if let Some(ring) = &self.resharding_hash_ring {
             // If `ForwardProxyShard::resharding_hash_ring` is `Some`, we assume that proxy is used
@@ -301,13 +292,13 @@ impl ShardOperation for ForwardProxyShard {
         };
 
         if let Some(operation) = forward_operation {
-            let remote_result = self
-                .remote_shard
-                .update(operation, false, false)
-                .await
-                .map_err(|err| {
-                    CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
-                })?;
+            let remote_result =
+                self.remote_shard
+                    .update(operation, false)
+                    .await
+                    .map_err(|err| {
+                        CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
+                    })?;
 
             // Merge `result` and `remote_result`:
             //
