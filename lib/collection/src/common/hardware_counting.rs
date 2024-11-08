@@ -11,7 +11,7 @@ impl CollectionAppliedHardwareAcc {
     }
 
     pub fn new() -> Self {
-        Self(HwMeasurementAcc::new())
+        Self::default()
     }
 
     pub fn into_hw_measurement_acc(self) -> HwMeasurementAcc {
@@ -31,5 +31,11 @@ impl Collection {
         out: &CollectionAppliedHardwareAcc,
     ) {
         out.apply(src, &self.hardware_usage);
+    }
+}
+
+impl Default for CollectionAppliedHardwareAcc {
+    fn default() -> Self {
+        Self(HwMeasurementAcc::new())
     }
 }
