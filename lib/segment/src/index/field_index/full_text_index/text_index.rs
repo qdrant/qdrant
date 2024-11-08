@@ -159,7 +159,7 @@ impl FullTextIndex {
         }
     }
 
-    pub(super) fn store_key(id: &PointOffsetType) -> Vec<u8> {
+    pub(super) fn store_key(id: PointOffsetType) -> Vec<u8> {
         bincode::serialize(&id).unwrap()
     }
 

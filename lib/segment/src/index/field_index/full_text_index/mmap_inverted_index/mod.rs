@@ -222,7 +222,7 @@ impl InvertedIndex for MmapInvertedIndex {
                 self.postings
                     .get(query_token.unwrap())
                     .unwrap()
-                    .contains(&point_id)
+                    .contains(point_id)
             })
     }
 

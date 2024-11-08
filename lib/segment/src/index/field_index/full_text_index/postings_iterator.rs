@@ -18,7 +18,7 @@ pub fn intersect_postings_iterator<'a>(
 
     let and_iter = smallest_posting
         .iter()
-        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
+        .filter(move |doc_id| postings.iter().all(|posting| posting.contains(*doc_id)));
 
     Box::new(and_iter)
 }
@@ -47,7 +47,7 @@ pub fn intersect_compressed_postings_iterator<'a>(
         .filter(move |doc_id| {
             posting_visitors
                 .iter_mut()
-                .all(|posting_visitor| posting_visitor.contains_next_and_advance(doc_id))
+                .all(|posting_visitor| posting_visitor.contains_next_and_advance(*doc_id))
         });
 
     Box::new(and_iter)

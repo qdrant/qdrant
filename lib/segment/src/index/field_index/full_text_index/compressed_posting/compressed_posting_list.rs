@@ -41,7 +41,7 @@ impl CompressedPostingList {
         )
     }
 
-    pub fn contains(&self, val: &PointOffsetType) -> bool {
+    pub fn contains(&self, val: PointOffsetType) -> bool {
         self.reader().contains(val)
     }
 
@@ -94,7 +94,7 @@ mod tests {
             let (compressed_posting_list, set) =
                 CompressedPostingList::generate_compressed_posting_list_fixture(step);
             for i in 0..step * 1000 {
-                assert_eq!(compressed_posting_list.contains(&i), set.contains(&i));
+                assert_eq!(compressed_posting_list.contains(i), set.contains(&i));
             }
         }
     }

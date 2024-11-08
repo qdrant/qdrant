@@ -93,7 +93,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .tokens
             .iter()
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
-            .all(|query_token| self.postings[query_token.unwrap() as usize].contains(&point_id))
+            .all(|query_token| self.postings[query_token.unwrap() as usize].contains(point_id))
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
