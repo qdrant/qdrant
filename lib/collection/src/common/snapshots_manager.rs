@@ -54,7 +54,7 @@ pub enum SnapshotStorageManager {
 
 impl SnapshotStorageManager {
     pub fn new(snapshots_config: SnapShotsConfig) -> CollectionResult<Self> {
-        match snapshots_config.clone().snapshots_storage {
+        match snapshots_config.snapshots_storage {
             SnapshotsStorageConfig::Local => {
                 Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }

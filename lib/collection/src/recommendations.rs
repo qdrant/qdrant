@@ -379,13 +379,13 @@ fn recommend_by_avg_vector(
 
     Ok(CoreSearchRequest {
         query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-            search_vector.clone(),
+            search_vector,
             vector_name,
         )),
         filter: Some(Filter {
             should: None,
             min_should: None,
-            must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
+            must: filter.map(|filter| vec![Condition::Filter(filter)]),
             // Exclude vector ids from the same collection given as lookup params
             must_not: Some(vec![Condition::HasId(HasIdCondition {
                 has_id: reference_vectors_ids_to_exclude.into_iter().collect(),

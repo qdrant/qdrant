@@ -102,7 +102,7 @@ mod tests {
         ];
 
         // top 10
-        let scored_points = rrf_scoring(responses.clone());
+        let scored_points = rrf_scoring(responses);
         assert_eq!(scored_points.len(), 4);
         // assert that the list is sorted
         assert!(scored_points.windows(2).all(|w| w[0].score >= w[1].score));

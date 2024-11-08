@@ -339,7 +339,7 @@ mod tests {
 
         let path = tempfile::tempdir().unwrap().into_path();
 
-        MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
+        MmapInvertedIndex::create(path.clone(), immutable).unwrap();
 
         let mut mmap_index = MmapInvertedIndex::open(path, false).unwrap();
 

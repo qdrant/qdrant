@@ -891,8 +891,8 @@ mod tests {
         };
 
         let europe_no_berlin = GeoPolygon {
-            exterior: europe.clone(),
-            interiors: Some(vec![berlin.clone()]),
+            exterior: europe,
+            interiors: Some(vec![berlin]),
         };
         check_cardinality_match(
             polygon_hashes(&europe_no_berlin, GEO_QUERY_MAX_REGION).unwrap(),
@@ -1386,7 +1386,7 @@ mod tests {
         };
 
         // check with geo_radius
-        let field_condition = condition_for_geo_box("test", bounding_box.clone());
+        let field_condition = condition_for_geo_box("test", bounding_box);
         let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
         // Only LOS_ANGELES is in the bounding box
         assert_eq!(point_offsets, vec![2]);

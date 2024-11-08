@@ -172,7 +172,6 @@ mod tests {
                     .flat_map(|proposal| {
                         proposal
                             .distribution
-                            .clone()
                             .into_iter()
                             .flat_map(|(_, peers)| peers)
                     })

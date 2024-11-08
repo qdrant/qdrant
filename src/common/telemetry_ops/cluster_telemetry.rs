@@ -98,7 +98,7 @@ impl ClusterTelemetry {
             peers: (detail.level >= DetailsLevel::Level2)
                 .then(|| match dispatcher.cluster_status() {
                     ClusterStatus::Disabled => None,
-                    ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers.clone()),
+                    ClusterStatus::Enabled(cluster_info) => Some(cluster_info.peers),
                 })
                 .flatten(),
             metadata: (detail.level >= DetailsLevel::Level1)

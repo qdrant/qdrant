@@ -491,7 +491,7 @@ mod tests {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
                             VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(
-                                vec![dummy_vector.clone()]
+                                vec![dummy_vector]
                             )),
                             "multi"
                         )
@@ -531,7 +531,7 @@ mod tests {
             planned_query.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                    VectorInternal::Dense(dummy_vector.clone()),
+                    VectorInternal::Dense(dummy_vector),
                     "full",
                 )),
                 filter: Some(Filter::default()),
@@ -617,7 +617,7 @@ mod tests {
             vec![
                 CoreSearchRequest {
                     query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                        VectorInternal::Dense(dummy_vector.clone()),
+                        VectorInternal::Dense(dummy_vector),
                         "dense",
                     )),
                     filter: Some(filter_outer.merge(&filter_inner1)),
@@ -630,7 +630,7 @@ mod tests {
                 },
                 CoreSearchRequest {
                     query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                        VectorInternal::Sparse(dummy_sparse.clone()),
+                        VectorInternal::Sparse(dummy_sparse),
                         "sparse",
                     )),
                     filter: Some(filter_outer.merge(&filter_inner2)),
@@ -729,7 +729,7 @@ mod tests {
             planned_query.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                    VectorInternal::Dense(dummy_vector.clone()),
+                    VectorInternal::Dense(dummy_vector),
                     "dense",
                 ),),
                 filter: dummy_filter,

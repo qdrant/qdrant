@@ -1853,11 +1853,11 @@ mod tests {
         );
 
         // Unwrapped `LockedSegment`s for convenient access
-        let LockedSegment::Original(wrapped_segment) = locked_wrapped_segment.clone() else {
+        let LockedSegment::Original(wrapped_segment) = locked_wrapped_segment else {
             unreachable!();
         };
 
-        let LockedSegment::Original(write_segment) = locked_write_segment.clone() else {
+        let LockedSegment::Original(write_segment) = locked_write_segment else {
             unreachable!()
         };
 

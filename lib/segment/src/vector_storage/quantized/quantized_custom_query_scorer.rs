@@ -60,7 +60,6 @@ where
             })
             .unwrap();
         let query: TQuery = original_query
-            .clone()
             .transform(|original_vector| {
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,
@@ -109,7 +108,6 @@ where
             .unwrap();
 
         let query: TQuery = original_query
-            .clone()
             .transform(|original_vector| {
                 let original_vector_prequantized = TElement::quantization_preprocess(
                     quantization_config,

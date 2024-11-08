@@ -116,7 +116,7 @@ fn test_alias_operation() {
                         strict_mode_config: None,
                     },
                 )),
-                FULL_ACCESS.clone(),
+                FULL_ACCESS,
                 None,
             ),
         )
@@ -131,7 +131,7 @@ fn test_alias_operation() {
                     }
                     .into()],
             }),
-            FULL_ACCESS.clone(),
+            FULL_ACCESS,
             None,
         ))
         .unwrap();
@@ -156,7 +156,7 @@ fn test_alias_operation() {
                         .into(),
                     ],
             }),
-            FULL_ACCESS.clone(),
+            FULL_ACCESS,
             None,
         ))
         .unwrap();
