@@ -130,7 +130,7 @@ impl Shard {
         }
     }
 
-    pub async fn trigger_optimizers(&self) {
+    pub fn trigger_optimizers(&self) {
         match self {
             Shard::Local(local_shard) => local_shard.trigger_optimizers(),
             Shard::Proxy(proxy_shard) => proxy_shard.trigger_optimizers(),

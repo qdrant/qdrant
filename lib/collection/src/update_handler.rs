@@ -240,7 +240,7 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
-    async fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
+    fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
@@ -604,10 +604,7 @@ impl UpdateHandler {
                 continue;
             }
 
-            if Self::try_recover(segments.clone(), wal.clone())
-                .await
-                .is_err()
-            {
+            if Self::try_recover(segments.clone(), wal.clone()).is_err() {
                 continue;
             }
 

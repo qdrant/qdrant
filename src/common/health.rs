@@ -72,7 +72,7 @@ impl HealthChecker {
             return true;
         }
 
-        self.notify_task().await;
+        self.notify_task();
         self.wait_ready().await
     }
 
@@ -80,7 +80,7 @@ impl HealthChecker {
         self.is_ready.load(atomic::Ordering::Relaxed)
     }
 
-    pub async fn notify_task(&self) {
+    pub fn notify_task(&self) {
         self.check_ready_signal.notify_one();
     }
 

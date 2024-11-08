@@ -87,14 +87,11 @@ impl Dispatcher {
 
                                 let suggested_shard_nr = number_of_peers as u32 * shard_nr_per_node;
 
-                                let shard_distribution = self
-                                    .toc
-                                    .suggest_shard_distribution(
-                                        &op,
-                                        NonZeroU32::new(suggested_shard_nr)
-                                            .expect("Peer count should be always >= 1"),
-                                    )
-                                    .await;
+                                let shard_distribution = self.toc.suggest_shard_distribution(
+                                    &op,
+                                    NonZeroU32::new(suggested_shard_nr)
+                                        .expect("Peer count should be always >= 1"),
+                                );
 
                                 // Expect all replicas to become active eventually
                                 for (shard_id, peer_ids) in &shard_distribution.distribution {

@@ -146,12 +146,12 @@ fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = Http
 
 #[get("/healthz")]
 async fn healthz() -> impl Responder {
-    kubernetes_healthz().await
+    kubernetes_healthz()
 }
 
 #[get("/livez")]
 async fn livez() -> impl Responder {
-    kubernetes_healthz().await
+    kubernetes_healthz()
 }
 
 #[get("/readyz")]
@@ -173,7 +173,7 @@ async fn readyz(health_checker: web::Data<Option<Arc<health::HealthChecker>>>) -
 }
 
 /// Basic Kubernetes healthz endpoint
-async fn kubernetes_healthz() -> impl Responder {
+fn kubernetes_healthz() -> impl Responder {
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())
         .body("healthz check passed")
