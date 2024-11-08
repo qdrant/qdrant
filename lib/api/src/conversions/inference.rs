@@ -52,8 +52,7 @@ impl TryFrom<grpc::Image> for rest::Image {
             options,
         } = image;
 
-        let image =
-            image.ok_or_else(|| Status::invalid_argument("Empty image is not allowed"))?;
+        let image = image.ok_or_else(|| Status::invalid_argument("Empty image is not allowed"))?;
 
         Ok(Self {
             image: proto_to_json(image)?,
