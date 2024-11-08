@@ -150,40 +150,32 @@ impl SnapshotStorageManager {
         }
     }
 
-    pub async fn get_snapshot_path(
+    pub fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl
-                    .get_snapshot_path(snapshots_path, snapshot_name)
-                    .await
+                storage_impl.get_snapshot_path(snapshots_path, snapshot_name)
             }
             SnapshotStorageManager::S3(storage_impl) => {
-                storage_impl
-                    .get_snapshot_path(snapshots_path, snapshot_name)
-                    .await
+                storage_impl.get_snapshot_path(snapshots_path, snapshot_name)
             }
         }
     }
 
-    pub async fn get_full_snapshot_path(
+    pub fn get_full_snapshot_path(
         &self,
         snapshots_path: &str,
         snapshot_name: &str,
     ) -> CollectionResult<PathBuf> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl
-                    .get_full_snapshot_path(snapshots_path, snapshot_name)
-                    .await
+                storage_impl.get_full_snapshot_path(snapshots_path, snapshot_name)
             }
             SnapshotStorageManager::S3(storage_impl) => {
-                storage_impl
-                    .get_full_snapshot_path(snapshots_path, snapshot_name)
-                    .await
+                storage_impl.get_full_snapshot_path(snapshots_path, snapshot_name)
             }
         }
     }
@@ -195,9 +187,7 @@ impl SnapshotStorageManager {
     ) -> CollectionResult<MaybeTempPath> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl
-                    .get_snapshot_file(snapshot_path, temp_dir)
-                    .await
+                storage_impl.get_snapshot_file(snapshot_path, temp_dir)
             }
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl
@@ -213,7 +203,7 @@ impl SnapshotStorageManager {
     ) -> CollectionResult<SnapshotStream> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                storage_impl.get_snapshot_stream(snapshot_path).await
+                storage_impl.get_snapshot_stream(snapshot_path)
             }
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl.get_snapshot_stream(snapshot_path).await
@@ -322,7 +312,7 @@ impl SnapshotStorageLocalFS {
     /// Get absolute file path for a full snapshot by name
     ///
     /// This enforces the file to be inside the snapshots directory
-    async fn get_full_snapshot_path(
+    fn get_full_snapshot_path(
         &self,
         snapshots_path: &str,
         snapshot_name: &str,
@@ -354,7 +344,7 @@ impl SnapshotStorageLocalFS {
     /// Get absolute file path for a collection snapshot by name
     ///
     /// This enforces the file to be inside the snapshots directory
-    async fn get_snapshot_path(
+    fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
@@ -383,7 +373,7 @@ impl SnapshotStorageLocalFS {
         Ok(absolute_snapshot_path)
     }
 
-    async fn get_snapshot_file(
+    fn get_snapshot_file(
         &self,
         snapshot_path: &Path,
         _temp_dir: &Path,
@@ -396,7 +386,7 @@ impl SnapshotStorageLocalFS {
         Ok(MaybeTempPath::Persistent(snapshot_path.to_path_buf()))
     }
 
-    async fn get_snapshot_stream(&self, snapshot_path: &Path) -> CollectionResult<SnapshotStream> {
+    fn get_snapshot_stream(&self, snapshot_path: &Path) -> CollectionResult<SnapshotStream> {
         Ok(SnapshotStream::LocalFS(SnapShotStreamLocalFS {
             snapshot_path: snapshot_path.to_path_buf(),
         }))
@@ -439,7 +429,7 @@ impl SnapshotStorageCloud {
         Ok(())
     }
 
-    async fn get_snapshot_path(
+    fn get_snapshot_path(
         &self,
         snapshots_path: &Path,
         snapshot_name: &str,
@@ -449,7 +439,7 @@ impl SnapshotStorageCloud {
         Ok(absolute_snapshot_path)
     }
 
-    async fn get_full_snapshot_path(
+    fn get_full_snapshot_path(
         &self,
         snapshots_path: &str,
         snapshot_name: &str,

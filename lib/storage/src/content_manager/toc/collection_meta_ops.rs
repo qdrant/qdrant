@@ -259,12 +259,8 @@ impl TableOfContent {
                             alias_name,
                         },
                 }) => {
-                    collection_lock
-                        .validate_collection_exists(&collection_name)
-                        .await?;
-                    collection_lock
-                        .validate_collection_not_exists(&alias_name)
-                        .await?;
+                    collection_lock.validate_collection_exists(&collection_name)?;
+                    collection_lock.validate_collection_not_exists(&alias_name)?;
 
                     alias_lock.insert(alias_name, collection_name)?;
                 }

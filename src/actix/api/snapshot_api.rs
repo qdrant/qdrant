@@ -64,9 +64,8 @@ pub async fn do_get_full_snapshot(
 ) -> Result<SnapshotStream, HttpError> {
     access.check_global_access(AccessRequirements::new())?;
     let snapshots_storage_manager = toc.get_snapshots_storage_manager()?;
-    let snapshot_path = snapshots_storage_manager
-        .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
-        .await?;
+    let snapshot_path =
+        snapshots_storage_manager.get_full_snapshot_path(toc.snapshots_path(), snapshot_name)?;
     let snapshot_stream = snapshots_storage_manager
         .get_snapshot_stream(&snapshot_path)
         .await?;
@@ -127,9 +126,8 @@ pub async fn do_get_snapshot(
     let collection: tokio::sync::RwLockReadGuard<collection::collection::Collection> =
         toc.get_collection(&collection_pass).await?;
     let snapshot_storage_manager = collection.get_snapshots_storage_manager()?;
-    let snapshot_path = snapshot_storage_manager
-        .get_snapshot_path(collection.snapshots_path(), snapshot_name)
-        .await?;
+    let snapshot_path =
+        snapshot_storage_manager.get_snapshot_path(collection.snapshots_path(), snapshot_name)?;
     let snapshot_stream = snapshot_storage_manager
         .get_snapshot_stream(&snapshot_path)
         .await?;

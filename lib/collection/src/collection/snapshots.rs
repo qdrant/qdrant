@@ -329,6 +329,5 @@ impl Collection {
             .read()
             .await
             .assert_shard_exists(shard_id)
-            .await
     }
 }

@@ -714,7 +714,7 @@ impl ShardHolder {
         }
     }
 
-    pub async fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
+    pub fn assert_shard_exists(&self, shard_id: ShardId) -> CollectionResult<()> {
         match self.get_shard(shard_id) {
             Some(_) => Ok(()),
             None => Err(shard_not_found_error(shard_id)),
