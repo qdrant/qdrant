@@ -182,7 +182,7 @@ pub struct Document {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
 pub struct Image {
     /// Image data: base64 encoded image or an URL
-    pub image: String,
+    pub image: Value,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
     pub model: Option<String>,

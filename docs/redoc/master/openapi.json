@@ -9971,8 +9971,7 @@
         ],
         "properties": {
           "image": {
-            "description": "Image data: base64 encoded image or an URL",
-            "type": "string"
+            "description": "Image data: base64 encoded image or an URL"
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",

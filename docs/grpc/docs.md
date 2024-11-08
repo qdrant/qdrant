@@ -2813,7 +2813,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| image | [string](#string) |  | Image data, either base64 encoded or URL |
+| image | [Value](#qdrant-Value) |  | Image data, either base64 encoded or URL |
 | model | [string](#string) | optional | Model name |
 | options | [Image.OptionsEntry](#qdrant-Image-OptionsEntry) | repeated | Model options |
 

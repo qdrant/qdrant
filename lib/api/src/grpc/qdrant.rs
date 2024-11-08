@@ -3846,8 +3846,8 @@ pub struct Document {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Image {
     /// Image data, either base64 encoded or URL
-    #[prost(string, tag = "1")]
-    pub image: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub image: ::core::option::Option<Value>,
     /// Model name
     #[prost(string, optional, tag = "2")]
     pub model: ::core::option::Option<::prost::alloc::string::String>,
