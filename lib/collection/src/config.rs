@@ -265,26 +265,64 @@ impl CollectionParams {
         }
     }
 
+    fn missing_vector_error(&self, vector_name: &str) -> CollectionError {
+        let mut available_names = vec![];
+
+        match &self.vectors {
+            VectorsConfig::Single(_) => {
+                available_names.push(DEFAULT_VECTOR_NAME.to_string());
+            }
+            VectorsConfig::Multi(vectors) => {
+                for name in vectors.keys() {
+                    available_names.push(name.clone());
+                }
+            }
+        }
+
+        if let Some(sparse_vectors) = &self.sparse_vectors {
+            for name in sparse_vectors.keys() {
+                available_names.push(name.clone());
+            }
+        }
+
+        if available_names.is_empty() {
+            CollectionError::BadInput {
+                description: "Vectors are not configured in this collection".into(),
+            }
+        } else if available_names == vec![DEFAULT_VECTOR_NAME] {
+            return CollectionError::BadInput {
+                description: format!(
+                    "Vector with name {vector_name} is not configured in this collection"
+                ),
+            };
+        } else {
+            let available_names = available_names.join(", ");
+            if vector_name == DEFAULT_VECTOR_NAME {
+                return CollectionError::BadInput {
+                    description: format!(
+                        "Collection requires specified vector name in the request, available names: {available_names}"
+                    ),
+                };
+            }
+
+            CollectionError::BadInput {
+                description: format!(
+                    "Vector with name `{vector_name}` is not configured in this collection, available names: {available_names}"
+                ),
+            }
+        }
+    }
+
     pub fn get_distance(&self, vector_name: &str) -> CollectionResult<Distance> {
         match self.vectors.get_params(vector_name) {
             Some(params) => Ok(params.distance),
             None => {
                 if let Some(sparse_vectors) = &self.sparse_vectors {
-                    sparse_vectors
-                        .get(vector_name)
-                        .ok_or_else(|| CollectionError::BadInput {
-                            description: format!(
-                                "Vector params for {vector_name} are not specified in config"
-                            ),
-                        })
-                        .map(|_params| Distance::Dot)
-                } else {
-                    Err(CollectionError::BadInput {
-                        description: format!(
-                            "Vector params for {vector_name} are not specified in config"
-                        ),
-                    })
+                    if let Some(_params) = sparse_vectors.get(vector_name) {
+                        return Ok(Distance::Dot);
+                    }
                 }
+                Err(self.missing_vector_error(vector_name))
             }
         }
     }
@@ -314,11 +352,15 @@ impl CollectionParams {
         self.sparse_vectors
             .as_mut()
             .ok_or_else(|| CollectionError::BadInput {
-                description: format!("Vector params for {vector_name} are not specified in config"),
+                description: format!(
+                    "Sparse vector `{vector_name}` is not specified in collection config"
+                ),
             })?
             .get_mut(vector_name)
             .ok_or_else(|| CollectionError::BadInput {
-                description: format!("Vector params for {vector_name} are not specified in config"),
+                description: format!(
+                    "Sparse vector `{vector_name}` is not specified in collection config"
+                ),
             })
     }
 
