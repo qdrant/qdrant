@@ -14,7 +14,7 @@ use crate::types::{Payload, PayloadKeyTypeRef};
 impl PayloadStorage for SimplePayloadStorage {
     fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.payload.insert(point_id, payload.to_owned());
-        self.update_storage(&point_id)?;
+        self.update_storage(point_id)?;
         Ok(())
     }
 
@@ -26,7 +26,7 @@ impl PayloadStorage for SimplePayloadStorage {
             }
         }
 
-        self.update_storage(&point_id)?;
+        self.update_storage(point_id)?;
 
         Ok(())
     }
@@ -64,7 +64,7 @@ impl PayloadStorage for SimplePayloadStorage {
             Some(payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.update_storage(&point_id)?;
+                    self.update_storage(point_id)?;
                 }
                 Ok(res)
             }
@@ -74,7 +74,7 @@ impl PayloadStorage for SimplePayloadStorage {
 
     fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
-        self.update_storage(&point_id)?;
+        self.update_storage(point_id)?;
         Ok(res)
     }
 

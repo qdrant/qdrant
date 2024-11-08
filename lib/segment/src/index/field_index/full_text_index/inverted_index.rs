@@ -268,11 +268,11 @@ mod tests {
 
                 let new_contains_orig = orig_posting
                     .iter()
-                    .all(|point_id| new_posting.contains(&point_id));
+                    .all(|point_id| new_posting.contains(point_id));
 
                 let orig_contains_new = new_posting
                     .iter()
-                    .all(|point_id| orig_posting.contains(&point_id));
+                    .all(|point_id| orig_posting.contains(point_id));
 
                 new_contains_orig && orig_contains_new
             })
@@ -306,7 +306,7 @@ mod tests {
             let chunk_reader = mmap.postings.get(token_id as u32).unwrap();
 
             for point_id in posting.iter() {
-                assert!(chunk_reader.contains(&point_id));
+                assert!(chunk_reader.contains(point_id));
             }
         }
 

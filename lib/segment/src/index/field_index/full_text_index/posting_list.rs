@@ -33,8 +33,8 @@ impl PostingList {
         self.list.len()
     }
 
-    pub fn contains(&self, val: &PointOffsetType) -> bool {
-        self.list.binary_search(val).is_ok()
+    pub fn contains(&self, val: PointOffsetType) -> bool {
+        self.list.binary_search(&val).is_ok()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
