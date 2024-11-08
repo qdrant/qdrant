@@ -100,7 +100,7 @@ pub async fn convert_query_point_groups_from_grpc(
 }
 
 /// ToDo: this function is supposed to call an inference endpoint internally
-pub async fn convert_query_points_from_grpc(
+pub fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
 ) -> Result<CollectionQueryRequest, Status> {
     let grpc::QueryPoints {

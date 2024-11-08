@@ -679,7 +679,7 @@ impl Collection {
                 });
 
             // Try to find a replica to transfer from
-            for replica_id in replica_set.active_remote_shards().await {
+            for replica_id in replica_set.active_remote_shards() {
                 let transfer = ShardTransfer {
                     from: replica_id,
                     to: this_peer_id,

@@ -138,7 +138,7 @@ async fn drive_up(
                         ))
                     })?;
 
-                    let active_peer_ids = replica_set.active_shards().await;
+                    let active_peer_ids = replica_set.active_shards();
                     if active_peer_ids.is_empty() {
                         return Err(CollectionError::service_error(format!(
                             "No peer with shard {source_shard_id} in active state for resharding",

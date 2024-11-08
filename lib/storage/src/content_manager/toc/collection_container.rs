@@ -189,7 +189,7 @@ impl TableOfContent {
                         self.storage_config.optimizers_overwrite.clone(),
                     )
                     .await?;
-                    collections.validate_collection_not_exists(id).await?;
+                    collections.validate_collection_not_exists(id)?;
                     collections.insert(id.to_string(), collection);
                 }
 

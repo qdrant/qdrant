@@ -50,8 +50,7 @@ impl TableOfContent {
         self.collections
             .read()
             .await
-            .validate_collection_not_exists(collection_name)
-            .await?;
+            .validate_collection_not_exists(collection_name)?;
 
         if self
             .alias_persistence
@@ -240,9 +239,7 @@ impl TableOfContent {
 
         {
             let mut write_collections = self.collections.write().await;
-            write_collections
-                .validate_collection_not_exists(collection_name)
-                .await?;
+            write_collections.validate_collection_not_exists(collection_name)?;
             write_collections.insert(collection_name.to_string(), collection);
         }
 

@@ -10,10 +10,7 @@ pub type Collections = HashMap<CollectionId, Collection>;
 pub trait Checker {
     fn collection_exists(&self, collection_name: &str) -> bool;
 
-    async fn validate_collection_not_exists(
-        &self,
-        collection_name: &str,
-    ) -> Result<(), StorageError> {
+    fn validate_collection_not_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if self.collection_exists(collection_name) {
             return Err(StorageError::AlreadyExists {
                 description: format!("Collection `{collection_name}` already exists!"),
@@ -22,7 +19,7 @@ pub trait Checker {
         Ok(())
     }
 
-    async fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
+    fn validate_collection_exists(&self, collection_name: &str) -> Result<(), StorageError> {
         if !self.collection_exists(collection_name) {
             return Err(StorageError::NotFound {
                 description: format!("Collection `{collection_name}` doesn't exist!"),

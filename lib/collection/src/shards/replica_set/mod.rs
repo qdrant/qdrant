@@ -325,7 +325,7 @@ impl ShardReplicaSet {
             clock_set: Default::default(),
         };
 
-        if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
+        if local_load_failure && replica_set.active_remote_shards().is_empty() {
             replica_set
                 .locally_disabled_peers
                 .write()
@@ -372,7 +372,7 @@ impl ShardReplicaSet {
     }
 
     /// List the peer IDs on which this shard is active, both the local and remote peers.
-    pub async fn active_shards(&self) -> Vec<PeerId> {
+    pub fn active_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
         replica_state
             .active_peers()
@@ -382,7 +382,7 @@ impl ShardReplicaSet {
     }
 
     /// List the remote peer IDs on which this shard is active, excludes the local peer ID.
-    pub async fn active_remote_shards(&self) -> Vec<PeerId> {
+    pub fn active_remote_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
         let this_peer_id = replica_state.this_peer_id;
         replica_state
@@ -1001,7 +1001,7 @@ impl ShardReplicaSet {
         let Some(shard) = shard.as_ref() else {
             return false;
         };
-        shard.trigger_optimizers().await;
+        shard.trigger_optimizers();
         true
     }
 }
