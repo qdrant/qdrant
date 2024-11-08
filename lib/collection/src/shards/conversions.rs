@@ -22,7 +22,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::CollectionResult;
 use crate::operations::vector_ops::UpdateVectorsOp;
-use crate::operations::{ClockTag, CreateIndex};
+use crate::operations::{ClockTag, CreateIndex, DebugMetadata};
 use crate::shards::shard::ShardId;
 
 pub fn internal_sync_points(
@@ -32,6 +32,7 @@ pub fn internal_sync_points(
     points_sync_operation: PointSyncOperation,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> CollectionResult<SyncPointsInternal> {
     let PointSyncOperation {
         points,
@@ -52,6 +53,7 @@ pub fn internal_sync_points(
             to_id: to_id.map(|x| x.into()),
             ordering: ordering.map(write_ordering_to_proto),
         }),
+        debug_metadata: debug_metadata.map(From::from),
     })
 }
 
@@ -62,6 +64,7 @@ pub fn internal_upsert_points(
     point_insert_operations: PointInsertOperationsInternal,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> CollectionResult<UpsertPointsInternal> {
     Ok(UpsertPointsInternal {
         shard_id,
@@ -79,6 +82,7 @@ pub fn internal_upsert_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     })
 }
 
@@ -89,6 +93,7 @@ pub fn internal_delete_points(
     ids: Vec<PointIdType>,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id,
@@ -104,6 +109,7 @@ pub fn internal_delete_points(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -114,6 +120,7 @@ pub fn internal_delete_points_by_filter(
     filter: Filter,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeletePointsInternal {
     DeletePointsInternal {
         shard_id,
@@ -127,6 +134,7 @@ pub fn internal_delete_points_by_filter(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -137,6 +145,7 @@ pub fn internal_update_vectors(
     update_vectors: UpdateVectorsOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> CollectionResult<UpdateVectorsInternal> {
     let UpdateVectorsOp { points } = update_vectors;
     let points: Result<Vec<_>, _> = points
@@ -159,9 +168,11 @@ pub fn internal_update_vectors(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn internal_delete_vectors(
     shard_id: Option<ShardId>,
     clock_tag: Option<ClockTag>,
@@ -170,6 +181,7 @@ pub fn internal_delete_vectors(
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
         shard_id,
@@ -188,9 +200,11 @@ pub fn internal_delete_vectors(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn internal_delete_vectors_by_filter(
     shard_id: Option<ShardId>,
     clock_tag: Option<ClockTag>,
@@ -199,6 +213,7 @@ pub fn internal_delete_vectors_by_filter(
     vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeleteVectorsInternal {
     DeleteVectorsInternal {
         shard_id,
@@ -215,6 +230,7 @@ pub fn internal_delete_vectors_by_filter(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -225,6 +241,7 @@ pub fn internal_set_payload(
     set_payload: SetPayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> SetPayloadPointsInternal {
     let points_selector = if let Some(points) = set_payload.points {
         Some(PointsSelector {
@@ -250,6 +267,7 @@ pub fn internal_set_payload(
             shard_key_selector: None,
             key: set_payload.key.map(|key| key.to_string()),
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -260,6 +278,7 @@ pub fn internal_delete_payload(
     delete_payload: DeletePayloadOp,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeletePayloadPointsInternal {
     let points_selector = if let Some(points) = delete_payload.points {
         Some(PointsSelector {
@@ -288,6 +307,7 @@ pub fn internal_delete_payload(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -298,6 +318,7 @@ pub fn internal_clear_payload(
     points: Vec<PointIdType>,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
         shard_id,
@@ -313,6 +334,7 @@ pub fn internal_clear_payload(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -323,6 +345,7 @@ pub fn internal_clear_payload_by_filter(
     filter: Filter,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> ClearPayloadPointsInternal {
     ClearPayloadPointsInternal {
         shard_id,
@@ -336,6 +359,7 @@ pub fn internal_clear_payload_by_filter(
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -346,6 +370,7 @@ pub fn internal_create_index(
     create_index: CreateIndex,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> CreateFieldIndexCollectionInternal {
     let (field_type, field_index_params) = create_index
         .field_schema
@@ -372,6 +397,7 @@ pub fn internal_create_index(
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 
@@ -382,6 +408,7 @@ pub fn internal_delete_index(
     delete_index: JsonPath,
     wait: bool,
     ordering: Option<WriteOrdering>,
+    debug_metadata: Option<DebugMetadata>,
 ) -> DeleteFieldIndexCollectionInternal {
     DeleteFieldIndexCollectionInternal {
         shard_id,
@@ -392,6 +419,7 @@ pub fn internal_delete_index(
             field_name: delete_index.to_string(),
             ordering: ordering.map(write_ordering_to_proto),
         }),
+        debug_metadata: debug_metadata.map(From::from),
     }
 }
 

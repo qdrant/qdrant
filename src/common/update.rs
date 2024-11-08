@@ -53,16 +53,19 @@ impl UpdateParams {
 pub struct InternalUpdateParams {
     pub shard_id: Option<ShardId>,
     pub clock_tag: Option<ClockTag>,
+    pub debug_metadata: Option<DebugMetadata>,
 }
 
 impl InternalUpdateParams {
     pub fn from_grpc(
         shard_id: Option<ShardId>,
         clock_tag: Option<api::grpc::qdrant::ClockTag>,
+        debug_metadata: Option<api::grpc::qdrant::DebugMetadata>,
     ) -> Self {
         Self {
             shard_id,
             clock_tag: clock_tag.map(ClockTag::from),
+            debug_metadata: debug_metadata.map(DebugMetadata::from),
         }
     }
 }
@@ -829,6 +832,7 @@ pub async fn update(
     let InternalUpdateParams {
         shard_id,
         clock_tag,
+        debug_metadata,
     } = internal_params;
 
     let UpdateParams { wait, ordering } = params;
@@ -866,7 +870,7 @@ pub async fn update(
 
     toc.update(
         collection_name,
-        OperationWithClockTag::new(operation, clock_tag),
+        OperationWithClockTag::new(operation, clock_tag).with_debug_metadata(debug_metadata),
         wait,
         ordering,
         shard_selector,

@@ -38,6 +38,7 @@ tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
+update-operations-debug-metadata = ["collection/update-operations-debug-metadata"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
 
