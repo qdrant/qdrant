@@ -32,7 +32,7 @@ impl<
         TVectorStorage: MultiVectorStorage<TElement>,
     > MultiMetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
-    pub fn new(query: MultiDenseVectorInternal, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(query: &MultiDenseVectorInternal, vector_storage: &'a TVectorStorage) -> Self {
         let slices = query.multi_vectors();
         let preprocessed: DenseVector = slices
             .into_iter()

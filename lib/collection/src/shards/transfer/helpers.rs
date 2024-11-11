@@ -218,7 +218,7 @@ pub fn suggest_transfer_source(
 /// 2. Peer should have minimal number of active transfers
 pub fn suggest_peer_to_add_replica(
     shard_id: ShardId,
-    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
+    shard_distribution: &HashMap<ShardId, HashSet<PeerId>>,
 ) -> Option<PeerId> {
     let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
     for peers in shard_distribution.values() {

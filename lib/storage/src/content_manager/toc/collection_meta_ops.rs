@@ -336,11 +336,11 @@ impl TableOfContent {
             }
 
             ReshardingOperation::CommitRead(key) => {
-                collection.commit_read_hashring(key).await?;
+                collection.commit_read_hashring(&key).await?;
             }
 
             ReshardingOperation::CommitWrite(key) => {
-                collection.commit_write_hashring(key).await?;
+                collection.commit_write_hashring(&key).await?;
             }
 
             ReshardingOperation::Finish(key) => {

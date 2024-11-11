@@ -43,7 +43,7 @@ impl GroupsAggregator {
     }
 
     /// Adds a point to the group that corresponds based on the group_by field, assumes that the point has the group_by field
-    fn add_point(&mut self, point: ScoredPoint) -> Result<(), AggregatorError> {
+    fn add_point(&mut self, point: &ScoredPoint) -> Result<(), AggregatorError> {
         // extract all values from the group_by field
         let payload_values: Vec<_> = point
             .payload
@@ -98,7 +98,7 @@ impl GroupsAggregator {
                 .and_modify(|other_score| {
                     let ordering = match self.order {
                         Some(Order::LargeBetter) => point.cmp(other_score),
-                        Some(Order::SmallBetter) => (*other_score).cmp(&point),
+                        Some(Order::SmallBetter) => (*other_score).cmp(point),
                         None => Ordering::Equal, // No order can mean random sampling.
                     };
                     if ordering == Ordering::Greater {
@@ -113,7 +113,7 @@ impl GroupsAggregator {
     /// Adds multiple points to the group that they correspond to based on the group_by field, assumes that the points always have the grouped_by field, else it just ignores them
     pub(super) fn add_points(&mut self, points: &[ScoredPoint]) {
         for point in points {
-            match self.add_point(point.to_owned()) {
+            match self.add_point(point) {
                 Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
                     // ignore points that don't have the group_by field
                     continue;
@@ -240,7 +240,7 @@ mod unit_tests {
 
         let mut aggregator =
             GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Some(Order::LargeBetter));
-        for point in scored_points {
+        for point in &scored_points {
             aggregator.add_point(point).unwrap();
         }
 
@@ -313,7 +313,7 @@ mod unit_tests {
         .into_iter()
         .enumerate()
         .for_each(|(case_idx, case)| {
-            let result = aggregator.add_point(case.point);
+            let result = aggregator.add_point(&case.point);
 
             assert_eq!(result, case.expected_result, "case {case_idx}");
 
@@ -411,7 +411,7 @@ mod unit_tests {
             point(10, 0.6, json!(3)),
             point(11, 0.1, json!(3)),
         ]
-        .into_iter()
+        .iter()
         .for_each(|point| {
             aggregator.add_point(point).unwrap();
         });

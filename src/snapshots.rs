@@ -127,7 +127,7 @@ pub fn recover_full_snapshot(
 
     let alias_path = Path::new(storage_dir).join(ALIASES_PATH);
     let mut alias_persistence =
-        AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
+        AliasPersistence::open(&alias_path).expect("Can't open database by the provided config");
     for (alias, collection_name) in config_json.collections_aliases {
         if alias_persistence.get(&alias).is_some() && !force {
             panic!("Alias {alias} already exists. Use --force-snapshot to overwrite it.");

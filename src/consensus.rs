@@ -230,7 +230,7 @@ impl Consensus {
                 p2p_port,
                 &config,
                 tls_config.clone(),
-                runtime.clone(),
+                &runtime,
                 leader_established_in_ms,
             )
             .map_err(|err| anyhow!("Failed to initialize Consensus for new Raft state: {}", err))?;
@@ -302,7 +302,7 @@ impl Consensus {
         p2p_port: u16,
         config: &ConsensusConfig,
         tls_config: Option<ClientTlsConfig>,
-        runtime: Handle,
+        runtime: &Handle,
         leader_established_in_ms: u64,
     ) -> anyhow::Result<()> {
         if let Some(bootstrap_peer) = bootstrap_peer {
@@ -926,7 +926,7 @@ impl Consensus {
         }
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
         let stop_consensus =
-            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
+            handle_committed_entries(&ready.take_committed_entries(), &store, &mut self.node)
                 .context("Failed to handle committed entries")?;
         if stop_consensus {
             return Ok((None, None));
@@ -955,7 +955,7 @@ impl Consensus {
         self.send_messages(light_rd.take_messages());
         // Apply all committed entries.
         let stop_consensus =
-            handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
+            handle_committed_entries(&light_rd.take_committed_entries(), &store, &mut self.node)
                 .context("Failed to apply committed entries")?;
         // Advance the apply index.
         self.node.advance_apply();
@@ -1001,7 +1001,7 @@ enum TryAddOriginError {
 /// Return `true` if consensus should be stopped.
 /// `false` otherwise.
 fn handle_committed_entries(
-    entries: Vec<Entry>,
+    entries: &[Entry],
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
 ) -> anyhow::Result<bool> {

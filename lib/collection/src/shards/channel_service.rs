@@ -162,7 +162,7 @@ impl ChannelService {
     ///
     /// If the version is not known for any peer, this returns `false`.
     /// Peer versions are known since 1.9 and up.
-    pub fn all_peers_at_version(&self, version: Version) -> bool {
+    pub fn all_peers_at_version(&self, version: &Version) -> bool {
         let id_to_address = self.id_to_address.read();
         let id_to_metadata = self.id_to_metadata.read();
 
@@ -173,18 +173,18 @@ impl ChannelService {
 
         id_to_metadata
             .values()
-            .all(|metadata| metadata.version >= version)
+            .all(|metadata| &metadata.version >= version)
     }
 
     /// Check whether the specified peer is running at least the given version
     ///
     /// If the version is not known for the peer, this returns `false`.
     /// Peer versions are known since 1.9 and up.
-    pub fn peer_is_at_version(&self, peer_id: PeerId, version: Version) -> bool {
+    pub fn peer_is_at_version(&self, peer_id: PeerId, version: &Version) -> bool {
         self.id_to_metadata
             .read()
             .get(&peer_id)
-            .map_or(false, |metadata| metadata.version >= version)
+            .map_or(false, |metadata| &metadata.version >= version)
     }
 
     /// Get the REST address for the current peer.
