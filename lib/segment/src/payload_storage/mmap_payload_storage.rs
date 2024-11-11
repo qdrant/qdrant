@@ -40,31 +40,32 @@ impl MmapPayloadStorage {
             std::fs::create_dir_all(&path).map_err(|_| {
                 OperationError::service_error("Failed to create mmap payload storage directory")
             })?;
-            Ok(Self::new(path))
+            Ok(Self::new(path)?)
         }
     }
 
     fn open(path: PathBuf) -> OperationResult<Self> {
-        if let Some(storage) = BlobStore::open(path) {
-            let storage = Arc::new(RwLock::new(storage));
-            Ok(Self { storage })
-        } else {
-            Err(OperationError::service_error(
-                "Failed to open mmap payload storage",
-            ))
-        }
+        let storage = BlobStore::open(path).map_err(|err| {
+            OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
+        })?;
+        let storage = Arc::new(RwLock::new(storage));
+        Ok(Self { storage })
     }
 
-    fn new(path: PathBuf) -> Self {
-        let storage = BlobStore::new(path, StorageOptions::default()).unwrap();
+    fn new(path: PathBuf) -> OperationResult<Self> {
+        let storage = BlobStore::new(path, StorageOptions::default())
+            .map_err(OperationError::service_error)?;
         let storage = Arc::new(RwLock::new(storage));
-        Self { storage }
+        Ok(Self { storage })
     }
 }
 
 impl PayloadStorage for MmapPayloadStorage {
     fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.storage.write().put_value(point_id, payload);
+        self.storage
+            .write()
+            .put_value(point_id, payload)
+            .map_err(OperationError::service_error)?;
         Ok(())
     }
 
@@ -73,10 +74,14 @@ impl PayloadStorage for MmapPayloadStorage {
         match guard.get_value(point_id) {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
-                guard.put_value(point_id, &point_payload);
+                guard
+                    .put_value(point_id, &point_payload)
+                    .map_err(OperationError::service_error)?;
             }
             None => {
-                guard.put_value(point_id, payload);
+                guard
+                    .put_value(point_id, payload)
+                    .map_err(OperationError::service_error)?;
             }
         }
         Ok(())
@@ -92,12 +97,16 @@ impl PayloadStorage for MmapPayloadStorage {
         match guard.get_value(point_id) {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
-                guard.put_value(point_id, &point_payload);
+                guard
+                    .put_value(point_id, &point_payload)
+                    .map_err(OperationError::service_error)?;
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                guard.put_value(point_id, &dest_payload);
+                guard
+                    .put_value(point_id, &dest_payload)
+                    .map_err(OperationError::service_error)?;
             }
         }
         Ok(())
@@ -120,7 +129,9 @@ impl PayloadStorage for MmapPayloadStorage {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    guard.put_value(point_id, &payload);
+                    guard
+                        .put_value(point_id, &payload)
+                        .map_err(OperationError::service_error)?;
                 }
                 Ok(res)
             }
@@ -151,17 +162,12 @@ impl PayloadStorage for MmapPayloadStorage {
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.read().iter(|point_id, payload| {
-            match callback(point_id, payload) {
-                Ok(true) => Ok(true),
-                Ok(false) => Ok(false),
-                Err(e) => {
+            callback(point_id, payload).map_err(|e|
                     // TODO return proper error
-                    Err(std::io::Error::new(
+                    std::io::Error::new(
                         std::io::ErrorKind::Other,
                         e.to_string(),
                     ))
-                }
-            }
         })?;
         Ok(())
     }
