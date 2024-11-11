@@ -670,7 +670,7 @@ impl Collection {
                 .unwrap_or_else(|| {
                     let all_support_wal_delta = self
                         .channel_service
-                        .all_peers_at_version(Version::new(1, 8, 0));
+                        .all_peers_at_version(&Version::new(1, 8, 0));
                     if all_support_wal_delta {
                         ShardTransferMethod::WalDelta
                     } else {

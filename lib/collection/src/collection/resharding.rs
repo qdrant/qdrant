@@ -170,14 +170,14 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn commit_read_hashring(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.shards_holder
             .write()
             .await
             .commit_read_hashring(resharding_key)
     }
 
-    pub async fn commit_write_hashring(&self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.shards_holder
             .write()
             .await

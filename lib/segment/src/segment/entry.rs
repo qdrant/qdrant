@@ -96,10 +96,10 @@ impl SegmentEntry for Segment {
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, vectors)?;
+                segment.replace_all_vectors(existing_internal_id, &vectors)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, vectors)?;
+                let new_index = segment.insert_new_vectors(point_id, &vectors)?;
                 Ok((false, Some(new_index)))
             }
         })

@@ -84,7 +84,7 @@ fn test_aggregation_of_batch_search_results() {
     let (aggregator, re_request) = SegmentsSearcher::process_search_result_step1(
         search_results,
         result_limits,
-        further_results,
+        &further_results,
     );
 
     // ------------Segment----------batch---

@@ -159,8 +159,8 @@ impl TableOfContent {
             collections.insert(collection_name, collection);
         }
         let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
-        let alias_persistence =
-            AliasPersistence::open(alias_path).expect("Can't open database by the provided config");
+        let alias_persistence = AliasPersistence::open(&alias_path)
+            .expect("Can't open database by the provided config");
 
         let rate_limiter = match storage_config.performance.update_rate_limit {
             Some(limit) => Some(Semaphore::new(limit)),

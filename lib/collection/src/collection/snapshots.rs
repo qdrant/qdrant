@@ -30,7 +30,7 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
-        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
+        SnapshotStorageManager::new(&self.shared_storage_config.snapshots_config)
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {

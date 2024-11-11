@@ -121,8 +121,8 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn commit_read_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
-        self.check_resharding(&resharding_key, check_stage(ReshardStage::MigratingPoints))?;
+    pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(resharding_key, check_stage(ReshardStage::MigratingPoints))?;
 
         self.resharding_state.write(|state| {
             let Some(state) = state else {
@@ -135,9 +135,9 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub fn commit_write_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         self.check_resharding(
-            &resharding_key,
+            resharding_key,
             check_stage(ReshardStage::ReadHashRingCommitted),
         )?;
 

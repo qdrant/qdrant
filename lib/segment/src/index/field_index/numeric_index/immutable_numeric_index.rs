@@ -51,8 +51,8 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         self.data.len() - self.deleted_count
     }
 
-    fn remove(&mut self, key: Point<T>) -> bool {
-        if let Ok(index) = self.data.binary_search(&key) {
+    fn remove(&mut self, key: &Point<T>) -> bool {
+        if let Ok(index) = self.data.binary_search(key) {
             if let Some(is_deleted) = self.deleted.get_mut(index).as_deref_mut() {
                 if !*is_deleted {
                     self.deleted_count += 1;
@@ -255,7 +255,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
             let mut removed_count = 0;
             for value in removed_values {
                 let key = Point::new(*value, idx);
-                Self::remove_from_map(&mut self.map, &mut self.histogram, key);
+                Self::remove_from_map(&mut self.map, &mut self.histogram, &key);
 
                 // update db
                 let encoded = value.encode_key(idx);
@@ -286,11 +286,11 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     fn remove_from_map(
         map: &mut NumericKeySortedVec<T>,
         histogram: &mut Histogram<T>,
-        key: Point<T>,
+        key: &Point<T>,
     ) {
-        if map.remove(key.clone()) {
+        if map.remove(key) {
             histogram.remove(
-                &key,
+                key,
                 |x| Self::get_histogram_left_neighbor(map, x),
                 |x| Self::get_histogram_right_neighbor(map, x),
             );
@@ -439,14 +439,14 @@ mod tests {
 
         // test deletion and ranges after deletion
         let deleted_key = Point::new(0.4, 2);
-        set_keys.remove(deleted_key.clone());
+        set_keys.remove(&deleted_key);
         set_byte.remove(&deleted_key);
 
         check_ranges(&set_keys, &set_byte);
 
         // test deletion and ranges after deletion
         let deleted_key = Point::new(-5.0, 1);
-        set_keys.remove(deleted_key.clone());
+        set_keys.remove(&deleted_key);
         set_byte.remove(&deleted_key);
 
         check_ranges(&set_keys, &set_byte);

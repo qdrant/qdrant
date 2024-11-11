@@ -55,7 +55,7 @@ where
     }
 
     pub fn new_multi(
-        raw_query: MultiDenseVectorInternal,
+        raw_query: &MultiDenseVectorInternal,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
     ) -> Self {

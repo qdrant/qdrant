@@ -159,7 +159,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 &vector_storage.borrow(),
                 &quantized_vectors.borrow(),
                 &payload_index.borrow(),
-                hnsw_config,
+                &hnsw_config,
                 num_cpus,
                 stopped,
             )?;
@@ -205,7 +205,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
         payload_index: &StructPayloadIndex,
-        hnsw_config: HnswConfig,
+        hnsw_config: &HnswConfig,
         num_cpus: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<(HnswGraphConfig, GraphLayers<TGraphLinks>)> {
