@@ -359,7 +359,7 @@ mod tests {
 
         assert_eq!(new_params.replication_factor.get(), 1);
         assert_eq!(new_params.write_consistency_factor.get(), 2);
-        assert!(!new_params.on_disk_payload);
+        assert!(new_params.on_disk_payload);
     }
 
     #[test]

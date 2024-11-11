@@ -100,6 +100,8 @@ pub struct CollectionParams {
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+    ///
+    /// Default: true
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
     /// Configuration of the sparse vector storage
@@ -193,8 +195,8 @@ pub fn default_write_consistency_factor() -> NonZeroU32 {
     NonZeroU32::new(default_write_consistency_factor_const()).unwrap()
 }
 
-const fn default_on_disk_payload() -> bool {
-    false
+pub const fn default_on_disk_payload() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]

@@ -146,6 +146,8 @@ pub struct CreateCollection {
     /// It will be read from the disk every time it is requested.
     /// This setting saves RAM by (slightly) increasing the response time.
     /// Note: those payload values that are involved in filtering and are indexed - remain in RAM.
+    ///
+    /// Default: true
     #[serde(default)]
     pub on_disk_payload: Option<bool>,
     /// Custom params for HNSW index. If none - values from service configuration file are used.

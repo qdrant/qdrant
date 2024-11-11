@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::common::snapshots_manager::SnapShotsConfig;
-use collection::config::WalConfig;
+use collection::config::{default_on_disk_payload, WalConfig};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
     SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
@@ -122,10 +122,6 @@ impl StorageConfig {
 
 fn default_snapshots_path() -> String {
     DEFAULT_SNAPSHOTS_PATH.to_string()
-}
-
-const fn default_on_disk_payload() -> bool {
-    false
 }
 
 const fn default_mmap_advice() -> madvise::Advice {
