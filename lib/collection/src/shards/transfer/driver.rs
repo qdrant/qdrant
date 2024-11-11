@@ -254,10 +254,7 @@ where
         match &result {
             Ok(Ok(true)) => on_finish.await,
             Ok(Ok(false)) => (), // do nothing, we should not finish the task
-            Ok(Err(e)) => {
-                debug_assert!(false, "Snapshot transfer failed: {e}");
-                on_error.await
-            }
+            Ok(Err(_)) => on_error.await,
             Err(_) => (), // do nothing, if task was cancelled
         }
 
