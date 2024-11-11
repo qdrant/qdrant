@@ -590,7 +590,7 @@ fn search_in_segment(
 
         let query = search_query.query.clone().into();
 
-        // same params enables batching
+        // same params enables batching (cmp expensive on large filters)
         if params == prev_params {
             vectors_batch.push(query);
         } else {

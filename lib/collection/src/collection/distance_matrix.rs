@@ -178,7 +178,7 @@ impl Collection {
 
         let mut sampled_points = self
             .query(
-                sampling_query.clone(),
+                sampling_query,
                 read_consistency,
                 shard_selection.clone(),
                 timeout,
