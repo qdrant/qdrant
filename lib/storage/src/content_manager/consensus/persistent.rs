@@ -172,12 +172,18 @@ impl Persistent {
 
     pub fn insert_peer(&mut self, peer_id: PeerId, address: Uri) -> Result<(), StorageError> {
         let address_display = address.to_string();
-        if let Some(prev_peer_address) = self.peer_address_by_id.write().insert(peer_id, address) {
-            log::warn!(
-                "Replaced address of peer {peer_id} from {prev_peer_address} to {address_display}"
-            );
-        } else {
-            log::debug!("Added peer with id {peer_id} and address {address_display}")
+        match self
+            .peer_address_by_id
+            .write()
+            .insert(peer_id, address.clone())
+        {
+            Some(prev_address) if prev_address != address => log::warn!(
+                "Replaced address of peer {peer_id} from {prev_address} to {address_display}"
+            ),
+            Some(_) => log::debug!(
+                "Re-added peer with id {peer_id} with the same address {address_display}"
+            ),
+            None => log::debug!("Added peer with id {peer_id} and address {address_display}"),
         }
         self.save()
     }
