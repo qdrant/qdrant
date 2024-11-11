@@ -99,7 +99,7 @@ impl VectorData {
         };
 
         let storage_task = match &*self.vector_storage.borrow() {
-            VectorStorageEnum::DenseMemmap(storage) => storage.prefault_mmap_pages(),
+            // VectorStorageEnum::DenseMemmap(storage) => storage.prefault_mmap_pages(),
             _ => None,
         };
 
