@@ -758,9 +758,9 @@ impl Default for Indexes {
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
-    #[default]
     InMemory,
     // Store payload on disk only, read each time it is requested
+    #[default]
     OnDisk,
 }
 
