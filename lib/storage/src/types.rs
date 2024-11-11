@@ -43,6 +43,8 @@ pub struct PerformanceConfig {
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub outgoing_shard_transfers_limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub async_scorer: Option<bool>,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
@@ -82,8 +84,6 @@ pub struct StorageConfig {
     pub update_queue_size: Option<usize>,
     #[serde(default)]
     pub handle_collection_load_errors: bool,
-    #[serde(default)]
-    pub async_scorer: bool,
     /// If provided - qdrant will start in recovery mode, which means that it will not accept any new data.
     /// Only collection metadata will be available, and it will only process collection delete requests.
     /// Provided value will be used error message for unavailable requests.
