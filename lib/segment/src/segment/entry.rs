@@ -74,14 +74,12 @@ impl SegmentEntry for Segment {
 
         check_stopped(&vector_query_context.is_stopped())?;
 
-        let res = internal_results
-            .iter()
+        internal_results
+            .into_iter()
             .map(|internal_result| {
                 self.process_search_result(internal_result, with_payload, with_vector)
             })
-            .collect();
-
-        res
+            .collect()
     }
 
     fn upsert_point(

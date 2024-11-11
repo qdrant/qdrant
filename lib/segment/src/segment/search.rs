@@ -7,6 +7,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 #[cfg(feature = "testing")]
 use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::VectorStructInternal;
 #[cfg(feature = "testing")]
 use crate::entry::entry_point::SegmentEntry;
 #[cfg(feature = "testing")]
@@ -17,14 +18,14 @@ impl Segment {
     /// Converts raw ScoredPointOffset search result into ScoredPoint result
     pub(super) fn process_search_result(
         &self,
-        internal_result: &[ScoredPointOffset],
+        internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
         internal_result
-            .iter()
-            .filter_map(|&scored_point_offset| {
+            .into_iter()
+            .filter_map(|scored_point_offset| {
                 let point_offset = scored_point_offset.idx;
                 let external_id = id_tracker.external_id(point_offset);
                 match external_id {
@@ -68,7 +69,7 @@ impl Segment {
                                 result.insert(vector_name.clone(), vector);
                             }
                         }
-                        Some(result.into())
+                        Some(VectorStructInternal::from(result))
                     }
                 };
 
