@@ -35,6 +35,8 @@ pub struct LocalShardTelemetry {
     pub total_optimized_points: usize,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub async_scorer: Option<bool>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Default)]
@@ -62,6 +64,7 @@ impl Anonymize for LocalShardTelemetry {
             total_optimized_points: self.total_optimized_points.anonymize(),
             segments: self.segments.anonymize(),
             optimizations: self.optimizations.anonymize(),
+            async_scorer: self.async_scorer,
         }
     }
 }
