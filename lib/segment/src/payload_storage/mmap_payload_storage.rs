@@ -46,7 +46,7 @@ impl MmapPayloadStorage {
 
     fn open(path: PathBuf) -> OperationResult<Self> {
         let storage = BlobStore::open(path).map_err(|err| {
-            OperationError::service_error(format!("Failed to open mmap payload storage: {}", err))
+            OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
         })?;
         let storage = Arc::new(RwLock::new(storage));
         Ok(Self { storage })
