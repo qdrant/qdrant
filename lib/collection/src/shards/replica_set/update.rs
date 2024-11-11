@@ -324,6 +324,7 @@ impl ShardReplicaSet {
 
         // Notify consensus about replica failures if:
         // 1. there are some failures, but enough successes for the operation to be accepted
+        // 2. a resharding replica failed, and there are not enough successes for the operation to be accepted
         //
         // Notify user about potential consistency problems if:
         // 1. there are some failures and enough successes, but we fail to deactivate the failed replicas
@@ -341,6 +342,15 @@ impl ShardReplicaSet {
         if !failures.is_empty() {
             // If there aren't enough successes, report error to user
             if successes.len() < minimal_success_count {
+                // TODO(resharding): reconsider how we count/deactivate resharding replicas.
+                self.handle_failed_replicas(
+                    failures
+                        .iter()
+                        .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
+                    &self.replica_state.read(),
+                    update_only_existing,
+                );
+
                 let (_peer_id, err) = failures.into_iter().next().unwrap();
                 return Err(err);
             }
@@ -432,6 +442,11 @@ impl ShardReplicaSet {
             Some(ReplicaState::Dead) | None => false,
         };
         res && !self.is_locally_disabled(peer_id)
+    }
+
+    fn peer_is_resharding(&self, peer_id: PeerId) -> bool {
+        self.peer_state(peer_id) == Some(ReplicaState::Resharding)
+            && !self.is_locally_disabled(peer_id)
     }
 
     fn handle_failed_replicas<'a>(
