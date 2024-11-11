@@ -208,7 +208,7 @@ pub enum ThreadPriorityError {
     #[error("Failed to set thread priority: {0:?}")]
     SetThreadPriority(thread_priority::Error),
     #[error("Failed to parse thread priority value: {0}")]
-    ParseNice(&'static str),
+    ParseNice(String),
 }
 
 /// On Linux, make current thread lower priority (nice: 10).
