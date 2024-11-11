@@ -10,5 +10,7 @@ pub mod payload_storage_enum;
 pub mod query_checker;
 pub mod simple_payload_storage;
 pub mod simple_payload_storage_impl;
+#[cfg(test)]
+mod tests;
 
 pub use payload_storage_base::*;
