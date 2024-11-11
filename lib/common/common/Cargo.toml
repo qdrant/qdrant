@@ -38,7 +38,7 @@ criterion = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = { workspace = true }
-thread-priority = "1.1"
+thread-priority = "1.2"
 
 [[bench]]
 name = "mmap_hashmap"
