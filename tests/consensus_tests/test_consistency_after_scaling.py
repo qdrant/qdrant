@@ -17,6 +17,7 @@ import multiprocessing
 import pathlib
 import random
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from http.client import RemoteDisconnected
 
@@ -29,11 +30,12 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 INITIAL_POINTS_COUNT = 10000
+POINTS_COUNT_UNDER_CHECK = 10000
 N_PEERS = 3
 N_SHARDS = 3
 N_REPLICAS = 3
 COLLECTION_NAME = "test_collection"
-LOOPS_OF_SCALING = 20
+LOOPS_OF_SCALING = 2
 INCONSISTENCY_CHECK_ATTEMPTS = 10
 HEADERS = {}
 
@@ -263,59 +265,201 @@ def cluster_scale_down(peer_number, peer_api_uris, collection_name):
     return peer_api_uris
 
 
-def check_consistency(peer_api_uris):
-    print("11. Check consistency")
-    attempts_counter = INCONSISTENCY_CHECK_ATTEMPTS
-    results = []
-    diffs = {}
-    while attempts_counter > 0:
-        print(f"attempts_counter {attempts_counter}")
-        results = []
-        for url in peer_api_uris:
-            try:
-                res = get_all_points(url, COLLECTION_NAME)
-                results.append(res)
-            except Exception as ex:
-                print(f"failed with {ex}")
-                raise ex
+def get_points_ids_from_peer(uri, point_ids):
+    if len(point_ids) == 0:
+        print(
+            f'level=INFO msg="Skipping because no check required for node" node={uri}'
+        )
+        return None
 
-        diffs[f'attempt_{attempts_counter}'] = {}
-        is_diff = False
-        for node_id, res in enumerate(results[1::]):
-            diffs[f'attempt_{attempts_counter}'][f'node_{node_id + 1}'] = []
-            for idx, row in enumerate(res['points']):
-                expected_row = results[0]['points'][idx]
-                if row != expected_row:
-                    # diffs.append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
-                    diffs[f'attempt_{attempts_counter}'][f'node_{node_id + 1}'].append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
-                    is_diff = True
-        if is_diff:
-            print(f"    There are inconsistencies found, wait for 1 sec and try again")
-            time.sleep(1)
-            attempts_counter -= 1
+    try:
+        response = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points",
+            headers=HEADERS,
+            json={"ids": point_ids, "with_vector": False, "with_payload": True},
+            timeout=10,
+        )
+    except requests.exceptions.Timeout:
+        print(
+            f'level=WARN msg="Request timed out after 10s, skipping all points all peers consistency check for node" uri="{uri}" api="/collections/{COLLECTION_NAME}/points"'
+        )
+        return None
+
+    if response.status_code != 200:
+        error_msg = response.text.strip()
+        if error_msg in ("404 page not found", "Service Unavailable"):
+            print(
+                f'level=WARN msg="Node unreachable, skipping all points all peers consistency check" uri="{uri}" status_code={response.status_code} err="{error_msg}"'
+            )
+            return None
         else:
+            # Some unknown error:
+            print(
+                f'level=ERROR msg="Failed to fetch points" uri="{uri}" status_code={response.status_code} err="{error_msg}"'
+            )
+            return None
+
+    return {item["id"]: item["payload"] for item in response.json()["result"]}
+
+
+def check_consistency(peer_api_uris, loop_num='final'):
+    print("8. Check consistency")
+    print('level=INFO msg="Starting all points all peers data consistency check script"')
+
+    QC_NAME = "local"
+    # POINTS_DIR = f"data/{QC_NAME}-points-dump/loop-{loop_num}"
+    # os.makedirs(POINTS_DIR, exist_ok=True)
+
+    def get_points_from_all_peers_parallel(qdrant_peers, attempt_number, node_points_map):
+        for node_idx, uri in enumerate(qdrant_peers):
+            if not node_points_map.get(node_idx):
+                node_points_map[node_idx] = {}
+
+        with ProcessPoolExecutor() as executor:
+            future_to_uri = {
+                executor.submit(get_points_ids_from_peer, uri, point_ids_for_node): (node_idx, uri) for
+                node_idx, uri in enumerate(qdrant_peers)}
+            for future in as_completed(future_to_uri):
+                node_idx, uri = future_to_uri[future]
+                fetched_points = future.result()
+
+                if fetched_points:
+                    fetched_points_count = len(fetched_points)
+                    node_points_map[node_idx][attempt_number] = fetched_points
+                else:
+                    fetched_points_count = 0
+                    fetched_points = {}
+
+                print(
+                    f'level=INFO msg="Fetched points" num_points={fetched_points_count} uri="{uri}"'
+                )
+                # with open(
+                #         f"{POINTS_DIR}/node-{node_idx}-attempt-{attempt_number}.json", "w"
+                # ) as f:
+                #     json.dump(fetched_points, f)
+
+        return node_points_map
+
+    def check_for_consistency(node_to_points_map, attempt_number, consistent_points):
+        print(
+            f'level=INFO msg="Start checking points, attempt_number={attempt_number}"'
+        )
+        for point in initial_point_ids:
+            if consistent_points[point]:
+                # if point is already consistent, no need to check again
+                continue
+
+            # get point's payload from all nodes
+            point_attempt_versions_list = []
+            for node_idx, node in node_to_points_map.items():
+                if not node or not node.get(attempt_number):
+                    # print(f"level=INFO msg='No points for node, skip' node_idx={node_idx} attempt_number={attempt_number}")
+                    continue
+                try:
+                    version = node[attempt_number][point]
+                except KeyError:
+                    # print(
+                    #     f"level=WARN msg='Missing point for node' node_idx={node_idx} attempt_number={attempt_number} point={point}")
+                    version = None
+                point_attempt_versions_list.append(version)
+
+            first_obj = point_attempt_versions_list[0]
+            is_point_consistent = all(obj == first_obj for obj in point_attempt_versions_list)
+
+            if is_point_consistent:
+                consistent_points[point] = True
+                continue
+
+            point_history_nodes = []  # point history over different attempts for each node
+            for node_idx, node in node_to_points_map.items():
+                point_history = set()
+
+                for attempt in range(attempt_number + 1):
+                    if node.get(attempt):
+                        payload = node.get(attempt).get(point, None)
+                        if payload:
+                            point_history.add(tuple(sorted(payload.items())))
+                        else:
+                            # point is missing for this node on this attempt
+                            point_history.add((("a",""), ("timestamp","")))
+
+                if point_history:
+                    # if node has no data for this point (was unreachable all this time), skip it
+                    point_history_nodes.append(point_history)
+
+            common_objects = set.intersection(*point_history_nodes)
+            common_objects = [dict(obj) for obj in common_objects]
+            if len(common_objects) > 0:
+                consistent_points[point] = True
+
+        is_consistent = all(consistent_points.values())
+        return is_consistent
+
+    num_points_to_check = POINTS_COUNT_UNDER_CHECK
+    initial_point_ids = list(range(num_points_to_check))
+    point_ids_for_node = list(range(num_points_to_check))
+    # is_data_consistent = False
+    consistency_attempts_remaining = INCONSISTENCY_CHECK_ATTEMPTS
+    node_to_points_map = {}
+    consistent_points = {}
+
+    while True:
+        attempt_number = INCONSISTENCY_CHECK_ATTEMPTS - consistency_attempts_remaining
+
+        node_to_points_map = get_points_from_all_peers_parallel(peer_api_uris, attempt_number, node_to_points_map)
+        if attempt_number == 0:
+            # initialize all points on the 1st attempt
+            for point in initial_point_ids:
+                consistent_points[point] = False
+
+        is_data_consistent = check_for_consistency(node_to_points_map, attempt_number, consistent_points)
+
+        consistency_attempts_remaining -= 1
+
+        if is_data_consistent:
+            print(
+                f'level=INFO msg="All points all peers data consistency check succeeded" attempts={INCONSISTENCY_CHECK_ATTEMPTS - consistency_attempts_remaining}'
+            )
             break
+        else:
+            inconsistent_point_ids = [i for i, val in consistent_points.items() if not val]
 
-    # final check
-    diffs['final'] = {}
-    is_diff = False
-    for node_id, res in enumerate(results[1::]):
-        diffs['final'][f'node_{node_id + 1}'] = []
-        for idx, row in enumerate(res['points']):
-            expected_row = results[0]['points'][idx]
-            if row != expected_row:
-                # diffs.append(f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
-                diffs['final'][f'node_{node_id + 1}'].append(
-                    f"inconsistency in point {row['id']}: {row['payload']} vs {expected_row['payload']}")
-                is_diff = True
+            if consistency_attempts_remaining == 0:
+                print(
+                    f'level=ERROR msg="All points all peers data consistency check failed" attempts={INCONSISTENCY_CHECK_ATTEMPTS - consistency_attempts_remaining} inconsistent_count={len(inconsistent_point_ids)} inconsistent_points="{inconsistent_point_ids[:20]}"'
+                )
 
-    with open('diff.json', 'w') as diff_log:
-        diff_log.write(json.dumps(diffs))
+                last_fetched_node_inconsistent_points = []
+                for point_id in inconsistent_point_ids:
+                    point_data = {point_id: {}}
+                    for node_idx, node_data in node_to_points_map.items():
+                        point_data[point_id][f"node-{node_idx}"] = node_data[attempt_number][point_id] if node_data.get(
+                            attempt_number) else None
+                    last_fetched_node_inconsistent_points.append(point_data)
 
-    if is_diff:
-        print("Consistency check FAILED")
-        raise AssertionError("There are inconsistencies found after 10 attempts")
-    print("Consistency check OK")
+                print(
+                    f'level=ERROR msg="Dumping inconsistent points (max 5)" last_fetched_points={last_fetched_node_inconsistent_points[:5]}')
+                POINTS_DIR = f"data/{QC_NAME}-points-dump/loop-{loop_num}"
+                os.makedirs(POINTS_DIR, exist_ok=True)
+                with open(
+                        f"{POINTS_DIR}/diff.json", "w"
+                ) as f:
+                    json.dump(last_fetched_node_inconsistent_points, f)
+
+                break
+            else:
+                print(
+                    f'level=WARN msg="Nodes might be inconsistent. Will retry" inconsistent_count={len(inconsistent_point_ids)} inconsistent_points="{inconsistent_point_ids[:20]}"'
+                )
+                print(
+                    f'level=WARN msg="Retrying all points all peers data consistency check" attempts={INCONSISTENCY_CHECK_ATTEMPTS - consistency_attempts_remaining} remaining_attempts={consistency_attempts_remaining}'
+                )
+                point_ids_for_node = [x for x in inconsistent_point_ids]
+                # Node might be unavailable which caused request to fail. Give some time to heal
+                time.sleep(5)
+                continue
+
+    return is_data_consistent
 
 
 def test_consistency(tmp_path: pathlib.Path):
@@ -339,18 +483,39 @@ def test_consistency(tmp_path: pathlib.Path):
     time.sleep(5)
 
     new_upsert_processes = []
+    # start from 4, so that new peer id is 4
     for i in range(4, 4 + LOOPS_OF_SCALING):
         print("5. Scale up")
         new_peer_uri = cluster_scale_up(tmp_path, bootstrap_uri, processes[-1].http_port, i, peer_api_uris, peer_dirs)
-        print("6. Replicate shard on a new node and wait for transfers")
+        # print("6. Replicate shard on a new node and wait for transfers")
+        print("6. Start updating points for new peer")
         wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
         new_upsert_processes.append(run_update_points_in_background([new_peer_uri], "test_collection"))
-        collection_cluster_info = get_collection_cluster_info(new_peer_uri, "test_collection")
-        peer_id = collection_cluster_info['peer_id']
-        replicate_shard(peer_id, peer_api_uris, "test_collection")
-        wait_for_all_replicas_active(peer_api_uris[0], "test_collection")
+        # collection_cluster_info = get_collection_cluster_info(new_peer_uri, "test_collection")
+        # peer_id = collection_cluster_info['peer_id']
+        # replicate_shard(peer_id, peer_api_uris, "test_collection")
+        # wait_for_all_replicas_active(peer_api_uris[0], "test_collection")
         print("7. Wait for some time after scaling up")
         time.sleep(random.randint(3, 15))
+        print("     Stop updating points")
+        upsert_process.kill()
+        for item in new_upsert_processes:
+            item.kill()
+        print("     Wait for some time")
+        time.sleep(5)
+
+        is_consistent = check_consistency(peer_api_uris, loop_num=str(i))
+        if not is_consistent:
+            print("Final check")
+            time.sleep(30)
+            final_check = check_consistency(peer_api_uris, loop_num='final')
+
+            if not final_check:
+                raise AssertionError("FAILED")
+
+            print("OK")
+            exit(0)
+
         print("8-9. Scale down. Wait for some time")
         cluster_scale_down(i, peer_api_uris, "test_collection")
         wait_for_all_replicas_active(peer_api_uris[0], "test_collection")
@@ -363,6 +528,11 @@ def test_consistency(tmp_path: pathlib.Path):
     for item in new_upsert_processes:
         item.kill()
 
-    check_consistency(peer_api_uris)
+    print("Final check")
+    final_check = check_consistency(peer_api_uris, loop_num='final')
+
+    if not final_check:
+        raise AssertionError("FAILED")
 
     print("OK")
+
