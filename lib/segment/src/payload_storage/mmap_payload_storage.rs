@@ -162,17 +162,12 @@ impl PayloadStorage for MmapPayloadStorage {
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.read().iter(|point_id, payload| {
-            match callback(point_id, payload) {
-                Ok(true) => Ok(true),
-                Ok(false) => Ok(false),
-                Err(e) => {
+            callback(point_id, payload).map_err(|e|
                     // TODO return proper error
-                    Err(std::io::Error::new(
+                    std::io::Error::new(
                         std::io::ErrorKind::Other,
                         e.to_string(),
                     ))
-                }
-            }
         })?;
         Ok(())
     }
