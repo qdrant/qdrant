@@ -1167,6 +1167,7 @@ dependencies = [
  "actix-files",
  "actix-web",
  "actix-web-validator",
+ "ahash",
  "api",
  "approx",
  "arc-swap",

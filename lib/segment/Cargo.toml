@@ -76,7 +76,7 @@ chrono = { workspace = true }
 smol_str = { version = "0.3.2", features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
-ahash = { version = "0.8.11", features = ["serde"] }
+ahash = {  workspace = true }
 http = "1.0.0"
 sha2 = { workspace = true }
 smallvec = "1.13.2"
