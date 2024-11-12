@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde_json::json;
 
 use super::mmap_payload_storage::MmapPayloadStorage;
@@ -7,7 +9,10 @@ use super::PayloadStorage;
 use crate::common::rocksdb_wrapper::open_db;
 use crate::types::Payload;
 
-fn test_trait_impl<S: PayloadStorage>(mut storage: S) {
+fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut storage = open(dir.path());
+
     let payload: Payload = json!({
         "a": "some text",
     })
@@ -80,27 +85,54 @@ fn test_trait_impl<S: PayloadStorage>(mut storage: S) {
 
     storage.clear(0).unwrap();
     assert_eq!(storage.get(0).unwrap(), json!({}).into());
+
+    for i in 1..10 {
+        storage.set(i, &payload).unwrap();
+    }
+
+    let assert_payloads = |storage: &S| {
+        storage
+            .iter(|key, value| {
+                if key == 0 {
+                    assert_eq!(value, &json!({}).into());
+                    return Ok(true);
+                }
+                assert_eq!(value, &payload);
+                Ok(true)
+            })
+            .unwrap();
+    };
+
+    assert_payloads(&storage);
+    eprintln!("storage is correct before drop");
+
+    // flush, drop, and reopen
+    storage.flusher()().unwrap();
+    drop(storage);
+    let storage = open(dir.path());
+
+    // check if the data is still there
+    assert_payloads(&storage);
+    eprintln!("storage is correct after drop");
 }
 
 #[test]
 fn test_in_memory_storage() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = open_db(dir.path(), &[""]).unwrap();
-    let storage = SimplePayloadStorage::open(db).unwrap();
-    test_trait_impl(storage);
+    test_trait_impl(|path| {
+        let db = open_db(path, &[""]).unwrap();
+        SimplePayloadStorage::open(db).unwrap()
+    });
 }
 
 #[test]
 fn test_mmap_storage() {
-    let dir = tempfile::tempdir().unwrap();
-    test_trait_impl(MmapPayloadStorage::open_or_create(dir.path()).unwrap());
+    test_trait_impl(|path| MmapPayloadStorage::open_or_create(path).unwrap());
 }
 
 #[test]
 fn test_on_disk_storage() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = open_db(dir.path(), &[""]).unwrap();
-    let storage = OnDiskPayloadStorage::open(db).unwrap();
-
-    test_trait_impl(storage);
+    test_trait_impl(|path| {
+        let db = open_db(path, &[""]).unwrap();
+        OnDiskPayloadStorage::open(db).unwrap()
+    });
 }
