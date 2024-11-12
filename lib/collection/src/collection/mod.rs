@@ -178,6 +178,8 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
+            // We only drop collections when we delete them. In this case, we don't need
+            // hardware measurements anymore, so no check needed here.
             hardware_usage: HwMeasurementAcc::new_unchecked(),
         })
     }
@@ -288,6 +290,8 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
+            // We only drop collections when we delete them. In this case, we don't need
+            // hardware measurements anymore, so no check needed here.
             hardware_usage: HwMeasurementAcc::new_unchecked(),
         }
     }

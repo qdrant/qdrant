@@ -70,6 +70,8 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: true,
                 }),
                 None,
+                // Internal operations don't need to be measured so we can
+                // safely discard measurements here.
                 HwMeasurementAcc::new_unchecked(),
             )
             .await?

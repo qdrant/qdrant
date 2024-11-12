@@ -344,6 +344,8 @@ impl Collection {
                     .count_local(
                         count_request.clone(),
                         None,
+                        // We don't need to measure hardware here and can safely discard the measurements,
+                        // since the endpoint calling this function doesn't need them.
                         HwMeasurementAcc::new_unchecked(),
                     )
                     .await

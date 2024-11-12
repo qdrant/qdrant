@@ -60,6 +60,8 @@ pub(super) async fn transfer_stream_records(
                     exact: true,
                 }),
                 None, // no timeout
+                // Internal operations don't need to be measured so we can
+                // safely discard measurements here.
                 HwMeasurementAcc::new_unchecked(),
             )
             .await?
