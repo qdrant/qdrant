@@ -329,8 +329,8 @@ mod tests {
 
         let mut doc1 = create_test_document("same");
         let mut doc2 = create_test_document("same");
-        doc1.model = Some("model1".to_string());
-        doc2.model = Some("model2".to_string());
+        doc1.model = "model1".to_string();
+        doc2.model = "model2".to_string();
 
         batch.add(InferenceData::Document(doc1));
         batch.add(InferenceData::Document(doc2));
