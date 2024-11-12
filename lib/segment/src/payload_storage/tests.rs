@@ -85,7 +85,7 @@ fn test_trait_impl<S: PayloadStorage>(mut storage: S) {
 #[test]
 fn test_in_memory_storage() {
     let dir = tempfile::tempdir().unwrap();
-    let db = open_db(dir.path(), &vec![""]).unwrap();
+    let db = open_db(dir.path(), &[""]).unwrap();
     let storage = SimplePayloadStorage::open(db).unwrap();
     test_trait_impl(storage);
 }
@@ -99,7 +99,7 @@ fn test_mmap_storage() {
 #[test]
 fn test_on_disk_storage() {
     let dir = tempfile::tempdir().unwrap();
-    let db = open_db(dir.path(), &vec![""]).unwrap();
+    let db = open_db(dir.path(), &[""]).unwrap();
     let storage = OnDiskPayloadStorage::open(db).unwrap();
 
     test_trait_impl(storage);
