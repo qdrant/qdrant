@@ -758,9 +758,9 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
-            hardware_usage: HardwareInfo {
+            hardware_usage: Some(HardwareInfo {
                 cpu: self.hardware_usage.get_cpu(),
-            },
+            }),
         }
     }
 

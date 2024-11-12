@@ -10984,7 +10984,6 @@
         "type": "object",
         "required": [
           "config",
-          "hardware_usage",
           "id",
           "init_time_ms",
           "resharding",
@@ -11022,7 +11021,14 @@
             }
           },
           "hardware_usage": {
-            "$ref": "#/components/schemas/HardwareInfo"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HardwareInfo"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

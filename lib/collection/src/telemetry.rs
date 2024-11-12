@@ -14,7 +14,7 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
-    pub hardware_usage: HardwareInfo,
+    pub hardware_usage: Option<HardwareInfo>,
 }
 
 impl CollectionTelemetry {
@@ -37,7 +37,7 @@ impl Anonymize for CollectionTelemetry {
             shards: self.shards.anonymize(),
             transfers: vec![],
             resharding: vec![],
-            hardware_usage: HardwareInfo::default(),
+            hardware_usage: Some(HardwareInfo::default()),
         }
     }
 }
