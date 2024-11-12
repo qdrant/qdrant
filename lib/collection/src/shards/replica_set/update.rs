@@ -340,24 +340,10 @@ impl ShardReplicaSet {
         };
 
         if !failures.is_empty() {
-            // If there aren't enough successes, report error to user
-            if successes.len() < minimal_success_count {
-                // TODO(resharding): reconsider how we count/deactivate resharding replicas.
-                self.handle_failed_replicas(
-                    failures
-                        .iter()
-                        .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
-                    &self.replica_state.read(),
-                    update_only_existing,
-                );
-
-                let (_peer_id, err) = failures.into_iter().next().unwrap();
-                return Err(err);
-            }
-
-            // If there are enough successes, deactivate failed replicas
-            // Failed replicas will automatically recover from another replica ensuring consistency
             if successes.len() >= minimal_success_count {
+                // If there are enough successes, deactivate failed replicas
+                // Failed replicas will automatically recover from another replica ensuring consistency
+
                 let wait_for_deactivation = self.handle_failed_replicas(
                     &failures,
                     &self.replica_state.read(),
@@ -396,6 +382,20 @@ impl ShardReplicaSet {
                         )));
                     }
                 }
+            } else {
+                // If there aren't enough successes, report error to user
+
+                // TODO(resharding): reconsider how we count/deactivate resharding replicas.
+                self.handle_failed_replicas(
+                    failures
+                        .iter()
+                        .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
+                    &self.replica_state.read(),
+                    update_only_existing,
+                );
+
+                let (_peer_id, err) = failures.into_iter().next().unwrap();
+                return Err(err);
             }
         }
 
