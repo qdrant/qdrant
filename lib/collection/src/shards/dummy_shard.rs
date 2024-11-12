@@ -56,6 +56,7 @@ impl DummyShard {
             total_optimized_points: 0,
             segments: vec![],
             optimizations: Default::default(),
+            async_scorer: None,
         }
     }
 

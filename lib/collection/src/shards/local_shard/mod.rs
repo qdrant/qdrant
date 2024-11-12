@@ -32,6 +32,7 @@ use segment::types::{
     QuantizationConfig, SegmentConfig, SegmentType, SnapshotFormat,
 };
 use segment::utils::mem::Mem;
+use segment::vector_storage::common::get_async_scorer;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -948,6 +949,7 @@ impl LocalShard {
                 optimizations,
                 log: self.optimizers_log.lock().to_telemetry(),
             },
+            async_scorer: Some(get_async_scorer()),
         }
     }
 

@@ -161,7 +161,13 @@ fn main() -> anyhow::Result<()> {
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
     memory::madvise::set_global(settings.storage.mmap_advice);
-    segment::vector_storage::common::set_async_scorer(settings.storage.async_scorer);
+    segment::vector_storage::common::set_async_scorer(
+        settings
+            .storage
+            .performance
+            .async_scorer
+            .unwrap_or_default(),
+    );
 
     welcome(&settings);
 
