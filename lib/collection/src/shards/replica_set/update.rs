@@ -365,7 +365,7 @@ impl ShardReplicaSet {
                 );
 
                 // Wait for replica failures to be accepted, otherwise return consistency error
-                if wait && wait_for_deactivation && !failures.is_empty() {
+                if wait && wait_for_deactivation {
                     // ToDo: allow timeout configuration in API
                     let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
 
