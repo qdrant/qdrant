@@ -65,8 +65,12 @@ impl<'a> VisitedListHandle<'a> {
     /// Updates visited list
     /// return `true` if point was visited before
     pub fn check_and_update_visited(&mut self, point_id: PointOffsetType) -> bool {
+        let idx = point_id as usize;
+        if idx >= self.visited_list.visit_counters.len() {
+            self.visited_list.visit_counters.resize(idx + 1, 0);
+        }
         std::mem::replace(
-            &mut self.visited_list.visit_counters[point_id as usize],
+            &mut self.visited_list.visit_counters[idx],
             self.visited_list.current_iter,
         ) == self.visited_list.current_iter
     }
