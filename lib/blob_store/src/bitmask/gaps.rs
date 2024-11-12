@@ -31,16 +31,12 @@ impl RegionGaps {
 
             assert!(
                 leading <= max,
-                "Invalid gaps: leading is {}, but max is {}",
-                leading,
-                max
+                "Invalid gaps: leading is {leading}, but max is {max}",
             );
 
             assert!(
                 trailing <= max,
-                "Invalid gaps: trailing is {}, but max is {}",
-                trailing,
-                max
+                "Invalid gaps: trailing is {trailing}, but max is {max}",
             );
 
             if leading == maximum_possible || trailing == maximum_possible {
@@ -100,8 +96,8 @@ impl BitmaskGaps {
 
         Self {
             path,
-            mmap_slice,
             config,
+            mmap_slice,
         }
     }
 
@@ -113,8 +109,8 @@ impl BitmaskGaps {
 
         Ok(Self {
             path,
-            mmap_slice,
             config,
+            mmap_slice,
         })
     }
 
@@ -155,7 +151,7 @@ impl BitmaskGaps {
             .iter()
             .rev()
             .take_while_inclusive(|gap| gap.trailing == self.config.region_size_blocks as u16)
-            .map(|gap| gap.trailing as u32)
+            .map(|gap| u32::from(gap.trailing))
             .sum()
     }
 
@@ -224,9 +220,9 @@ impl BitmaskGaps {
                 let right = &gaps[1];
 
                 // check it fits in the left region
-                if left.max as u32 >= num_blocks {
+                if u32::from(left.max) >= num_blocks {
                     // if both gaps are large enough, choose the smaller one
-                    if right.max as u32 >= num_blocks {
+                    if u32::from(right.max) >= num_blocks {
                         return if left.max <= right.max {
                             Some(start_region_id as RegionId..start_region_id as RegionId + 1)
                         } else {
@@ -237,14 +233,14 @@ impl BitmaskGaps {
                 }
 
                 // check it fits in the right region
-                if right.max as u32 >= num_blocks {
+                if u32::from(right.max) >= num_blocks {
                     return Some(start_region_id as RegionId + 1..start_region_id as RegionId + 2);
                 }
 
                 // Otherwise, check if the gap in between them is large enough
                 let in_between = left.trailing + right.leading;
 
-                if in_between as u32 >= num_blocks {
+                if u32::from(in_between) >= num_blocks {
                     Some(start_region_id as RegionId..start_region_id as RegionId + 2)
                 } else {
                     None

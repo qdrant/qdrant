@@ -16,14 +16,14 @@ impl Collection for ArcStorage<PayloadStorage> {
         let proxy = StorageProxy::new(storage);
         ArcStorage {
             proxy: Arc::new(RwLock::new(proxy)),
-            _dir: Arc::new(dir),
+            dir: Arc::new(dir),
         }
     }
 
     fn pin(&self) -> Self::Handle {
         Self {
             proxy: self.proxy.clone(),
-            _dir: self._dir.clone(),
+            dir: self.dir.clone(),
         }
     }
 }

@@ -19,8 +19,8 @@ fn default_opts(workload: &mut Workload) -> &mut Workload {
 }
 
 fn main() {
-    for num_threads in [1, 2].into_iter() {
-        println!("------------ {} thread(s) -------------", num_threads);
+    for num_threads in [1, 2] {
+        println!("------------ {num_threads} thread(s) -------------");
         // Read heavy
         println!("**read_heavy** with prefill_fraction 0.95");
         let mut workload = Workload::new(num_threads, Mix::read_heavy());

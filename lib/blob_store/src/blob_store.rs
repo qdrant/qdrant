@@ -142,7 +142,7 @@ impl<V: Blob> BlobStore<V> {
 
     /// Get the path for a given page id
     pub fn page_path(&self, page_id: u32) -> PathBuf {
-        self.base_path.join(format!("page_{}.dat", page_id))
+        self.base_path.join(format!("page_{page_id}.dat"))
     }
 
     /// Read raw value from the pages. Considering that they can span more than one page.
@@ -510,7 +510,7 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
-        assert_eq!(files.len(), 5, "Expected 5 files, got {:?}", files);
+        assert_eq!(files.len(), 5, "Expected 5 files, got {files:?}");
         assert_eq!(files[0].file_name().unwrap(), "tracker.dat");
         assert_eq!(files[1].file_name().unwrap(), "page_0.dat");
         assert_eq!(files[2].file_name().unwrap(), "bitmask.dat");
@@ -681,7 +681,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // apply operations to storage and model_hashmap
-        for operation in operations.into_iter() {
+        for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
                     storage.put_value(point_offset, &payload).unwrap();
@@ -692,8 +692,7 @@ mod tests {
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
                         old1, old2,
-                        "same deletion failed for point_offset: {} with {:?} vs {:?}",
-                        point_offset, old1, old2
+                        "same deletion failed for point_offset: {point_offset} with {old1:?} vs {old2:?}",
                     );
                 }
                 Operation::Update(point_offset, payload) => {
@@ -729,8 +728,7 @@ mod tests {
             assert_eq!(
                 stored_payload.as_ref(),
                 model_payload,
-                "failed for point_offset: {}",
-                point_offset
+                "failed for point_offset: {point_offset}",
             );
         }
     }
@@ -828,7 +826,7 @@ mod tests {
             for result in rdr.records() {
                 let record = result.unwrap();
                 let mut payload = Payload::default();
-                for (i, field) in HM_FIELDS.iter().enumerate() {
+                for (i, &field) in HM_FIELDS.iter().enumerate() {
                     payload.0.insert(
                         field.to_string(),
                         serde_json::Value::String(record.get(i).unwrap().to_string()),
@@ -862,10 +860,7 @@ mod tests {
                     assert_eq!(
                         first.0.get(*field).unwrap().as_str().unwrap(),
                         record.get(i).unwrap(),
-                        "failed for id {} with shift {} for field: {}",
-                        row_index,
-                        right_shift_offset,
-                        field
+                        "failed for id {row_index} with shift {right_shift_offset} for field: {field}",
                     );
                 }
             }

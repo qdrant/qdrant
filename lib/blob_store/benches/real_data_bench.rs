@@ -15,7 +15,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
             for result in rdr.records() {
                 let record = result.unwrap();
                 let mut payload = Payload::default();
-                for (i, field) in HM_FIELDS.iter().enumerate() {
+                for (i, &field) in HM_FIELDS.iter().enumerate() {
                     payload.0.insert(
                         field.to_string(),
                         Value::String(record.get(i).unwrap().to_string()),

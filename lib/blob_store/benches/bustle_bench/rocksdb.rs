@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use blob_store::blob::Blob;
-use blob_store::payload::Payload;
+use blob_store::fixtures::Payload;
+use blob_store::Blob;
 use bustle::Collection;
 use parking_lot::RwLock;
 use rocksdb::{DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
@@ -64,14 +64,14 @@ impl Collection for ArcStorage<rocksdb::DB> {
         let proxy = StorageProxy::new(db);
         ArcStorage {
             proxy: Arc::new(RwLock::new(proxy)),
-            _dir: Arc::new(dir),
+            dir: Arc::new(dir),
         }
     }
 
     fn pin(&self) -> Self::Handle {
         Self {
             proxy: self.proxy.clone(),
-            _dir: self._dir.clone(),
+            dir: self.dir.clone(),
         }
     }
 }

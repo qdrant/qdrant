@@ -10,7 +10,7 @@ use tempfile::TempDir;
 #[derive(Clone)]
 pub struct ArcStorage<S> {
     pub proxy: Arc<RwLock<StorageProxy<S>>>,
-    pub _dir: Arc<TempDir>,
+    pub dir: Arc<TempDir>,
 }
 
 /// A storage that includes an external to internal id tracker, and a generator of payloads.
