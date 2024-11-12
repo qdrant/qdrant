@@ -4,7 +4,7 @@ use std::future::Future;
 use actix_web::rt::time::Instant;
 use actix_web::{http, HttpResponse, ResponseError};
 use api::grpc::models::{ApiResponse, ApiStatus, HardwareUsage};
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
@@ -22,7 +22,7 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
 pub fn process_response<T>(
     response: Result<T, StorageError>,
     timing: Instant,
-    hw_measurement_acc: Option<CollectionAppliedHardwareAcc>,
+    hw_measurement_acc: Option<RequestHardwareAcc>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -42,7 +42,7 @@ where
     }
 }
 
-fn hardware_accumulator_to_api(acc: CollectionAppliedHardwareAcc) -> HardwareUsage {
+fn hardware_accumulator_to_api(acc: RequestHardwareAcc) -> HardwareUsage {
     let acc = HwMeasurementAcc::from(acc);
     HardwareUsage { cpu: acc.get_cpu() }
 }
@@ -67,7 +67,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
 /// Future must be cancel safe.
 pub async fn time_and_hardware_opt<T, Fut>(
     future: Fut,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
     enabled: bool,
 ) -> HttpResponse
 where
@@ -146,7 +146,7 @@ where
 /// Future must be cancel safe.
 async fn time_and_hardware_impl<T, Fut>(
     future: Fut,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 ) -> HttpResponse
 where
     Fut: Future<Output = Result<Option<T>, StorageError>>,

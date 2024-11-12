@@ -10,7 +10,7 @@ use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 
 use super::Collection;
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -378,7 +378,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<CountResult> {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;

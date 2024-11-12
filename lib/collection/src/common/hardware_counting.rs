@@ -4,10 +4,9 @@ use crate::collection::Collection;
 
 /// A wrapper around `HwMeasurementAcc` that encforces by design that all collected
 /// hardware metrics get also to applied to the corresponding collection.
-#[derive(Clone)]
-pub struct CollectionAppliedHardwareAcc(HwMeasurementAcc);
+pub struct RequestHardwareAcc(HwMeasurementAcc);
 
-impl CollectionAppliedHardwareAcc {
+impl RequestHardwareAcc {
     pub fn new() -> Self {
         Self::default()
     }
@@ -30,19 +29,19 @@ impl CollectionAppliedHardwareAcc {
 }
 
 impl Collection {
-    pub fn accumulate_hw_counter(&self, src: HwMeasurementAcc, out: &CollectionAppliedHardwareAcc) {
+    pub fn accumulate_hw_counter(&self, src: HwMeasurementAcc, out: &RequestHardwareAcc) {
         out.apply(src, &self.hardware_usage);
     }
 }
 
-impl Default for CollectionAppliedHardwareAcc {
+impl Default for RequestHardwareAcc {
     fn default() -> Self {
         Self(HwMeasurementAcc::new())
     }
 }
 
-impl From<CollectionAppliedHardwareAcc> for HwMeasurementAcc {
-    fn from(value: CollectionAppliedHardwareAcc) -> Self {
+impl From<RequestHardwareAcc> for HwMeasurementAcc {
+    fn from(value: RequestHardwareAcc) -> Self {
         value.0
     }
 }

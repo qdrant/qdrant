@@ -15,7 +15,7 @@ use api::grpc::qdrant::{
     SearchPointGroups, SearchPoints, SearchResponse, SetPayloadPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::types::CoreSearchRequest;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::dispatcher::Dispatcher;
@@ -52,7 +52,7 @@ impl PointsService {
     /// returning `None` if hardware reporting is disabled.
     fn convert_api_hardware_usage_opt(
         &self,
-        hw_measurements: CollectionAppliedHardwareAcc,
+        hw_measurements: RequestHardwareAcc,
     ) -> Option<HardwareUsage> {
         super::points_common::convert_api_hardware_usage_opt(&self.service_config, hw_measurements)
     }
@@ -566,7 +566,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+        let hw_measurement_acc = RequestHardwareAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -589,7 +589,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let timing = Instant::now();
-        let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+        let hw_measurement_acc = RequestHardwareAcc::new();
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),

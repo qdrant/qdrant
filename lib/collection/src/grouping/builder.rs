@@ -6,7 +6,7 @@ use tokio::sync::RwLockReadGuard;
 
 use super::group_by::{group_by, GroupRequest};
 use crate::collection::Collection;
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;
 use crate::operations::consistency_params::ReadConsistency;
@@ -26,7 +26,7 @@ where
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 }
 
 impl<'a, F, Fut> GroupBy<'a, F, Fut>
@@ -39,7 +39,7 @@ where
         group_by: GroupRequest,
         collection: &'a Collection,
         collection_by_name: F,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> Self {
         Self {
             group_by,

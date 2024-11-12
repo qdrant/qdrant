@@ -4,7 +4,7 @@ use std::path::Path;
 
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -128,7 +128,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -163,7 +163,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await;
 
@@ -193,7 +193,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -246,7 +246,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        CollectionAppliedHardwareAcc::new_unchecked(),
+        RequestHardwareAcc::new_unchecked(),
     )
     .await;
 
@@ -273,7 +273,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        CollectionAppliedHardwareAcc::new_unchecked(),
+        RequestHardwareAcc::new_unchecked(),
     )
     .await
     .unwrap();

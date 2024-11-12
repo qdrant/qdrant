@@ -11,7 +11,7 @@ use segment::types::{
 };
 
 use crate::collection::Collection;
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -139,7 +139,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let CollectionSearchMatrixRequest {
             sample_size,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{post, web, Responder};
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
@@ -144,7 +144,7 @@ async fn count_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
 
     helpers::time_and_hardware_opt(

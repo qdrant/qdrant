@@ -16,7 +16,7 @@ pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
 
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use common::validation::validate_collection_name;
 use serde::Deserialize;
 use validator::Validate;
@@ -50,8 +50,8 @@ struct CollectionPath {
 
 pub(crate) fn apply_hw_measurement_settings(
     config: &ServiceConfig,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
-) -> Option<CollectionAppliedHardwareAcc> {
+    hw_measurement_acc: RequestHardwareAcc,
+) -> Option<RequestHardwareAcc> {
     if !config.hardware_reporting() {
         hw_measurement_acc.set_applied();
     }

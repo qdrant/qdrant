@@ -12,7 +12,7 @@ use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     convert_to_vectors, resolve_referenced_vectors_batch, ReferencedVectors,
 };
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;
@@ -131,7 +131,7 @@ pub async fn discover<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -161,7 +161,7 @@ pub async fn discover_batch<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,

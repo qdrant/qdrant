@@ -2,7 +2,7 @@ use actix_web::{post, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
@@ -57,7 +57,7 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_core_search_points(
@@ -123,7 +123,7 @@ async fn batch_search_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_search_batch_points(
@@ -184,7 +184,7 @@ async fn search_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_search_point_groups(
@@ -237,7 +237,7 @@ async fn search_points_matrix_pairs(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
@@ -291,7 +291,7 @@ async fn search_points_matrix_offsets(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),

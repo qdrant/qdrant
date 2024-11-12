@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -162,7 +162,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -173,7 +173,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();

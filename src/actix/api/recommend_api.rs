@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
@@ -58,7 +58,7 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
+    let hw_measurement_acc = RequestHardwareAcc::new_unchecked();
 
     helpers::time_and_hardware_opt(
         dispatcher
@@ -91,7 +91,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -139,7 +139,7 @@ async fn recommend_batch_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     helpers::time_and_hardware_opt(
         do_recommend_batch_points(
@@ -200,7 +200,7 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
     helpers::time_and_hardware_opt(
         crate::common::points::do_recommend_point_groups(
             dispatcher.toc(&access, &pass),

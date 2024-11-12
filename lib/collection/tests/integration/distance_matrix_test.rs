@@ -1,5 +1,5 @@
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
@@ -34,7 +34,7 @@ async fn distance_matrix_empty() {
             ShardSelectorInternal::All,
             None,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -89,7 +89,7 @@ async fn distance_matrix_anonymous_vector() {
             ShardSelectorInternal::All,
             None,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();

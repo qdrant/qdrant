@@ -13,7 +13,7 @@ use api::grpc::qdrant::{
     ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
     SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
@@ -77,7 +77,7 @@ pub async fn query_batch_internal(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
 
     let batch_response = toc
         .query_batch_internal(

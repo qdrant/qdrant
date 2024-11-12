@@ -4,7 +4,7 @@ use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
 use collection::collection::Collection;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
 use collection::operations::consistency_params::ReadConsistency;
@@ -43,7 +43,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -78,7 +78,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -124,7 +124,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for request in &mut request.searches {
@@ -168,7 +168,7 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<CountResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -223,7 +223,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<GroupsResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -252,7 +252,7 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<ScoredPoint>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
@@ -277,7 +277,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -337,7 +337,7 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<Vec<ScoredPoint>>> {
         let mut collection_pass = None;
         for (request, _shard_selector) in &mut requests {
@@ -391,7 +391,7 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> Result<CollectionSearchMatrixResponse, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 

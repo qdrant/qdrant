@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
 use api::rest::{OrderByInterface, SearchRequestInternal};
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
@@ -86,7 +86,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await;
 
@@ -155,7 +155,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await;
 
@@ -189,7 +189,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new(),
+            RequestHardwareAcc::new(),
         )
         .await
         .unwrap();
@@ -379,7 +379,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        CollectionAppliedHardwareAcc::new_unchecked(),
+        RequestHardwareAcc::new_unchecked(),
     )
     .await
     .unwrap();

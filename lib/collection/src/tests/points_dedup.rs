@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -259,7 +259,7 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .expect("failed to search");

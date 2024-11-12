@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::UpdateResult;
 use collection::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
@@ -20,7 +20,7 @@ impl TableOfContent {
         requests: Vec<ShardQueryRequest>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> StorageResult<Vec<ShardQueryResponse>> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 

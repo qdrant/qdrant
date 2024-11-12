@@ -1,5 +1,5 @@
 use api::rest::SearchRequestInternal;
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
@@ -61,7 +61,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -88,7 +88,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();
@@ -116,7 +116,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            CollectionAppliedHardwareAcc::new_unchecked(),
+            RequestHardwareAcc::new_unchecked(),
         )
         .await
         .unwrap();

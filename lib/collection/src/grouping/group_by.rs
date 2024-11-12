@@ -18,7 +18,7 @@ use super::types::QueryGroupRequest;
 use crate::collection::Collection;
 use crate::common::fetch_vectors;
 use crate::common::fetch_vectors::build_vector_resolver_query;
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::lookup::WithLookup;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -147,7 +147,7 @@ impl QueryGroupRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
@@ -313,7 +313,7 @@ pub async fn group_by(
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: CollectionAppliedHardwareAcc,
+    hw_measurement_acc: RequestHardwareAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();

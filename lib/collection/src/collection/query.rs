@@ -19,7 +19,7 @@ use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
 };
-use crate::common::hardware_counting::CollectionAppliedHardwareAcc;
+use crate::common::hardware_counting::RequestHardwareAcc;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
@@ -44,7 +44,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -68,7 +68,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
@@ -111,7 +111,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
@@ -200,7 +200,7 @@ impl Collection {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
@@ -285,7 +285,7 @@ impl Collection {
         requests: Vec<ShardQueryRequest>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: CollectionAppliedHardwareAcc,
+        hw_measurement_acc: RequestHardwareAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let requests_arc = Arc::new(requests);
 

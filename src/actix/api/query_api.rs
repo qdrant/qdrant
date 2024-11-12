@@ -1,7 +1,7 @@
 use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
-use collection::common::hardware_counting::CollectionAppliedHardwareAcc;
+use collection::common::hardware_counting::RequestHardwareAcc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
@@ -48,7 +48,7 @@ async fn query_points(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
+    let hw_measurement_acc = RequestHardwareAcc::new_unchecked();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
@@ -110,7 +110,7 @@ async fn query_points_batch(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new_unchecked();
+    let hw_measurement_acc = RequestHardwareAcc::new_unchecked();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
     helpers::time_and_hardware_opt(
         async move {
@@ -184,7 +184,7 @@ async fn query_points_groups(
         Err(err) => return process_response_error(err, Instant::now()),
     };
 
-    let hw_measurement_acc = CollectionAppliedHardwareAcc::new();
+    let hw_measurement_acc = RequestHardwareAcc::new();
     let hw_measurement_acc_clone = hw_measurement_acc.clone();
 
     helpers::time_and_hardware_opt(
