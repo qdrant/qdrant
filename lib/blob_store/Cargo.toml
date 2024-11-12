@@ -1,7 +1,13 @@
 [package]
 name = "blob_store"
 version = "0.1.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
 edition = "2021"
+publish = false
+
+[lints]
+workspace = true
 
 [features]
 bench_rocksdb = ["dep:rocksdb"]
@@ -49,6 +55,3 @@ harness = false
 [[bench]]
 name = "bustle_bench"
 harness = false
-
-[profile.bench]
-debug = true
