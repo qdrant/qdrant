@@ -388,7 +388,7 @@ impl SegmentEntry for Segment {
         Ok(self.vector_data[vector_name]
             .vector_storage
             .borrow()
-            .size_in_bytes())
+            .size_of_available_vectors_in_bytes())
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
@@ -447,7 +447,7 @@ impl SegmentEntry for Segment {
             .map(|data| data.vector_storage.borrow().available_vector_count())
             .sum();
 
-        let mut vectors_size_bytes: usize = 0;
+        let mut total_average_vectors_size_bytes: usize = 0;
 
         let vector_data_info: HashMap<_, _> = self
             .vector_data
@@ -458,7 +458,12 @@ impl SegmentEntry for Segment {
                 let vector_index = vector_data.vector_index.borrow();
                 let is_indexed = vector_index.is_index();
 
-                vectors_size_bytes += vector_storage.size_in_bytes();
+                let average_vector_size_bytes = if num_vectors > 0 {
+                    vector_storage.size_of_available_vectors_in_bytes() / num_vectors
+                } else {
+                    0
+                };
+                total_average_vectors_size_bytes += average_vector_size_bytes;
 
                 let vector_data_info = VectorDataInfo {
                     num_vectors,
@@ -481,6 +486,10 @@ impl SegmentEntry for Segment {
         } else {
             0
         };
+
+        let num_points = self.available_point_count();
+
+        let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
 
         SegmentInfo {
             segment_type: self.segment_type,
