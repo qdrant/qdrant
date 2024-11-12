@@ -1,5 +1,4 @@
-use blob_store::fixtures::{empty_storage, HM_FIELDS};
-use blob_store::payload::Payload;
+use blob_store::fixtures::{empty_storage, Payload, HM_FIELDS};
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::Value;
 

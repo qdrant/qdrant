@@ -1,10 +1,30 @@
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::StorageOptions;
-use crate::payload::Payload;
-use crate::BlobStore;
+use crate::{Blob, BlobStore};
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct Payload(pub Map<String, serde_json::Value>);
+
+impl Default for Payload {
+    fn default() -> Self {
+        Payload(serde_json::Map::new())
+    }
+}
+
+impl Blob for Payload {
+    fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap()
+    }
+
+    fn from_bytes(data: &[u8]) -> Self {
+        serde_json::from_slice(data).unwrap()
+    }
+}
 
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, BlobStore<Payload>) {
@@ -93,3 +113,22 @@ pub const HM_FIELDS: [&str; 23] = [
     "garment_group_name",
     "detail_desc",
 ];
+
+#[cfg(test)]
+mod tests {
+    use crate::fixtures::Payload;
+    use crate::Blob;
+
+    #[test]
+    fn test_serde_symmetry() {
+        let mut payload = Payload::default();
+        payload.0.insert(
+            "key".to_string(),
+            serde_json::Value::String("value".to_string()),
+        );
+        let bytes = payload.to_bytes();
+
+        let deserialized = Payload::from_bytes(&bytes);
+        assert_eq!(payload, deserialized);
+    }
+}

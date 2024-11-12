@@ -4,7 +4,6 @@ mod blob_store;
 pub mod config;
 pub mod fixtures;
 mod page;
-pub mod payload;
 mod tracker;
 
 pub use blob::Blob;
