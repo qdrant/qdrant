@@ -3835,8 +3835,8 @@ pub struct Document {
     #[prost(string, tag = "1")]
     pub text: ::prost::alloc::string::String,
     /// Model name
-    #[prost(string, optional, tag = "3")]
-    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "3")]
+    pub model: ::prost::alloc::string::String,
     /// Model options
     #[prost(map = "string, message", tag = "4")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
@@ -3849,8 +3849,8 @@ pub struct Image {
     #[prost(message, optional, tag = "1")]
     pub image: ::core::option::Option<Value>,
     /// Model name
-    #[prost(string, optional, tag = "2")]
-    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub model: ::prost::alloc::string::String,
     /// Model options
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
@@ -3863,8 +3863,8 @@ pub struct InferenceObject {
     #[prost(message, optional, tag = "1")]
     pub object: ::core::option::Option<Value>,
     /// Model name
-    #[prost(string, optional, tag = "2")]
-    pub model: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub model: ::prost::alloc::string::String,
     /// Model options
     #[prost(map = "string, message", tag = "3")]
     pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,

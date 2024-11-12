@@ -2476,7 +2476,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | text | [string](#string) |  | Text of the document |
-| model | [string](#string) | optional | Model name |
+| model | [string](#string) |  | Model name |
 | options | [Document.OptionsEntry](#qdrant-Document-OptionsEntry) | repeated | Model options |
 
 
@@ -2814,7 +2814,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | image | [Value](#qdrant-Value) |  | Image data, either base64 encoded or URL |
-| model | [string](#string) | optional | Model name |
+| model | [string](#string) |  | Model name |
 | options | [Image.OptionsEntry](#qdrant-Image-OptionsEntry) | repeated | Model options |
 
 
@@ -2847,7 +2847,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | object | [Value](#qdrant-Value) |  | Object to infer |
-| model | [string](#string) | optional | Model name |
+| model | [string](#string) |  | Model name |
 | options | [InferenceObject.OptionsEntry](#qdrant-InferenceObject-OptionsEntry) | repeated | Model options |
 
 

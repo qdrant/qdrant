@@ -82,7 +82,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: Value::String(text),
                     data_type: DOCUMENT_DATA_TYPE.to_string(),
-                    model: model.unwrap_or_default(),
+                    model: model.to_string(),
                     options: options.options,
                 }
             }
@@ -95,7 +95,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: image,
                     data_type: IMAGE_DATA_TYPE.to_string(),
-                    model: model.unwrap_or_default(),
+                    model: model.to_string(),
                     options: options.options,
                 }
             }
@@ -108,7 +108,7 @@ impl From<InferenceData> for InferenceInput {
                 InferenceInput {
                     data: object,
                     data_type: OBJECT_DATA_TYPE.to_string(),
-                    model: model.unwrap_or_default(),
+                    model: model.to_string(),
                     options: options.options,
                 }
             }

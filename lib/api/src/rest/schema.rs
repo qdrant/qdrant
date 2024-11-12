@@ -171,7 +171,7 @@ pub struct Document {
     pub text: String,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
-    pub model: Option<String>,
+    pub model: String,
     #[serde(flatten)]
     pub options: Options,
 }
@@ -185,7 +185,7 @@ pub struct Image {
     pub image: Value,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
-    pub model: Option<String>,
+    pub model: String,
     /// Parameters for the model
     /// Values of the parameters are model-specific
     #[serde(flatten)]
@@ -202,7 +202,7 @@ pub struct InferenceObject {
     pub object: Value,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
-    pub model: Option<String>,
+    pub model: String,
     /// Parameters for the model
     /// Values of the parameters are model-specific
     #[serde(flatten)]
