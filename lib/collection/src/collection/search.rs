@@ -260,7 +260,7 @@ impl Collection {
         let collection_params = self.collection_config.read().await.params.clone();
 
         // Merge results from shards in order and deduplicate based on point ID
-        let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
+        let mut top_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
         let mut seen_ids = AHashSet::new();
 
         for (batch_index, request) in request.searches.iter().enumerate() {
@@ -286,16 +286,13 @@ impl Collection {
 
             // Skip `offset` only for client requests
             // to avoid applying `offset` twice in distributed mode.
-            let top_res = if is_client_request && request.offset > 0 {
-                merged_iter
-                    .skip(request.offset)
-                    .take(request.limit)
-                    .collect()
+            if is_client_request && request.offset > 0 {
+                let top_res = merged_iter.skip(request.offset).take(request.limit);
+                top_results[batch_index].extend(top_res);
             } else {
-                merged_iter.take(request.offset + request.limit).collect()
+                let top_res = merged_iter.take(request.offset + request.limit);
+                top_results[batch_index].extend(top_res);
             };
-
-            top_results.push(top_res);
 
             seen_ids.clear();
         }
