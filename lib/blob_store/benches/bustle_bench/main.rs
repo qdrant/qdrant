@@ -19,11 +19,11 @@ fn default_opts(workload: &mut Workload) -> &mut Workload {
 }
 
 fn main() {
-    for n in [1].into_iter() {
-        println!("------------ {} thread(s) -------------", n);
+    for num_threads in [1, 2].into_iter() {
+        println!("------------ {} thread(s) -------------", num_threads);
         // Read heavy
         println!("**read_heavy** with prefill_fraction 0.95");
-        let mut workload = Workload::new(n, Mix::read_heavy());
+        let mut workload = Workload::new(num_threads, Mix::read_heavy());
         default_opts(&mut workload).prefill_fraction(0.95);
         println!("ValueStorage:");
         workload.run::<ArcStorage<PayloadStorage>>();
@@ -37,7 +37,7 @@ fn main() {
 
         // Insert heavy
         println!("**insert_heavy** with prefill_fraction 0.0");
-        let mut workload = Workload::new(n, Mix::insert_heavy());
+        let mut workload = Workload::new(num_threads, Mix::insert_heavy());
         default_opts(&mut workload).prefill_fraction(0.0);
 
         println!("ValueStorage:");
@@ -52,7 +52,7 @@ fn main() {
 
         // Update heavy
         println!("**update_heavy** with prefill_fraction 0.5");
-        let mut workload = Workload::new(n, Mix::update_heavy());
+        let mut workload = Workload::new(num_threads, Mix::update_heavy());
         default_opts(&mut workload).prefill_fraction(0.5);
 
         println!("ValueStorage:");
