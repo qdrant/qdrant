@@ -126,7 +126,7 @@ impl SegmentsSearcher {
         let mut searches_to_rerun: HashMap<SegmentOffset, Vec<BatchOffset>> = HashMap::new();
 
         // Check if we want to re-run the search without sampling on some segments
-        for (batch_id, required_limit) in limits.iter().copied().enumerate() {
+        for (batch_id, required_limit) in limits.into_iter().enumerate() {
             let lowest_batch_score_opt = result_aggregator.batch_lowest_scores(batch_id);
 
             // If there are no results, we do not need to re-run the search

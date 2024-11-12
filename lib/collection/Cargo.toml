@@ -30,7 +30,7 @@ pprof = { workspace = true }
 
 [dependencies]
 parking_lot = { workspace = true }
-
+ahash = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
