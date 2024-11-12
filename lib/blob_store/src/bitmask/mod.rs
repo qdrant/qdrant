@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use bitvec::slice::BitSlice;
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::{self, MmapBitSlice};
 
 use crate::config::StorageConfig;
 use crate::tracker::{BlockOffset, PageId};
-use crate::utils_copied::madvise::{Advice, AdviceSetting};
-use crate::utils_copied::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use crate::utils_copied::mmap_type::{self, MmapBitSlice};
+
 
 const BITMASK_NAME: &str = "bitmask.dat";
 

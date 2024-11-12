@@ -1,7 +1,6 @@
 use crate::tracker::BlockOffset;
-use crate::utils_copied::madvise::{Advice, AdviceSetting};
-use crate::utils_copied::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memmap2::MmapMut;
+use memory::{madvise::{Advice, AdviceSetting}, mmap_ops::{create_and_ensure_length, open_write_mmap}};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]

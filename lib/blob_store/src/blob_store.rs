@@ -3,10 +3,10 @@ use crate::blob::Blob;
 use crate::config::{StorageConfig, StorageOptions};
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
-use crate::utils_copied::file_operations::atomic_save_json;
-use crate::utils_copied::mmap_type;
 
+use io::file_operations::atomic_save_json;
 use lz4_flex::compress_prepend_size;
+use memory::mmap_type;
 use parking_lot::RwLock;
 use std::path::PathBuf;
 

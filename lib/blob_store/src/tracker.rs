@@ -1,8 +1,6 @@
-use crate::utils_copied::madvise::{Advice, AdviceSetting};
-use crate::utils_copied::mmap_ops::{
-    create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
-};
 use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

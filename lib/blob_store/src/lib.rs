@@ -6,7 +6,6 @@ pub mod fixtures;
 mod page;
 pub mod payload;
 mod tracker;
-mod utils_copied;
 
 pub use blob::Blob;
 pub use blob_store::BlobStore;

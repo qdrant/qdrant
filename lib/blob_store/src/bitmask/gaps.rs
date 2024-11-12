@@ -2,12 +2,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
-
-use crate::utils_copied::{
-    madvise::{Advice, AdviceSetting},
-    mmap_ops::{create_and_ensure_length, open_write_mmap},
-    mmap_type::{self, MmapSlice},
-};
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_type::{self, MmapSlice};
 
 use super::{RegionId, StorageConfig};
 
