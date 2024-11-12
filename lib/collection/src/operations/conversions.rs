@@ -733,6 +733,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
+                    on_disk_payload_uses_mmap: false,
                     replication_factor: NonZeroU32::new(
                         params
                             .replication_factor
