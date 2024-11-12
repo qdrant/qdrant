@@ -322,91 +322,102 @@ impl ShardReplicaSet {
             clock.advance_to(new_clock_tick);
         }
 
-        // Notify consensus about failures if:
-        // 1. There is at least one success, otherwise it might be a problem of sending node
-        // 2. Failed peer is in `Resharding` state
-        // 3. ???
+        // Notify consensus about replica failures if:
+        // 1. there are some failures, but enough successes for the operation to be accepted
+        // 2. a resharding replica failed, and there are not enough successes for the operation to be accepted
+        //
+        // Notify user about potential consistency problems if:
+        // 1. there are some failures and enough successes, but we fail to deactivate the failed replicas
+        // 2. successes were not applied to any Active or Resharding replica
+        //
+        // Notify user with operation error if:
+        // 1. there are not enough successes for the operation to be accepted
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
             format!("Failed peer: {peer_id}, error: {collection_error}")
         } else {
-            "".to_string()
+            String::new()
         };
 
-        if successes.len() >= minimal_success_count {
-            let wait_for_deactivation = self.handle_failed_replicas(
-                &failures,
-                &self.replica_state.read(),
-                update_only_existing,
-            );
+        if !failures.is_empty() {
+            if successes.len() >= minimal_success_count {
+                // If there are enough successes, deactivate failed replicas
+                // Failed replicas will automatically recover from another replica ensuring consistency
 
-            // report all failing peers to consensus
-            if wait && wait_for_deactivation && !failures.is_empty() {
-                // ToDo: allow timeout configuration in API
-                let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
+                let wait_for_deactivation = self.handle_failed_replicas(
+                    &failures,
+                    &self.replica_state.read(),
+                    update_only_existing,
+                );
 
-                let replica_state = self.replica_state.clone();
-                let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
+                // Wait for replica failures to be accepted, otherwise return consistency error
+                if wait && wait_for_deactivation {
+                    // ToDo: allow timeout configuration in API
+                    let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
 
-                let shards_disabled = tokio::task::spawn_blocking(move || {
-                    replica_state.wait_for(
-                        |state| {
-                            peer_ids.iter().all(|peer_id| {
-                                state
-                                    .peers
-                                    .get(peer_id)
-                                    .map(|state| state != &ReplicaState::Active)
-                                    .unwrap_or(true) // not found means that peer is dead
-                            })
-                        },
-                        DEFAULT_SHARD_DEACTIVATION_TIMEOUT,
-                    )
-                })
-                .await?;
+                    let replica_state = self.replica_state.clone();
+                    let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
 
-                if !shards_disabled {
-                    return Err(CollectionError::service_error(format!(
-                        "Some replica of shard {} failed to apply operation and deactivation \
-                         timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
-                        self.shard_id, timeout.as_secs()
-                    )));
+                    let shards_disabled = tokio::task::spawn_blocking(move || {
+                        replica_state.wait_for(
+                            |state| {
+                                peer_ids.iter().all(|peer_id| {
+                                    state
+                                        .peers
+                                        .get(peer_id)
+                                        // Not found means that peer is dead
+                                        .map_or(true, |state| state != &ReplicaState::Active)
+                                })
+                            },
+                            timeout,
+                        )
+                    })
+                    .await?;
+
+                    if !shards_disabled {
+                        return Err(CollectionError::service_error(format!(
+                            "Some replica of shard {} failed to apply operation and deactivation \
+                            timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
+                            self.shard_id, timeout.as_secs(),
+                        )));
+                    }
                 }
+            } else {
+                // If there aren't enough successes, report error to user
+
+                // TODO(resharding): reconsider how we count/deactivate resharding replicas.
+                self.handle_failed_replicas(
+                    failures
+                        .iter()
+                        .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
+                    &self.replica_state.read(),
+                    update_only_existing,
+                );
+
+                let (_peer_id, err) = failures.into_iter().next().unwrap();
+                return Err(err);
             }
         }
 
-        if !failures.is_empty() && successes.len() < minimal_success_count {
-            self.handle_failed_replicas(
-                failures
-                    .iter()
-                    .filter(|(peer_id, _)| self.peer_is_resharding(*peer_id)),
-                &self.replica_state.read(),
-                update_only_existing,
-            );
-
-            // completely failed - report error to user
-            let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
-            return Err(err);
-        }
-
+        // Successes must have applied to at least one active replica
         if !successes
             .iter()
             .any(|&(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \
-                 Consistency of this update is not guaranteed. Please retry. {failure_error}"
+                 Consistency of this update is not guaranteed. Please retry. {failure_error}",
             )));
         }
 
         let is_any_operation_rejected = successes
             .iter()
             .any(|(_, res)| matches!(res.status, UpdateStatus::ClockRejected));
-
         if is_any_operation_rejected {
             return Ok(None);
         }
 
-        // there are enough successes, return the first one
+        // There are enough successes, return the first one
         let (_, res) = successes
             .into_iter()
             .next()
