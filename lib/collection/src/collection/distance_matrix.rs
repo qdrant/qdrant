@@ -77,8 +77,8 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixOffsetsResponse {
             }
         }
         let scores = nearests
-            .iter()
-            .flat_map(|row| row.iter().map(|p| p.score))
+            .into_iter()
+            .flat_map(|row| row.into_iter().map(|p| p.score))
             .collect();
         Self {
             offsets_row,
@@ -96,7 +96,8 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
             nearests,
         } = response;
 
-        let mut pairs = vec![];
+        let pairs_len = nearests.iter().map(|n| n.len()).sum();
+        let mut pairs = Vec::with_capacity(pairs_len);
 
         for (a, scored_points) in sample_ids.into_iter().zip(nearests.into_iter()) {
             for scored_point in scored_points {
@@ -245,17 +246,15 @@ impl Collection {
         // postprocess the results to account for overlapping samples
         for (scores, sample_id) in nearest.iter_mut().zip(sampled_point_ids.iter()) {
             // need to remove the sample_id from the results
-            let mut filtered: Vec<_> = scores
-                .iter()
-                .filter(|p| p.id != *sample_id)
-                .cloned()
-                .collect();
-            // if not found pop lowest score
-            if filtered.len() == limit_per_sample + 1 {
-                // if we have enough results, remove the last one
-                filtered.pop();
+            if let Some(sample_pos) = scores.iter().position(|p| p.id == *sample_id) {
+                scores.remove(sample_pos);
+            } else {
+                // if not found pop lowest score
+                if scores.len() == limit_per_sample + 1 {
+                    // if we have enough results, remove the last one
+                    scores.pop();
+                }
             }
-            *scores = filtered;
         }
 
         Ok(CollectionSearchMatrixResponse {
