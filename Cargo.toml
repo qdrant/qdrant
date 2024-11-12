@@ -152,6 +152,7 @@ used_underscore_binding = "warn"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
 [workspace.dependencies]
+ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"
 bytes = "1.8.0"
 chrono = { version = "0.4.38", features = ["serde"] }

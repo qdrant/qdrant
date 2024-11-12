@@ -1,20 +1,20 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
 
+use ahash::{AHashMap, AHashSet};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::ScoreType;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 
 pub struct SearchResultAggregator {
     queue: FixedLengthPriorityQueue<ScoredPoint>,
-    seen: HashSet<PointIdType>, // Point ids seen
+    seen: AHashSet<PointIdType>, // Point ids seen
 }
 
 impl SearchResultAggregator {
     pub fn new(limit: usize) -> Self {
         SearchResultAggregator {
             queue: FixedLengthPriorityQueue::new(limit),
-            seen: HashSet::new(),
+            seen: AHashSet::with_capacity(limit),
         }
     }
 
@@ -39,7 +39,7 @@ pub struct BatchResultAggregator {
     // result aggregators for each batched request
     batch_aggregators: Vec<SearchResultAggregator>,
     // Store max version for each point id to exclude outdated points from the result
-    point_versions: HashMap<PointIdType, SeqNumberType>,
+    point_versions: AHashMap<PointIdType, SeqNumberType>,
 }
 
 impl BatchResultAggregator {
@@ -51,7 +51,7 @@ impl BatchResultAggregator {
 
         BatchResultAggregator {
             batch_aggregators: merged_results_per_batch,
-            point_versions: HashMap::new(),
+            point_versions: AHashMap::new(),
         }
     }
 
