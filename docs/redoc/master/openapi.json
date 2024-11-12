@@ -11181,6 +11181,7 @@
             "minimum": 0
           },
           "vectors_size_bytes": {
+            "description": "An ESTIMATION of effective amount of bytes used for vectors Do NOT rely on this number unless you know what you are doing",
             "type": "integer",
             "format": "uint",
             "minimum": 0
