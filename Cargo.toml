@@ -224,6 +224,7 @@ bench = false
 [workspace]
 members = [
     "lib/api",
+    "lib/blob_store",
     "lib/collection",
     "lib/common/*",
     "lib/segment",
