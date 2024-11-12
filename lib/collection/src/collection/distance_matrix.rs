@@ -96,7 +96,8 @@ impl From<CollectionSearchMatrixResponse> for SearchMatrixPairsResponse {
             nearests,
         } = response;
 
-        let mut pairs = Vec::with_capacity(sample_ids.len() * nearests.len());
+        let pairs_len = nearests.iter().map(|n| n.len()).sum();
+        let mut pairs = Vec::with_capacity(pairs_len);
 
         for (a, scored_points) in sample_ids.into_iter().zip(nearests.into_iter()) {
             for scored_point in scored_points {
