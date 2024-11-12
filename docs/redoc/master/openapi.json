@@ -9943,6 +9943,7 @@
         "description": "WARN: Work-in-progress, unimplemented\n\nText document for embedding. Requires inference infrastructure, unimplemented.",
         "type": "object",
         "required": [
+          "model",
           "text"
         ],
         "properties": {
@@ -9952,8 +9953,7 @@
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",
@@ -9967,7 +9967,8 @@
         "description": "WARN: Work-in-progress, unimplemented\n\nImage object for embedding. Requires inference infrastructure, unimplemented.",
         "type": "object",
         "required": [
-          "image"
+          "image",
+          "model"
         ],
         "properties": {
           "image": {
@@ -9975,8 +9976,7 @@
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",
@@ -9990,6 +9990,7 @@
         "description": "WARN: Work-in-progress, unimplemented\n\nCustom object for embedding. Requires inference infrastructure, unimplemented.",
         "type": "object",
         "required": [
+          "model",
           "object"
         ],
         "properties": {
@@ -9998,8 +9999,7 @@
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",
