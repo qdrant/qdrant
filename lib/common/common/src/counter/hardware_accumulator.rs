@@ -78,14 +78,14 @@ impl HwMeasurementAcc {
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);
     }
 
-    pub fn has_values(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         let Self {
             ref cpu_counter,
 
             #[cfg(any(debug_assertions, test))]
                 applied: _,
         } = self;
-        cpu_counter.load(Ordering::Relaxed) > 0
+        cpu_counter.load(Ordering::Relaxed) == 0
     }
 
     pub fn set_applied(&self) {
@@ -119,7 +119,7 @@ impl Drop for HwMeasurementAcc {
         #[cfg(any(debug_assertions, test))] // Fail in both, release and debug tests.
         {
             if !self.applied.load(Ordering::Relaxed)
-            && self.has_values()
+            && !self.is_zero()
             // We don't create weak references so checking for strong count only is fine!
             && Arc::strong_count(&self.cpu_counter) == 1
             {
