@@ -48,19 +48,19 @@ message SparseIndices {
 
 message Document {
   string text = 1; // Text of the document
-  optional string model = 3; // Model name
+  string model = 3; // Model name
   map<string, Value> options = 4; // Model options
 }
 
 message Image {
   Value image = 1; // Image data, either base64 encoded or URL
-  optional string model = 2; // Model name
+  string model = 2; // Model name
   map<string, Value> options = 3; // Model options
 }
 
 message InferenceObject {
   Value object = 1; // Object to infer
-  optional string model = 2; // Model name
+  string model = 2; // Model name
   map<string, Value> options = 3; // Model options
 }
 

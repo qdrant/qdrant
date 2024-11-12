@@ -273,7 +273,7 @@ mod tests {
     fn create_test_document(text: &str) -> Document {
         Document {
             text: text.to_string(),
-            model: Some("test-model".to_string()),
+            model: "test-model".to_string(),
             options: Default::default(),
         }
     }
@@ -281,7 +281,7 @@ mod tests {
     fn create_test_image(url: &str) -> Image {
         Image {
             image: json!({"data": url.to_string()}),
-            model: Some("test-model".to_string()),
+            model: "test-model".to_string(),
             options: Default::default(),
         }
     }
@@ -289,7 +289,7 @@ mod tests {
     fn create_test_object(data: &str) -> InferenceObject {
         InferenceObject {
             object: json!({"data": data}),
-            model: Some("test-model".to_string()),
+            model: "test-model".to_string(),
             options: Default::default(),
         }
     }
