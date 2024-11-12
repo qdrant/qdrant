@@ -11094,6 +11094,10 @@
           },
           "optimizations": {
             "$ref": "#/components/schemas/OptimizerTelemetry"
+          },
+          "async_scorer": {
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
