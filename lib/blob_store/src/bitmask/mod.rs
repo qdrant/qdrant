@@ -13,7 +13,6 @@ use memory::mmap_type::{self, MmapBitSlice};
 use crate::config::StorageConfig;
 use crate::tracker::{BlockOffset, PageId};
 
-
 const BITMASK_NAME: &str = "bitmask.dat";
 
 type RegionId = u32;
@@ -473,7 +472,8 @@ impl Bitmask {
 #[cfg(test)]
 mod tests {
 
-    use bitvec::{bits, vec::BitVec};
+    use bitvec::bits;
+    use bitvec::vec::BitVec;
     use proptest::prelude::*;
     use rand::thread_rng;
 

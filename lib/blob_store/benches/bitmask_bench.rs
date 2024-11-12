@@ -1,5 +1,6 @@
 use bitvec::vec::BitVec;
-use blob_store::{bitmask::Bitmask, config::DEFAULT_REGION_SIZE_BLOCKS};
+use blob_store::bitmask::Bitmask;
+use blob_store::config::DEFAULT_REGION_SIZE_BLOCKS;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::{thread_rng, Rng};
 

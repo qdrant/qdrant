@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use bustle::Collection;
-use blob_store::payload::Payload;
 use blob_store::blob::Blob;
+use blob_store::payload::Payload;
+use bustle::Collection;
 use parking_lot::RwLock;
 use rocksdb::{DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
 

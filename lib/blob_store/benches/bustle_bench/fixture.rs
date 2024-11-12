@@ -1,10 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock},
-};
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
-use bustle::CollectionHandle;
 use blob_store::payload::Payload;
+use bustle::CollectionHandle;
 use parking_lot::RwLock;
 use serde_json::json;
 use tempfile::TempDir;

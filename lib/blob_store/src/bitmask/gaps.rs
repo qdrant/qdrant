@@ -255,12 +255,11 @@ impl BitmaskGaps {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{StorageOptions, DEFAULT_REGION_SIZE_BLOCKS};
-
-    use super::*;
-
     use proptest::prelude::*;
     use tempfile::tempdir;
+
+    use super::*;
+    use crate::config::{StorageOptions, DEFAULT_REGION_SIZE_BLOCKS};
 
     prop_compose! {
         fn arbitrary_region_gaps(region_size_blocks: u16)(
@@ -371,6 +370,7 @@ mod tests {
     #[test]
     fn test_region_gaps_persistence() {
         use std::fs;
+
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();

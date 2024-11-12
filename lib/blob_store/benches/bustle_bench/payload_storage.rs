@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use blob_store::fixtures::empty_storage;
+use blob_store::payload::Payload;
 use bustle::Collection;
-use blob_store::{fixtures::empty_storage, payload::Payload};
 use parking_lot::RwLock;
 
 use crate::fixture::{ArcStorage, SequentialCollectionHandle, StorageProxy};

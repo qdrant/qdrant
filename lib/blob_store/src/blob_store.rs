@@ -1,14 +1,15 @@
-use crate::bitmask::Bitmask;
-use crate::blob::Blob;
-use crate::config::{StorageConfig, StorageOptions};
-use crate::page::Page;
-use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
+use std::path::PathBuf;
 
 use io::file_operations::atomic_save_json;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
 use parking_lot::RwLock;
-use std::path::PathBuf;
+
+use crate::bitmask::Bitmask;
+use crate::blob::Blob;
+use crate::config::{StorageConfig, StorageOptions};
+use crate::page::Page;
+use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
 
 const CONFIG_FILENAME: &str = "config.json";
 
@@ -436,17 +437,20 @@ impl<V> Drop for BlobStore<V> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rand::distributions::Uniform;
+    use rand::prelude::Distribution;
+    use rand::seq::SliceRandom;
+    use rand::Rng;
+    use rstest::rstest;
+    use tempfile::Builder;
 
+    use super::*;
     use crate::blob::Blob;
     use crate::config::{
         DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS,
     };
     use crate::fixtures::{empty_storage, empty_storage_sized, random_payload, HM_FIELDS};
     use crate::payload::Payload;
-    use rand::{distributions::Uniform, prelude::Distribution, seq::SliceRandom, Rng};
-    use rstest::rstest;
-    use tempfile::Builder;
 
     #[test]
     fn test_empty_payload_storage() {

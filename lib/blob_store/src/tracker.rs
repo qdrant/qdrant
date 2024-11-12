@@ -1,8 +1,11 @@
-use memmap2::MmapMut;
-use memory::madvise::{Advice, AdviceSetting};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::{
+    create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
+};
 
 pub type PointOffset = u32;
 pub type BlockOffset = u32;
@@ -298,10 +301,12 @@ impl Tracker {
 
 #[cfg(test)]
 mod tests {
-    use crate::tracker::{Tracker, ValuePointer};
-    use rstest::rstest;
     use std::path::PathBuf;
+
+    use rstest::rstest;
     use tempfile::Builder;
+
+    use crate::tracker::{Tracker, ValuePointer};
 
     #[test]
     fn test_file_name() {

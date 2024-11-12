@@ -1,7 +1,10 @@
-use crate::tracker::BlockOffset;
-use memmap2::MmapMut;
-use memory::{madvise::{Advice, AdviceSetting}, mmap_ops::{create_and_ensure_length, open_write_mmap}};
 use std::path::{Path, PathBuf};
+
+use memmap2::MmapMut;
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+
+use crate::tracker::BlockOffset;
 
 #[derive(Debug)]
 pub(crate) struct Page {

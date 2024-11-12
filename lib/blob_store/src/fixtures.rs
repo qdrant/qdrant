@@ -1,9 +1,10 @@
-use crate::config::StorageOptions;
-use crate::payload::Payload;
-use crate::BlobStore;
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 use tempfile::{Builder, TempDir};
+
+use crate::config::StorageOptions;
+use crate::payload::Payload;
+use crate::BlobStore;
 
 /// Create an empty storage with the default configuration
 pub fn empty_storage() -> (TempDir, BlobStore<Payload>) {
