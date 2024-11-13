@@ -19,8 +19,8 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
-    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, VectorStorageType,
+    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PointIdType, QuantizationConfig,
+    SegmentConfig, VectorStorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -85,11 +85,7 @@ pub trait SegmentOptimizer {
         let config = SegmentConfig {
             vector_data: collection_params.to_base_vector_data()?,
             sparse_vector_data: collection_params.to_sparse_vector_data()?,
-            payload_storage_type: if collection_params.on_disk_payload {
-                PayloadStorageType::OnDisk
-            } else {
-                PayloadStorageType::InMemory
-            },
+            payload_storage_type: collection_params.payload_storage_type(),
         };
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
@@ -296,11 +292,7 @@ pub trait SegmentOptimizer {
         let optimized_config = SegmentConfig {
             vector_data,
             sparse_vector_data,
-            payload_storage_type: if collection_params.on_disk_payload {
-                PayloadStorageType::OnDisk
-            } else {
-                PayloadStorageType::InMemory
-            },
+            payload_storage_type: collection_params.payload_storage_type(),
         };
 
         Ok(SegmentBuilder::new(

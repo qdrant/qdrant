@@ -104,6 +104,10 @@ pub struct CollectionParams {
     /// Default: true
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
+    /// Temporary setting to enable/disable the use of mmap for on-disk payload storage.
+    // TODO: remove this setting after integration is finished
+    #[serde(skip)]
+    pub on_disk_payload_uses_mmap: bool,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
@@ -113,6 +117,9 @@ pub struct CollectionParams {
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
         if self.on_disk_payload {
+            if self.on_disk_payload_uses_mmap {
+                return PayloadStorageType::Mmap;
+            }
             PayloadStorageType::OnDisk
         } else {
             PayloadStorageType::InMemory
@@ -128,6 +135,7 @@ impl CollectionParams {
             write_consistency_factor: _, // May be changed
             read_fan_out_factor: _, // May be changed
             on_disk_payload: _, // May be changed
+            on_disk_payload_uses_mmap: _, // Temporary
             sparse_vectors,  // Parameters may be changes, but not the structure
         } = other;
 
@@ -178,6 +186,7 @@ impl Anonymize for CollectionParams {
             write_consistency_factor: self.write_consistency_factor,
             read_fan_out_factor: self.read_fan_out_factor,
             on_disk_payload: self.on_disk_payload,
+            on_disk_payload_uses_mmap: self.on_disk_payload_uses_mmap,
             sparse_vectors: self.sparse_vectors.anonymize(),
         }
     }
@@ -263,6 +272,7 @@ impl CollectionParams {
             write_consistency_factor: default_write_consistency_factor(),
             read_fan_out_factor: None,
             on_disk_payload: default_on_disk_payload(),
+            on_disk_payload_uses_mmap: false,
             sparse_vectors: None,
         }
     }

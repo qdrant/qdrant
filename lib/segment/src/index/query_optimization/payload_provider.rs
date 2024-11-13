@@ -5,6 +5,7 @@ use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::PayloadStorage;
 use crate::types::{OwnedPayloadRef, Payload};
 
 #[derive(Clone)]
@@ -51,6 +52,12 @@ impl PayloadProvider {
                 .read_payload(point_id)
                 .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"))
                 .map(OwnedPayloadRef::from),
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                let payload = s
+                    .get(point_id)
+                    .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
+                Some(OwnedPayloadRef::from(payload))
+            }
         };
 
         let payload = if let Some(payload_ptr) = payload_ptr_opt {

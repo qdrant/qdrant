@@ -13,7 +13,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::payload_storage::ConditionChecker;
+use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
     OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorName,
@@ -282,6 +282,12 @@ impl ConditionChecker for SimpleConditionChecker {
                             s.read_payload(point_id)
                                 .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"))
                                 .map(|x| x.into())
+                        }
+                        PayloadStorageEnum::MmapPayloadStorage(s) => {
+                            let payload = s.get(point_id).unwrap_or_else(|err| {
+                                panic!("Payload storage is corrupted: {err}")
+                            });
+                            Some(OwnedPayloadRef::from(payload))
                         }
                     };
 
