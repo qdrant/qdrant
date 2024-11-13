@@ -11,15 +11,15 @@ use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
-    "Not enough bytes to operate with memmaped file `point_to_values.bin`. Is the storage corrupted?";
+    "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
 
-/// Trait for values that can be stored in memmaped file. It's used in `MmapPointToValues` to store values.
+/// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.
 pub trait MmapValue {
     /// Lifetime `'a` is required to define lifetime for `&'a str` case
     type Referenced<'a>: Sized + Clone;
 
-    fn mmaped_size(value: Self::Referenced<'_>) -> usize;
+    fn mmapped_size(value: Self::Referenced<'_>) -> usize;
 
     fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>>;
 
@@ -33,7 +33,7 @@ pub trait MmapValue {
 impl MmapValue for IntPayloadType {
     type Referenced<'a> = &'a Self;
 
-    fn mmaped_size(_value: Self::Referenced<'_>) -> usize {
+    fn mmapped_size(_value: Self::Referenced<'_>) -> usize {
         std::mem::size_of::<Self>()
     }
 
@@ -57,7 +57,7 @@ impl MmapValue for IntPayloadType {
 impl MmapValue for FloatPayloadType {
     type Referenced<'a> = Self;
 
-    fn mmaped_size(_value: Self) -> usize {
+    fn mmapped_size(_value: Self) -> usize {
         std::mem::size_of::<Self>()
     }
 
@@ -81,7 +81,7 @@ impl MmapValue for FloatPayloadType {
 impl MmapValue for UuidIntType {
     type Referenced<'a> = &'a Self;
 
-    fn mmaped_size(_value: Self::Referenced<'_>) -> usize {
+    fn mmapped_size(_value: Self::Referenced<'_>) -> usize {
         std::mem::size_of::<Self>()
     }
 
@@ -105,7 +105,7 @@ impl MmapValue for UuidIntType {
 impl MmapValue for GeoPoint {
     type Referenced<'a> = Self;
 
-    fn mmaped_size(_value: Self) -> usize {
+    fn mmapped_size(_value: Self) -> usize {
         2 * std::mem::size_of::<f64>()
     }
 
@@ -137,7 +137,7 @@ impl MmapValue for GeoPoint {
 impl MmapValue for str {
     type Referenced<'a> = &'a str;
 
-    fn mmaped_size(value: &str) -> usize {
+    fn mmapped_size(value: &str) -> usize {
         value.as_bytes().len() + std::mem::size_of::<u32>()
     }
 
@@ -165,8 +165,8 @@ impl MmapValue for str {
     }
 }
 
-/// Flattened memmaped points-to-values map
-/// It's an analogue of `Vec<Vec<N>>` but in memmaped file.
+/// Flattened memmapped points-to-values map
+/// It's an analogue of `Vec<Vec<N>>` but in memmapped file.
 /// This structure doesn't support adding new values, only removing.
 /// It's used in mmap field indices like `MmapMapIndex`, `MmapNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
@@ -205,7 +205,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         let ranges_size = points_count * std::mem::size_of::<MmapRange>();
         let values_size = iter
             .clone()
-            .map(|v| v.1.map(|v| T::mmaped_size(v)).sum::<usize>())
+            .map(|v| v.1.map(|v| T::mmapped_size(v)).sum::<usize>())
             .sum::<usize>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
 
@@ -236,7 +236,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                 T::write_to_mmap(value.clone(), bytes).ok_or_else(|| {
                     OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE)
                 })?;
-                point_values_offset += T::mmaped_size(value);
+                point_values_offset += T::mmapped_size(value);
             }
 
             let range = MmapRange {
@@ -295,7 +295,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                     if check_fn(value.clone()) {
                         return true;
                     }
-                    value_offset += T::mmaped_size(value);
+                    value_offset += T::mmapped_size(value);
                 }
                 false
             })
@@ -310,14 +310,14 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         let range = self.get_range(point_id)?;
 
         // second, define iteration step for values
-        // iteration step gets remainder range from memmaped file and returns left range
+        // iteration step gets remainder range from memmapped file and returns left range
         let bytes: &[u8] = self.mmap.as_ref();
         let read_value = move |range: MmapRange| -> Option<(T::Referenced<'a>, MmapRange)> {
             if range.count > 0 {
                 let bytes = bytes.get(range.start as usize..)?;
                 T::read_from_mmap(bytes).map(|value| {
                     let range = MmapRange {
-                        start: range.start + T::mmaped_size(value.clone()) as u64,
+                        start: range.start + T::mmapped_size(value.clone()) as u64,
                         count: range.count - 1,
                     };
                     (value, range)

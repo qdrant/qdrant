@@ -49,7 +49,7 @@ pub struct OptimizersConfig {
     #[serde(default)]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
-    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// Segments larger than this threshold will be stored as read-only memmapped file.
     ///
     /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
     ///

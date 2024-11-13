@@ -171,7 +171,7 @@ impl Tracker {
         Ok(old_pointers)
     }
 
-    /// Return the size of the underlying mmaped file
+    /// Return the size of the underlying mmapped file
     #[cfg(test)]
     pub fn mmap_file_size(&self) -> usize {
         self.mmap.len()
