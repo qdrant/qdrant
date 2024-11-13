@@ -75,8 +75,11 @@ impl<
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
         let consecutive_ids = ids.windows(2).all(|w| w[0] + 1 == w[1]);
         if consecutive_ids {
-            // TODO optimize storage for consecutive ids
-            ids.iter().map(|&id| self.score_stored(id)).collect()
+            let vectors = self.vector_storage.get_dense_batch(ids);
+            vectors
+                .into_iter()
+                .map(|v| TMetric::similarity(&self.query, v))
+                .collect()
         } else {
             ids.iter().map(|&id| self.score_stored(id)).collect()
         }
