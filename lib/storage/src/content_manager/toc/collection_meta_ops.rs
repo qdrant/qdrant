@@ -227,7 +227,7 @@ impl TableOfContent {
                 if let Err(error) = tokio::fs::remove_dir_all(&deleted_path).await {
                     log::error!(
                         "Can't delete collection {} from disk. Error: {}",
-                        deleted_path.display(),
+                        deleted_path.as_ref().display(),
                         error
                     );
                 }
