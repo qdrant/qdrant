@@ -211,6 +211,7 @@ impl TableOfContent {
                 // Even if the chosen randomness factor poses chances of collision, the library
                 // prevents creation of duplicate files within the chosen directory.
                 .rand_bytes(8)
+                .prefix("")
                 .tempdir_in(removed_collections_path)?;
 
             tokio::fs::rename(path, &deleted_path).await?;
