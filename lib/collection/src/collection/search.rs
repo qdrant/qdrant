@@ -259,8 +259,15 @@ impl Collection {
 
         let collection_params = self.collection_config.read().await.params.clone();
 
+        let min_limit = request
+            .searches
+            .iter()
+            .map(|r| r.limit)
+            .min()
+            .unwrap_or_default();
         // Merge results from shards in order and deduplicate based on point ID
-        let mut top_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
+        let mut top_results: Vec<Vec<ScoredPoint>> =
+            vec![Vec::with_capacity(min_limit); batch_size];
         let mut seen_ids = AHashSet::new();
 
         for (batch_index, request) in request.searches.iter().enumerate() {
