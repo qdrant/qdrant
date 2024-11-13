@@ -327,6 +327,8 @@ pub struct SegmentInfo {
     pub num_points: usize,
     pub num_indexed_vectors: usize,
     pub num_deleted_vectors: usize,
+    /// An ESTIMATION of effective amount of bytes used for vectors
+    /// Do NOT rely on this number unless you know what you are doing
     pub vectors_size_bytes: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,

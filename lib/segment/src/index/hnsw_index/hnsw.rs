@@ -118,7 +118,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 let vector_storage = vector_storage.borrow();
                 let available_vectors = vector_storage.available_vector_count();
                 let full_scan_threshold = vector_storage
-                    .size_in_bytes()
+                    .size_of_available_vectors_in_bytes()
                     .checked_div(available_vectors)
                     .and_then(|avg_vector_size| {
                         hnsw_config
@@ -212,7 +212,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let total_vector_count = vector_storage.total_vector_count();
 
         let full_scan_threshold = vector_storage
-            .size_in_bytes()
+            .size_of_available_vectors_in_bytes()
             .checked_div(total_vector_count)
             .and_then(|avg_vector_size| {
                 hnsw_config
