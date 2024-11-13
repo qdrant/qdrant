@@ -220,16 +220,20 @@ impl ShardHolder {
     pub fn check_abort_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let state = self.resharding_state.read();
 
-        // `abort_resharding` designed to be self-healing, so...
-        //
-        // - it's safe to run, if resharding is *not* in progress
+        // - do not abort if no resharding operation is ongoing
         let Some(state) = state.deref() else {
-            return Ok(());
+            return Err(CollectionError::bad_request(format!(
+                "can't abort resharding {resharding_key}, no resharding operation in progress",
+            )));
         };
 
-        // - it's safe to run, if *another* resharding is in progress
+        // - do not abort if there is no active reshardinog operation with that key
         if !state.matches(resharding_key) {
-            return Ok(());
+            return Err(CollectionError::bad_request(format!(
+                "can't abort resharding {resharding_key}, \
+                 resharding operation in progress has key {}",
+                state.key(),
+            )));
         }
 
         // - it's safe to run, if write hash ring was not committed yet
