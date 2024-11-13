@@ -88,6 +88,7 @@ pub trait RawScorer {
     ) -> Vec<ScoredPointOffset>;
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
+    fn peek_top_all_old(&self, top: usize) -> Vec<ScoredPointOffset>;
 
     fn take_hardware_counter(&self) -> HardwareCounterCell;
 }
@@ -933,6 +934,20 @@ where
                         idx: point_id,
                         score,
                     })
+            });
+        peek_top_largest_iterable(scores, top)
+    }
+
+    fn peek_top_all_old(&self, top: usize) -> Vec<ScoredPointOffset> {
+        let scores = (0..self.point_deleted.len() as PointOffsetType)
+            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .filter(|point_id| self.check_vector(*point_id))
+            .map(|point_id| {
+                let point_id = point_id as PointOffsetType;
+                ScoredPointOffset {
+                    idx: point_id,
+                    score: self.query_scorer.score_stored(point_id),
+                }
             });
         peek_top_largest_iterable(scores, top)
     }

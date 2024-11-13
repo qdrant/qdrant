@@ -3,11 +3,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
 use segment::data_types::named_vectors::CowVector;
-use segment::data_types::vectors::DenseVector;
+use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
@@ -18,7 +18,7 @@ use tempfile::Builder;
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-const NUM_VECTORS: usize = 10000;
+const NUM_VECTORS: usize = 10_000;
 const DIM: usize = 1024;
 
 fn random_vector(size: usize) -> DenseVector {
@@ -42,6 +42,10 @@ fn init_mmap_vector_storage(
         .update_from(&mut vectors, &AtomicBool::from(false))
         .unwrap();
 
+    assert_eq!(storage.available_vector_count(), num);
+    drop(storage);
+    let storage = open_memmap_vector_storage(path, dim, dist).unwrap();
+    assert_eq!(storage.available_vector_count(), num);
     (storage, id_tracker)
 }
 
@@ -54,18 +58,36 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("storage-score-all");
 
-    group.bench_function("storage vector search", |b| {
-        b.iter(|| {
-            let vector = random_vector(DIM);
-            let vector = vector.as_slice().into();
-            new_raw_scorer(
-                vector,
-                &storage,
-                borrowed_id_tracker.deleted_point_bitslice(),
-            )
-            .unwrap()
-            .peek_top_all(10)
-        })
+    group.bench_function("storage batched vector scoring", |b| {
+        b.iter_batched(
+            || QueryVector::from(random_vector(DIM)),
+            |vector| {
+                new_raw_scorer(
+                    vector,
+                    &storage,
+                    borrowed_id_tracker.deleted_point_bitslice(),
+                )
+                .unwrap()
+                .peek_top_all(10)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function("storage current vector scoring", |b| {
+        b.iter_batched(
+            || QueryVector::from(random_vector(DIM)),
+            |vector| {
+                new_raw_scorer(
+                    vector,
+                    &storage,
+                    borrowed_id_tracker.deleted_point_bitslice(),
+                )
+                .unwrap()
+                .peek_top_all_old(10)
+            },
+            BatchSize::SmallInput,
+        )
     });
 }
 
