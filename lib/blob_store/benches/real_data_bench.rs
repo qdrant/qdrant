@@ -1,16 +1,21 @@
+use std::fs::File;
+
 use blob_store::fixtures::{empty_storage, Payload, HM_FIELDS};
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::Value;
 
 pub fn real_data_data_bench(c: &mut Criterion) {
     let (_dir, mut storage) = empty_storage();
-    let csv_data = include_str!("../data/h&m-articles.csv");
-    let csv_data_bytes = csv_data.as_bytes();
+    let csv_path = dataset::Dataset::HMArticles
+        .download()
+        .expect("download should succeed");
+
     let expected_point_count = 105_542;
 
     c.bench_function("write real payload", |b| {
         b.iter(|| {
-            let mut rdr = csv::Reader::from_reader(csv_data_bytes);
+            let csv_file = File::open(csv_path.clone()).expect("file should open");
+            let mut rdr = csv::Reader::from_reader(csv_file);
             let mut point_offset = 0;
             for result in rdr.records() {
                 let record = result.unwrap();

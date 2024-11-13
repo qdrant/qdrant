@@ -437,6 +437,8 @@ impl<V> Drop for BlobStore<V> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+
     use rand::distributions::Uniform;
     use rand::prelude::Distribution;
     use rand::seq::SliceRandom;
@@ -820,8 +822,13 @@ mod tests {
         const EXPECTED_LEN: usize = 105_542;
 
         fn write_data(storage: &mut BlobStore<Payload>, init_offset: u32) -> u32 {
-            let csv_data = include_str!("../data/h&m-articles.csv");
-            let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+            let csv_path = dataset::Dataset::HMArticles
+                .download()
+                .expect("download should succeed");
+
+            let csv_file = File::open(csv_path).expect("file should open");
+
+            let mut rdr = csv::Reader::from_reader(csv_file);
             let mut point_offset = init_offset;
             for result in rdr.records() {
                 let record = result.unwrap();
@@ -843,8 +850,13 @@ mod tests {
             right_shift_offset: u32,
         ) {
             // validate storage value equality between the two writes
-            let csv_data = include_str!("../data/h&m-articles.csv");
-            let mut rdr = csv::Reader::from_reader(csv_data.as_bytes());
+            let csv_path = dataset::Dataset::HMArticles
+                .download()
+                .expect("download should succeed");
+
+            let csv_file = File::open(csv_path).expect("file should open");
+
+            let mut rdr = csv::Reader::from_reader(csv_file);
             for (row_index, result) in rdr.records().enumerate() {
                 let record = result.unwrap();
                 // apply shift offset

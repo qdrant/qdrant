@@ -846,6 +846,7 @@ dependencies = [
  "bustle",
  "criterion",
  "csv",
+ "dataset",
  "io",
  "itertools 0.13.0",
  "log",
