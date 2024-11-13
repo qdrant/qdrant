@@ -74,6 +74,9 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
         )
     });
 
+    drop(storage);
+    let storage = open_memmap_vector_storage(dir.path(), DIM, dist).unwrap();
+
     group.bench_function("storage current vector scoring", |b| {
         b.iter_batched(
             || QueryVector::from(random_vector(DIM)),

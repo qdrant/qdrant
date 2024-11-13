@@ -920,7 +920,7 @@ where
         let point_ids = (0..self.point_deleted.len() as PointOffsetType)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
-            .chunks(32); // batch points to leverage sequential access
+            .chunks(64); // batch points to leverage sequential access
 
         let scores = point_ids // batch points to leverage sequential access
             .into_iter()
