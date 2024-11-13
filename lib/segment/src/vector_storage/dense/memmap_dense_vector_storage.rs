@@ -135,6 +135,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 
+    #[cfg(target_os = "linux")]
     fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
         debug_assert!(
             keys.windows(2).all(|w| w[0] + 1 == w[1]),
