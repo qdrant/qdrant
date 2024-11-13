@@ -244,7 +244,7 @@ opt-level = 0
 
 # Inherits by default from release
 [profile.bench]
-lto = false
+lto = "off"
 debug = true
 codegen-units = 256 # restore default value for faster compilation
 

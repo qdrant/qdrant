@@ -138,7 +138,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         let end_offset = self.data_offset(range_end).unwrap() + self.raw_size();
         self.mmap
             .advise_range(memmap2::Advice::WillNeed, start_offset, end_offset)
-            .unwrap();
+            .expect("Failed to advise MADV_WILLNEED for vectors");
         keys.iter().map(|&key| self.get_vector(key)).collect()
     }
 
