@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
-use memmap2::Mmap;
+use memmap2::{Advice, Mmap};
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
@@ -128,6 +128,17 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     pub fn get_vector_opt(&self, key: PointOffsetType) -> Option<&[T]> {
         self.data_offset(key)
             .map(|offset| self.raw_vector_offset(offset))
+    }
+
+    pub fn get_vectors(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
+        let range_start = keys[0];
+        let range_end = keys[keys.len() - 1];
+        let start_offset = self.data_offset(range_start).unwrap();
+        let end_offset = self.data_offset(range_end).unwrap() + self.raw_size();
+        self.mmap
+            .advise_range(Advice::WillNeed, start_offset, end_offset)
+            .unwrap();
+        keys.iter().map(|&key| self.get_vector(key)).collect()
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> bool {

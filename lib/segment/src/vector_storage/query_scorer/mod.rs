@@ -15,6 +15,13 @@ pub mod sparse_custom_query_scorer;
 pub trait QueryScorer<TVector: ?Sized> {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
 
+    /// Score a batch of points
+    ///
+    /// Enable underlying storage to optimize pre-fetching of data
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        ids.iter().map(|&id| self.score_stored(id)).collect()
+    }
+
     fn score(&self, v2: &TVector) -> ScoreType;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;

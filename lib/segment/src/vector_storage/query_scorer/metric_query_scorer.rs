@@ -72,6 +72,16 @@ impl<
         TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        let consecutive_ids = ids.windows(2).all(|w| w[0] + 1 == w[1]);
+        if consecutive_ids {
+            // TODO optimize storage for consecutive ids
+            ids.iter().map(|&id| self.score_stored(id)).collect()
+        } else {
+            ids.iter().map(|&id| self.score_stored(id)).collect()
+        }
+    }
+
     #[inline]
     fn score(&self, v2: &[TElement]) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();

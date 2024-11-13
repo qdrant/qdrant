@@ -134,6 +134,15 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
+
+    fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
+        debug_assert!(
+            keys.windows(2).all(|w| w[0] + 1 == w[1]),
+            "Keys are not consecutive"
+        );
+        let mmap_store = self.mmap_store.as_ref().unwrap();
+        mmap_store.get_vectors(keys)
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {

@@ -107,6 +107,13 @@ pub trait VectorStorage {
 pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
     fn get_dense(&self, key: PointOffsetType) -> &[T];
+
+    /// Get the dense vectors by the given keys
+    ///
+    /// Implementation can assume that the keys are consecutive
+    fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
+        keys.iter().map(|&key| self.get_dense(key)).collect()
+    }
 }
 
 pub trait SparseVectorStorage: VectorStorage {
