@@ -65,6 +65,19 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .get(key as VectorOffsetType)
             .expect("mmap vector not found")
     }
+
+    #[cfg(target_os = "linux")]
+    fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
+        debug_assert!(
+            keys.windows(2).all(|w| w[0] + 1 == w[1]),
+            "Keys are not consecutive"
+        );
+        let keys = keys
+            .iter()
+            .map(|&key| key as VectorOffsetType)
+            .collect::<Vec<_>>();
+        self.vectors.get_batch(&keys)
+    }
 }
 
 impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
