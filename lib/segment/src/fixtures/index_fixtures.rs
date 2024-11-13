@@ -67,7 +67,7 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
-    fn size_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
         self.available_vector_count() * self.vector_dim() * std::mem::size_of::<VectorElementType>()
     }
 

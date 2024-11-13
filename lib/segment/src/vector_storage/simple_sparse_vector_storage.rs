@@ -7,6 +7,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimWeight;
 
 use super::SparseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
@@ -162,8 +163,14 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn size_in_bytes(&self) -> usize {
-        self.total_sparse_size * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>())
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        if self.total_vector_count == 0 {
+            return 0;
+        }
+        let available_fraction =
+            (self.total_vector_count - self.deleted_count) as f32 / self.total_vector_count as f32;
+        let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
+        available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<PointOffsetType>())
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

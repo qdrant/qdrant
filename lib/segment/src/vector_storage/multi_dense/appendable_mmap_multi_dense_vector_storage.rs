@@ -146,7 +146,7 @@ impl<
         self.offsets.len()
     }
 
-    fn size_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
         if self.total_vector_count() > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
             (total_size as u128 * self.available_vector_count() as u128
