@@ -818,6 +818,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "this test is too slow for ci, and has similar coverage to the hashmap tests"]
     fn test_with_real_hm_data() {
         const EXPECTED_LEN: usize = 105_542;
 
