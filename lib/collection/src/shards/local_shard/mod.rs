@@ -28,8 +28,8 @@ use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
-    CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, SegmentType, SnapshotFormat,
+    CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    SegmentConfig, SegmentType, SnapshotFormat,
 };
 use segment::utils::mem::Mem;
 use segment::vector_storage::common::get_async_scorer;
@@ -484,11 +484,7 @@ impl LocalShard {
             let segment_config = SegmentConfig {
                 vector_data: vector_params.clone(),
                 sparse_vector_data: sparse_vector_params.clone(),
-                payload_storage_type: if config.params.on_disk_payload {
-                    PayloadStorageType::OnDisk
-                } else {
-                    PayloadStorageType::InMemory
-                },
+                payload_storage_type: config.params.payload_storage_type(),
             };
             let segment = thread::Builder::new()
                 .name(format!("shard-build-{collection_id}-{id}"))
