@@ -439,6 +439,7 @@ impl<V> Drop for BlobStore<V> {
 mod tests {
     use std::fs::File;
 
+    use itertools::Itertools;
     use rand::distributions::Uniform;
     use rand::prelude::Distribution;
     use rand::seq::SliceRandom;
@@ -500,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_storage_files() {
-        let (_dir, mut storage) = empty_storage();
+        let (dir, mut storage) = empty_storage();
 
         let mut payload = Payload::default();
         payload.0.insert(
@@ -512,6 +513,17 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
+        let actual_files: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .try_collect()
+            .unwrap();
+        assert_eq!(
+            files.len(),
+            actual_files.len(),
+            "The directory has {} files, but we are reporting {}\nreported: {files:?}\n actual: {actual_files:?}",
+            actual_files.len(),
+            files.len()
+        );
         assert_eq!(files.len(), 5, "Expected 5 files, got {files:?}");
         assert_eq!(files[0].file_name().unwrap(), "tracker.dat");
         assert_eq!(files[1].file_name().unwrap(), "page_0.dat");
