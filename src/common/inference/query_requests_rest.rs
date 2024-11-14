@@ -10,7 +10,9 @@ use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEF
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::batch_processing::collect_query_groups_request;
+use crate::common::inference::batch_processing::{
+    collect_query_groups_request, collect_query_request,
+};
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
@@ -70,6 +72,8 @@ pub async fn convert_query_groups_request_from_rest(
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
 ) -> Result<CollectionQueryRequest, StorageError> {
+    let batch = collect_query_request(&request);
+    let inferred = BatchAccumInferred::from_batch_accum(batch, InferenceType::Search).await?;
     let rest::QueryRequestInternal {
         prefetch,
         query,
@@ -88,13 +92,15 @@ pub async fn convert_query_request_from_rest(
         .map(|prefetches| {
             prefetches
                 .into_iter()
-                .map(convert_collection_prefetch)
+                .map(|p| convert_prefetch_with_inferred(p, &inferred))
                 .collect::<Result<Vec<_>, _>>()
         })
         .transpose()?
         .unwrap_or_default();
 
-    let query = query.map(convert_query).transpose()?;
+    let query = query
+        .map(|q| convert_query_with_inferred(q, &inferred))
+        .transpose()?;
 
     Ok(CollectionQueryRequest {
         prefetch,

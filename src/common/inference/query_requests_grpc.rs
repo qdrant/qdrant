@@ -100,7 +100,7 @@ pub async fn convert_query_point_groups_from_grpc(
 }
 
 /// ToDo: this function is supposed to call an inference endpoint internally
-pub fn convert_query_points_from_grpc(
+pub async fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
 ) -> Result<CollectionQueryRequest, Status> {
     let grpc::QueryPoints {
@@ -121,12 +121,33 @@ pub fn convert_query_points_from_grpc(
         timeout: _,
     } = query;
 
-    let prefetch: Result<_, _> = prefetch.into_iter().map(convert_prefetch_query).collect();
+    let mut batch = BatchAccumGrpc::new();
 
-    let query = query.map(convert_query).transpose()?;
+    if let Some(q) = &query {
+        collect_query(q, &mut batch)?;
+    }
 
-    let request = CollectionQueryRequest {
-        prefetch: prefetch?,
+    for p in &prefetch {
+        collect_prefetch(p, &mut batch)?;
+    }
+
+    let BatchAccumGrpc { objects } = batch;
+
+    let inferred = BatchAccumInferred::from_objects(objects, InferenceType::Search)
+        .await
+        .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
+
+    let prefetch = prefetch
+        .into_iter()
+        .map(|p| convert_prefetch_with_inferred(p, &inferred))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let query = query
+        .map(|q| convert_query_with_inferred(q, &inferred))
+        .transpose()?;
+
+    Ok(CollectionQueryRequest {
+        prefetch,
         query,
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
         filter: filter.map(TryFrom::try_from).transpose()?,
@@ -146,8 +167,7 @@ pub fn convert_query_points_from_grpc(
             .transpose()?
             .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
         lookup_from: lookup_from.map(From::from),
-    };
-    Ok(request)
+    })
 }
 
 fn convert_prefetch_query(query: grpc::PrefetchQuery) -> Result<CollectionPrefetch, Status> {

@@ -1806,7 +1806,7 @@ pub async fn query(
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
     let timeout = query_points.timeout;
-    let request = convert_query_points_from_grpc(query_points)?;
+    let request = convert_query_points_from_grpc(query_points).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -1861,7 +1861,7 @@ pub async fn query_batch(
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
-        let request = convert_query_points_from_grpc(query_points)?;
+        let request = convert_query_points_from_grpc(query_points).await?;
         requests.push((request, shard_selector));
     }
 
