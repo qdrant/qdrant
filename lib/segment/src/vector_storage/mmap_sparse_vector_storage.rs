@@ -23,7 +23,8 @@ use crate::types::VectorStorageDatatype;
 
 const STORAGE_PATH: &str = "sparse_vector_storage";
 
-struct MmapSparseVectorStorage {
+#[derive(Debug)]
+pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<BlobStore<SparseVector>>>,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,

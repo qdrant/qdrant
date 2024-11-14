@@ -80,6 +80,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             VectorStorageEnum::DenseAppendableMemmapByte(_) => unreachable!(),
             VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
             VectorStorageEnum::SparseSimple(_) => unreachable!(),
+            VectorStorageEnum::SparseMmap(_) => unreachable!(),
             VectorStorageEnum::MultiDenseSimple(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
