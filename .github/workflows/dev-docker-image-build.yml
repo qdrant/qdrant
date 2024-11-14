@@ -42,6 +42,6 @@ jobs:
             GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${{ github.sha }} -t ghcr.io/qdrant/qdrant:$branch"
 
             # Pull, retag and push to GitHub packages
-            docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
+            docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} --build-arg DEBUG_SYMBOLS=1 $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
 
 
