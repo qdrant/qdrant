@@ -419,11 +419,9 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         {
             for (idx, deleted) in deleted_bitslice.iter().enumerate() {
                 if *deleted {
-                    debug_assert!(graph
-                        .links
-                        .links(idx as PointOffsetType, 0)
-                        .next()
-                        .is_none());
+                    graph.links.for_each_link(idx as PointOffsetType, 0, |_| {
+                        panic!("Deleted point in the graph");
+                    });
                 }
             }
         }
