@@ -145,7 +145,7 @@ where
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        // TODO leverage batch scoring
+        // no specific implementation for batch scoring
         ids.iter().map(|&id| self.score_stored(id)).collect()
     }
 

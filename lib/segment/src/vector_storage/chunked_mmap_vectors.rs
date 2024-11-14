@@ -326,7 +326,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             #[cfg(unix)]
             chunk
                 .advise_range(memmap2::Advice::WillNeed, chunk_offset, chunk_len_to_read)
-                .unwrap(); // TODO error handling
+                .expect("Failed to MADV_WILLNEED chunk");
 
             // push individual vectors
             chunk[chunk_offset..chunk_offset + chunk_len_to_read]
