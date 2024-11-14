@@ -76,6 +76,7 @@ impl<
         let consecutive_ids = ids.windows(2).all(|w| w[0] + 1 == w[1]);
         if consecutive_ids {
             let vectors = self.vector_storage.get_dense_batch(ids);
+            debug_assert!(vectors.len() <= ids.len());
             self.hardware_counter
                 .cpu_counter()
                 .incr_delta(vectors.len());

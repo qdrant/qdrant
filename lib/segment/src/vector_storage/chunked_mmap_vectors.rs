@@ -329,7 +329,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 .unwrap(); // TODO error handling
 
             // push individual vectors
-            chunk[chunk_offset..chunk_len_to_read]
+            chunk[chunk_offset..chunk_offset + chunk_len_to_read]
                 .chunks_exact(self.config.dim)
                 .for_each(|vector| {
                     result.push(vector);
