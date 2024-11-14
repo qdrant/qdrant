@@ -919,21 +919,19 @@ where
         let point_ids = (0..self.point_deleted.len() as PointOffsetType)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
-            .chunks(64); // batch points to leverage sequential access
+            .chunks(64); // batch points to leverage storage sequential access
 
-        let scores = point_ids // batch points to leverage sequential access
-            .into_iter()
-            .flat_map(|point_ids| {
-                let point_ids: Vec<PointOffsetType> = point_ids.collect();
-                self.query_scorer
-                    .score_stored_batch(&point_ids)
-                    .into_iter()
-                    .zip(point_ids)
-                    .map(|(score, point_id)| ScoredPointOffset {
-                        idx: point_id,
-                        score,
-                    })
-            });
+        let scores = point_ids.into_iter().flat_map(|point_ids| {
+            let point_ids: Vec<PointOffsetType> = point_ids.collect();
+            self.query_scorer
+                .score_stored_batch(&point_ids)
+                .into_iter()
+                .zip(point_ids)
+                .map(|(score, point_id)| ScoredPointOffset {
+                    idx: point_id,
+                    score,
+                })
+        });
         peek_top_largest_iterable(scores, top)
     }
 

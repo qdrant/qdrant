@@ -180,6 +180,17 @@ where
     pub unsafe fn unchecked_advise(&self, advice: memmap2::UncheckedAdvice) -> std::io::Result<()> {
         self.mmap.unchecked_advise(advice)
     }
+
+    /// Call [`memmap2::MmapMut::advise_range`] on the underlying mmap.
+    #[cfg(unix)]
+    pub fn advise_range(
+        &self,
+        advice: memmap2::Advice,
+        offset: usize,
+        len: usize,
+    ) -> std::io::Result<()> {
+        self.mmap.advise_range(advice, offset, len)
+    }
 }
 
 impl<T> Deref for MmapType<T>

@@ -35,12 +35,7 @@ pub trait ChunkedVectorStorage<T> {
 
     /// Returns batch of vectors by keys.
     /// Keys are expected to be consecutive.
-    fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
-        // TODO replace blanket implementation with optimized one for each storage
-        keys.iter()
-            .map(|&key| self.get(key).expect("mmap vector not found"))
-            .collect()
-    }
+    fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]>;
 
     fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
 
