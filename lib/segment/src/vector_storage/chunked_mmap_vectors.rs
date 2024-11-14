@@ -312,7 +312,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             }
             // how many vectors are still needed
             let count_vector_needed = keys.len() - result.len();
-            let ideal_chunk_end = chunk_offset + count_vector_needed * self.config.dim;
+            let ideal_chunk_end = chunk_offset + count_vector_needed * self.config.dim * size_of::<T>();
             // check which range of the chunk needs to be loaded
             let chunk_len_to_read = if ideal_chunk_end > chunk.len() {
                 // load all from start_key to the end of the chunk
