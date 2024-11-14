@@ -4,14 +4,12 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
-use super::ShardTransferConsensus;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
-use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
-use crate::shards::{await_consensus_sync, CollectionId};
+use crate::shards::CollectionId;
 
 /// Orchestrate shard transfer by streaming records, but only the points that fall into the new
 /// shard.
@@ -30,8 +28,6 @@ pub(crate) async fn transfer_resharding_stream_records(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    channel_service: ChannelService,
-    consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
@@ -152,10 +148,6 @@ pub(crate) async fn transfer_resharding_stream_records(
             Ok(()) => {}
         }
     }
-
-    // Synchronize all nodes
-    // Prevents target shard in dead state on lagging peers before we destruct forward proxy
-    await_consensus_sync(consensus, &channel_service).await;
 
     log::debug!(
         "Ending shard {shard_id} transfer to peer {remote_peer_id} by reshard streaming records"
