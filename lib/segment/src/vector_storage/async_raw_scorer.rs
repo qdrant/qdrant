@@ -203,10 +203,6 @@ where
         pq.into_vec()
     }
 
-    fn peek_top_all_old(&self, top: usize) -> Vec<ScoredPointOffset> {
-        self.peek_top_all(top)
-    }
-
     fn take_hardware_counter(&self) -> HardwareCounterCell {
         self.query_scorer.take_hardware_counter()
     }

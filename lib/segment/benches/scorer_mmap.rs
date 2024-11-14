@@ -73,25 +73,6 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
-
-    drop(storage);
-    let storage = open_memmap_vector_storage(dir.path(), DIM, dist).unwrap();
-
-    group.bench_function("storage current vector scoring", |b| {
-        b.iter_batched(
-            || QueryVector::from(random_vector(DIM)),
-            |vector| {
-                new_raw_scorer(
-                    vector,
-                    &storage,
-                    borrowed_id_tracker.deleted_point_bitslice(),
-                )
-                .unwrap()
-                .peek_top_all_old(10)
-            },
-            BatchSize::SmallInput,
-        )
-    });
 }
 
 #[cfg(not(target_os = "windows"))]
