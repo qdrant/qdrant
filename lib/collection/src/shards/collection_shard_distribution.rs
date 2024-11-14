@@ -12,7 +12,7 @@ impl CollectionShardDistribution {
     pub fn all_local(shard_number: Option<u32>, this_peer_id: PeerId) -> Self {
         Self {
             shards: (0..shard_number.unwrap_or(1))
-                .map(|shard_id| (shard_id, vec![this_peer_id].into_iter().collect()))
+                .map(|shard_id| (shard_id, HashSet::from([this_peer_id])))
                 .collect(),
         }
     }
