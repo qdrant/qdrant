@@ -98,6 +98,17 @@ impl<
         self.score(stored)
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        let consecutive_ids = ids.windows(2).all(|w| w[0] + 1 == w[1]);
+        if consecutive_ids {
+            let vectors = self.vector_storage.get_dense_batch(ids);
+            debug_assert!(vectors.len() <= ids.len());
+            vectors.into_iter().map(|v| self.score(v)).collect()
+        } else {
+            ids.iter().map(|&id| self.score_stored(id)).collect()
+        }
+    }
+
     #[inline]
     fn score(&self, against: &[TElement]) -> ScoreType {
         let cpu_counter = self.hardware_counter.cpu_counter();

@@ -53,6 +53,11 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
         })
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        // no specific implementation for batch scoring
+        ids.iter().map(|&id| self.score_stored(id)).collect()
+    }
+
     fn score(&self, v: &SparseVector) -> ScoreType {
         self.query.score_by(|example| {
             let cpu_units = v.indices.len() + example.indices.len();

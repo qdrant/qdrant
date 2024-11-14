@@ -99,6 +99,11 @@ where
             .score_point(&self.query, idx, &self.hardware_counter)
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        // no specific implementation for batch scoring
+        ids.iter().map(|&id| self.score_stored(id)).collect()
+    }
+
     fn score(&self, _v2: &[TElement]) -> ScoreType {
         unimplemented!("This method is not expected to be called for quantized scorer");
     }

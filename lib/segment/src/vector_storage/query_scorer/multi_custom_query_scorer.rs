@@ -119,6 +119,11 @@ impl<
         })
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        // no specific implementation for batch scoring
+        ids.iter().map(|&id| self.score_stored(id)).collect()
+    }
+
     #[inline]
     fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
         let cpu_counter = self.hardware_counter.cpu_counter();

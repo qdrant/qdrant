@@ -18,9 +18,7 @@ pub trait QueryScorer<TVector: ?Sized> {
     /// Score a batch of points
     ///
     /// Enable underlying storage to optimize pre-fetching of data
-    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        ids.iter().map(|&id| self.score_stored(id)).collect()
-    }
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType>;
 
     fn score(&self, v2: &TVector) -> ScoreType;
 

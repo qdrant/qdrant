@@ -108,6 +108,11 @@ impl<
         )
     }
 
+    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+        // TODO leverage batch scoring
+        ids.iter().map(|&id| self.score_stored(id)).collect()
+    }
+
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
