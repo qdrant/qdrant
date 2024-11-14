@@ -18,7 +18,7 @@ use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shards::CollectionId;
+use crate::shards::{await_consensus_sync, CollectionId};
 
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
@@ -90,7 +90,7 @@ pub async fn transfer_shard(
                 progress,
                 local_shard_id,
                 remote_shard,
-                channel_service,
+                &channel_service,
                 consensus,
                 snapshots_path,
                 &collection_id,
@@ -107,7 +107,6 @@ pub async fn transfer_shard(
                 progress,
                 local_shard_id,
                 remote_shard,
-                channel_service,
                 consensus,
                 &collection_id,
             )
@@ -128,6 +127,12 @@ pub async fn transfer_shard(
             }
         }
     }
+
+    // Synchronize all nodes
+    // Ensure all peers have reached a state where they'll start sending incoming updates to the
+    // remote shard. A lagging peer must not still have the target shard in dead/recovery state.
+    // Only then can we destruct the forward proxy.
+    await_consensus_sync(consensus, &channel_service).await;
 
     Ok(true)
 }

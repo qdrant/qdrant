@@ -15,7 +15,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::{await_consensus_sync, CollectionId};
+use crate::shards::CollectionId;
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -160,7 +160,7 @@ pub(super) async fn transfer_snapshot(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    channel_service: ChannelService,
+    channel_service: &ChannelService,
     consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
     collection_id: &CollectionId,
@@ -274,6 +274,7 @@ pub(super) async fn transfer_snapshot(
     replica_set.queue_proxy_into_forward_proxy().await?;
 
     // Wait for Partial state in our replica set
+    // Consensus sync is done right after this function
     let partial_state = ReplicaState::Partial;
     log::trace!("Wait for local shard to reach {partial_state:?} state");
     replica_set
@@ -288,9 +289,6 @@ pub(super) async fn transfer_snapshot(
                 "Shard being transferred did not reach {partial_state:?} state in time: {err}",
             ))
         })?;
-
-    // Synchronize all nodes
-    await_consensus_sync(consensus, &channel_service).await;
 
     log::debug!(
         "Ending shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
