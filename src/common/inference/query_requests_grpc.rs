@@ -170,194 +170,6 @@ pub async fn convert_query_points_from_grpc(
     })
 }
 
-fn convert_prefetch_query(query: grpc::PrefetchQuery) -> Result<CollectionPrefetch, Status> {
-    let grpc::PrefetchQuery {
-        prefetch,
-        query,
-        using,
-        filter,
-        params,
-        score_threshold,
-        limit,
-        lookup_from,
-    } = query;
-
-    let prefetch: Result<_, _> = prefetch.into_iter().map(convert_prefetch_query).collect();
-
-    let query = query.map(convert_query).transpose()?;
-
-    let collection_query = CollectionPrefetch {
-        prefetch: prefetch?,
-        query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
-        filter: filter.map(TryFrom::try_from).transpose()?,
-        score_threshold,
-        limit: limit
-            .map(|l| l as usize)
-            .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        params: params.map(From::from),
-        lookup_from: lookup_from.map(From::from),
-    };
-
-    Ok(collection_query)
-}
-
-fn convert_query(query: grpc::Query) -> Result<Query, Status> {
-    use api::grpc::qdrant::query::Variant;
-
-    let variant = query
-        .variant
-        .ok_or_else(|| Status::invalid_argument("Query variant is missing"))?;
-
-    let query = match variant {
-        Variant::Nearest(nearest) => {
-            Query::Vector(VectorQuery::Nearest(convert_vector_input(nearest)?))
-        }
-        Variant::Recommend(recommend) => Query::Vector(convert_recommend_input(recommend)?),
-        Variant::Discover(discover) => Query::Vector(convert_discover_input(discover)?),
-        Variant::Context(context) => Query::Vector(convert_context_input(context)?),
-        Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
-        Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
-        Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
-    };
-
-    Ok(query)
-}
-
-fn convert_recommend_input(
-    value: grpc::RecommendInput,
-) -> Result<VectorQuery<VectorInputInternal>, Status> {
-    let RecommendInput {
-        positive,
-        negative,
-        strategy,
-    } = value;
-
-    let positives = positive
-        .into_iter()
-        .map(convert_vector_input)
-        .collect::<Result<Vec<_>, _>>()?;
-    let negatives = negative
-        .into_iter()
-        .map(convert_vector_input)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let reco_query = RecoQuery::new(positives, negatives);
-
-    let strategy = strategy
-        .and_then(|x|
-            // XXX: Invalid values silently converted to None
-            grpc::RecommendStrategy::try_from(x).ok())
-        .map(RecommendStrategy::from)
-        .unwrap_or_default();
-
-    let query = match strategy {
-        RecommendStrategy::AverageVector => VectorQuery::RecommendAverageVector(reco_query),
-        RecommendStrategy::BestScore => VectorQuery::RecommendBestScore(reco_query),
-    };
-
-    Ok(query)
-}
-
-fn convert_discover_input(
-    value: grpc::DiscoverInput,
-) -> Result<VectorQuery<VectorInputInternal>, Status> {
-    let grpc::DiscoverInput { target, context } = value;
-
-    let target = target.map(convert_vector_input).transpose()?;
-
-    let target =
-        target.ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?;
-
-    let grpc::ContextInput { pairs } =
-        context.ok_or_else(|| Status::invalid_argument("DiscoverInput context is missing"))?;
-
-    let context = pairs
-        .into_iter()
-        .map(context_pair_from_grpc)
-        .collect::<Result<_, _>>()?;
-
-    Ok(VectorQuery::Discover(DiscoveryQuery::new(target, context)))
-}
-
-fn convert_context_input(
-    value: grpc::ContextInput,
-) -> Result<VectorQuery<VectorInputInternal>, Status> {
-    let context_query = context_query_from_grpc(value)?;
-
-    Ok(VectorQuery::Context(context_query))
-}
-
-fn convert_vector_input(value: grpc::VectorInput) -> Result<VectorInputInternal, Status> {
-    use api::grpc::qdrant::vector_input::Variant;
-
-    let variant = value
-        .variant
-        .ok_or_else(|| Status::invalid_argument("VectorInput variant is missing"))?;
-
-    let vector_input = match variant {
-        Variant::Id(id) => VectorInputInternal::Id(TryFrom::try_from(id)?),
-        Variant::Dense(dense) => {
-            VectorInputInternal::Vector(VectorInternal::Dense(From::from(dense)))
-        }
-        Variant::Sparse(sparse) => {
-            VectorInputInternal::Vector(VectorInternal::Sparse(From::from(sparse)))
-        }
-        Variant::MultiDense(multi_dense) => VectorInputInternal::Vector(
-            // TODO(universal-query): Validate at API level
-            VectorInternal::MultiDense(From::from(multi_dense)),
-        ),
-        Variant::Document(_) => {
-            return Err(Status::invalid_argument(
-                "Document inference is not implemented",
-            ))
-        }
-        Variant::Image(_) => {
-            return Err(Status::invalid_argument(
-                "Image inference is not implemented",
-            ))
-        }
-        Variant::Object(_) => {
-            return Err(Status::invalid_argument(
-                "Object inference is not implemented",
-            ))
-        }
-    };
-
-    Ok(vector_input)
-}
-
-/// Circular dependencies prevents us from implementing `TryFrom` directly
-fn context_query_from_grpc(
-    value: grpc::ContextInput,
-) -> Result<ContextQuery<VectorInputInternal>, Status> {
-    let grpc::ContextInput { pairs } = value;
-
-    Ok(ContextQuery {
-        pairs: pairs
-            .into_iter()
-            .map(context_pair_from_grpc)
-            .collect::<Result<_, _>>()?,
-    })
-}
-
-/// Circular dependencies prevents us from implementing `TryFrom` directly
-fn context_pair_from_grpc(
-    value: grpc::ContextInputPair,
-) -> Result<ContextPair<VectorInputInternal>, Status> {
-    let grpc::ContextInputPair { positive, negative } = value;
-
-    let positive =
-        positive.ok_or_else(|| Status::invalid_argument("ContextPair positive is missing"))?;
-    let negative =
-        negative.ok_or_else(|| Status::invalid_argument("ContextPair negative is missing"))?;
-
-    Ok(ContextPair {
-        positive: convert_vector_input(positive)?,
-        negative: convert_vector_input(negative)?,
-    })
-}
-
 fn convert_prefetch_with_inferred(
     prefetch: grpc::PrefetchQuery,
     inferred: &BatchAccumInferred,
@@ -565,4 +377,159 @@ fn context_pair_from_grpc_with_inferred(
         positive: convert_vector_input_with_inferred(positive, inferred)?,
         negative: convert_vector_input_with_inferred(negative, inferred)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use api::grpc::qdrant::value::Kind;
+    use api::grpc::qdrant::vector_input::Variant;
+    use api::grpc::qdrant::Value;
+    use collection::operations::point_ops::VectorPersisted;
+
+    use super::*;
+
+    fn create_test_document() -> api::grpc::qdrant::Document {
+        api::grpc::qdrant::Document {
+            text: "test".to_string(),
+            model: "test-model".to_string(),
+            options: HashMap::new(),
+        }
+    }
+
+    fn create_test_image() -> api::grpc::qdrant::Image {
+        api::grpc::qdrant::Image {
+            image: Some(Value {
+                kind: Some(Kind::StringValue("test.jpg".to_string())),
+            }),
+            model: "test-model".to_string(),
+            options: HashMap::new(),
+        }
+    }
+
+    fn create_test_object() -> api::grpc::qdrant::InferenceObject {
+        api::grpc::qdrant::InferenceObject {
+            object: Some(Value {
+                kind: Some(Kind::StringValue("test".to_string())),
+            }),
+            model: "test-model".to_string(),
+            options: HashMap::new(),
+        }
+    }
+
+    fn create_test_inferred_batch() -> BatchAccumInferred {
+        let mut objects = HashMap::new();
+
+        let grpc_doc = create_test_document();
+        let grpc_img = create_test_image();
+        let grpc_obj = create_test_object();
+
+        let doc: rest::Document = grpc_doc.try_into().unwrap();
+        let img: rest::Image = grpc_img.try_into().unwrap();
+        let obj: rest::InferenceObject = grpc_obj.try_into().unwrap();
+
+        let doc_data = InferenceData::Document(doc);
+        let img_data = InferenceData::Image(img);
+        let obj_data = InferenceData::Object(obj);
+
+        let dense_vector = vec![1.0, 2.0, 3.0];
+        let vector_persisted = VectorPersisted::Dense(dense_vector);
+
+        objects.insert(doc_data, vector_persisted.clone());
+        objects.insert(img_data, vector_persisted.clone());
+        objects.insert(obj_data, vector_persisted);
+
+        BatchAccumInferred { objects }
+    }
+
+    #[test]
+    fn test_convert_vector_input_with_inferred_dense() {
+        let inferred = create_test_inferred_batch();
+        let vector = grpc::VectorInput {
+            variant: Some(Variant::Dense(grpc::DenseVector {
+                data: vec![1.0, 2.0, 3.0],
+            })),
+        };
+
+        let result = convert_vector_input_with_inferred(vector, &inferred).unwrap();
+        match result {
+            VectorInputInternal::Vector(VectorInternal::Dense(values)) => {
+                assert_eq!(values, vec![1.0, 2.0, 3.0]);
+            }
+            _ => panic!("Expected dense vector"),
+        }
+    }
+
+    #[test]
+    fn test_convert_vector_input_with_inferred_document() {
+        let inferred = create_test_inferred_batch();
+        let doc = create_test_document();
+        let vector = grpc::VectorInput {
+            variant: Some(Variant::Document(doc)),
+        };
+
+        let result = convert_vector_input_with_inferred(vector, &inferred).unwrap();
+        match result {
+            VectorInputInternal::Vector(VectorInternal::Dense(values)) => {
+                assert_eq!(values, vec![1.0, 2.0, 3.0]);
+            }
+            _ => panic!("Expected dense vector from inference"),
+        }
+    }
+
+    #[test]
+    fn test_convert_vector_input_missing_variant() {
+        let inferred = create_test_inferred_batch();
+        let vector = grpc::VectorInput { variant: None };
+
+        let result = convert_vector_input_with_inferred(vector, &inferred);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message().contains("variant is missing"));
+    }
+
+    #[test]
+    fn test_context_pair_from_grpc_with_inferred() {
+        let inferred = create_test_inferred_batch();
+        let pair = grpc::ContextInputPair {
+            positive: Some(grpc::VectorInput {
+                variant: Some(Variant::Dense(grpc::DenseVector {
+                    data: vec![1.0, 2.0, 3.0],
+                })),
+            }),
+            negative: Some(grpc::VectorInput {
+                variant: Some(Variant::Document(create_test_document())),
+            }),
+        };
+
+        let result = context_pair_from_grpc_with_inferred(pair, &inferred).unwrap();
+        match (result.positive, result.negative) {
+            (
+                VectorInputInternal::Vector(VectorInternal::Dense(pos)),
+                VectorInputInternal::Vector(VectorInternal::Dense(neg)),
+            ) => {
+                assert_eq!(pos, vec![1.0, 2.0, 3.0]);
+                assert_eq!(neg, vec![1.0, 2.0, 3.0]);
+            }
+            _ => panic!("Expected dense vectors"),
+        }
+    }
+
+    #[test]
+    fn test_context_pair_missing_vectors() {
+        let inferred = create_test_inferred_batch();
+        let pair = grpc::ContextInputPair {
+            positive: None,
+            negative: Some(grpc::VectorInput {
+                variant: Some(Variant::Document(create_test_document())),
+            }),
+        };
+
+        let result = context_pair_from_grpc_with_inferred(pair, &inferred);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("positive is missing"));
+    }
 }

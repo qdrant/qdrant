@@ -50,7 +50,16 @@ impl Validate for VectorInput {
             VectorInput::DenseVector(_dense) => Ok(()),
             VectorInput::SparseVector(sparse) => sparse.validate(),
             VectorInput::MultiDenseVector(multi) => validate_multi_vector(multi),
-            VectorInput::Document(_) => Ok(()),
+            VectorInput::Document(doc) => {
+                if doc.model.is_empty() {
+                    let mut errors = ValidationErrors::default();
+                    let mut err = ValidationError::new("Empty value");
+                    err.add_param(Cow::from("field"), &"model");
+                    errors.add("document", err);
+                    return Err(errors);
+                }
+                Ok(())
+            }
             VectorInput::Image(_) => {
                 let mut errors = ValidationErrors::default();
                 let mut err = ValidationError::new("not_supported_inference");

@@ -7,7 +7,7 @@ use super::batch_processing::BatchAccum;
 use super::service::{InferenceData, InferenceInput, InferenceService, InferenceType};
 
 pub struct BatchAccumInferred {
-    objects: HashMap<InferenceData, VectorPersisted>,
+    pub(crate) objects: HashMap<InferenceData, VectorPersisted>,
 }
 
 impl BatchAccumInferred {
