@@ -68,10 +68,6 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
 
     #[cfg(unix)]
     fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
-        debug_assert!(
-            keys.windows(2).all(|w| w[0] + 1 == w[1]),
-            "Keys are not consecutive"
-        );
         let keys = keys
             .iter()
             .map(|&key| key as VectorOffsetType)

@@ -912,7 +912,8 @@ where
 
         let scores = point_ids.into_iter().flat_map(|point_ids| {
             // TODO reuse preallocated buffer for point_ids
-            let point_ids: Vec<PointOffsetType> = point_ids.collect();
+            let mut point_ids: Vec<PointOffsetType> = point_ids.collect();
+            point_ids.sort_unstable();
             self.query_scorer
                 .score_stored_batch(&point_ids)
                 .into_iter()

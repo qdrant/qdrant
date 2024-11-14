@@ -63,3 +63,45 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
         }
     }
 }
+
+/// Check if ids are rather contiguous to enable further optimizations
+/// The threshold is 20% of sparsity
+pub fn check_ids_rather_contiguous(ids: &[PointOffsetType]) -> bool {
+    if ids.len() < 2 {
+        return false;
+    }
+    // check if sorted
+    if ids.windows(2).any(|w| w[0] >= w[1]) {
+        return false;
+    }
+    let mut prev = ids[0];
+    let mut contiguous_count = 0;
+    for &id in &ids[1..] {
+        if id == prev + 1 {
+            contiguous_count += 1;
+        }
+        prev = id;
+    }
+    (contiguous_count + 1) as f32 / ids.len() as f32 >= 0.8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_ids_rather_contiguous() {
+        assert!(!check_ids_rather_contiguous(&[]));
+        assert!(!check_ids_rather_contiguous(&[1]));
+        assert!(check_ids_rather_contiguous(&[1, 2]));
+        assert!(!check_ids_rather_contiguous(&[2, 1]));
+        assert!(check_ids_rather_contiguous(&[1, 2, 3, 9, 10]));
+        assert!(check_ids_rather_contiguous(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+        ]));
+        assert!(check_ids_rather_contiguous(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 11
+        ]));
+        assert!(!check_ids_rather_contiguous(&[1, 2, 3, 4, 9, 10, 12, 14]));
+    }
+}

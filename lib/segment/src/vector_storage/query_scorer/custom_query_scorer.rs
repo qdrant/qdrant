@@ -8,7 +8,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
-use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::query_scorer::{check_ids_rather_contiguous, QueryScorer};
 use crate::vector_storage::DenseVectorStorage;
 
 pub struct CustomQueryScorer<
@@ -99,8 +99,7 @@ impl<
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        let consecutive_ids = ids.windows(2).all(|w| w[0] + 1 == w[1]);
-        if consecutive_ids {
+        if check_ids_rather_contiguous(ids) {
             let vectors = self.vector_storage.get_dense_batch(ids);
             debug_assert!(vectors.len() <= ids.len());
             vectors.into_iter().map(|v| self.score(v)).collect()
