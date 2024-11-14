@@ -949,4 +949,35 @@ mod tests {
         let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed);
         assert_eq!(payload, decompressed_payload);
     }
+
+    #[rstest]
+    #[case(64)]
+    #[case(128)]
+    #[case(256)]
+    #[case(512)]
+    fn test_different_block_sizes(#[case] block_size_bytes: usize) {
+        use crate::fixtures::minimal_payload;
+
+        let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
+        let blocks_per_page = DEFAULT_PAGE_SIZE_BYTES / block_size_bytes;
+        let options = StorageOptions {
+            block_size_bytes: Some(block_size_bytes),
+            ..Default::default()
+        };
+        let mut storage = BlobStore::new(dir.path().to_path_buf(), options).unwrap();
+
+        let payload = minimal_payload();
+        let last_point_id = 3 * blocks_per_page as u32;
+        for point_offset in 0..=last_point_id {
+            storage.put_value(point_offset, &payload).unwrap();
+        }
+
+        storage.flush().unwrap();
+        println!("{last_point_id}");
+
+        assert_eq!(storage.pages.len(), 4);
+        let last_pointer = storage.get_pointer(last_point_id).unwrap();
+        assert_eq!(last_pointer.block_offset, 0);
+        assert_eq!(last_pointer.page_id, 3);
+    }
 }

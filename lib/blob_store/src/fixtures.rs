@@ -88,6 +88,10 @@ pub fn random_payload(rng: &mut impl Rng, size_factor: usize) -> Payload {
     payload
 }
 
+pub fn minimal_payload() -> Payload {
+    Payload(serde_json::json!({"a": 1}).as_object().unwrap().clone())
+}
+
 pub const HM_FIELDS: [&str; 23] = [
     "article_id",
     "product_code",
