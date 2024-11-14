@@ -10,7 +10,7 @@ use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
-use super::graph_links::{GraphLinks, GraphLinksMmap};
+use super::graph_links::{convert_to_compressed, GraphLinks, GraphLinksMmap};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -270,7 +270,7 @@ where
         let graph_data: GraphLayerData = read_bin(graph_path)?;
 
         if convert {
-            // TODO: Implement conversion
+            convert_to_compressed(links_path, graph_data.m, graph_data.m0)?;
         }
 
         Ok(Self {
