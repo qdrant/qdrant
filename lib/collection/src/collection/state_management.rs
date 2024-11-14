@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
@@ -11,7 +11,7 @@ use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
-    pub async fn check_config_compatible(&self, config: &CollectionConfig) -> CollectionResult<()> {
+    pub async fn check_config_compatible(&self, config: &CollectionConfigInternal) -> CollectionResult<()> {
         self.collection_config
             .read()
             .await
@@ -71,7 +71,7 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
+    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
@@ -100,7 +100,7 @@ impl Collection {
             // complain, if new field is added to `CollectionConfig` struct, but not destructured
             // explicitly. We have to explicitly compare config fields, because we want to compare
             // `wal_config` and `strict_mode_config` independently of other fields.
-            let CollectionConfig {
+            let CollectionConfigInternal {
                 params,
                 hnsw_config,
                 optimizer_config,

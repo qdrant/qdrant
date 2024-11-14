@@ -15,7 +15,7 @@ use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::collection::CollectionVersion;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::common::snapshots_manager::SnapshotStorageManager;
-use crate::config::{CollectionConfig, ShardingMethod, COLLECTION_CONFIG_FILE};
+use crate::config::{CollectionConfigInternal, ShardingMethod, COLLECTION_CONFIG_FILE};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
@@ -170,7 +170,7 @@ impl Collection {
         let mut ar = open_snapshot_archive_with_validation(snapshot_path)?;
         ar.unpack(target_dir)?;
 
-        let config = CollectionConfig::load(target_dir)?;
+        let config = CollectionConfigInternal::load(target_dir)?;
         config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 

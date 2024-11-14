@@ -11,7 +11,7 @@ use tokio::time::sleep;
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -224,7 +224,7 @@ pub async fn drive_resharding(
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     collection_path: PathBuf,
-    collection_config: Arc<RwLock<CollectionConfig>>,
+    collection_config: Arc<RwLock<CollectionConfigInternal>>,
     shared_storage_config: &SharedStorageConfig,
     channel_service: ChannelService,
     can_resume: bool,

@@ -27,7 +27,7 @@ use super::transfer::ShardTransfer;
 use super::CollectionId;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::snapshots_manager::SnapshotStorageManager;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::point_ops::{self};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
@@ -98,7 +98,7 @@ pub struct ShardReplicaSet {
     abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
     collection_id: CollectionId,
-    collection_config: Arc<RwLock<CollectionConfig>>,
+    collection_config: Arc<RwLock<CollectionConfigInternal>>,
     optimizers_config: OptimizersConfig,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -129,7 +129,7 @@ impl ShardReplicaSet {
         on_peer_failure: ChangePeerFromState,
         abort_shard_transfer: AbortShardTransfer,
         collection_path: &Path,
-        collection_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -218,7 +218,7 @@ impl ShardReplicaSet {
         shard_id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
-        collection_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,

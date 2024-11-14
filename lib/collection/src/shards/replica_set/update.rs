@@ -612,7 +612,7 @@ mod tests {
             ..CollectionParams::empty()
         };
 
-        let config = CollectionConfig {
+        let config = CollectionConfigInternal {
             params: collection_params,
             optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
             wal_config,

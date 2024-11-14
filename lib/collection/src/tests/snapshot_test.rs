@@ -7,7 +7,7 @@ use segment::types::Distance;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
-use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{NodeType, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
@@ -46,7 +46,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ..CollectionParams::empty()
     };
 
-    let config = CollectionConfig {
+    let config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,

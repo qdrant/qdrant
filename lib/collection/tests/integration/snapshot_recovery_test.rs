@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
@@ -36,7 +36,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         ..CollectionParams::empty()
     };
 
-    let config = CollectionConfig {
+    let config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,

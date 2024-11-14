@@ -25,7 +25,7 @@ use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::common::stopping_guard::StoppingGuard;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionResult, CoreSearchRequestBatch, Modifier, RecordInternal,
@@ -159,7 +159,7 @@ impl SegmentsSearcher {
     pub async fn prepare_query_context(
         segments: LockedSegmentHolder,
         batch_request: &CoreSearchRequestBatch,
-        collection_config: &CollectionConfig,
+        collection_config: &CollectionConfigInternal,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
@@ -54,7 +54,7 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         ..CollectionParams::empty()
     };
 
-    let collection_config = CollectionConfig {
+    let collection_config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,

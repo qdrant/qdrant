@@ -24,7 +24,7 @@ use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::snapshot_stream::SnapshotStream;
-use crate::config::{CollectionConfig, ShardingMethod};
+use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -564,7 +564,7 @@ impl ShardHolder {
         &mut self,
         collection_path: &Path,
         collection_id: &CollectionId,
-        collection_config: Arc<RwLock<CollectionConfig>>,
+        collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
