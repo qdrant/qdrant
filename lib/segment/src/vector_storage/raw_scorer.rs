@@ -911,6 +911,7 @@ where
             .chunks(64); // batch points to leverage storage sequential access
 
         let scores = point_ids.into_iter().flat_map(|point_ids| {
+            // TODO reuse preallocated buffer for point_ids
             let point_ids: Vec<PointOffsetType> = point_ids.collect();
             self.query_scorer
                 .score_stored_batch(&point_ids)

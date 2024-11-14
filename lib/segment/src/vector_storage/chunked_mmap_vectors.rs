@@ -291,56 +291,34 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
+    /// Expects the keys to be sorted and not very sparse.
     pub fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
-        debug_assert!(
-            keys.windows(2).all(|w| w[0] + 1 == w[1]),
-            "Keys are expected to be consecutive"
-        );
-        let start_key: usize = keys[0].as_();
-        let chunk_idx = self.get_chunk_index(start_key);
-        if chunk_idx >= self.chunks.len() {
+        if keys.is_empty() {
             return vec![];
         }
 
-        let mut chunk_offset = self.get_chunk_offset(start_key);
-
-        let mut result = Vec::with_capacity(keys.len());
-        // iterate over chunks starting from the one containing the start_key until enough vectors are loaded
-        for chunk in self.chunks[chunk_idx..].iter() {
-            if result.len() == keys.len() {
-                break;
-            }
-            // how many vectors are still needed
-            let count_vector_needed = keys.len() - result.len();
-            let ideal_chunk_end =
-                chunk_offset + count_vector_needed * self.config.dim * size_of::<T>();
-            // check which range of the chunk needs to be loaded
-            let chunk_len_to_read = if ideal_chunk_end > chunk.len() {
-                // load all from start_key to the end of the chunk
-                chunk.len() - chunk_offset
-            } else {
-                // load only the needed vectors
-                ideal_chunk_end - chunk_offset
-            };
-
-            // prefetch the chunk accordingly
-            #[cfg(unix)]
-            chunk
-                .advise_range(memmap2::Advice::WillNeed, chunk_offset, chunk_len_to_read)
-                .expect("Failed to MADV_WILLNEED chunk");
-
-            // push individual vectors
-            chunk[chunk_offset..chunk_offset + chunk_len_to_read]
-                .chunks_exact(self.config.dim)
-                .for_each(|vector| {
-                    result.push(vector);
-                    debug_assert!(result.len() <= keys.len());
-                });
-            // move to the next chunk
-            chunk_offset = 0;
+        let start_key: usize = keys[0].as_();
+        let start_chunk_idx = self.get_chunk_index(start_key);
+        if start_chunk_idx >= self.chunks.len() {
+            return vec![];
         }
 
-        result
+        let last_key = keys[keys.len() - 1].as_();
+        let last_chunk_idx = self.get_chunk_index(last_key);
+        if last_chunk_idx >= self.chunks.len() {
+            return vec![];
+        }
+
+        // prefetch all impacted chunks
+        #[cfg(unix)]
+        for chunk in self.chunks[start_chunk_idx..last_chunk_idx].iter() {
+            chunk
+                .advise_range(memmap2::Advice::WillNeed, 0, chunk.len())
+                .expect("Failed to MADV_WILLNEED chunk");
+        }
+
+        // read the vectors
+        keys.iter().map(|&key| self.get(key).unwrap()).collect()
     }
 
     pub fn flusher(&self) -> Flusher {
