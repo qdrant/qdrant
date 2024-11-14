@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
+use blob_store::Blob;
 use common::types::ScoreType;
 use itertools::Itertools;
 use schemars::JsonSchema;
@@ -233,6 +234,16 @@ impl TryFrom<Vec<(u32, f32)>> for SparseVector {
     fn try_from(tuples: Vec<(u32, f32)>) -> Result<Self, Self::Error> {
         let (indices, values): (Vec<_>, Vec<_>) = tuples.into_iter().unzip();
         SparseVector::new(indices, values)
+    }
+}
+
+impl Blob for SparseVector {
+    fn to_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self).expect("Sparse vector serialization should not fail")
+    }
+
+    fn from_bytes(data: &[u8]) -> Self {
+        bincode::deserialize(data).expect("Sparse vector deserialization should not fail")
     }
 }
 
