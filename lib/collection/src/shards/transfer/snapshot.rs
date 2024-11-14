@@ -290,6 +290,7 @@ pub(super) async fn transfer_snapshot(
         })?;
 
     // Synchronize all nodes
+    // Prevents target shard in recovery/dead state on lagging peers before we destruct forward proxy
     await_consensus_sync(consensus, &channel_service).await;
 
     log::debug!(

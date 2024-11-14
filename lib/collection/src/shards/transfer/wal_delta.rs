@@ -164,6 +164,7 @@ pub(super) async fn transfer_wal_delta(
         })?;
 
     // Synchronize all nodes
+    // Prevents target shard in recovery/dead state on lagging peers before we destruct forward proxy
     await_consensus_sync(consensus, &channel_service).await;
 
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
