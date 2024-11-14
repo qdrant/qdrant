@@ -313,25 +313,27 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
             }
             // how many vectors are still needed
             let count_vector_needed = keys.len() - result.len();
-            let chunk_end = chunk_offset + count_vector_needed * self.config.dim;
+            let ideal_chunk_end = chunk_offset + count_vector_needed * self.config.dim;
             // check which range of the chunk needs to be loaded
-            let chunk_len_to_read = if chunk_end > chunk.len() {
+            let chunk_len_to_read = if ideal_chunk_end > chunk.len() {
                 // load all from start_key to the end of the chunk
                 chunk.len() - chunk_offset
             } else {
                 // load only the needed vectors
-                chunk_end - chunk_offset
+                ideal_chunk_end - chunk_offset
             };
 
             // prefetch the chunk accordingly
             chunk
                 .advise_range(memmap2::Advice::WillNeed, chunk_offset, chunk_len_to_read)
                 .unwrap(); // TODO error handling
-                           // push individual vectors
+
+            // push individual vectors
             chunk[chunk_offset..chunk_len_to_read]
                 .chunks_exact(self.config.dim)
                 .for_each(|vector| {
                     result.push(vector);
+                    debug_assert!(result.len() <= keys.len());
                 });
             // move to the next chunk
             chunk_offset = 0;
