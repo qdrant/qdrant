@@ -135,7 +135,6 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 
-    #[cfg(target_os = "linux")]
     fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
         let mmap_store = self.mmap_store.as_ref().unwrap();
         mmap_store.get_vectors(keys)

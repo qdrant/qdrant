@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::score_multi;
+use super::{check_ids_rather_contiguous, score_multi};
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -63,6 +63,10 @@ impl<
             multi_dense_b,
         )
     }
+
+    fn score_ref(&self, v2: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
+        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), v2)
+    }
 }
 
 impl<
@@ -109,8 +113,12 @@ impl<
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        // TODO leverage batch scoring
-        ids.iter().map(|&id| self.score_stored(id)).collect()
+        if check_ids_rather_contiguous(ids) {
+            let vectors = self.vector_storage.get_batch_multi(ids);
+            vectors.into_iter().map(|v| self.score_ref(v)).collect()
+        } else {
+            ids.iter().map(|&id| self.score_stored(id)).collect()
+        }
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

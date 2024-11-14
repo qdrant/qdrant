@@ -75,7 +75,6 @@ impl<
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
         if check_ids_rather_contiguous(ids) {
             let vectors = self.vector_storage.get_dense_batch(ids);
-            debug_assert!(vectors.len() <= ids.len());
             self.hardware_counter
                 .cpu_counter()
                 .incr_delta(vectors.len());

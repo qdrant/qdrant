@@ -293,31 +293,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
     /// Expects the keys to be sorted and not very sparse.
     pub fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
-        if keys.is_empty() {
-            return vec![];
-        }
-
-        let start_key: usize = keys[0].as_();
-        let start_chunk_idx = self.get_chunk_index(start_key);
-        if start_chunk_idx >= self.chunks.len() {
-            return vec![];
-        }
-
-        let last_key = keys[keys.len() - 1].as_();
-        let last_chunk_idx = self.get_chunk_index(last_key);
-        if last_chunk_idx >= self.chunks.len() {
-            return vec![];
-        }
-
-        // prefetch all impacted chunks
-        #[cfg(unix)]
-        for chunk in self.chunks[start_chunk_idx..last_chunk_idx].iter() {
-            chunk
-                .advise_range(memmap2::Advice::WillNeed, 0, chunk.len())
-                .expect("Failed to MADV_WILLNEED chunk");
-        }
-
-        // read the vectors
+        // TODO read from sequential mmap
         keys.iter().map(|&key| self.get(key).unwrap()).collect()
     }
 

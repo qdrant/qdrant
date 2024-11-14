@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::score_multi;
+use super::{check_ids_rather_contiguous, score_multi};
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -90,6 +90,23 @@ impl<
 
         counter
     }
+
+    #[inline]
+    fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
+        let cpu_counter = self.hardware_counter.cpu_counter();
+
+        let against_vector_count = against.vectors_count();
+
+        self.query.score_by(|example| {
+            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
+
+            score_multi::<TElement, TMetric>(
+                self.vector_storage.multi_vector_config(),
+                TypedMultiDenseVectorRef::from(example),
+                against,
+            )
+        })
+    }
 }
 
 impl<
@@ -105,40 +122,21 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);
-        let cpu_counter = self.hardware_counter.cpu_counter();
-
-        let stored_vector_count = stored.vectors_count();
-        self.query.score_by(|example| {
-            cpu_counter.incr_delta(example.vectors_count() * stored_vector_count);
-
-            score_multi::<TElement, TMetric>(
-                self.vector_storage.multi_vector_config(),
-                TypedMultiDenseVectorRef::from(example),
-                stored,
-            )
-        })
+        self.score_ref(stored)
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        // TODO leverage batch scoring
-        ids.iter().map(|&id| self.score_stored(id)).collect()
+        if check_ids_rather_contiguous(ids) {
+            let vectors = self.vector_storage.get_batch_multi(ids);
+            vectors.into_iter().map(|v| self.score_ref(v)).collect()
+        } else {
+            ids.iter().map(|&id| self.score_stored(id)).collect()
+        }
     }
 
     #[inline]
     fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
-        let cpu_counter = self.hardware_counter.cpu_counter();
-
-        let against_vector_count = against.vectors_count();
-
-        self.query.score_by(|example| {
-            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
-
-            score_multi::<TElement, TMetric>(
-                self.vector_storage.multi_vector_config(),
-                TypedMultiDenseVectorRef::from(example),
-                TypedMultiDenseVectorRef::from(against),
-            )
-        })
+        self.score_ref(TypedMultiDenseVectorRef::from(against))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

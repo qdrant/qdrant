@@ -130,16 +130,8 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             .map(|offset| self.raw_vector_offset(offset))
     }
 
-    #[cfg(target_os = "linux")]
     pub fn get_vectors(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
-        let range_start = keys[0];
-        let range_end = keys[keys.len() - 1];
-        let start_offset = self.data_offset(range_start).unwrap();
-        let end_offset = self.data_offset(range_end).unwrap() + self.raw_size();
-        let len = end_offset - start_offset;
-        self.mmap
-            .advise_range(memmap2::Advice::WillNeed, start_offset, len)
-            .expect("Failed to advise MADV_WILLNEED for vectors");
+        // TODO read from sequential mmap
         keys.iter().map(|&key| self.get_vector(key)).collect()
     }
 

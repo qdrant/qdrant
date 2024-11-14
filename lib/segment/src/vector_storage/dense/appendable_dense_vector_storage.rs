@@ -66,7 +66,6 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
-    #[cfg(unix)]
     fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
         let keys = keys
             .iter()

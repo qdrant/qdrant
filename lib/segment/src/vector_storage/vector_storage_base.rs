@@ -125,6 +125,7 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>>;
+    fn get_batch_multi(&self, keys: &[PointOffsetType]) -> Vec<TypedMultiDenseVectorRef<T>>;
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }

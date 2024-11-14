@@ -103,6 +103,11 @@ impl<
             })
     }
 
+    fn get_batch_multi(&self, keys: &[PointOffsetType]) -> Vec<TypedMultiDenseVectorRef<T>> {
+        // TODO read from sequential mmap
+        keys.iter().map(|&key| self.get_multi(key)).collect()
+    }
+
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let mmap_offset = self
