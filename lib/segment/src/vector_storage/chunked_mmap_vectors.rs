@@ -291,6 +291,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
+    #[cfg(unix)]
     pub fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
         debug_assert!(
             keys.windows(2).all(|w| w[0] + 1 == w[1]),

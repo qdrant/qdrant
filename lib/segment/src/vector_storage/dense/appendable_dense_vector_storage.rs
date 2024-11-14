@@ -66,7 +66,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
         debug_assert!(
             keys.windows(2).all(|w| w[0] + 1 == w[1]),
