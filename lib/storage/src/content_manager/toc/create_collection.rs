@@ -134,9 +134,8 @@ impl TableOfContent {
         let collection_params = CollectionParams {
             vectors,
             sparse_vectors,
-            shard_number: NonZeroU32::new(shard_number).ok_or_else(|| StorageError::BadInput {
-                description: "`shard_number` cannot be 0".to_string(),
-            })?,
+            shard_number: NonZeroU32::new(shard_number)
+                .ok_or_else(|| StorageError::bad_input("`shard_number` cannot be 0"))?,
             sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             on_disk_payload_uses_mmap: self.storage_config.on_disk_payload_uses_mmap,
