@@ -68,6 +68,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     .map(sharding_method_from_proto)
                     .transpose()?,
                 strict_mode_config: value.strict_mode_config.map(strict_mode_from_api),
+                uuid: None,
             },
         )))
     }

@@ -6645,12 +6645,12 @@
         ]
       },
       "CollectionConfig": {
+        "description": "Information about the collection configuration",
         "type": "object",
         "required": [
           "hnsw_config",
           "optimizer_config",
-          "params",
-          "wal_config"
+          "params"
         ],
         "properties": {
           "params": {
@@ -6663,13 +6663,30 @@
             "$ref": "#/components/schemas/OptimizersConfig"
           },
           "wal_config": {
-            "$ref": "#/components/schemas/WalConfig"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "quantization_config": {
             "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "strict_mode_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
               },
               {
                 "nullable": true
@@ -7215,6 +7232,58 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          }
+        }
+      },
+      "StrictModeConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether strict mode is enabled for a collection or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "max_query_limit": {
+            "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_timeout": {
+            "description": "Max allowed `timeout` parameter.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "unindexed_filtering_retrieve": {
+            "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "unindexed_filtering_update": {
+            "description": "Allow usage of unindexed fields in filtered updates (eg. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_hnsw_ef": {
+            "description": "Max HNSW value allowed in search parameters.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_allow_exact": {
+            "description": "Whether exact search is allowed or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_oversampling": {
+            "description": "Max oversampling value allowed in search.",
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         }
       },
@@ -9360,58 +9429,6 @@
           }
         }
       },
-      "StrictModeConfig": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "description": "Whether strict mode is enabled for a collection or not.",
-            "type": "boolean",
-            "nullable": true
-          },
-          "max_query_limit": {
-            "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "nullable": true
-          },
-          "max_timeout": {
-            "description": "Max allowed `timeout` parameter.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 1,
-            "nullable": true
-          },
-          "unindexed_filtering_retrieve": {
-            "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
-            "type": "boolean",
-            "nullable": true
-          },
-          "unindexed_filtering_update": {
-            "description": "Allow usage of unindexed fields in filtered updates (eg. delete by payload).",
-            "type": "boolean",
-            "nullable": true
-          },
-          "search_max_hnsw_ef": {
-            "description": "Max HNSW value allowed in search parameters.",
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "search_allow_exact": {
-            "description": "Whether exact search is allowed or not.",
-            "type": "boolean",
-            "nullable": true
-          },
-          "search_max_oversampling": {
-            "description": "Max oversampling value allowed in search.",
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        }
-      },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
@@ -11007,7 +11024,7 @@
             "minimum": 0
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfig"
+            "$ref": "#/components/schemas/CollectionConfigInternal"
           },
           "shards": {
             "type": "array",
@@ -11026,6 +11043,56 @@
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
             }
+          }
+        }
+      },
+      "CollectionConfigInternal": {
+        "type": "object",
+        "required": [
+          "hnsw_config",
+          "optimizer_config",
+          "params",
+          "wal_config"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/components/schemas/CollectionParams"
+          },
+          "hnsw_config": {
+            "$ref": "#/components/schemas/HnswConfig"
+          },
+          "optimizer_config": {
+            "$ref": "#/components/schemas/OptimizersConfig"
+          },
+          "wal_config": {
+            "$ref": "#/components/schemas/WalConfig"
+          },
+          "quantization_config": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "strict_mode_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "uuid": {
+            "default": null,
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         }
       },

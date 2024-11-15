@@ -17,6 +17,7 @@ use segment::types::{
     VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 use wal::WalOptions;
 
@@ -209,7 +210,7 @@ pub const fn default_on_disk_payload() -> bool {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
-pub struct CollectionConfig {
+pub struct CollectionConfigInternal {
     #[validate(nested)]
     pub params: CollectionParams,
     #[validate(nested)]
@@ -220,13 +221,13 @@ pub struct CollectionConfig {
     pub wal_config: WalConfig,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
-    #[serde(default)]
-    #[schemars(skip)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_mode_config: Option<StrictModeConfig>,
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
 }
 
-impl CollectionConfig {
+impl CollectionConfigInternal {
     pub fn to_bytes(&self) -> CollectionResult<Vec<u8>> {
         serde_json::to_vec(self).map_err(|err| CollectionError::service_error(err.to_string()))
     }

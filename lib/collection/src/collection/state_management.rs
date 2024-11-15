@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
 use crate::collection_state::{ShardInfo, State};
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
@@ -11,7 +11,10 @@ use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
-    pub async fn check_config_compatible(&self, config: &CollectionConfig) -> CollectionResult<()> {
+    pub async fn check_config_compatible(
+        &self,
+        config: &CollectionConfigInternal,
+    ) -> CollectionResult<()> {
         self.collection_config
             .read()
             .await
@@ -71,11 +74,22 @@ impl Collection {
         Ok(())
     }
 
-    async fn apply_config(&self, new_config: CollectionConfig) -> CollectionResult<()> {
+    async fn apply_config(&self, new_config: CollectionConfigInternal) -> CollectionResult<()> {
         let recreate_optimizers;
 
         {
             let mut config = self.collection_config.write().await;
+
+            if config.uuid != new_config.uuid {
+                return Err(CollectionError::service_error(format!(
+                    "collection {} UUID mismatch: \
+                     UUID of existing collection is different from UUID of collection in Raft snapshot: \
+                     existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
+                    self.id,
+                    config.uuid,
+                    new_config.uuid,
+                )));
+            }
 
             if let Err(err) = config.params.check_compatible(&new_config.params) {
                 // Stop consensus with a service error, if new config is incompatible with current one.
@@ -89,13 +103,14 @@ impl Collection {
             // complain, if new field is added to `CollectionConfig` struct, but not destructured
             // explicitly. We have to explicitly compare config fields, because we want to compare
             // `wal_config` and `strict_mode_config` independently of other fields.
-            let CollectionConfig {
+            let CollectionConfigInternal {
                 params,
                 hnsw_config,
                 optimizer_config,
                 wal_config,
                 quantization_config,
                 strict_mode_config,
+                uuid: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params

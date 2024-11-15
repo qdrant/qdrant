@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use collection::collection::Collection;
-use collection::config::{self, CollectionConfig, CollectionParams, ShardingMethod};
+use collection::config::{self, CollectionConfigInternal, CollectionParams, ShardingMethod};
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::{
     check_sparse_compatible, CollectionResult, SparseVectorParams, VectorsConfig,
@@ -45,6 +45,7 @@ impl TableOfContent {
             quantization_config,
             sparse_vectors,
             strict_mode_config,
+            uuid,
         } = operation;
 
         self.collections
@@ -198,13 +199,14 @@ impl TableOfContent {
             .to_shared_storage_config(self.is_distributed())
             .into();
 
-        let collection_config = CollectionConfig {
+        let collection_config = CollectionConfigInternal {
             wal_config,
             params: collection_params,
             optimizer_config: optimizers_config,
             hnsw_config,
             quantization_config,
             strict_mode_config,
+            uuid,
         };
         let collection = Collection::new(
             collection_name.to_string(),

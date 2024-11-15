@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -19,7 +19,7 @@ pub struct ShardInfo {
 #[derive(Debug, Serialize, Deserialize, Validate, Clone, PartialEq)]
 pub struct State {
     #[validate(nested)]
-    pub config: CollectionConfig,
+    pub config: CollectionConfigInternal,
     pub shards: HashMap<ShardId, ShardInfo>,
     pub resharding: Option<ReshardState>,
     #[serde(default)]

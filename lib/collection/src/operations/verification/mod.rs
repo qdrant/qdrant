@@ -249,7 +249,7 @@ mod test {
 
     use super::StrictModeVerification;
     use crate::collection::{Collection, RequestShardTransfer};
-    use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+    use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
     use crate::operations::point_ops::{FilterSelector, PointsSelector};
     use crate::operations::shared_storage_config::SharedStorageConfig;
     use crate::operations::types::{
@@ -409,13 +409,14 @@ mod test {
         let wal_config = WalConfig::default();
         let collection_params = CollectionParams::empty();
 
-        let config = CollectionConfig {
+        let config = CollectionConfigInternal {
             params: collection_params,
             optimizer_config: OptimizersConfig::fixture(),
             wal_config,
             hnsw_config: Default::default(),
             quantization_config: Default::default(),
             strict_mode_config: Some(strict_mode_config.clone()),
+            uuid: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

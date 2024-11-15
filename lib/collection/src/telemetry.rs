@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
@@ -10,7 +10,7 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 pub struct CollectionTelemetry {
     pub id: String,
     pub init_time_ms: u64,
-    pub config: CollectionConfig,
+    pub config: CollectionConfigInternal,
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
@@ -40,15 +40,16 @@ impl Anonymize for CollectionTelemetry {
     }
 }
 
-impl Anonymize for CollectionConfig {
+impl Anonymize for CollectionConfigInternal {
     fn anonymize(&self) -> Self {
-        CollectionConfig {
+        CollectionConfigInternal {
             params: self.params.clone(),
             hnsw_config: self.hnsw_config.clone(),
             optimizer_config: self.optimizer_config.clone(),
             wal_config: self.wal_config.clone(),
             quantization_config: self.quantization_config.clone(),
             strict_mode_config: self.strict_mode_config.clone(),
+            uuid: None,
         }
     }
 }
