@@ -204,13 +204,24 @@ pub struct CollectionConfig {
 
 impl From<CollectionConfigInternal> for CollectionConfig {
     fn from(config: CollectionConfigInternal) -> Self {
+        let CollectionConfigInternal {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            // Internal UUID to identify unique collections in consensus snapshots
+            uuid: _,
+        } = config;
+
         CollectionConfig {
-            params: config.params,
-            hnsw_config: config.hnsw_config,
-            optimizer_config: config.optimizer_config,
-            wal_config: Some(config.wal_config),
-            quantization_config: config.quantization_config,
-            strict_mode_config: config.strict_mode_config,
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config: Some(wal_config),
+            quantization_config,
+            strict_mode_config,
         }
     }
 }
