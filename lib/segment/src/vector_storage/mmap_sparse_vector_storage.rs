@@ -23,6 +23,7 @@ use crate::types::VectorStorageDatatype;
 
 const STORAGE_PATH: &str = "sparse_vector_storage";
 
+/// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<BlobStore<SparseVector>>>,
@@ -126,16 +127,23 @@ impl MmapSparseVectorStorage {
         key: PointOffsetType,
         vector: Option<&SparseVector>,
     ) -> OperationResult<()> {
-        // Write vector state to buffer record
+        let mut storage_guard = self.storage.write();
         if let Some(vector) = vector {
+            // upsert vector
+            if let Some(old_vector) = storage_guard.get_value(key) {
+                // it is an update
+                self.total_sparse_size = self
+                    .total_sparse_size
+                    .saturating_sub(old_vector.values.len());
+            }
+
             self.total_sparse_size += vector.values.len();
-            self.storage
-                .write()
+            storage_guard
                 .put_value(key, vector)
                 .map_err(OperationError::service_error)?;
         } else {
-            // is deleting
-            if let Some(old_vector) = self.storage.write().delete_value(key) {
+            // delete vector
+            if let Some(old_vector) = storage_guard.delete_value(key) {
                 self.total_sparse_size = self
                     .total_sparse_size
                     .saturating_sub(old_vector.values.len());
