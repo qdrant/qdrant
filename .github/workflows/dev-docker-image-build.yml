@@ -9,6 +9,7 @@ on:
 jobs:
   branch-build-and-push:
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 240 # 4hrs
     steps:
         - uses: actions/checkout@v4
           with:
