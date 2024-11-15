@@ -59,9 +59,9 @@ pub fn open_simple_sparse_vector_storage(
             bitvec_set_deleted(&mut deleted, point_id, true);
             deleted_count += 1;
         } else {
-            total_vector_count = total_vector_count.max(point_id as usize + 1);
             total_sparse_size += stored_record.vector.values.len();
         }
+        total_vector_count = total_vector_count.max(point_id as usize + 1);
 
         check_process_stopped(stopped)?;
     }
