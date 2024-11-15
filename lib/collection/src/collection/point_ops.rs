@@ -377,7 +377,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         let shards_holder = self.shards_holder.read().await;
         let shards = shards_holder.select_shards(shard_selection)?;
@@ -393,7 +393,7 @@ impl Collection {
                     read_consistency,
                     timeout,
                     shard_selection.is_shard_id(),
-                    hw_measurement_acc.clone(),
+                    hw_measurement_acc,
                 )
             })
             .collect();

@@ -147,7 +147,7 @@ impl QueryGroupRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let mut request = self.source.clone();
 
@@ -313,7 +313,7 @@ pub async fn group_by(
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let collection_params = collection.collection_config.read().await.params.clone();
@@ -374,7 +374,7 @@ pub async fn group_by(
                 read_consistency,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
+                hw_measurement_acc,
             )
             .await?;
 
@@ -437,7 +437,7 @@ pub async fn group_by(
                     read_consistency,
                     shard_selection.clone(),
                     timeout,
-                    hw_measurement_acc.clone(),
+                    hw_measurement_acc,
                 )
                 .await?;
 

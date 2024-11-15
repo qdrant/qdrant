@@ -152,7 +152,7 @@ pub async fn recommend_by<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -242,7 +242,7 @@ pub async fn recommend_batch_by<'a, F, Fut>(
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
@@ -319,7 +319,7 @@ where
                 read_consistency,
                 shard_selector,
                 timeout,
-                hw_measurement_acc.clone(),
+                hw_measurement_acc,
             ));
 
             Ok(())

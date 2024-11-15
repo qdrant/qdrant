@@ -140,7 +140,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let CollectionSearchMatrixRequest {
             sample_size,
@@ -183,7 +183,7 @@ impl Collection {
                 read_consistency,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
+                hw_measurement_acc,
             )
             .await?;
 

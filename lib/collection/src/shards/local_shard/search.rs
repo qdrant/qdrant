@@ -17,7 +17,7 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_counter_acc: HwMeasurementAcc,
+        hw_counter_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let is_stopped_guard = StoppingGuard::new();
 
