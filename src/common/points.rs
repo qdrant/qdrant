@@ -844,7 +844,7 @@ pub async fn do_core_search_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
         toc,
@@ -872,7 +872,7 @@ pub async fn do_search_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
         (CoreSearchRequest, ShardSelectorInternal),
@@ -902,7 +902,7 @@ pub async fn do_search_batch_points(
                 shard_selector,
                 access.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
+                hw_measurement_acc,
             );
             res.push(req);
             Ok(())
@@ -923,7 +923,7 @@ pub async fn do_core_search_batch_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
         collection_name,
@@ -946,7 +946,7 @@ pub async fn do_search_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -969,7 +969,7 @@ pub async fn do_recommend_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -990,7 +990,7 @@ pub async fn do_discover_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -1025,7 +1025,7 @@ pub async fn do_count_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<CountResult, StorageError> {
     toc.count(
         collection_name,
@@ -1088,7 +1088,7 @@ pub async fn do_query_points(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let requests = vec![(request, shard_selection)];
     let batch_res = toc
@@ -1115,7 +1115,7 @@ pub async fn do_query_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.query_batch(
         collection_name,
@@ -1137,7 +1137,7 @@ pub async fn do_query_point_groups(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
         collection_name,
@@ -1160,7 +1160,7 @@ pub async fn do_search_points_matrix(
     shard_selection: ShardSelectorInternal,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<CollectionSearchMatrixResponse, StorageError> {
     toc.search_points_matrix(
         collection_name,

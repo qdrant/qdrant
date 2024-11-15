@@ -4,11 +4,13 @@ use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use segment::types::default_shard_number_per_node_const;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::content_manager::toc::request_hw_counter::RequestHwCounter;
 use crate::rbac::Access;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
@@ -232,5 +234,14 @@ impl Dispatcher {
         } else {
             Ok(())
         }
+    }
+
+    #[must_use]
+    pub fn apply_hardware_to_collection(
+        &self,
+        collection: &str,
+        hw_data: HwMeasurementAcc,
+    ) -> RequestHwCounter {
+        self.toc.report_hw_measurements(collection, hw_data)
     }
 }

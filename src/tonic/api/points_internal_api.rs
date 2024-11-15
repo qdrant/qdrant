@@ -85,7 +85,7 @@ pub async fn query_batch_internal(
             batch_requests,
             shard_selection,
             timeout,
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         )
         .await?;
 
@@ -426,7 +426,8 @@ impl PointsInternal for PointsInternalService {
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
 
-        core_search_list(
+        let hw_measurement = HwMeasurementAcc::new();
+        let res = core_search_list(
             self.toc.as_ref(),
             collection_name,
             search_points,
@@ -434,9 +435,11 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             timeout,
-            &self.service_config,
+            &hw_measurement,
         )
-        .await
+        .await?;
+        hw_measurement.discard();
+        Ok(res)
     }
 
     async fn recommend(
@@ -456,13 +459,16 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        recommend(
+        let hw_measurement = HwMeasurementAcc::new();
+        let res = recommend(
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
             FULL_ACCESS.clone(),
-            &self.service_config,
+            &hw_measurement,
         )
-        .await
+        .await?;
+        hw_measurement.discard();
+        Ok(res)
     }
 
     async fn scroll(
@@ -528,14 +534,17 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        count(
+        let hw_measurement = HwMeasurementAcc::new();
+        let res = count(
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
             &FULL_ACCESS,
-            &self.service_config,
+            &hw_measurement,
         )
-        .await
+        .await?;
+        hw_measurement.discard();
+        Ok(res)
     }
 
     async fn sync(
