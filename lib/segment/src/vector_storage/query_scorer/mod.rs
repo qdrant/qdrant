@@ -1,6 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
-use itertools::{Itertools, MinMaxResult};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
@@ -82,15 +81,27 @@ pub fn is_read_with_prefetch_efficient_vectors(ids: &[VectorOffsetType]) -> bool
 }
 
 fn is_read_with_prefetch_efficient(ids: impl IntoIterator<Item = usize>) -> bool {
-    match ids.into_iter().minmax() {
-        MinMaxResult::NoElements => false,
-        MinMaxResult::OneElement(_) => false,
-        MinMaxResult::MinMax(small, big) => {
-            let diff = big - small;
-            // Check if it is at least half efficient to read in a batch
-            diff < 2
+    let mut min = usize::MAX;
+    let mut max = 0;
+    let mut n = 0;
+
+    for id in ids {
+        if id < min {
+            min = id;
         }
+        if id > max {
+            max = id;
+        }
+        n += 1;
     }
+
+    if n < 2 {
+        return false;
+    }
+
+    let diff = max.saturating_sub(min);
+
+    diff < n * 2
 }
 
 #[cfg(test)]
