@@ -7,6 +7,7 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::DenseVectorStorage;
@@ -96,6 +97,20 @@ impl<
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_dense(idx);
         self.score(stored)
+    }
+
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
+
+        let mut vectors: [&[TElement]; VECTOR_READ_BATCH_SIZE] = [&[]; VECTOR_READ_BATCH_SIZE];
+
+        self.vector_storage
+            .get_dense_batch(ids, &mut vectors[..ids.len()]);
+
+        for idx in 0..ids.len() {
+            scores[idx] = self.score(vectors[idx]);
+        }
     }
 
     #[inline]

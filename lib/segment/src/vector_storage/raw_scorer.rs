@@ -2,7 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
@@ -17,8 +19,8 @@ use crate::data_types::vectors::{
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -904,28 +906,45 @@ where
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
     ) -> Vec<ScoredPointOffset> {
-        let scores = points
+        if top == 0 {
+            return vec![];
+        }
+
+        let chunks = points
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
-            .map(|point_id| ScoredPointOffset {
-                idx: point_id,
-                score: self.query_scorer.score_stored(point_id),
-            });
-        peek_top_largest_iterable(scores, top)
+            .chunks(VECTOR_READ_BATCH_SIZE); // batch points to leverage storage sequential access
+
+        let mut pq = FixedLengthPriorityQueue::new(top);
+
+        // Reuse the same buffer for all chunks, to avoid reallocation
+        let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
+        let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
+
+        for points_chunk in &chunks {
+            let mut chunk_size = 0;
+            for (i, point_id) in points_chunk.enumerate() {
+                chunk[i] = point_id;
+                chunk_size += 1;
+            }
+
+            self.query_scorer
+                .score_stored_batch(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+
+            for i in 0..chunk_size {
+                pq.push(ScoredPointOffset {
+                    idx: chunk[i],
+                    score: scores_buffer[i],
+                });
+            }
+        }
+
+        pq.into_vec()
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
-        let scores = (0..self.point_deleted.len() as PointOffsetType)
-            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
-            .filter(|point_id| self.check_vector(*point_id))
-            .map(|point_id| {
-                let point_id = point_id as PointOffsetType;
-                ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score_stored(point_id),
-                }
-            });
-        peek_top_largest_iterable(scores, top)
+        let mut point_ids = 0..self.point_deleted.len() as PointOffsetType;
+        self.peek_top_iter(&mut point_ids, top)
     }
 
     fn take_hardware_counter(&self) -> HardwareCounterCell {
