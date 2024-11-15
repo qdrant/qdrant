@@ -98,7 +98,7 @@ impl Default for HwMeasurementAcc {
 
 /// A type collecting hardware measuerements in multi threaded scenarios where multiple instances of `HwMeasurementAcc` would be needed.
 /// Because `HwMeasurementAcc` purposely doesn't implement Clone, we need this type to allow having an owned type we can move
-/// between threads/asnyc closures.
+/// between threads/async closures.
 ///
 /// This collector automatically applies all measurements to the `HwMeasurementAcc` that was used when creating this collector on drop.
 /// To ensure all values get applied, before reading from a `HwMeasurementAcc`, this type must be dropped first.
