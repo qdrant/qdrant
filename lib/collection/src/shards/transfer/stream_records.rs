@@ -66,7 +66,7 @@ pub(super) async fn transfer_stream_records(
             )));
         };
         progress.lock().points_total = count_result.count;
-        hw_acc.discard();
+        hw_acc.discard(); // Don't measure hardware in internal operations
 
         replica_set.transfer_indexes().await?;
 

@@ -21,10 +21,14 @@ impl HwMeasurementAcc {
         }
     }
 
+    /// Creates a new collector with this `HwMeasurementAcc` as "parent". All values collected by the
+    /// collector will be applied to the parents counters when the collector drops.
+    /// This allows using `HwMeasurementAcc` in multi-threaded or async code.
     pub fn new_collector(&self) -> HwMeasurementCollector {
         HwMeasurementCollector::new(self.cpu_counter.clone())
     }
 
+    /// Creates completely independent copy of the current `HwMeasurementAcc`'s values.
     pub fn deep_copy(&self) -> Self {
         Self::new_with_values(self.get_cpu())
     }
@@ -39,6 +43,13 @@ impl HwMeasurementAcc {
         cpu_counter.store(0, Ordering::Relaxed);
     }
 
+    /// Discards all values of the `HwMeasurementAcc`. This does the same as `.clear()` but the intended use is
+    /// slightly different:
+    ///
+    /// This function explicitly states that we don't care about the measurement result and therefore want
+    /// to disable the check on `drop`.
+    ///
+    /// `.clear()` should be used when the `HwMeasurementAcc` should reset its values to 0.
     pub fn discard(&self) {
         self.clear()
     }
@@ -58,15 +69,10 @@ impl HwMeasurementAcc {
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);
     }
 
+    /// Returns `true` if all values of the `HwMeasurementAcc` are zero.
     pub fn is_zero(&self) -> bool {
         let HwMeasurementAcc { ref cpu_counter } = self;
         cpu_counter.load(Ordering::Relaxed) == 0
-    }
-
-    pub fn take(&self) -> HwMeasurementAcc {
-        let HwMeasurementAcc { ref cpu_counter } = self;
-        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
-        Self::new_with_values(cpu)
     }
 }
 
@@ -103,7 +109,11 @@ impl Default for HwMeasurementAcc {
 /// This collector automatically applies all measurements to the `HwMeasurementAcc` that was used when creating this collector on drop.
 /// To ensure all values get applied, before reading from a `HwMeasurementAcc`, this type must be dropped first.
 pub struct HwMeasurementCollector {
+    /// Shared reference of CPU usage with the given Parent.
     cpu_counter: Arc<AtomicUsize>,
+
+    /// A new temporary measurement accumulator, which values get applied to the parents
+    /// ones on drop.
     collector: HwMeasurementAcc,
 }
 
@@ -127,9 +137,10 @@ impl Deref for HwMeasurementCollector {
 
 impl Drop for HwMeasurementCollector {
     fn drop(&mut self) {
+        // Apply the collected values from `collector` into the parents value references.
         let HwMeasurementAcc { cpu_counter } = &self.collector;
-        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
 
+        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
         self.cpu_counter.fetch_add(cpu, Ordering::Relaxed);
     }
 }
