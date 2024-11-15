@@ -21,7 +21,7 @@ pub fn accepted_response(timing: Instant) -> HttpResponse {
 pub fn process_response<T>(
     response: Result<T, StorageError>,
     timing: Instant,
-    hw_measurement_acc: Option<HwMeasurementAcc>,
+    hw_measurement_acc: Option<&HwMeasurementAcc>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -33,12 +33,19 @@ where
             time: timing.elapsed().as_secs_f64(),
             usage: hw_measurement_acc.map(hardware_accumulator_to_api),
         }),
-        Err(err) => process_response_error(err, timing),
+        Err(err) => {
+            if let Some(hw_acc) = hw_measurement_acc {
+                hw_acc.discard();
+            }
+            process_response_error(err, timing)
+        }
     }
 }
 
-fn hardware_accumulator_to_api(acc: HwMeasurementAcc) -> HardwareUsage {
-    HardwareUsage { cpu: acc.get_cpu() }
+fn hardware_accumulator_to_api(acc: &HwMeasurementAcc) -> HardwareUsage {
+    let res = HardwareUsage { cpu: acc.get_cpu() };
+    acc.discard();
+    res
 }
 
 pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
@@ -61,7 +68,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
 /// Future must be cancel safe.
 pub async fn time_and_hardware_opt<T, Fut>(
     future: Fut,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
     enabled: bool,
 ) -> HttpResponse
 where
@@ -71,7 +78,9 @@ where
     if enabled {
         time_and_hardware_impl(async { future.await.map(Some) }, hw_measurement_acc).await
     } else {
-        time_impl(async { future.await.map(Some) }).await
+        let res = time_impl(async { future.await.map(Some) }).await;
+        hw_measurement_acc.discard();
+        res
     }
 }
 
@@ -138,7 +147,7 @@ where
 /// Future must be cancel safe.
 async fn time_and_hardware_impl<T, Fut>(
     future: Fut,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> HttpResponse
 where
     Fut: Future<Output = Result<Option<T>, StorageError>>,
@@ -147,7 +156,10 @@ where
     let instant = Instant::now();
     match future.await.transpose() {
         Some(res) => process_response(res, instant, Some(hw_measurement_acc)),
-        None => accepted_response(instant),
+        None => {
+            hw_measurement_acc.discard();
+            accepted_response(instant)
+        }
     }
 }
 

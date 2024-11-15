@@ -70,7 +70,7 @@ async fn recommend_points(
                 shard_selection,
                 access,
                 params.timeout(),
-                hw_measurement_acc.clone(),
+                &hw_measurement_acc,
             )
             .map_ok(|scored_points| {
                 scored_points
@@ -78,7 +78,7 @@ async fn recommend_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -91,7 +91,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -149,7 +149,7 @@ async fn recommend_batch_points(
             params.consistency,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points
@@ -162,7 +162,7 @@ async fn recommend_batch_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -210,9 +210,9 @@ async fn recommend_point_groups(
             shard_selection,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         ),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

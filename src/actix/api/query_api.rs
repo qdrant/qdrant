@@ -49,7 +49,7 @@ async fn query_points(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+    let hw_collector = hw_measurement_acc.new_collector();
     helpers::time_and_hardware_opt(
         async move {
             let shard_selection = match shard_key {
@@ -67,7 +67,7 @@ async fn query_points(
                     params.consistency,
                     access,
                     params.timeout(),
-                    hw_measurement_acc_clone,
+                    &hw_collector,
                 )
                 .await?
                 .pop()
@@ -80,7 +80,7 @@ async fn query_points(
 
             Ok(QueryResponse { points })
         },
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -111,7 +111,8 @@ async fn query_points_batch(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+    let hw_collector = hw_measurement_acc.new_collector();
+
     helpers::time_and_hardware_opt(
         async move {
             let mut batch = Vec::with_capacity(searches.len());
@@ -138,7 +139,7 @@ async fn query_points_batch(
                     params.consistency,
                     access,
                     params.timeout(),
-                    hw_measurement_acc_clone,
+                    &hw_collector,
                 )
                 .await?
                 .into_iter()
@@ -151,7 +152,7 @@ async fn query_points_batch(
                 .collect_vec();
             Ok(res)
         },
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -185,7 +186,7 @@ async fn query_points_groups(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+    let hw_collector = hw_measurement_acc.new_collector();
 
     helpers::time_and_hardware_opt(
         async move {
@@ -205,11 +206,11 @@ async fn query_points_groups(
                 shard_selection,
                 access,
                 params.timeout(),
-                hw_measurement_acc_clone,
+                &hw_collector,
             )
             .await
         },
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

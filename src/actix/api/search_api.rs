@@ -17,6 +17,7 @@ use tokio::time::Instant;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
+use crate::actix::api::hardware_opt;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response, process_response_error};
 use crate::common::points::{
@@ -67,7 +68,7 @@ async fn search_points(
             shard_selection,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         )
         .map_ok(|scored_points| {
             scored_points
@@ -75,7 +76,7 @@ async fn search_points(
                 .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -132,7 +133,7 @@ async fn batch_search_points(
             params.consistency,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points
@@ -145,7 +146,7 @@ async fn batch_search_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -194,9 +195,9 @@ async fn search_point_groups(
             shard_selection,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         ),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -246,16 +247,16 @@ async fn search_points_matrix_pairs(
         shard_selection,
         access,
         params.timeout(),
-        hw_measurement_acc.clone(),
+        &hw_measurement_acc,
     )
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
-
-    process_response(response, timing, hw_measurements)
+    process_response(
+        response,
+        timing,
+        hardware_opt(&service_config, &hw_measurement_acc),
+    )
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
@@ -302,16 +303,16 @@ async fn search_points_matrix_offsets(
         shard_selection,
         access,
         params.timeout(),
-        hw_measurement_acc.clone(),
+        &hw_measurement_acc,
     )
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
-
-    process_response(response, timing, hw_measurements)
+    process_response(
+        response,
+        timing,
+        hardware_opt(&service_config, &hw_measurement_acc),
+    )
 }
 
 // Configure services

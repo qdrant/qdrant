@@ -145,7 +145,7 @@ async fn count_points(
     };
 
     let hw_measurement_acc = HwMeasurementAcc::new();
-    let hw_measurement_acc_clone = hw_measurement_acc.clone();
+    let hw_collector = hw_measurement_acc.new_collector();
 
     helpers::time_and_hardware_opt(
         async move {
@@ -174,11 +174,11 @@ async fn count_points(
                 params.timeout(),
                 ShardSelectorInternal::ShardId(path.shard),
                 access,
-                hw_measurement_acc_clone,
+                &hw_collector,
             )
             .await
         },
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

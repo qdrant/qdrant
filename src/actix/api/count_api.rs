@@ -57,9 +57,9 @@ async fn count_points(
             params.timeout(),
             shard_selector,
             access,
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         ),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await

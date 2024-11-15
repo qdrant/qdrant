@@ -62,7 +62,7 @@ async fn discover_points(
                 shard_selection,
                 access,
                 params.timeout(),
-                hw_measurement_acc.clone(),
+                &hw_measurement_acc,
             )
             .map_ok(|scored_points| {
                 scored_points
@@ -70,7 +70,7 @@ async fn discover_points(
                     .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
@@ -110,7 +110,7 @@ async fn discover_batch_points(
             params.consistency,
             access,
             params.timeout(),
-            hw_measurement_acc.clone(),
+            &hw_measurement_acc,
         )
         .map_ok(|batch_scored_points| {
             batch_scored_points
@@ -123,7 +123,7 @@ async fn discover_batch_points(
                 })
                 .collect_vec()
         }),
-        hw_measurement_acc,
+        &hw_measurement_acc,
         service_config.hardware_reporting(),
     )
     .await
