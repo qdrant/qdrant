@@ -1,12 +1,11 @@
-//! Typed memory maps
+//! Typed read-ponly memory maps
 //!
 //! This module adds type to directly map types and a slice of types onto a memory mapped file.
 //! The typed memory maps can be directly used as if it were that type.
 //!
 //! Types:
 //! - [`MmapTypeReadOnly`]
-//! - [`MmapSlice`]
-//! - [`MmapBitSlice`]
+//! - [`MmapSliceReadOnly`]
 //!
 //! Various additional functions are added for use within Qdrant, such as `flusher` to obtain a
 //! flusher handle to explicitly flush the underlying memory map at a later time.
@@ -35,7 +34,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 /// Type `T` on a memory mapped file
 ///
-/// Functions as if it is `T` because this implements [`Deref`] and [`DerefMut`].
+/// Functions as if it is `T` because this implements [`Deref`]
 ///
 /// # Safety
 ///
@@ -274,7 +273,7 @@ where
 
 /// Slice of type `T` on a memory mapped file
 ///
-/// Functions as if it is `&[T]` because this implements [`Deref`] and [`DerefMut`].
+/// Functions as if it is `&[T]` because this implements [`Deref`]
 ///
 /// A helper because [`MmapTypeReadOnly`] doesn't support slices directly.
 pub struct MmapSliceReadOnly<T>
