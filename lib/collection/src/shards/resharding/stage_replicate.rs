@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use super::driver::{PersistedState, Stage};
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -31,7 +31,7 @@ pub(super) async fn is_completed(
     reshard_key: &ReshardKey,
     state: &PersistedState,
     shard_holder: &Arc<LockedShardHolder>,
-    collection_config: &Arc<RwLock<CollectionConfig>>,
+    collection_config: &Arc<RwLock<CollectionConfigInternal>>,
 ) -> CollectionResult<bool> {
     Ok(state.read().all_peers_completed(Stage::S3_Replicate)
         && has_enough_replicas(reshard_key, shard_holder, collection_config).await?)
@@ -48,7 +48,7 @@ pub(super) async fn drive(
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
-    collection_config: Arc<RwLock<CollectionConfig>>,
+    collection_config: Arc<RwLock<CollectionConfigInternal>>,
     shared_storage_config: &SharedStorageConfig,
 ) -> CollectionResult<()> {
     let this_peer_id = consensus.this_peer_id();
@@ -173,7 +173,7 @@ pub(super) async fn drive(
 async fn has_enough_replicas(
     reshard_key: &ReshardKey,
     shard_holder: &Arc<LockedShardHolder>,
-    collection_config: &Arc<RwLock<CollectionConfig>>,
+    collection_config: &Arc<RwLock<CollectionConfigInternal>>,
 ) -> CollectionResult<bool> {
     // We don't need to replicate when scaling down
     if reshard_key.direction == ReshardingDirection::Down {

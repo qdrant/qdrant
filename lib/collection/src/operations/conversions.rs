@@ -20,21 +20,23 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
     BatchVectorStructInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
-use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, StrictModeConfig};
+use segment::types::{
+    Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfig,
+};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal, GroupsResult,
-    Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal, ReshardingInfo,
-    SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
+    CollectionConfig, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
+    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
+    ReshardingInfo, SparseIndexParams, SparseVectorParams, SparseVectorsConfig, VectorParamsDiff,
     VectorsConfigDiff,
 };
 use crate::config::{
-    default_replication_factor, default_write_consistency_factor, CollectionConfig,
-    CollectionParams, ShardingMethod, WalConfig,
+    default_replication_factor, default_write_consistency_factor, CollectionParams, ShardingMethod,
+    WalConfig,
 };
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
@@ -429,10 +431,12 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .max_optimization_threads
                         .map(|n| n as u64),
                 }),
-                wal_config: Some(api::grpc::qdrant::WalConfigDiff {
-                    wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
-                    wal_segments_ahead: Some(config.wal_config.wal_segments_ahead as u64),
-                }),
+                wal_config: config
+                    .wal_config
+                    .map(|wal_config| api::grpc::qdrant::WalConfigDiff {
+                        wal_capacity_mb: Some(wal_config.wal_capacity_mb as u64),
+                        wal_segments_ahead: Some(wal_config.wal_segments_ahead as u64),
+                    }),
                 quantization_config: config.quantization_config.map(|x| x.into()),
                 strict_mode_config: config
                     .strict_mode_config
@@ -692,97 +696,6 @@ fn grpc_to_segment_quantization_config(
     }
 }
 
-impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
-    type Error = Status;
-
-    fn try_from(config: api::grpc::qdrant::CollectionConfig) -> Result<Self, Self::Error> {
-        Ok(Self {
-            params: match config.params {
-                None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
-                Some(params) => CollectionParams {
-                    vectors: match params.vectors_config {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Expected `vectors` - configuration for vector storage",
-                            ))
-                        }
-                        Some(vector_config) => match vector_config.config {
-                            None => {
-                                return Err(Status::invalid_argument(
-                                    "Expected `vectors` - configuration for vector storage",
-                                ))
-                            }
-                            Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
-                                VectorsConfig::Single(params.try_into()?)
-                            }
-                            Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
-                                params_map,
-                            )) => VectorsConfig::Multi(
-                                params_map
-                                    .map
-                                    .into_iter()
-                                    .map(|(k, v)| Ok((k, v.try_into()?)))
-                                    .collect::<Result<BTreeMap<String, VectorParams>, Status>>()?,
-                            ),
-                        },
-                    },
-                    sparse_vectors: params
-                        .sparse_vectors_config
-                        .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
-                        .transpose()?,
-                    shard_number: NonZeroU32::new(params.shard_number)
-                        .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
-                    on_disk_payload: params.on_disk_payload,
-                    on_disk_payload_uses_mmap: false,
-                    replication_factor: NonZeroU32::new(
-                        params
-                            .replication_factor
-                            .unwrap_or_else(|| default_replication_factor().get()),
-                    )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`replication_factor` cannot be zero")
-                    })?,
-                    write_consistency_factor: NonZeroU32::new(
-                        params
-                            .write_consistency_factor
-                            .unwrap_or_else(|| default_write_consistency_factor().get()),
-                    )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
-                    })?,
-
-                    read_fan_out_factor: params.read_fan_out_factor,
-                    sharding_method: params
-                        .sharding_method
-                        .map(sharding_method_from_proto)
-                        .transpose()?,
-                },
-            },
-            hnsw_config: match config.hnsw_config {
-                None => return Err(Status::invalid_argument("Malformed HnswConfig type")),
-                Some(hnsw_config) => hnsw_config.into(),
-            },
-            optimizer_config: match config.optimizer_config {
-                None => return Err(Status::invalid_argument("Malformed OptimizerConfig type")),
-                Some(optimizer_config) => optimizer_config.into(),
-            },
-            wal_config: match config.wal_config {
-                None => return Err(Status::invalid_argument("Malformed WalConfig type")),
-                Some(wal_config) => wal_config.into(),
-            },
-            quantization_config: {
-                if let Some(config) = config.quantization_config {
-                    Some(config.try_into()?)
-                } else {
-                    None
-                }
-            },
-            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
-            uuid: None,
-        })
-    }
-}
-
 impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     type Error = Status;
 
@@ -817,7 +730,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     None => {
                         return Err(Status::invalid_argument("Malformed CollectionConfig type"))
                     }
-                    Some(config) => config.try_into()?,
+                    Some(config) => CollectionConfig::try_from(config)?,
                 },
                 payload_schema: collection_info_response
                     .payload_schema
@@ -1808,5 +1721,95 @@ impl TryFrom<api::grpc::qdrant::SparseVectorConfig> for SparseVectorsConfig {
             .map(|(k, v)| Ok((k, v.try_into()?)))
             .collect::<Result<_, Status>>()
             .map(SparseVectorsConfig)
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
+    type Error = Status;
+
+    fn try_from(config: api::grpc::qdrant::CollectionConfig) -> Result<Self, Self::Error> {
+        Ok(Self {
+            params: match config.params {
+                None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
+                Some(params) => CollectionParams {
+                    vectors: match params.vectors_config {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Expected `vectors` - configuration for vector storage",
+                            ))
+                        }
+                        Some(vector_config) => match vector_config.config {
+                            None => {
+                                return Err(Status::invalid_argument(
+                                    "Expected `vectors` - configuration for vector storage",
+                                ))
+                            }
+                            Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
+                                VectorsConfig::Single(params.try_into()?)
+                            }
+                            Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                params_map,
+                            )) => VectorsConfig::Multi(
+                                params_map
+                                    .map
+                                    .into_iter()
+                                    .map(|(k, v)| Ok((k, v.try_into()?)))
+                                    .collect::<Result<BTreeMap<String, VectorParams>, Status>>()?,
+                            ),
+                        },
+                    },
+                    sparse_vectors: params
+                        .sparse_vectors_config
+                        .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
+                        .transpose()?,
+                    shard_number: NonZeroU32::new(params.shard_number)
+                        .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
+                    on_disk_payload: params.on_disk_payload,
+                    replication_factor: NonZeroU32::new(
+                        params
+                            .replication_factor
+                            .unwrap_or_else(|| default_replication_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`replication_factor` cannot be zero")
+                    })?,
+                    write_consistency_factor: NonZeroU32::new(
+                        params
+                            .write_consistency_factor
+                            .unwrap_or_else(|| default_write_consistency_factor().get()),
+                    )
+                    .ok_or_else(|| {
+                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                    })?,
+
+                    read_fan_out_factor: params.read_fan_out_factor,
+                    sharding_method: params
+                        .sharding_method
+                        .map(sharding_method_from_proto)
+                        .transpose()?,
+                    on_disk_payload_uses_mmap: false,
+                },
+            },
+            hnsw_config: match config.hnsw_config {
+                None => return Err(Status::invalid_argument("Malformed HnswConfig type")),
+                Some(hnsw_config) => HnswConfig::from(hnsw_config),
+            },
+            optimizer_config: match config.optimizer_config {
+                None => return Err(Status::invalid_argument("Malformed OptimizerConfig type")),
+                Some(optimizer_config) => OptimizersConfig::from(optimizer_config),
+            },
+            wal_config: match config.wal_config {
+                None => return Err(Status::invalid_argument("Malformed WalConfig type")),
+                Some(wal_config) => Some(WalConfig::from(wal_config)),
+            },
+            quantization_config: {
+                if let Some(config) = config.quantization_config {
+                    Some(QuantizationConfig::try_from(config)?)
+                } else {
+                    None
+                }
+            },
+            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
+        })
     }
 }

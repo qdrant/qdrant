@@ -5,7 +5,7 @@ use segment::types::{
     Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
 };
 
-use crate::config::{CollectionConfig, CollectionParams, WalConfig};
+use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
@@ -25,7 +25,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     max_optimization_threads: Some(2),
 };
 
-pub fn create_collection_config() -> CollectionConfig {
+pub fn create_collection_config() -> CollectionConfigInternal {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -41,7 +41,7 @@ pub fn create_collection_config() -> CollectionConfig {
     optimizer_config.default_segment_number = 1;
     optimizer_config.flush_interval_sec = 0;
 
-    CollectionConfig {
+    CollectionConfigInternal {
         params: collection_params,
         optimizer_config,
         wal_config,

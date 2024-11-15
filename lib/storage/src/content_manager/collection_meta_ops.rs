@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use collection::config::{CollectionConfig, ShardingMethod};
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -397,8 +397,8 @@ pub enum CollectionMetaOperations {
 
 /// Use config of the existing collection to generate a create collection operation
 /// for the new collection
-impl From<CollectionConfig> for CreateCollection {
-    fn from(value: CollectionConfig) -> Self {
+impl From<CollectionConfigInternal> for CreateCollection {
+    fn from(value: CollectionConfigInternal) -> Self {
         Self {
             vectors: value.params.vectors,
             shard_number: Some(value.params.shard_number.get()),
