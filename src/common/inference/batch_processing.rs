@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use api::rest::{
     ContextInput, ContextPair, DiscoverInput, Prefetch, Query, QueryGroupsRequestInternal,
-    QueryInterface, RecommendInput, VectorInput,
+    QueryInterface, QueryRequestInternal, RecommendInput, VectorInput,
 };
 
 use super::service::{InferenceData, InferenceInput, InferenceRequest};
@@ -146,6 +146,36 @@ pub fn collect_query_groups_request(request: &QueryGroupsRequestInternal) -> Bat
         with_payload: _,
         lookup_from: _,
         group_request: _,
+    } = request;
+
+    if let Some(query) = query {
+        collect_query_interface(query, &mut batch);
+    }
+
+    if let Some(prefetches) = prefetch {
+        for prefetch in prefetches {
+            collect_prefetch(prefetch, &mut batch);
+        }
+    }
+
+    batch
+}
+
+pub fn collect_query_request(request: &QueryRequestInternal) -> BatchAccum {
+    let mut batch = BatchAccum::new();
+
+    let QueryRequestInternal {
+        prefetch,
+        query,
+        using: _,
+        filter: _,
+        score_threshold: _,
+        params: _,
+        limit: _,
+        offset: _,
+        with_vector: _,
+        with_payload: _,
+        lookup_from: _,
     } = request;
 
     if let Some(query) = query {
