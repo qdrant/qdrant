@@ -1,15 +1,46 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::madvise::AdviceSetting;
-use crate::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use crate::mmap_type::{Error as MmapError, MmapSlice};
+use crate::madvise::{Advice, AdviceSetting};
+use crate::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
+use crate::mmap_type::{Error as MmapError, MmapFlusher, MmapSlice};
+use crate::mmap_type_readonly::MmapSliceReadOnly;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
-/// Memory mapped chunk data.
-pub type MmapChunk<T> = MmapSlice<T>;
+/// Memory mapped chunk data, that can be read and written and also maintain sequential read-only view
+#[derive(Debug)]
+pub struct UniversalMmapChunk<T: Sized + 'static> {
+    mmap: MmapSlice<T>,
+    mmap_seq: MmapSliceReadOnly<T>,
+}
+
+impl<T: Sized + 'static> UniversalMmapChunk<T> {
+    pub fn as_slice(&self) -> &[T] {
+        &self.mmap
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        &mut self.mmap
+    }
+
+    pub fn as_seq_slice(&self) -> &[T] {
+        &self.mmap_seq
+    }
+
+    pub fn flusher(&self) -> MmapFlusher {
+        self.mmap.flusher()
+    }
+
+    pub fn len(&self) -> usize {
+        self.mmap.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mmap.is_empty()
+    }
+}
 
 /// Checks if the file name matches the pattern for mmap chunks
 /// Return ID from the file name if it matches, None otherwise
@@ -25,7 +56,7 @@ pub fn read_mmaps<T: Sized>(
     mlock: bool,
     populate: bool,
     advice: AdviceSetting,
-) -> Result<Vec<MmapChunk<T>>, MmapError> {
+) -> Result<Vec<UniversalMmapChunk<T>>, MmapError> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -52,6 +83,10 @@ pub fn read_mmaps<T: Sized>(
             ))
         })?;
         let mmap = open_write_mmap(&mmap_file, advice, populate)?;
+
+        let mmap_seq =
+            open_read_mmap(&mmap_file, AdviceSetting::Advice(Advice::Sequential), false)?;
+
         // If unix, lock the memory
         #[cfg(unix)]
         if mlock {
@@ -63,7 +98,12 @@ pub fn read_mmaps<T: Sized>(
             log::warn!("Can't lock vectors in RAM, is not supported on this platform");
         }
 
-        let chunk = unsafe { MmapChunk::try_from(mmap)? };
+        let chunk = unsafe {
+            UniversalMmapChunk {
+                mmap: MmapSlice::try_from(mmap)?,
+                mmap_seq: MmapSliceReadOnly::try_from(mmap_seq)?,
+            }
+        };
         result.push(chunk);
     }
     Ok(result)
@@ -80,7 +120,7 @@ pub fn create_chunk<T: Sized>(
     chunk_id: usize,
     chunk_length_bytes: usize,
     mlock: bool,
-) -> Result<MmapChunk<T>, MmapError> {
+) -> Result<UniversalMmapChunk<T>, MmapError> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(
@@ -88,6 +128,13 @@ pub fn create_chunk<T: Sized>(
         AdviceSetting::Global,
         false, // don't populate newly created chunk, as it's empty and will be filled later
     )?;
+
+    let mmap_seq = open_read_mmap(
+        &chunk_file_path,
+        AdviceSetting::Advice(Advice::Sequential),
+        false,
+    )?;
+
     #[cfg(unix)]
     if mlock {
         mmap.lock()?;
@@ -97,6 +144,12 @@ pub fn create_chunk<T: Sized>(
     if mlock {
         log::warn!("Can't lock vectors in RAM, is not supported on this platform");
     }
-    let chunk = unsafe { MmapChunk::try_from(mmap)? };
+
+    let chunk = unsafe {
+        UniversalMmapChunk {
+            mmap: MmapSlice::try_from(mmap)?,
+            mmap_seq: MmapSliceReadOnly::try_from(mmap_seq)?,
+        }
+    };
     Ok(chunk)
 }
