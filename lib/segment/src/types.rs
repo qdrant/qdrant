@@ -970,7 +970,13 @@ pub struct SparseVectorDataConfig {
     pub index: SparseIndexConfig,
 
     /// Type of storage this sparse vector uses
+    #[serde(default = "default_sparse_vector_storage_type_when_not_in_config")]
     pub storage_type: SparseVectorStorageType,
+}
+
+/// If the storage type is not in config, it means it is the OnDisk variant
+const fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
+    SparseVectorStorageType::OnDisk
 }
 
 impl SparseVectorDataConfig {
