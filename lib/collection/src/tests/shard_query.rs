@@ -65,13 +65,9 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await;
     let expected_error =
         CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
@@ -105,12 +101,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -156,12 +147,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -204,12 +190,7 @@ async fn test_shard_query_rrf_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -221,6 +202,7 @@ async fn test_shard_query_rrf_rescoring() {
     assert_eq!(sources_scores[0][0].id, PointIdType::NumId(1));
     assert_eq!(sources_scores[1][0].id, PointIdType::NumId(2));
     assert_eq!(sources_scores[2][0].id, PointIdType::NumId(3));
+    hw_acc.discard();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -286,13 +268,9 @@ async fn test_shard_query_vector_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -318,12 +296,7 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -352,12 +325,7 @@ async fn test_shard_query_vector_rescoring() {
     };
 
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
@@ -368,6 +336,7 @@ async fn test_shard_query_vector_rescoring() {
     // merging taking place
     // number of results is limited by the outer limit for vector rescoring
     assert_eq!(sources_scores[0].len(), outer_limit);
+    hw_acc.discard();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -423,17 +392,14 @@ async fn test_shard_query_payload_vector() {
         with_payload: WithPayloadInterface::Bool(true), // requesting payload
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let sources_scores = shard
-        .query_batch(
-            Arc::new(vec![query]),
-            &current_runtime,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query_batch(Arc::new(vec![query]), &current_runtime, None, &hw_acc)
         .await
         .unwrap()
         .pop()
         .unwrap();
+    hw_acc.discard();
 
     // only one inner result in absence of prefetches
     assert_eq!(sources_scores.len(), 1);

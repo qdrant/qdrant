@@ -122,16 +122,18 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let result = collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -157,15 +159,17 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let result = collection
         .search(
             failed_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await;
+    hw_acc.discard();
 
     assert!(
         matches!(result, Err(CollectionError::BadInput { .. })),
@@ -187,16 +191,18 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let result = collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     for hit in result {
         match hit.vector.unwrap() {
@@ -233,6 +239,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
+    let hw_acc = HwMeasurementAcc::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -246,9 +253,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
+        &hw_acc,
     )
     .await;
+    hw_acc.discard();
 
     match recommend_result {
         Ok(_) => panic!("Error expected"),
@@ -259,6 +267,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
     }
 
+    let hw_acc = HwMeasurementAcc::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -273,10 +282,11 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
+        &hw_acc,
     )
     .await
     .unwrap();
+    hw_acc.discard();
 
     assert_eq!(recommend_result.len(), 10);
     for hit in recommend_result {
