@@ -27,9 +27,9 @@ use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
-    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
-    WithPayloadInterface, WithVector,
+    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
+    PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey, StrictModeConfig,
+    VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use serde;
@@ -45,12 +45,13 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::config_diff::{self};
 use super::ClockTag;
-use crate::config::{CollectionConfig, CollectionParams};
+use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -183,6 +184,48 @@ impl TryFrom<Record> for PointStructPersisted {
     }
 }
 
+// Version of the collection config we can present to the user
+/// Information about the collection configuration
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CollectionConfig {
+    #[validate(nested)]
+    pub params: CollectionParams,
+    #[validate(nested)]
+    pub hnsw_config: HnswConfig,
+    #[validate(nested)]
+    pub optimizer_config: OptimizersConfig,
+    #[validate(nested)]
+    pub wal_config: Option<WalConfig>,
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict_mode_config: Option<StrictModeConfig>,
+}
+
+impl From<CollectionConfigInternal> for CollectionConfig {
+    fn from(config: CollectionConfigInternal) -> Self {
+        let CollectionConfigInternal {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            // Internal UUID to identify unique collections in consensus snapshots
+            uuid: _,
+        } = config;
+
+        CollectionConfig {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config: Some(wal_config),
+            quantization_config,
+            strict_mode_config,
+        }
+    }
+}
+
 /// Current statistics and configuration of the collection
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CollectionInfo {
@@ -214,7 +257,7 @@ pub struct CollectionInfo {
 }
 
 impl CollectionInfo {
-    pub fn empty(collection_config: CollectionConfig) -> Self {
+    pub fn empty(collection_config: CollectionConfigInternal) -> Self {
         Self {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
@@ -222,7 +265,7 @@ impl CollectionInfo {
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
-            config: collection_config,
+            config: CollectionConfig::from(collection_config),
             payload_schema: HashMap::new(),
         }
     }
@@ -237,7 +280,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             indexed_vectors_count: Some(info.indexed_vectors_count),
             points_count: Some(info.points_count),
             segments_count: info.segments_count,
-            config: info.config,
+            config: CollectionConfig::from(info.config),
             payload_schema: info.payload_schema,
         }
     }
@@ -266,7 +309,7 @@ pub struct ShardInfoInternal {
     /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings
-    pub config: CollectionConfig,
+    pub config: CollectionConfigInternal,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }

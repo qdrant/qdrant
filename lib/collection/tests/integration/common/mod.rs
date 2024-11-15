@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
@@ -45,13 +45,14 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         ..CollectionParams::empty()
     };
 
-    let collection_config = CollectionConfig {
+    let collection_config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: TEST_OPTIMIZERS_CONFIG.clone(),
         wal_config,
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
+        uuid: None,
     };
 
     let snapshot_path = collection_path.join("snapshots");
@@ -85,7 +86,7 @@ pub async fn new_local_collection(
     id: CollectionId,
     path: &Path,
     snapshots_path: &Path,
-    config: &CollectionConfig,
+    config: &CollectionConfigInternal,
 ) -> Result<Collection, CollectionError> {
     let collection = Collection::new(
         id,

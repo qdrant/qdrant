@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use collection::config::{CollectionConfig, ShardingMethod};
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -18,6 +18,7 @@ use segment::types::{
     PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -173,6 +174,9 @@ pub struct CreateCollection {
     /// Strict-mode config.
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,
+    #[serde(default)]
+    #[schemars(skip)]
+    pub uuid: Option<Uuid>,
 }
 
 /// Operation for creating new collection and (optionally) specify index params
@@ -393,8 +397,8 @@ pub enum CollectionMetaOperations {
 
 /// Use config of the existing collection to generate a create collection operation
 /// for the new collection
-impl From<CollectionConfig> for CreateCollection {
-    fn from(value: CollectionConfig) -> Self {
+impl From<CollectionConfigInternal> for CreateCollection {
+    fn from(value: CollectionConfigInternal) -> Self {
         Self {
             vectors: value.params.vectors,
             shard_number: Some(value.params.shard_number.get()),
@@ -409,6 +413,7 @@ impl From<CollectionConfig> for CreateCollection {
             quantization_config: value.quantization_config,
             sparse_vectors: value.params.sparse_vectors,
             strict_mode_config: value.strict_mode_config,
+            uuid: value.uuid,
         }
     }
 }

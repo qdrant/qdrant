@@ -27,7 +27,7 @@ use tokio::time::sleep;
 use super::shard::{PeerId, ShardId};
 use super::transfer::ShardTransferConsensus;
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::shards::channel_service::ChannelService;
@@ -118,7 +118,7 @@ pub fn spawn_resharding_task<T, F>(
     consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     collection_path: PathBuf,
-    collection_config: Arc<RwLock<CollectionConfig>>,
+    collection_config: Arc<RwLock<CollectionConfigInternal>>,
     shared_storage_config: Arc<SharedStorageConfig>,
     channel_service: ChannelService,
     can_resume: bool,

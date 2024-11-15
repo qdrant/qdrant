@@ -18,7 +18,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{default_replication_factor, CollectionConfig};
+use collection::config::{default_replication_factor, CollectionConfigInternal};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set;
@@ -108,7 +108,7 @@ impl TableOfContent {
                 .expect("Can't access of one of the collection files")
                 .path();
 
-            if !CollectionConfig::check(&collection_path) {
+            if !CollectionConfigInternal::check(&collection_path) {
                 log::warn!(
                     "Collection config is not found in the collection directory: {}, skipping",
                     collection_path.display(),
@@ -586,7 +586,7 @@ impl TableOfContent {
         let path = self.get_collection_path(collection_name);
 
         if path.exists() {
-            if CollectionConfig::check(&path) {
+            if CollectionConfigInternal::check(&path) {
                 return Err(StorageError::bad_input(format!(
                     "Can't create collection with name {collection_name}. Collection data already exists at {path}",
                     collection_name = collection_name,

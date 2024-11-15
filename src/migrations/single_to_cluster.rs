@@ -63,6 +63,7 @@ pub async fn handle_existing_collections(
                 init_from: None,
                 quantization_config: collection_state.config.quantization_config,
                 strict_mode_config: collection_state.config.strict_mode_config,
+                uuid: collection_state.config.uuid,
             },
         );
 

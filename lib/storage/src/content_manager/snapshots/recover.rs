@@ -1,6 +1,6 @@
 use collection::collection::Collection;
 use collection::common::sha_256::{hash_file, hashes_equal};
-use collection::config::CollectionConfig;
+use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::ReplicaState;
@@ -137,7 +137,7 @@ async fn _do_recover_from_snapshot(
     });
     restoring.await??;
 
-    let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
+    let snapshot_config = CollectionConfigInternal::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
     let collection = match toc.get_collection(&collection_pass).await.ok() {

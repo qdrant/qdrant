@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use api::rest::SearchRequestInternal;
-use collection::config::{CollectionConfig, CollectionParams, WalConfig};
+use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
@@ -48,7 +48,7 @@ fn setup() -> (TempDir, LocalShard) {
         ..CollectionParams::empty()
     };
 
-    let collection_config = CollectionConfig {
+    let collection_config = CollectionConfigInternal {
         params: collection_params,
         optimizer_config: OptimizersConfig {
             deleted_threshold: 0.9,
@@ -64,6 +64,7 @@ fn setup() -> (TempDir, LocalShard) {
         hnsw_config: Default::default(),
         quantization_config: Default::default(),
         strict_mode_config: Default::default(),
+        uuid: None,
     };
 
     let optimizers_config = collection_config.optimizer_config.clone();

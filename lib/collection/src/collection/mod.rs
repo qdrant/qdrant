@@ -28,7 +28,7 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
-use crate::config::CollectionConfig;
+use crate::config::CollectionConfigInternal;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -54,7 +54,7 @@ use crate::telemetry::CollectionTelemetry;
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
-    pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
+    pub(crate) collection_config: Arc<RwLock<CollectionConfigInternal>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     optimizers_overwrite: Option<OptimizersConfigDiff>,
@@ -94,7 +94,7 @@ impl Collection {
         this_peer_id: PeerId,
         path: &Path,
         snapshots_path: &Path,
-        collection_config: &CollectionConfig,
+        collection_config: &CollectionConfigInternal,
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
         channel_service: ChannelService,
@@ -215,7 +215,7 @@ impl Collection {
             }
         }
 
-        let collection_config = CollectionConfig::load(path).unwrap_or_else(|err| {
+        let collection_config = CollectionConfigInternal::load(path).unwrap_or_else(|err| {
             panic!(
                 "Can't read collection config due to {}\nat {}",
                 err,
@@ -311,6 +311,10 @@ impl Collection {
 
     pub fn name(&self) -> String {
         self.id.clone()
+    }
+
+    pub async fn uuid(&self) -> Option<uuid::Uuid> {
+        self.collection_config.read().await.uuid
     }
 
     pub async fn get_shard_keys(&self) -> Vec<ShardKey> {

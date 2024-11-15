@@ -115,6 +115,18 @@ impl Dispatcher {
                             }
                         }
                     }
+
+                    if let Some(uuid) = &op.create_collection.uuid {
+                        log::warn!(
+                            "Collection UUID {uuid} explicitly specified, \
+                             when proposing create collection {} operation, \
+                             new random UUID will be generated instead",
+                            op.collection_name,
+                        );
+                    }
+
+                    op.create_collection.uuid = Some(uuid::Uuid::new_v4());
+
                     CollectionMetaOperations::CreateCollection(op)
                 }
                 CollectionMetaOperations::CreateShardKey(op) => {
