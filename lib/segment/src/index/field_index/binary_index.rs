@@ -314,7 +314,7 @@ impl PayloadFieldIndex for BinaryIndex {
                 };
 
                 let estimation = CardinalityEstimation::exact(count)
-                    .with_primary_clause(PrimaryCondition::Condition(condition.clone()));
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
 
                 Some(estimation)
             }

@@ -103,7 +103,7 @@ pub trait InvertedIndex {
         if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
             return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
                 min: 0,
                 exp: 0,
                 max: 0,
@@ -113,7 +113,7 @@ pub trait InvertedIndex {
         if postings.is_empty() {
             // Empty request -> no matches
             return CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
                 min: 0,
                 exp: 0,
                 max: 0,
@@ -122,9 +122,9 @@ pub trait InvertedIndex {
         // Smallest posting is the largest possible cardinality
         let smallest_posting = postings.iter().min().copied().unwrap();
 
-        return if postings.len() == 1 {
+        if postings.len() == 1 {
             CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
                 min: smallest_posting,
                 exp: smallest_posting,
                 max: smallest_posting,
@@ -136,12 +136,12 @@ pub trait InvertedIndex {
                 .product();
             let exp = (expected_frac * points_count as f64) as usize;
             CardinalityEstimation {
-                primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
+                primary_clauses: vec![PrimaryCondition::Condition(Box::new(condition.clone()))],
                 min: 0, // ToDo: make better estimation
                 exp,
                 max: smallest_posting,
             }
-        };
+        }
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_;

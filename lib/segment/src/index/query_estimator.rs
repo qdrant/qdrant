@@ -294,19 +294,19 @@ mod tests {
             Condition::CustomIdChecker(_) => panic!("unexpected CustomIdChecker"),
             Condition::Field(field) => match field.key.to_string().as_str() {
                 "color" => CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    primary_clauses: vec![PrimaryCondition::Condition(Box::new(field.clone()))],
                     min: 100,
                     exp: 200,
                     max: 300,
                 },
                 "size" => CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    primary_clauses: vec![PrimaryCondition::Condition(Box::new(field.clone()))],
                     min: 100,
                     exp: 100,
                     max: 100,
                 },
                 "price" => CardinalityEstimation {
-                    primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
+                    primary_clauses: vec![PrimaryCondition::Condition(Box::new(field.clone()))],
                     min: 10,
                     exp: 15,
                     max: 20,

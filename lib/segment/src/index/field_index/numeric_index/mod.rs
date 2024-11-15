@@ -679,8 +679,9 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
                 let estimated_count = self.estimate_points(&key);
                 return Some(
-                    CardinalityEstimation::exact(estimated_count)
-                        .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                    CardinalityEstimation::exact(estimated_count).with_primary_clause(
+                        PrimaryCondition::Condition(Box::new(condition.clone())),
+                    ),
                 );
             }
         }
@@ -689,7 +690,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
             let mut cardinality = self.range_cardinality(range);
             cardinality
                 .primary_clauses
-                .push(PrimaryCondition::Condition(condition.clone()));
+                .push(PrimaryCondition::Condition(Box::new(condition.clone())));
             cardinality
         })
     }
