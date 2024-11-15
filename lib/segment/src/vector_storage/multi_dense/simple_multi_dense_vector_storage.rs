@@ -308,7 +308,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
 
-        // TODO read from sequential mmap
         for (i, key) in keys.iter().enumerate() {
             vectors[i] = self.get_multi(*key);
         }

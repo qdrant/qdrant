@@ -111,7 +111,6 @@ impl<
     ) {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-        // TODO read from sequential mmap
         for (idx, key) in keys.iter().enumerate() {
             vectors[idx] = self.get_multi(*key);
         }

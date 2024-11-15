@@ -264,7 +264,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    /// Expects the keys to be sorted and not very sparse.
     pub fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
         debug_assert!(keys.len() == vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);

@@ -34,7 +34,7 @@ pub trait ChunkedVectorStorage<T> {
     fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
 
     /// Returns batch of vectors by keys.
-    /// Keys are expected to be rather consecutive.
+    /// Underlying storage might apply some optimizations to prefetch vectors.
     fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]);
 
     fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
