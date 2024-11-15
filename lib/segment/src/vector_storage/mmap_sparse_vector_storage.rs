@@ -37,10 +37,10 @@ pub struct MmapSparseVectorStorage {
 }
 
 impl MmapSparseVectorStorage {
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, stopped: &AtomicBool) -> OperationResult<Self> {
         let path = path.join(STORAGE_PATH);
         if path.exists() {
-            Self::open(path)
+            Self::open(path, stopped)
         } else {
             // create folder if it does not exist
             std::fs::create_dir_all(&path).map_err(|_| {
@@ -52,7 +52,7 @@ impl MmapSparseVectorStorage {
         }
     }
 
-    fn open(path: PathBuf) -> OperationResult<Self> {
+    fn open(path: PathBuf, stopped: &AtomicBool) -> OperationResult<Self> {
         let storage: BlobStore<SparseVector> = BlobStore::open(path).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
@@ -64,6 +64,7 @@ impl MmapSparseVectorStorage {
         let mut total_vector_count = 0;
         let mut total_sparse_size = 0;
         let mut last_read_id = 0;
+        const CHECK_STOP_INTERVAL: usize = 100;
 
         storage.iter(|point_id, vector| {
             // Propagate deleted flag
@@ -78,6 +79,11 @@ impl MmapSparseVectorStorage {
 
             total_vector_count = total_vector_count.max(point_id as usize + 1);
             total_sparse_size += vector.values.len();
+
+            if total_vector_count % CHECK_STOP_INTERVAL == 0 && stopped.load(Ordering::Relaxed) {
+                return Err(std::io::Error::other("Process cancelled"));
+            }
+
             Ok(true)
         })?;
 
@@ -200,7 +206,6 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         let vector = self.get_vector_opt(key);
-        debug_assert!(vector.is_some());
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 

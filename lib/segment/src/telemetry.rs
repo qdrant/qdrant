@@ -143,6 +143,7 @@ impl Anonymize for SparseVectorDataConfig {
     fn anonymize(&self) -> Self {
         SparseVectorDataConfig {
             index: self.index.anonymize(),
+            storage_type: self.storage_type,
         }
     }
 }

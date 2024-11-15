@@ -180,7 +180,6 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         let vector = self.get_vector_opt(key);
-        debug_assert!(vector.is_some());
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 

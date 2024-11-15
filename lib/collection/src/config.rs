@@ -13,8 +13,8 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
     default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
-    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    QuantizationConfig, SparseVectorDataConfig, SparseVectorStorageType, StrictModeConfig,
+    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -500,6 +500,8 @@ impl CollectionParams {
                                     .and_then(|index| index.datatype)
                                     .map(VectorStorageDatatype::from),
                             },
+                            // Not configurable by user (at this point). When we switch the default, it will be switched here too.
+                            storage_type: SparseVectorStorageType::default(),
                         },
                     ))
                 })
