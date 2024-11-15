@@ -9949,11 +9949,14 @@
         "properties": {
           "text": {
             "description": "Text of the document This field will be used as input for the embedding model",
-            "type": "string"
+            "type": "string",
+            "example": "This is a document text"
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "example": "jinaai/jina-embeddings-v2-base-en"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",
@@ -9972,11 +9975,14 @@
         ],
         "properties": {
           "image": {
-            "description": "Image data: base64 encoded image or an URL"
+            "description": "Image data: base64 encoded image or an URL",
+            "example": "https://example.com/image.jpg"
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "example": "Qdrant/clip-ViT-B-32-vision"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",
@@ -9999,7 +10005,9 @@
           },
           "model": {
             "description": "Name of the model used to generate the vector List of available models depends on a provider",
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "example": "jinaai/jina-embeddings-v2-base-en"
           },
           "options": {
             "description": "Parameters for the model Values of the parameters are model-specific",

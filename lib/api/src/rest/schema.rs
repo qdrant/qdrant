@@ -164,13 +164,16 @@ impl Hash for Options {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Text document for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash, Validate)]
 pub struct Document {
     /// Text of the document
     /// This field will be used as input for the embedding model
+    #[schemars(example = "document_text_example")]
     pub text: String,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
+    #[validate(length(min = 1))]
+    #[schemars(length(min = 1), example = "model_example")]
     pub model: String,
     #[serde(flatten)]
     pub options: Options,
@@ -179,12 +182,15 @@ pub struct Document {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Image object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Validate, Hash)]
 pub struct Image {
     /// Image data: base64 encoded image or an URL
+    #[schemars(example = "image_value_example")]
     pub image: Value,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
+    #[validate(length(min = 1))]
+    #[schemars(length(min = 1), example = "image_model_example")]
     pub model: String,
     /// Parameters for the model
     /// Values of the parameters are model-specific
@@ -195,13 +201,15 @@ pub struct Image {
 /// WARN: Work-in-progress, unimplemented
 ///
 /// Custom object for embedding. Requires inference infrastructure, unimplemented.
-#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema, Hash, Validate)]
 pub struct InferenceObject {
     /// Arbitrary data, used as input for the embedding model
     /// Used if the model requires more than one input or a custom input
     pub object: Value,
     /// Name of the model used to generate the vector
     /// List of available models depends on a provider
+    #[validate(length(min = 1))]
+    #[schemars(length(min = 1), example = "model_example")]
     pub model: String,
     /// Parameters for the model
     /// Values of the parameters are model-specific
@@ -242,6 +250,22 @@ fn version_example() -> segment::types::SeqNumberType {
 
 fn score_example() -> common::types::ScoreType {
     0.75
+}
+
+fn document_text_example() -> String {
+    "This is a document text".to_string()
+}
+
+fn model_example() -> String {
+    "jinaai/jina-embeddings-v2-base-en".to_string()
+}
+
+fn image_value_example() -> String {
+    "https://example.com/image.jpg".to_string()
+}
+
+fn image_model_example() -> String {
+    "Qdrant/clip-ViT-B-32-vision".to_string()
 }
 
 /// Search result

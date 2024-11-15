@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
-use api::grpc::qdrant::vector::Vector;
 use api::grpc::qdrant::vector_input::Variant;
 use api::grpc::qdrant::{
-    query, ContextInput, ContextInputPair, ContextPair, DiscoverInput, PrefetchQuery, Query,
-    QueryPointGroups, RecommendInput, VectorInput,
+    query, ContextInput, ContextInputPair, DiscoverInput, PrefetchQuery, Query, RecommendInput,
+    VectorInput,
 };
 use api::rest::schema as rest;
 use tonic::Status;
@@ -76,42 +75,6 @@ fn collect_vector_input(vector: &VectorInput, batch: &mut BatchAccumGrpc) -> Res
             batch.add(InferenceData::Object(obj));
         }
     }
-    Ok(())
-}
-
-fn collect_vector(vector: &Vector, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
-    match vector {
-        Vector::Dense(_) => {}
-        Vector::Sparse(_) => {}
-        Vector::MultiDense(_) => {}
-        Vector::Document(document) => batch.add(InferenceData::Document(rest::Document::try_from(
-            document.clone(),
-        )?)),
-        Vector::Image(image) => {
-            batch.add(InferenceData::Image(rest::Image::try_from(image.clone())?))
-        }
-        Vector::Object(object) => batch.add(InferenceData::Object(
-            rest::InferenceObject::try_from(object.clone())?,
-        )),
-    }
-    Ok(())
-}
-
-fn collect_context_pair(pair: &ContextPair, batch: &mut BatchAccumGrpc) -> Result<(), Status> {
-    let ContextPair { positive, negative } = pair;
-
-    if let Some(positive) = positive {
-        if let Some(new_vector) = &positive.vector {
-            collect_vector(new_vector, batch)?;
-        }
-    }
-
-    if let Some(negative) = negative {
-        if let Some(new_vector) = &negative.vector {
-            collect_vector(new_vector, batch)?;
-        }
-    }
-
     Ok(())
 }
 
@@ -227,40 +190,6 @@ pub(crate) fn collect_prefetch(
     }
 
     Ok(())
-}
-
-pub fn collect_query_point_groups(request: &QueryPointGroups) -> Result<BatchAccumGrpc, Status> {
-    let mut batch = BatchAccumGrpc::new();
-
-    let QueryPointGroups {
-        collection_name: _,
-        query,
-        prefetch,
-        using: _,
-        filter: _,
-        params: _,
-        score_threshold: _,
-        with_payload: _,
-        with_vectors: _,
-        lookup_from: _,
-        limit: _,
-        group_size: _,
-        group_by: _,
-        read_consistency: _,
-        with_lookup: _,
-        timeout: _,
-        shard_key_selector: _,
-    } = request;
-
-    if let Some(query) = query {
-        collect_query(query, &mut batch)?;
-    }
-
-    for pref in prefetch {
-        collect_prefetch(pref, &mut batch)?;
-    }
-
-    Ok(batch)
 }
 
 #[cfg(test)]
