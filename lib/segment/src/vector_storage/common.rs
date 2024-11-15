@@ -19,6 +19,15 @@ pub struct StoredRecord<T> {
     pub vector: T,
 }
 
+/// Minimal number of bytes we read from disk in one go
+/// WARN: this might be system dependent, so we assume 4Kb, which might be wrong
+/// ToDo: read this from system
+pub const PAGE_SIZE_BYTES: usize = 4096;
+
+/// Number of vectors we read from storage in one batch
+/// in case we need to score an iterator of vector ids
+pub const VECTOR_READ_BATCH_SIZE: usize = 64;
+
 #[cfg(debug_assertions)]
 pub const CHUNK_SIZE: usize = 512 * 1024;
 

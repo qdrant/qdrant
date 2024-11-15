@@ -171,3 +171,7 @@ harness = false
 [[bench]]
 name = "in_memory_id_tracker"
 harness = false
+
+[[bench]]
+name = "scorer_mmap"
+harness = false

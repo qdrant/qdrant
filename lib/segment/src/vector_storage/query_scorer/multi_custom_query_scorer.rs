@@ -10,6 +10,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
@@ -90,6 +91,23 @@ impl<
 
         counter
     }
+
+    #[inline]
+    fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
+        let cpu_counter = self.hardware_counter.cpu_counter();
+
+        let against_vector_count = against.vectors_count();
+
+        self.query.score_by(|example| {
+            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
+
+            score_multi::<TElement, TMetric>(
+                self.vector_storage.multi_vector_config(),
+                TypedMultiDenseVectorRef::from(example),
+                against,
+            )
+        })
+    }
 }
 
 impl<
@@ -105,35 +123,28 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);
-        let cpu_counter = self.hardware_counter.cpu_counter();
+        self.score_ref(stored)
+    }
 
-        let stored_vector_count = stored.vectors_count();
-        self.query.score_by(|example| {
-            cpu_counter.incr_delta(example.vectors_count() * stored_vector_count);
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
 
-            score_multi::<TElement, TMetric>(
-                self.vector_storage.multi_vector_config(),
-                TypedMultiDenseVectorRef::from(example),
-                stored,
-            )
-        })
+        let mut vectors = [TypedMultiDenseVectorRef {
+            flattened_vectors: &[],
+            dim: 0,
+        }; VECTOR_READ_BATCH_SIZE];
+
+        self.vector_storage
+            .get_batch_multi(ids, &mut vectors[..ids.len()]);
+        for idx in 0..ids.len() {
+            scores[idx] = self.score_ref(vectors[idx]);
+        }
     }
 
     #[inline]
     fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
-        let cpu_counter = self.hardware_counter.cpu_counter();
-
-        let against_vector_count = against.vectors_count();
-
-        self.query.score_by(|example| {
-            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
-
-            score_multi::<TElement, TMetric>(
-                self.vector_storage.multi_vector_config(),
-                TypedMultiDenseVectorRef::from(example),
-                TypedMultiDenseVectorRef::from(against),
-            )
-        })
+        self.score_ref(TypedMultiDenseVectorRef::from(against))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

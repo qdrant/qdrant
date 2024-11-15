@@ -10,6 +10,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
 
@@ -63,6 +64,10 @@ impl<
             multi_dense_b,
         )
     }
+
+    fn score_ref(&self, v2: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
+        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), v2)
+    }
 }
 
 impl<
@@ -106,6 +111,21 @@ impl<
             TypedMultiDenseVectorRef::from(&self.query),
             TypedMultiDenseVectorRef::from(v2),
         )
+    }
+
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
+
+        let mut vectors = [TypedMultiDenseVectorRef {
+            flattened_vectors: &[],
+            dim: 0,
+        }; VECTOR_READ_BATCH_SIZE];
+        self.vector_storage
+            .get_batch_multi(ids, &mut vectors[..ids.len()]);
+        for idx in 0..ids.len() {
+            scores[idx] = self.score_ref(vectors[idx]);
+        }
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
