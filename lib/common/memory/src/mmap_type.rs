@@ -734,12 +734,8 @@ mod tests {
         let tempfile = create_temp_mmap_file(1024);
         let mut mmap_write =
             mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
-        let mmap_read = mmap_ops::open_read_mmap(
-            tempfile.path(),
-            AdviceSetting::Advice(Advice::Sequential),
-            false,
-        )
-        .unwrap();
+        let mmap_read =
+            mmap_ops::open_read_mmap(tempfile.path(), AdviceSetting::Advice(Advice::Sequential), false).unwrap();
 
         mmap_write[333] = 42;
 

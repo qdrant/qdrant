@@ -9,7 +9,8 @@ use memmap2::MmapMut;
 use memory::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::MmapType;
+use memory::mmap_type::{MmapSlice, MmapType};
+use memory::mmap_type_readonly::MmapSliceReadOnly;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
