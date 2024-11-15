@@ -19,6 +19,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
@@ -130,9 +131,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             .map(|offset| self.raw_vector_offset(offset))
     }
 
-    pub fn get_vectors(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
+    pub fn get_vectors<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+        debug_assert_eq!(keys.len(), vectors.len());
+        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         // TODO read from sequential mmap
-        keys.iter().map(|&key| self.get_vector(key)).collect()
+        for (i, key) in keys.iter().enumerate() {
+            vectors[i] = self.get_vector(*key);
+        }
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> bool {

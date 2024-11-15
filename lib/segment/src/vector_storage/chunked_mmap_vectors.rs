@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
-use crate::vector_storage::common::CHUNK_SIZE;
+use crate::vector_storage::common::{CHUNK_SIZE, VECTOR_READ_BATCH_SIZE};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const STATUS_FILE_NAME: &str = "status.dat";
@@ -292,9 +292,15 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     /// Expects the keys to be sorted and not very sparse.
-    pub fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
+    pub fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+        debug_assert!(keys.len() == vectors.len());
+        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         // TODO read from sequential mmap
-        keys.iter().map(|&key| self.get(key).unwrap()).collect()
+        for (i, key) in keys.iter().enumerate() {
+            vectors[i] = self
+                .get(*key)
+                .unwrap_or_else(|| panic!("Vector {key} not found"));
+        }
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -374,8 +380,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
-        ChunkedMmapVectors::get_batch(self, keys)
+    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+        ChunkedMmapVectors::get_batch(self, keys, vectors)
     }
 
     #[inline]
@@ -430,8 +436,25 @@ mod tests {
                 chunked_mmap.push(vec).unwrap();
             }
 
-            let all = chunked_mmap.get_batch(&(0..num_vectors).collect::<Vec<_>>());
-            for (i, (vec, loaded_vec)) in zip(&vectors, all).enumerate() {
+            let mut vectors_buffer = Vec::with_capacity(VECTOR_READ_BATCH_SIZE);
+
+            vectors_buffer.resize_with(VECTOR_READ_BATCH_SIZE, Default::default);
+
+            let random_offset = 666;
+            let batch_size = 10;
+
+            assert!(random_offset + batch_size < num_vectors);
+            assert!(batch_size <= VECTOR_READ_BATCH_SIZE);
+
+            let batch_ids = (random_offset..random_offset + batch_size).collect::<Vec<_>>();
+            chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size]);
+
+            for (i, (vec, loaded_vec)) in zip(
+                &vectors[random_offset..random_offset + batch_size],
+                &vectors_buffer[..batch_size],
+            )
+            .enumerate()
+            {
                 assert_eq!(
                     vec, loaded_vec,
                     "Vectors at index {i} in chunked_mmap are not equal to vectors",

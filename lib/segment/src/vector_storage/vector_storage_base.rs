@@ -111,8 +111,10 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     /// Get the dense vectors by the given keys
     ///
     /// Implementation can assume that the keys are consecutive
-    fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
-        keys.iter().map(|&key| self.get_dense(key)).collect()
+    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+        for (idx, key) in keys.iter().enumerate() {
+            vectors[idx] = self.get_dense(*key);
+        }
     }
 }
 
@@ -125,7 +127,11 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
     fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>>;
-    fn get_batch_multi(&self, keys: &[PointOffsetType]) -> Vec<TypedMultiDenseVectorRef<T>>;
+    fn get_batch_multi<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
+    );
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }

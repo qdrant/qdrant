@@ -1,5 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
+use itertools::{Itertools, MinMaxResult};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
@@ -18,7 +19,7 @@ pub trait QueryScorer<TVector: ?Sized> {
     /// Score a batch of points
     ///
     /// Enable underlying storage to optimize pre-fetching of data
-    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType>;
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]);
 
     fn score(&self, v2: &TVector) -> ScoreType;
 
@@ -65,24 +66,23 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
 }
 
 /// Check if ids are rather contiguous to enable further optimizations
-/// The threshold is 20% of sparsity
-pub fn check_ids_rather_contiguous(ids: &[PointOffsetType]) -> bool {
-    if ids.len() < 2 {
-        return false;
-    }
-    // check if sorted
-    if ids.windows(2).any(|w| w[0] >= w[1]) {
-        return false;
-    }
-    let mut prev = ids[0];
-    let mut contiguous_count = 0;
-    for &id in &ids[1..] {
-        if id == prev + 1 {
-            contiguous_count += 1;
+/// TODO: this can be smarter, but requires experiments with actual mmap behaviour
+/// TODO: For example
+///
+/// - If the whole batch is less than one page - don't use prefetch
+/// - If one vector is bigger then the prefetch size - don't use prefetch
+/// - ???
+#[allow(dead_code)]
+pub fn is_read_with_prefetch_efficient(ids: &[PointOffsetType]) -> bool {
+    match ids.iter().copied().minmax() {
+        MinMaxResult::NoElements => false,
+        MinMaxResult::OneElement(_) => false,
+        MinMaxResult::MinMax(small, big) => {
+            let diff = (big - small) as usize;
+            // Check if it is at least half efficient to read in a batch
+            diff < ids.len() * 2
         }
-        prev = id;
     }
-    (contiguous_count + 1) as f32 / ids.len() as f32 >= 0.8
 }
 
 #[cfg(test)]
@@ -91,17 +91,19 @@ mod tests {
 
     #[test]
     fn test_check_ids_rather_contiguous() {
-        assert!(!check_ids_rather_contiguous(&[]));
-        assert!(!check_ids_rather_contiguous(&[1]));
-        assert!(check_ids_rather_contiguous(&[1, 2]));
-        assert!(!check_ids_rather_contiguous(&[2, 1]));
-        assert!(check_ids_rather_contiguous(&[1, 2, 3, 9, 10]));
-        assert!(check_ids_rather_contiguous(&[
+        assert!(!is_read_with_prefetch_efficient(&[]));
+        assert!(!is_read_with_prefetch_efficient(&[1]));
+        assert!(is_read_with_prefetch_efficient(&[1, 2]));
+        assert!(is_read_with_prefetch_efficient(&[2, 1]));
+        assert!(is_read_with_prefetch_efficient(&[1, 2, 3, 9, 10]));
+        assert!(is_read_with_prefetch_efficient(&[
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10
         ]));
-        assert!(check_ids_rather_contiguous(&[
+        assert!(is_read_with_prefetch_efficient(&[
             1, 2, 3, 4, 5, 6, 7, 8, 9, 11
         ]));
-        assert!(!check_ids_rather_contiguous(&[1, 2, 3, 4, 9, 10, 12, 14]));
+        assert!(!is_read_with_prefetch_efficient(&[
+            1, 2, 3, 4, 9, 1000, 12, 14
+        ]));
     }
 }

@@ -15,6 +15,7 @@ use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, Ve
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -103,9 +104,17 @@ impl<
             })
     }
 
-    fn get_batch_multi(&self, keys: &[PointOffsetType]) -> Vec<TypedMultiDenseVectorRef<T>> {
+    fn get_batch_multi<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
+    ) {
+        debug_assert_eq!(keys.len(), vectors.len());
+        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         // TODO read from sequential mmap
-        keys.iter().map(|&key| self.get_multi(key)).collect()
+        for (idx, key) in keys.iter().enumerate() {
+            vectors[idx] = self.get_multi(*key);
+        }
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {

@@ -19,6 +19,10 @@ pub struct StoredRecord<T> {
     pub vector: T,
 }
 
+/// Number of vectors we read from storage in one batch
+/// in case we need to score an iterator of vector ids
+pub const VECTOR_READ_BATCH_SIZE: usize = 64;
+
 #[cfg(debug_assertions)]
 pub const CHUNK_SIZE: usize = 512 * 1024;
 

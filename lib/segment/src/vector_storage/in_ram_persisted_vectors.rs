@@ -79,8 +79,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]> {
-        self.mmap_storage.get_batch(keys)
+    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+        self.mmap_storage.get_batch(keys, vectors)
     }
 
     #[inline]

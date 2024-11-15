@@ -3,13 +3,14 @@ use std::marker::PhantomData;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::{check_ids_rather_contiguous, score_multi};
+use super::score_multi;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
@@ -125,12 +126,19 @@ impl<
         self.score_ref(stored)
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
-        if check_ids_rather_contiguous(ids) {
-            let vectors = self.vector_storage.get_batch_multi(ids);
-            vectors.into_iter().map(|v| self.score_ref(v)).collect()
-        } else {
-            ids.iter().map(|&id| self.score_stored(id)).collect()
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
+
+        let mut vectors = [TypedMultiDenseVectorRef {
+            flattened_vectors: &[],
+            dim: 0,
+        }; VECTOR_READ_BATCH_SIZE];
+
+        self.vector_storage
+            .get_batch_multi(ids, &mut vectors[..ids.len()]);
+        for idx in 0..ids.len() {
+            scores[idx] = self.score_ref(vectors[idx]);
         }
     }
 

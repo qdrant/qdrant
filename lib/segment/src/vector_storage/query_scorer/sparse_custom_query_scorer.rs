@@ -2,6 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::SparseVectorStorage;
@@ -53,9 +54,14 @@ impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> Query
         })
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
+
         // no specific implementation for batch scoring
-        ids.iter().map(|&id| self.score_stored(id)).collect()
+        for (idx, id) in ids.iter().enumerate() {
+            scores[idx] = self.score_stored(*id);
+        }
     }
 
     fn score(&self, v: &SparseVector) -> ScoreType {

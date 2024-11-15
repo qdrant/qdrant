@@ -16,6 +16,7 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
@@ -66,12 +67,16 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
-    fn get_dense_batch(&self, keys: &[PointOffsetType]) -> Vec<&[T]> {
-        let keys = keys
-            .iter()
-            .map(|&key| key as VectorOffsetType)
-            .collect::<Vec<_>>();
-        self.vectors.get_batch(&keys)
+    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+        debug_assert!(keys.len() == vectors.len());
+        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
+
+        let mut vector_offsets = [0; VECTOR_READ_BATCH_SIZE];
+        for (i, key) in keys.iter().enumerate() {
+            vector_offsets[i] = *key as VectorOffsetType;
+        }
+        self.vectors
+            .get_batch(&vector_offsets[..keys.len()], vectors);
     }
 }
 

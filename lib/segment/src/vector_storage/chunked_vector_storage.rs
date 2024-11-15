@@ -35,7 +35,7 @@ pub trait ChunkedVectorStorage<T> {
 
     /// Returns batch of vectors by keys.
     /// Keys are expected to be rather consecutive.
-    fn get_batch(&self, keys: &[VectorOffsetType]) -> Vec<&[T]>;
+    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]);
 
     fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
 

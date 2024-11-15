@@ -9,6 +9,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct QuantizedQueryScorer<'a, TElement, TMetric, TEncodedQuery, TEncodedVectors>
@@ -99,9 +100,13 @@ where
             .score_point(&self.query, idx, &self.hardware_counter)
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType]) -> Vec<ScoreType> {
+    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(ids.len(), scores.len());
         // no specific implementation for batch scoring
-        ids.iter().map(|&id| self.score_stored(id)).collect()
+        for (idx, id) in ids.iter().enumerate() {
+            scores[idx] = self.score_stored(*id);
+        }
     }
 
     fn score(&self, _v2: &[TElement]) -> ScoreType {
