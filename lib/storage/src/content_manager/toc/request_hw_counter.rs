@@ -23,6 +23,15 @@ impl TableOfContent {
 pub struct RequestHwCounter(HwMeasurementAcc);
 
 impl RequestHwCounter {
+    /// Manually creates a new `RequestHwConuter`, without applying the values to the corresponding collection.
+    /// This should only be used in scenarios, where the hardware utilization gets returned in the API but
+    /// not applied to a collection eg. in the internal API.
+    ///
+    /// Otherwise `report_hw_measurements()` of `TableOfContent` must be used!
+    pub fn new_discard_collection(hardware: HwMeasurementAcc) -> Self {
+        Self(hardware)
+    }
+
     pub fn discard(&self) {
         self.0.discard()
     }

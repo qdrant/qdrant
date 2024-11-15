@@ -21,6 +21,7 @@ use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
 use segment::types::Filter;
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
@@ -52,6 +53,24 @@ impl PointsInternalService {
     }
 }
 
+/// Applies the hardware measurements to the response, respecting the given `ServiceConfigs` configuration.
+///
+/// Note: This does *NOT* update any collection counter!
+fn apply_hw_data_to_response_only(
+    hw: HwMeasurementAcc,
+    update_request: &mut Option<HardwareUsage>,
+    service_config: &ServiceConfig,
+) {
+    if service_config.hardware_reporting() {
+        *update_request = Some(HardwareUsage::from(
+            // Manually creating a new `RequestHwCounter` to bypass collection check.
+            RequestHwCounter::new_discard_collection(hw),
+        ));
+    } else {
+        hw.discard();
+    }
+}
+
 pub async fn query_batch_internal(
     toc: &TableOfContent,
     collection_name: String,
@@ -77,7 +96,7 @@ pub async fn query_batch_internal(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let hw_data = HwMeasurementAcc::new();
 
     let batch_response = toc
         .query_batch_internal(
@@ -85,11 +104,11 @@ pub async fn query_batch_internal(
             batch_requests,
             shard_selection,
             timeout,
-            &hw_measurement_acc,
+            &hw_data,
         )
         .await?;
 
-    let response = QueryBatchResponseInternal {
+    let mut response = QueryBatchResponseInternal {
         results: batch_response
             .into_iter()
             .map(|response| QueryResultInternal {
@@ -102,10 +121,10 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: service_config
-            .hardware_reporting()
-            .then(|| HardwareUsage::from(hw_measurement_acc)),
+        usage: None,
     };
+
+    apply_hw_data_to_response_only(hw_data, &mut response.usage, service_config);
 
     Ok(Response::new(response))
 }
@@ -426,8 +445,8 @@ impl PointsInternal for PointsInternalService {
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
 
-        let hw_measurement = HwMeasurementAcc::new();
-        let res = core_search_list(
+        let hw_data = HwMeasurementAcc::new();
+        let mut res = core_search_list(
             self.toc.as_ref(),
             collection_name,
             search_points,
@@ -435,10 +454,12 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             timeout,
-            &hw_measurement,
+            &hw_data,
         )
         .await?;
-        hw_measurement.discard();
+
+        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
+
         Ok(res)
     }
 
@@ -459,15 +480,17 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        let hw_measurement = HwMeasurementAcc::new();
-        let res = recommend(
+        let hw_data = HwMeasurementAcc::new();
+        let mut res = recommend(
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
             FULL_ACCESS.clone(),
-            &hw_measurement,
+            &hw_data,
         )
         .await?;
-        hw_measurement.discard();
+
+        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
+
         Ok(res)
     }
 
@@ -534,16 +557,16 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        let hw_measurement = HwMeasurementAcc::new();
-        let res = count(
+        let hw_data = HwMeasurementAcc::new();
+        let mut res = count(
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
             &FULL_ACCESS,
-            &hw_measurement,
+            &hw_data,
         )
         .await?;
-        hw_measurement.discard();
+        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
         Ok(res)
     }
 
