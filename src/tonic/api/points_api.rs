@@ -51,7 +51,7 @@ impl PointsService {
 
     fn get_request_collection_hw_usage_counter(&self, collection_name: String) -> RequestHwCounter {
         let counter = HwMeasurementAcc::new_with_drain(
-            self.dispatcher.get_collection_hw_metrics(collection_name),
+            &self.dispatcher.get_collection_hw_metrics(collection_name),
         );
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting(), false)

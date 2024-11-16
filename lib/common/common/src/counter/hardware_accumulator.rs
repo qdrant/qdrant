@@ -3,11 +3,24 @@ use std::sync::Arc;
 
 use super::hardware_counter::HardwareCounterCell;
 
+/// Data structure, that routes hardware measurement counters to specific location.
+/// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
+/// as it doesn't provide any checks on drop.
+struct HwSharedDrain {
+    cpu_counter: Arc<AtomicUsize>,
+}
+
+impl HwSharedDrain {
+    fn new(cpu: Arc<AtomicUsize>) -> Self {
+        Self { cpu_counter: cpu }
+    }
+}
+
 /// A "slow" but thread-safe accumulator for measurement results of `HardwareCounterCell` values.
 /// This type is completely reference counted and clones of this type will read/write the same values as their origin structure.
 pub struct HwMeasurementAcc {
     cpu_counter: Arc<AtomicUsize>,
-    drain: Option<Arc<Self>>,
+    drain: Option<HwSharedDrain>,
 }
 
 impl HwMeasurementAcc {
@@ -22,10 +35,10 @@ impl HwMeasurementAcc {
         }
     }
 
-    pub fn new_with_drain(drain: Arc<Self>) -> Self {
+    pub fn new_with_drain(drain: &Self) -> Self {
         Self {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
-            drain: Some(drain),
+            drain: Some(HwSharedDrain::new(drain.cpu_counter.clone())),
         }
     }
 
@@ -36,10 +49,7 @@ impl HwMeasurementAcc {
     pub fn new_collector(&self) -> HwMeasurementAcc {
         HwMeasurementAcc {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
-            drain: Some(Arc::new(Self {
-                cpu_counter: self.cpu_counter.clone(),
-                drain: None,
-            })),
+            drain: Some(HwSharedDrain::new(self.cpu_counter.clone())),
         }
     }
 
@@ -66,7 +76,19 @@ impl HwMeasurementAcc {
     }
 
     /// Merge, but for internal use only.
-    fn merge_from_ref(&self, other: &Self) {
+    fn merge_to_drain(&self) {
+        if let Some(drain) = &self.drain {
+            let HwSharedDrain {
+                cpu_counter: drain_cpu_counter,
+            } = drain;
+
+            let cpu = self.cpu_counter.swap(0, Ordering::Relaxed);
+            drain_cpu_counter.fetch_add(cpu, Ordering::Relaxed);
+        }
+    }
+
+    /// Consumes and accumulates the values from `other` into the accumulator.
+    pub fn merge(&self, other: Self) {
         let HwMeasurementAcc {
             ref cpu_counter,
             drain: _,
@@ -74,11 +96,6 @@ impl HwMeasurementAcc {
         // Discard of the drain is not a problem, as no counters are lost.
         let cpu = cpu_counter.swap(0, Ordering::Relaxed);
         self.cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-    }
-
-    /// Consumes and accumulates the values from `other` into the accumulator.
-    pub fn merge(&self, other: Self) {
-        self.merge_from_ref(&other);
     }
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
@@ -108,14 +125,15 @@ impl Drop for HwMeasurementAcc {
     //
     // You can apply values by utilizing `merge_from_cell(other_cell)` or `merge(other)`, consuming the other counter, which then can be dropped safely.
     fn drop(&mut self) {
-        if let Some(drain) = &self.drain {
-            drain.merge_from_ref(self);
-        }
+        self.merge_to_drain();
 
         #[cfg(any(debug_assertions, test))] // Fail in both, release and debug tests.
         {
             if !self.is_zero() {
-                panic!("HwMeasurementAcc dropped while still holding values!")
+                panic!(
+                    "HwMeasurementAcc dropped while still holding values! Drain: {:?}",
+                    self.drain.is_some()
+                );
             }
         }
     }
