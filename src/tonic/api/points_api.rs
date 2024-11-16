@@ -48,17 +48,10 @@ impl PointsService {
         }
     }
 
-    fn apply_hw_data(
-        &self,
-        hw: HwMeasurementAcc,
-        collection: &str,
-        update_request: &mut Option<HardwareUsage>,
-    ) {
-        let request_hw = self.dispatcher.apply_hardware_to_collection(collection, hw);
+    fn apply_hw_data(&self, hw: HwMeasurementAcc, update_request: &mut Option<HardwareUsage>) {
         if self.service_config.hardware_reporting() {
+            let request_hw = hw.deep_copy();
             *update_request = Some(HardwareUsage::from(request_hw));
-        } else {
-            request_hw.discard();
         }
     }
 }
@@ -293,7 +286,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
 
         let mut res = search(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -304,7 +299,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        self.apply_hw_data(hw_metrics, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
         Ok(res)
     }
 
@@ -336,7 +331,10 @@ impl Points for PointsService {
             requests.push((core_search_request, shard_selector));
         }
 
-        let hw_metrics = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
+
         let mut res = core_search_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -348,7 +346,7 @@ impl Points for PointsService {
         )
         .await?;
 
-        self.apply_hw_data(hw_metrics, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
         Ok(res)
     }
 
@@ -358,18 +356,20 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_data = HwMeasurementAcc::new();
         let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = search_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -396,17 +396,19 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_data = HwMeasurementAcc::new();
         let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -417,13 +419,17 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_data = HwMeasurementAcc::new();
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
             read_consistency,
             timeout,
         } = request.into_inner();
+
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
+
         let mut res = recommend_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -431,11 +437,11 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout.map(Duration::from_secs),
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -447,16 +453,19 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
+
         let mut res = recommend_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -469,16 +478,18 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
 
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = discover(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -496,7 +507,9 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
 
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = discover_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -504,11 +517,11 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout.map(Duration::from_secs),
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -521,17 +534,19 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = count(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             &access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -542,18 +557,21 @@ impl Points for PointsService {
     ) -> Result<Response<QueryResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_data = HwMeasurementAcc::new();
         let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
+
         let mut res = query(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -572,7 +590,9 @@ impl Points for PointsService {
             timeout,
         } = request;
         let timeout = timeout.map(Duration::from_secs);
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let mut res = query_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -580,11 +600,11 @@ impl Points for PointsService {
             read_consistency,
             access,
             timeout,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -594,18 +614,21 @@ impl Points for PointsService {
         mut request: Request<QueryPointGroups>,
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let access = extract_access(&mut request);
-        let hw_data = HwMeasurementAcc::new();
         let collection_name = request.get_ref().collection_name.clone();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
+
         let mut res = query_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
-        self.apply_hw_data(hw_data, &collection_name, &mut res.get_mut().usage);
+        self.apply_hw_data(hw_metrics, &mut res.get_mut().usage);
 
         Ok(res)
     }
@@ -631,12 +654,14 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
@@ -646,7 +671,7 @@ impl Points for PointsService {
             usage: None,
         };
 
-        self.apply_hw_data(hw_data, &collection_name, &mut pairs_response.usage);
+        self.apply_hw_data(hw_metrics, &mut pairs_response.usage);
 
         Ok(Response::new(pairs_response))
     }
@@ -659,12 +684,14 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_data = HwMeasurementAcc::new();
+        let hw_metrics = HwMeasurementAcc::new_with_drain(
+            self.dispatcher.get_collection_hw_counter(&collection_name),
+        );
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
-            &hw_data,
+            &hw_metrics,
         )
         .await?;
 
@@ -674,7 +701,7 @@ impl Points for PointsService {
             usage: None,
         };
 
-        self.apply_hw_data(hw_data, &collection_name, &mut offsets_response.usage);
+        self.apply_hw_data(hw_metrics, &mut offsets_response.usage);
 
         Ok(Response::new(offsets_response))
     }

@@ -1,22 +1,15 @@
+use std::sync::Arc;
+
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use super::TableOfContent;
 
 impl TableOfContent {
-    pub fn report_hw_measurements(
-        &self,
-        collection_id: &str,
-        measurements: HwMeasurementAcc,
-    ) -> RequestHwCounter {
-        let measurement_copy = measurements.deep_copy();
-
-        if let Some(hw) = self.collection_hw_metrics.get_mut(collection_id) {
-            hw.merge(measurements);
-        } else {
-            self.collection_hw_metrics
-                .insert(collection_id.to_string(), measurements);
-        }
-        RequestHwCounter(measurement_copy)
+    pub fn get_collection_hw_metrics(&self, collection_id: &str) -> Arc<HwMeasurementAcc> {
+        self.collection_hw_metrics
+            .entry(collection_id.to_string())
+            .or_default()
+            .clone()
     }
 }
 
