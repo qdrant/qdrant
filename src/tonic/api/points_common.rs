@@ -48,6 +48,7 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -1006,7 +1007,7 @@ pub async fn search(
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    hw_measurement_acc: RequestHwCounter,
 ) -> Result<Response<SearchResponse>, Status> {
     let SearchPoints {
         collection_name,
@@ -1065,7 +1066,7 @@ pub async fn search(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
-        hw_measurement_acc,
+        hw_measurement_acc.get_counter(),
     )
     .await?;
 
@@ -1075,7 +1076,7 @@ pub async fn search(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: hw_measurement_acc.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1088,7 +1089,7 @@ pub async fn core_search_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let toc = toc_provider
         .check_strict_mode_batch(
@@ -1111,7 +1112,7 @@ pub async fn core_search_batch(
         read_consistency,
         access,
         timeout,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1123,7 +1124,7 @@ pub async fn core_search_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1138,7 +1139,7 @@ pub async fn core_search_list(
     shard_selection: Option<ShardId>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
         search_points.into_iter().map(TryInto::try_into).collect();
@@ -1169,7 +1170,7 @@ pub async fn core_search_list(
             shard_selection,
             access,
             timeout,
-            hw_measurement_acc,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -1181,7 +1182,7 @@ pub async fn core_search_list(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1192,7 +1193,7 @@ pub async fn search_groups(
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
     let search_groups_request = search_point_groups.clone().try_into()?;
 
@@ -1226,7 +1227,7 @@ pub async fn search_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1236,7 +1237,7 @@ pub async fn search_groups(
     let response = SearchGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1246,7 +1247,7 @@ pub async fn recommend(
     toc_provider: impl CheckedTocProvider,
     recommend_points: RecommendPoints,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendResponse>, Status> {
     // TODO(luis): check if we can make this into a From impl
     let RecommendPoints {
@@ -1331,7 +1332,7 @@ pub async fn recommend(
             shard_selector,
             access,
             timeout,
-            hw_measurement_acc,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -1341,7 +1342,7 @@ pub async fn recommend(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1354,7 +1355,7 @@ pub async fn recommend_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(recommend_points.len());
 
@@ -1386,7 +1387,7 @@ pub async fn recommend_batch(
             read_consistency,
             access,
             timeout,
-            hw_measurement_acc,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -1398,7 +1399,7 @@ pub async fn recommend_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1408,7 +1409,7 @@ pub async fn recommend_groups(
     toc_provider: impl CheckedTocProvider,
     recommend_point_groups: RecommendPointGroups,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
     let recommend_groups_request = recommend_point_groups.clone().try_into()?;
 
@@ -1442,7 +1443,7 @@ pub async fn recommend_groups(
         shard_selector,
         access,
         timeout.map(Duration::from_secs),
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1452,7 +1453,7 @@ pub async fn recommend_groups(
     let response = RecommendGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1462,7 +1463,7 @@ pub async fn discover(
     toc_provider: impl CheckedTocProvider,
     discover_points: DiscoverPoints,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<DiscoverResponse>, Status> {
     let (request, collection_name, read_consistency, timeout, shard_key_selector) =
         try_discover_request_from_grpc(discover_points)?;
@@ -1488,7 +1489,7 @@ pub async fn discover(
             shard_selector,
             access,
             timeout,
-            hw_measurement_acc,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -1498,7 +1499,7 @@ pub async fn discover(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1511,7 +1512,7 @@ pub async fn discover_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(discover_points.len());
 
@@ -1542,7 +1543,7 @@ pub async fn discover_batch(
             read_consistency,
             access,
             timeout,
-            hw_measurement_acc,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -1554,7 +1555,7 @@ pub async fn discover_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1641,7 +1642,7 @@ pub async fn count(
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
     access: &Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
         collection_name,
@@ -1681,14 +1682,14 @@ pub async fn count(
         timeout,
         shard_selector,
         access.clone(),
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
     let response = CountResponse {
         result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1761,7 +1762,7 @@ pub async fn query(
     query_points: QueryPoints,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<QueryResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1794,7 +1795,7 @@ pub async fn query(
         shard_selector,
         access,
         timeout,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1804,7 +1805,7 @@ pub async fn query(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1817,7 +1818,7 @@ pub async fn query_batch(
     read_consistency: Option<ReadConsistencyGrpc>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
@@ -1846,7 +1847,7 @@ pub async fn query_batch(
         read_consistency,
         access,
         timeout,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1858,7 +1859,7 @@ pub async fn query_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -1869,7 +1870,7 @@ pub async fn query_groups(
     query_points: QueryPointGroups,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: &HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<QueryGroupsResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1902,7 +1903,7 @@ pub async fn query_groups(
         shard_selector,
         access,
         timeout,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1912,7 +1913,7 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))

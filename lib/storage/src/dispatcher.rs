@@ -236,7 +236,7 @@ impl Dispatcher {
     }
 
     #[must_use]
-    pub fn get_collection_hw_counter(&self, collection: &str) -> Arc<HwMeasurementAcc> {
+    pub fn get_collection_hw_metrics(&self, collection: String) -> Arc<HwMeasurementAcc> {
         self.toc.get_collection_hw_metrics(collection)
     }
 }

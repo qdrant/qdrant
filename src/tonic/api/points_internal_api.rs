@@ -7,7 +7,7 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, FacetCountsInternal,
-    FacetResponseInternal, GetPointsInternal, GetResponse, HardwareUsage, IntermediateResult,
+    FacetResponseInternal, GetPointsInternal, GetResponse, IntermediateResult,
     PointsOperationResponseInternal, QueryBatchPointsInternal, QueryBatchResponseInternal,
     QueryResultInternal, QueryShardPoints, RecommendPointsInternal, RecommendResponse,
     ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
@@ -53,31 +53,13 @@ impl PointsInternalService {
     }
 }
 
-/// Applies the hardware measurements to the response, respecting the given `ServiceConfigs` configuration.
-///
-/// Note: This does *NOT* update any collection counter!
-fn apply_hw_data_to_response_only(
-    hw: HwMeasurementAcc,
-    update_request: &mut Option<HardwareUsage>,
-    service_config: &ServiceConfig,
-) {
-    if service_config.hardware_reporting() {
-        *update_request = Some(HardwareUsage::from(
-            // Manually creating a new `RequestHwCounter` to bypass collection check.
-            RequestHwCounter::new_discard_collection(hw),
-        ));
-    } else {
-        hw.discard();
-    }
-}
-
 pub async fn query_batch_internal(
     toc: &TableOfContent,
     collection_name: String,
     query_points: Vec<QueryShardPoints>,
     shard_selection: Option<ShardId>,
     timeout: Option<Duration>,
-    service_config: &ServiceConfig,
+    request_hw_data: RequestHwCounter,
 ) -> Result<Response<QueryBatchResponseInternal>, Status> {
     let batch_requests: Vec<_> = query_points
         .into_iter()
@@ -96,19 +78,17 @@ pub async fn query_batch_internal(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    let hw_data = HwMeasurementAcc::new();
-
     let batch_response = toc
         .query_batch_internal(
             &collection_name,
             batch_requests,
             shard_selection,
             timeout,
-            &hw_data,
+            request_hw_data.get_counter(),
         )
         .await?;
 
-    let mut response = QueryBatchResponseInternal {
+    let response = QueryBatchResponseInternal {
         results: batch_response
             .into_iter()
             .map(|response| QueryResultInternal {
@@ -121,10 +101,8 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: request_hw_data.to_grpc_api(),
     };
-
-    apply_hw_data_to_response_only(hw_data, &mut response.usage, service_config);
 
     Ok(Response::new(response))
 }
@@ -172,6 +150,23 @@ async fn facet_counts_internal(
     };
 
     Ok(Response::new(response))
+}
+
+impl PointsInternalService {
+    /// Generates a new `RequestHwCounter` for the request.
+    /// This counter is indented to be used for internal requests.
+    ///
+    /// So, it collects the hardware usage to the collection's counter ONLY if it was not
+    /// converted to a response.
+    fn get_request_collection_hw_usage_counter_for_internal(
+        &self,
+        collection_name: String,
+    ) -> RequestHwCounter {
+        let counter =
+            HwMeasurementAcc::new_with_drain(self.toc.get_collection_hw_metrics(collection_name));
+
+        RequestHwCounter::new(counter, self.service_config.hardware_reporting(), true)
+    }
 }
 
 #[tonic::async_trait]
@@ -445,8 +440,9 @@ impl PointsInternal for PointsInternalService {
         //     .iter_mut()
         //     .for_each(|search_points| search_points.read_consistency = None);
 
-        let hw_data = HwMeasurementAcc::new();
-        let mut res = core_search_list(
+        let hw_data =
+            self.get_request_collection_hw_usage_counter_for_internal(collection_name.clone());
+        let res = core_search_list(
             self.toc.as_ref(),
             collection_name,
             search_points,
@@ -454,11 +450,9 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             timeout,
-            &hw_data,
+            hw_data,
         )
         .await?;
-
-        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
 
         Ok(res)
     }
@@ -480,16 +474,16 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        let hw_data = HwMeasurementAcc::new();
-        let mut res = recommend(
+        let collection_name = recommend_points.collection_name.clone();
+
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(collection_name);
+        let res = recommend(
             UncheckedTocProvider::new_unchecked(&self.toc),
             recommend_points,
             FULL_ACCESS.clone(),
-            &hw_data,
+            hw_data,
         )
         .await?;
-
-        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
 
         Ok(res)
     }
@@ -557,16 +551,17 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        let hw_data = HwMeasurementAcc::new();
-        let mut res = count(
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            count_points.collection_name.clone(),
+        );
+        let res = count(
             UncheckedTocProvider::new_unchecked(&self.toc),
             count_points,
             shard_id,
             &FULL_ACCESS,
-            &hw_data,
+            hw_data,
         )
         .await?;
-        apply_hw_data_to_response_only(hw_data, &mut res.get_mut().usage, &self.service_config);
         Ok(res)
     }
 
@@ -609,13 +604,16 @@ impl PointsInternal for PointsInternalService {
 
         let timeout = timeout.map(Duration::from_secs);
 
+        let hw_data =
+            self.get_request_collection_hw_usage_counter_for_internal(collection_name.clone());
+
         query_batch_internal(
             self.toc.as_ref(),
             collection_name,
             query_points,
             shard_id,
             timeout,
-            &self.service_config,
+            hw_data,
         )
         .await
     }
