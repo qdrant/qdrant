@@ -9,6 +9,16 @@ log_level: INFO
 #     log_file: path/to/log/file.log
 #     log_level: INFO
 
+service:
+  # Set an api-key.
+  # If set, all requests must include a header with the api-key.
+  # example header: `api-key: <API-KEY>`
+  #
+  # If you enable this you should also enable TLS.
+  # (Either above or via an external service like nginx.)
+  # Sending an api-key over an unencrypted channel is insecure.
+  api_key: "vKFR_nb9PYbAnYsjbXFAsY5DynKMUAIh-PIVq6oAr2yDiro5VzPJZg"
+  
 storage:
   # Where to store all the data
   storage_path: ./storage
