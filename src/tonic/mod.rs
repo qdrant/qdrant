@@ -15,7 +15,6 @@ use ::api::grpc::grpc_health_v1::{
     HealthCheckRequest as ProtocolHealthCheckRequest,
     HealthCheckResponse as ProtocolHealthCheckResponse,
 };
-use ::api::grpc::models::VersionInfo;
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
@@ -29,6 +28,7 @@ use ::api::grpc::qdrant::{
     WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
+use ::api::rest::models::VersionInfo;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;

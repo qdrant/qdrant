@@ -3,7 +3,7 @@ use std::future::Future;
 
 use actix_web::rt::time::Instant;
 use actix_web::{http, HttpResponse, ResponseError};
-use api::grpc::models::{ApiResponse, ApiStatus, HardwareUsage};
+use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;

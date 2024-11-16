@@ -39,9 +39,9 @@ impl RequestHwCounter {
         &self.counter
     }
 
-    pub fn to_rest_api(self) -> Option<api::grpc::models::HardwareUsage> {
+    pub fn to_rest_api(self) -> Option<api::rest::models::HardwareUsage> {
         if self.report_to_api {
-            let res = Some(api::grpc::models::HardwareUsage {
+            let res = Some(api::rest::models::HardwareUsage {
                 cpu: self.counter.get_cpu(),
             });
             if self.internal {

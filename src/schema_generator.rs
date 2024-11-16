@@ -1,4 +1,4 @@
-use api::grpc::models::{CollectionsResponse, HardwareUsage, VersionInfo};
+use api::rest::models::{CollectionsResponse, HardwareUsage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
 use api::rest::{
     FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
