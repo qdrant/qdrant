@@ -844,7 +844,9 @@ mod tests {
             .unwrap();
 
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
-            hw_measurement_acc.clear();
+            hw_measurement_acc.discard();
+
+            let hw_measurement_acc = HwMeasurementAcc::new();
 
             assert!(!result_no_sampling.is_empty());
 

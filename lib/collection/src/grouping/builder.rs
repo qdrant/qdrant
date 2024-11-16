@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::{HwMeasurementAcc, HwMeasurementCollector};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use tokio::sync::RwLockReadGuard;
@@ -26,7 +26,7 @@ where
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementCollector,
+    hw_measurement_acc: HwMeasurementAcc,
 }
 
 impl<'a, F, Fut> GroupBy<'a, F, Fut>

@@ -22,7 +22,7 @@ use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set;
+use collection::shards::{CollectionId, replica_set};
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
@@ -80,7 +80,7 @@ pub struct TableOfContent {
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
-    collection_hw_metrics: DashMap<String, HwMeasurementAcc>,
+    collection_hw_metrics: DashMap<CollectionId, HwMeasurementAcc>,
 }
 
 impl TableOfContent {

@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -8,6 +7,7 @@ use super::hardware_counter::HardwareCounterCell;
 /// This type is completely reference counted and clones of this type will read/write the same values as their origin structure.
 pub struct HwMeasurementAcc {
     cpu_counter: Arc<AtomicUsize>,
+    drain: Option<Arc<Self>>,
 }
 
 impl HwMeasurementAcc {
@@ -18,14 +18,29 @@ impl HwMeasurementAcc {
     pub fn new_with_values(cpu: usize) -> Self {
         Self {
             cpu_counter: Arc::new(AtomicUsize::new(cpu)),
+            drain: None,
         }
     }
 
-    /// Creates a new collector with this `HwMeasurementAcc` as "parent". All values collected by the
-    /// collector will be applied to the parents counters when the collector drops.
-    /// This allows using `HwMeasurementAcc` in multi-threaded or async code.
-    pub fn new_collector(&self) -> HwMeasurementCollector {
-        HwMeasurementCollector::new(self.cpu_counter.clone())
+    pub fn new_with_drain(drain: Arc<Self>) -> Self {
+        Self {
+            cpu_counter: Arc::new(AtomicUsize::new(0)),
+            drain: Some(drain),
+        }
+    }
+
+    /// Creates a new instance of `HwMeasurementAcc` we call "collector" with self as a "parent".
+    /// All values collected by the collector will be applied to the parents counters
+    /// when the collector drops.
+    /// This allows using `HwMeasurementAcc` in multi-threaded or async code without cloning it.
+    pub fn new_collector(&self) -> HwMeasurementAcc {
+        HwMeasurementAcc {
+            cpu_counter: Arc::new(AtomicUsize::new(0)),
+            drain: Some(Arc::new(Self {
+                cpu_counter: self.cpu_counter.clone(),
+                drain: None,
+            })),
+        }
     }
 
     /// Creates completely independent copy of the current `HwMeasurementAcc`'s values.
@@ -37,28 +52,33 @@ impl HwMeasurementAcc {
         self.cpu_counter.load(Ordering::Relaxed)
     }
 
-    pub fn clear(&self) {
-        let HwMeasurementAcc { cpu_counter } = self;
+    /// Discards all values of the `HwMeasurementAcc`.
+    ///
+    /// This function explicitly states that we don't care about the measurement result and therefore want
+    /// to disable the check on `drop`.
+    pub fn discard(&self) {
+        let HwMeasurementAcc {
+            cpu_counter,
+            drain: _,
+        } = self;
 
         cpu_counter.store(0, Ordering::Relaxed);
     }
 
-    /// Discards all values of the `HwMeasurementAcc`. This does the same as `.clear()` but the intended use is
-    /// slightly different:
-    ///
-    /// This function explicitly states that we don't care about the measurement result and therefore want
-    /// to disable the check on `drop`.
-    ///
-    /// `.clear()` should be used when the `HwMeasurementAcc` should reset its values to 0.
-    pub fn discard(&self) {
-        self.clear()
+    /// Merge, but for internal use only.
+    fn merge_from_ref(&self, other: &Self) {
+        let HwMeasurementAcc {
+            ref cpu_counter,
+            drain: _,
+        } = other;
+        // Discard of the drain is not a problem, as no counters are lost.
+        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
+        self.cpu_counter.fetch_add(cpu, Ordering::Relaxed);
     }
 
     /// Consumes and accumulates the values from `other` into the accumulator.
     pub fn merge(&self, other: Self) {
-        let HwMeasurementAcc { ref cpu_counter } = other;
-        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
-        self.cpu_counter.fetch_add(cpu, Ordering::Relaxed);
+        self.merge_from_ref(&other);
     }
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
@@ -71,7 +91,10 @@ impl HwMeasurementAcc {
 
     /// Returns `true` if all values of the `HwMeasurementAcc` are zero.
     pub fn is_zero(&self) -> bool {
-        let HwMeasurementAcc { ref cpu_counter } = self;
+        let HwMeasurementAcc {
+            ref cpu_counter,
+            drain: _,
+        } = self;
         cpu_counter.load(Ordering::Relaxed) == 0
     }
 }
@@ -85,6 +108,10 @@ impl Drop for HwMeasurementAcc {
     //
     // You can apply values by utilizing `merge_from_cell(other_cell)` or `merge(other)`, consuming the other counter, which then can be dropped safely.
     fn drop(&mut self) {
+        if let Some(drain) = &self.drain {
+            drain.merge_from_ref(self);
+        }
+
         #[cfg(any(debug_assertions, test))] // Fail in both, release and debug tests.
         {
             if !self.is_zero() {
@@ -98,49 +125,7 @@ impl Default for HwMeasurementAcc {
     fn default() -> Self {
         Self {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
+            drain: None,
         }
-    }
-}
-
-/// A type collecting hardware measuerements in multi threaded scenarios where multiple instances of `HwMeasurementAcc` would be needed.
-/// Because `HwMeasurementAcc` purposely doesn't implement Clone, we need this type to allow having an owned type we can move
-/// between threads/async closures.
-///
-/// This collector automatically applies all measurements to the `HwMeasurementAcc` that was used when creating this collector on drop.
-/// To ensure all values get applied, before reading from a `HwMeasurementAcc`, this type must be dropped first.
-pub struct HwMeasurementCollector {
-    /// Shared reference of CPU usage with the given Parent.
-    cpu_counter: Arc<AtomicUsize>,
-
-    /// A new temporary measurement accumulator, which values get applied to the parents
-    /// ones on drop.
-    collector: HwMeasurementAcc,
-}
-
-impl HwMeasurementCollector {
-    fn new(cpu_counter: Arc<AtomicUsize>) -> Self {
-        let collector = HwMeasurementAcc::new();
-        Self {
-            cpu_counter,
-            collector,
-        }
-    }
-}
-
-impl Deref for HwMeasurementCollector {
-    type Target = HwMeasurementAcc;
-
-    fn deref(&self) -> &Self::Target {
-        &self.collector
-    }
-}
-
-impl Drop for HwMeasurementCollector {
-    fn drop(&mut self) {
-        // Apply the collected values from `collector` into the parents value references.
-        let HwMeasurementAcc { cpu_counter } = &self.collector;
-
-        let cpu = cpu_counter.swap(0, Ordering::Relaxed);
-        self.cpu_counter.fetch_add(cpu, Ordering::Relaxed);
     }
 }
