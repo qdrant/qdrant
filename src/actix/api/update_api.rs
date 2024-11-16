@@ -76,7 +76,7 @@ async fn delete_points(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
     let wait = params.wait.unwrap_or(false);
@@ -137,7 +137,7 @@ async fn delete_vectors(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, timing),
+            Err(err) => return process_response_error(err, timing, None),
         };
 
     let wait = params.wait.unwrap_or(false);
@@ -170,7 +170,7 @@ async fn set_payload(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
     let wait = params.wait.unwrap_or(false);
@@ -201,7 +201,7 @@ async fn overwrite_payload(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -231,7 +231,7 @@ async fn delete_payload(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
@@ -261,7 +261,7 @@ async fn clear_payload(
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
     let wait = params.wait.unwrap_or(false);
@@ -297,7 +297,7 @@ async fn update_batch(
             .await
         {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now()),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
         vpass = Some(pass);
     }

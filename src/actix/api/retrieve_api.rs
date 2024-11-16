@@ -79,7 +79,7 @@ async fn get_point(
     .await
     {
         Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     helpers::time(async move {
@@ -124,7 +124,7 @@ async fn get_points(
     .await
     {
         Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let PointRequest {
@@ -180,7 +180,7 @@ async fn scroll_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {

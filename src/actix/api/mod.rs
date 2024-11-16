@@ -1,3 +1,7 @@
+use common::validation::validate_collection_name;
+use serde::Deserialize;
+use validator::Validate;
+
 pub mod cluster_api;
 pub mod collections_api;
 pub mod count_api;
@@ -15,13 +19,6 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
-
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::validation::validate_collection_name;
-use serde::Deserialize;
-use validator::Validate;
-
-use crate::settings::ServiceConfig;
 
 /// A collection path with stricter validation
 ///
@@ -46,16 +43,4 @@ struct StrictCollectionPath {
 struct CollectionPath {
     #[validate(length(min = 1, max = 255))]
     name: String,
-}
-
-pub(crate) fn hardware_opt<'a>(
-    config: &ServiceConfig,
-    hw_counter: &'a HwMeasurementAcc,
-) -> Option<&'a HwMeasurementAcc> {
-    if config.hardware_reporting() {
-        Some(hw_counter)
-    } else {
-        hw_counter.discard();
-        None
-    }
 }
