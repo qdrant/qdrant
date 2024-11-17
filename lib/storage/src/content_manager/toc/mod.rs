@@ -5,6 +5,7 @@ pub mod dispatcher;
 mod locks;
 mod point_ops;
 mod point_ops_internal;
+pub mod request_hw_counter;
 mod snapshots;
 mod temp_directories;
 pub mod transfer;
@@ -21,12 +22,14 @@ use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfigInternal};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
-use collection::shards::replica_set;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::{get_num_cpus, CpuBudget};
 use common::types::TelemetryDetail;
+use dashmap::DashMap;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
@@ -76,6 +79,8 @@ pub struct TableOfContent {
     /// A lock to prevent concurrent collection creation.
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
+    /// Aggregation of all hardware measurements for each alias or collection config.
+    collection_hw_metrics: DashMap<CollectionId, Arc<HwMeasurementAcc>>,
 }
 
 impl TableOfContent {
@@ -195,6 +200,7 @@ impl TableOfContent {
             lock_error_message: parking_lot::Mutex::new(None),
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
+            collection_hw_metrics: DashMap::new(),
         }
     }
 

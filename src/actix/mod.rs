@@ -10,7 +10,7 @@ pub mod web_ui;
 use std::io;
 use std::sync::Arc;
 
-use ::api::grpc::models::{ApiResponse, ApiStatus, VersionInfo};
+use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;

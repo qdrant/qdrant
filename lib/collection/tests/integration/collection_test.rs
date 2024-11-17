@@ -80,15 +80,17 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let search_res = collection
         .search(
             search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await;
+    hw_acc.discard();
 
     match search_res {
         Ok(res) => {
@@ -149,15 +151,17 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let search_res = collection
         .search(
             search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await;
+    hw_acc.discard();
 
     match search_res {
         Ok(res) => {
@@ -183,17 +187,19 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         exact: true,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let count_res = collection
         .count(
             count_request,
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);
+    hw_acc.discard();
 }
 
 // FIXME: does not work
@@ -363,6 +369,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_acc = HwMeasurementAcc::new();
     collection
         .update_from_client_simple(insert_points, true, WriteOrdering::default())
         .await
@@ -379,12 +386,13 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
+        &hw_acc,
     )
     .await
     .unwrap();
     assert!(!result.is_empty());
     let top1 = &result[0];
+    hw_acc.discard();
 
     assert!(top1.id == 5.into() || top1.id == 6.into());
 }

@@ -7,7 +7,6 @@ use collection::operations::types::{
 };
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, Filter};
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
@@ -17,7 +16,7 @@ use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::common::points;
 use crate::settings::ServiceConfig;
 
@@ -81,7 +80,7 @@ async fn scroll_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     helpers::time(async move {
@@ -141,47 +140,50 @@ async fn count_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-    let hw_measurement_acc_clone = hw_measurement_acc.clone();
-
-    helpers::time_and_hardware_opt(
-        async move {
-            let hash_ring_filter = match hash_ring_filter {
-                Some(filter) => get_hash_ring_filter(
-                    &dispatcher,
-                    &access,
-                    &path.collection,
-                    AccessRequirements::new(),
-                    filter.expected_shard_id,
-                    &pass,
-                )
-                .await?
-                .into(),
-
-                None => None,
-            };
-
-            request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
-
-            points::do_count_points(
-                dispatcher.toc(&access, &pass),
-                &path.collection,
-                request,
-                params.consistency,
-                params.timeout(),
-                ShardSelectorInternal::ShardId(path.shard),
-                access,
-                hw_measurement_acc_clone,
-            )
-            .await
-        },
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        path.collection.clone(),
         service_config.hardware_reporting(),
-    )
-    .await
+    );
+    let timing = Instant::now();
+    let hw_measurement_acc = request_hw_counter.get_counter();
+
+    let result = async move {
+        let hash_ring_filter = match hash_ring_filter {
+            Some(filter) => get_hash_ring_filter(
+                &dispatcher,
+                &access,
+                &path.collection,
+                AccessRequirements::new(),
+                filter.expected_shard_id,
+                &pass,
+            )
+            .await?
+            .into(),
+
+            None => None,
+        };
+
+        request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
+
+        points::do_count_points(
+            dispatcher.toc(&access, &pass),
+            &path.collection,
+            request,
+            params.consistency,
+            params.timeout(),
+            ShardSelectorInternal::ShardId(path.shard),
+            access,
+            hw_measurement_acc,
+        )
+        .await
+    }
+    .await;
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{collection}/shards/{shard}/cleanup")]

@@ -340,10 +340,12 @@ impl Collection {
                     .get(&replica_set.this_peer_id())
                     .copied()
                     .unwrap_or(ReplicaState::Dead);
+                let hw_acc = HwMeasurementAcc::new();
                 let count_result = replica_set
-                    .count_local(count_request.clone(), None, HwMeasurementAcc::new())
+                    .count_local(count_request.clone(), None, &hw_acc)
                     .await
                     .unwrap_or_default();
+                hw_acc.discard(); // We don't need to measure hardware for this function.
                 let points_count = count_result.map(|x| x.count).unwrap_or(0);
                 local_shards.push(LocalShardInfo {
                     shard_id,

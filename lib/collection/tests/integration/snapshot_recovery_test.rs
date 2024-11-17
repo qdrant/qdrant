@@ -157,13 +157,14 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let reference_result = collection
         .search(
             full_search_request.clone().into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
@@ -174,10 +175,11 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     assert_eq!(reference_result.len(), recovered_result.len());
 

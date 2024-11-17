@@ -49,6 +49,7 @@ pub(super) async fn transfer_stream_records(
             .proxify_local(remote_shard.clone(), None)
             .await?;
 
+        let hw_acc = HwMeasurementAcc::new();
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
@@ -56,7 +57,7 @@ pub(super) async fn transfer_stream_records(
                     exact: true,
                 }),
                 None, // no timeout
-                HwMeasurementAcc::new(),
+                &hw_acc,
             )
             .await?
         else {
@@ -65,6 +66,7 @@ pub(super) async fn transfer_stream_records(
             )));
         };
         progress.lock().points_total = count_result.count;
+        hw_acc.discard(); // Don't measure hardware in internal operations
 
         replica_set.transfer_indexes().await?;
 

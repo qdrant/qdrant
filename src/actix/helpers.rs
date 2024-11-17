@@ -3,25 +3,39 @@ use std::future::Future;
 
 use actix_web::rt::time::Instant;
 use actix_web::{http, HttpResponse, ResponseError};
-use api::grpc::models::{ApiResponse, ApiStatus, HardwareUsage};
+use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
+use storage::dispatcher::Dispatcher;
 
-pub fn accepted_response(timing: Instant) -> HttpResponse {
+pub fn get_request_hardware_counter(
+    dispatcher: &Dispatcher,
+    collection_name: String,
+    report_to_api: bool,
+) -> RequestHwCounter {
+    RequestHwCounter::new(
+        HwMeasurementAcc::new_with_drain(&dispatcher.get_collection_hw_metrics(collection_name)),
+        report_to_api,
+        false,
+    )
+}
+
+pub fn accepted_response(timing: Instant, hardware_usage: Option<HardwareUsage>) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: hardware_usage,
     })
 }
 
 pub fn process_response<T>(
     response: Result<T, StorageError>,
     timing: Instant,
-    hw_measurement_acc: Option<HwMeasurementAcc>,
+    hardware_usage: Option<HardwareUsage>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -31,17 +45,17 @@ where
             result: Some(res),
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
-            usage: hw_measurement_acc.map(hardware_accumulator_to_api),
+            usage: hardware_usage,
         }),
-        Err(err) => process_response_error(err, timing),
+        Err(err) => process_response_error(err, timing, hardware_usage),
     }
 }
 
-fn hardware_accumulator_to_api(acc: HwMeasurementAcc) -> HardwareUsage {
-    HardwareUsage { cpu: acc.get_cpu() }
-}
-
-pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
+pub fn process_response_error(
+    err: StorageError,
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+) -> HttpResponse {
     log_service_error(&err);
 
     let error = HttpError::from(err);
@@ -50,29 +64,8 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
         result: None,
         status: ApiStatus::Error(error.to_string()),
         time: timing.elapsed().as_secs_f64(),
-        usage: None,
+        usage: hardware_usage,
     })
-}
-
-/// Response wrapper for a `Future` returning `Result`.
-///
-/// # Cancel safety
-///
-/// Future must be cancel safe.
-pub async fn time_and_hardware_opt<T, Fut>(
-    future: Fut,
-    hw_measurement_acc: HwMeasurementAcc,
-    enabled: bool,
-) -> HttpResponse
-where
-    Fut: Future<Output = Result<T, StorageError>>,
-    T: serde::Serialize,
-{
-    if enabled {
-        time_and_hardware_impl(async { future.await.map(Some) }, hw_measurement_acc).await
-    } else {
-        time_impl(async { future.await.map(Some) }).await
-    }
 }
 
 /// Response wrapper for a `Future` returning `Result`.
@@ -129,25 +122,7 @@ where
     let instant = Instant::now();
     match future.await.transpose() {
         Some(res) => process_response(res, instant, None),
-        None => accepted_response(instant),
-    }
-}
-
-/// # Cancel safety
-///
-/// Future must be cancel safe.
-async fn time_and_hardware_impl<T, Fut>(
-    future: Fut,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> HttpResponse
-where
-    Fut: Future<Output = Result<Option<T>, StorageError>>,
-    T: serde::Serialize,
-{
-    let instant = Instant::now();
-    match future.await.transpose() {
-        Some(res) => process_response(res, instant, Some(hw_measurement_acc)),
-        None => accepted_response(instant),
+        None => accepted_response(instant, None),
     }
 }
 

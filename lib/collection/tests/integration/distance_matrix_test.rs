@@ -20,6 +20,7 @@ async fn distance_matrix_empty() {
     // empty collection
     let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
+    let hw_acc = HwMeasurementAcc::new();
     let sample_size = 100;
     let limit_per_sample = 10;
     let request = CollectionSearchMatrixRequest {
@@ -29,15 +30,10 @@ async fn distance_matrix_empty() {
         using: "".to_string(), // default vector name
     };
     let matrix = collection
-        .search_points_matrix(
-            request,
-            ShardSelectorInternal::All,
-            None,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .search_points_matrix(request, ShardSelectorInternal::All, None, None, &hw_acc)
         .await
         .unwrap();
+    hw_acc.discard();
 
     // assert all empty
     assert!(matrix.sample_ids.is_empty());
@@ -75,6 +71,7 @@ async fn distance_matrix_anonymous_vector() {
         .await
         .unwrap();
 
+    let hw_acc = HwMeasurementAcc::new();
     let sample_size = 100;
     let limit_per_sample = 10;
     let request = CollectionSearchMatrixRequest {
@@ -84,15 +81,10 @@ async fn distance_matrix_anonymous_vector() {
         using: "".to_string(), // default vector name
     };
     let matrix = collection
-        .search_points_matrix(
-            request,
-            ShardSelectorInternal::All,
-            None,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .search_points_matrix(request, ShardSelectorInternal::All, None, None, &hw_acc)
         .await
         .unwrap();
+    hw_acc.discard();
 
     assert_eq!(matrix.sample_ids.len(), sample_size);
     // no duplicate sample ids

@@ -8,7 +8,6 @@ use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures_util::TryFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_verification::{
@@ -23,7 +22,7 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/recommend")]
@@ -50,7 +49,7 @@ async fn recommend_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -58,30 +57,34 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        dispatcher
-            .toc(&access, &pass)
-            .recommend(
-                &collection.name,
-                recommend_request,
-                params.consistency,
-                shard_selection,
-                access,
-                params.timeout(),
-                hw_measurement_acc.clone(),
-            )
-            .map_ok(|scored_points| {
-                scored_points
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
-            }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
-    )
-    .await
+    );
+
+    let timing = Instant::now();
+
+    let result = dispatcher
+        .toc(&access, &pass)
+        .recommend(
+            &collection.name,
+            recommend_request,
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+            request_hw_counter.get_counter(),
+        )
+        .await
+        .map(|scored_points| {
+            scored_points
+                .into_iter()
+                .map(api::rest::ScoredPoint::from)
+                .collect_vec()
+        });
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 async fn do_recommend_batch_points(
@@ -91,7 +94,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
+    hw_measurement_acc: &HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -136,36 +139,39 @@ async fn recommend_batch_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        do_recommend_batch_points(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            request.into_inner(),
-            params.consistency,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        )
-        .map_ok(|batch_scored_points| {
-            batch_scored_points
-                .into_iter()
-                .map(|scored_points| {
-                    scored_points
-                        .into_iter()
-                        .map(api::rest::ScoredPoint::from)
-                        .collect_vec()
-                })
-                .collect_vec()
-        }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let result = do_recommend_batch_points(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        request.into_inner(),
+        params.consistency,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
     .await
+    .map(|batch_scored_points| {
+        batch_scored_points
+            .into_iter()
+            .map(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(api::rest::ScoredPoint::from)
+                    .collect_vec()
+            })
+            .collect_vec()
+    });
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/recommend/groups")]
@@ -192,7 +198,7 @@ async fn recommend_point_groups(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -200,22 +206,26 @@ async fn recommend_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-    helpers::time_and_hardware_opt(
-        crate::common::points::do_recommend_point_groups(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            recommend_group_request,
-            params.consistency,
-            shard_selection,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        ),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let result = crate::common::points::do_recommend_point_groups(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        recommend_group_request,
+        params.consistency,
+        shard_selection,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
-    .await
+    .await;
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {

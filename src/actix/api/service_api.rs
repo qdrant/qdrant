@@ -71,7 +71,7 @@ async fn metrics(
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     if let Err(err) = access.check_global_access(AccessRequirements::new()) {
-        return process_response_error(err, Instant::now());
+        return process_response_error(err, Instant::now(), None);
     }
 
     let anonymize = params.anonymize.unwrap_or(false);

@@ -2,8 +2,6 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -14,7 +12,7 @@ use tokio::time::Instant;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::common::points::do_discover_batch_points;
 use crate::settings::ServiceConfig;
 
@@ -42,7 +40,7 @@ async fn discover_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -50,30 +48,34 @@ async fn discover_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        dispatcher
-            .toc(&access, &pass)
-            .discover(
-                &collection.name,
-                discover_request,
-                params.consistency,
-                shard_selection,
-                access,
-                params.timeout(),
-                hw_measurement_acc.clone(),
-            )
-            .map_ok(|scored_points| {
-                scored_points
-                    .into_iter()
-                    .map(api::rest::ScoredPoint::from)
-                    .collect_vec()
-            }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
-    )
-    .await
+    );
+
+    let timing = Instant::now();
+
+    let result = dispatcher
+        .toc(&access, &pass)
+        .discover(
+            &collection.name,
+            discover_request,
+            params.consistency,
+            shard_selection,
+            access,
+            params.timeout(),
+            request_hw_counter.get_counter(),
+        )
+        .await
+        .map(|scored_points| {
+            scored_points
+                .into_iter()
+                .map(api::rest::ScoredPoint::from)
+                .collect_vec()
+        });
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/discover/batch")]
@@ -97,36 +99,39 @@ async fn discover_batch_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        do_discover_batch_points(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            request,
-            params.consistency,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        )
-        .map_ok(|batch_scored_points| {
-            batch_scored_points
-                .into_iter()
-                .map(|scored_points| {
-                    scored_points
-                        .into_iter()
-                        .map(api::rest::ScoredPoint::from)
-                        .collect_vec()
-                })
-                .collect_vec()
-        }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let result = do_discover_batch_points(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        request,
+        params.consistency,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
     .await
+    .map(|batch_scored_points| {
+        batch_scored_points
+            .into_iter()
+            .map(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(api::rest::ScoredPoint::from)
+                    .collect_vec()
+            })
+            .collect_vec()
+    });
+
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 pub fn config_discovery_api(cfg: &mut web::ServiceConfig) {

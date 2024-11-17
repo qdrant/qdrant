@@ -95,7 +95,7 @@ impl ShardOperation for DummyShard {
         _: Arc<CoreSearchRequestBatch>,
         _: &Handle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
+        _: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy()
     }
@@ -105,7 +105,7 @@ impl ShardOperation for DummyShard {
         _: Arc<CountRequestInternal>,
         _: &Handle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
+        _: &HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         self.dummy()
     }
@@ -126,7 +126,7 @@ impl ShardOperation for DummyShard {
         _requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
         _timeout: Option<Duration>,
-        _: HwMeasurementAcc,
+        _: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.dummy()
     }

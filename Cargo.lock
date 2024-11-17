@@ -1545,12 +1545,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.14"
+version = "0.8.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fb766fa798726286dbbb842f174001dab8abc7b627a1dd86e0b7222a95d929f"
-dependencies = [
- "cfg-if",
-]
+checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
 
 [[package]]
 name = "crunchy"
@@ -6345,6 +6342,7 @@ dependencies = [
  "chrono",
  "collection",
  "common",
+ "dashmap",
  "env_logger",
  "futures",
  "http 0.2.9",
@@ -7398,7 +7396,7 @@ dependencies = [
  "memmap2 0.9.5",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.40",
  "serde",
 ]
 

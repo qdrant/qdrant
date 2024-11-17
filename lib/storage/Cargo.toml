@@ -36,6 +36,7 @@ tap = { workspace = true }
 tar = { workspace = true }
 chrono = { workspace = true }
 validator = { workspace = true }
+dashmap = { workspace = true }
 
 # Consensus related
 atomicwrites = { workspace = true }
