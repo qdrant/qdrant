@@ -231,7 +231,7 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         query_context: QueryContext,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_arc = Arc::new(query_context);
 
@@ -256,7 +256,8 @@ impl SegmentsSearcher {
             segments
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
-                    let hw_counter_clone = hw_measurement_acc.clone();
+                    let hw_collector = hw_measurement_acc.new_collector();
+
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
@@ -270,7 +271,7 @@ impl SegmentsSearcher {
                                 &segment_query_context,
                             );
 
-                            hw_counter_clone
+                            hw_collector
                                 .merge_from_cell(segment_query_context.take_hardware_counter());
 
                             res
@@ -315,7 +316,8 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-                    let hw_counter_clone = hw_measurement_acc.clone();
+                    let hw_collector = hw_measurement_acc.new_collector();
+
                     res.push(runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
@@ -327,8 +329,7 @@ impl SegmentsSearcher {
                             &segment_query_context,
                         );
 
-                        hw_counter_clone
-                            .merge_from_cell(segment_query_context.take_hardware_counter());
+                        hw_collector.merge_from_cell(segment_query_context.take_hardware_counter());
 
                         result
                     }))
@@ -761,19 +762,21 @@ mod tests {
             searches: vec![req],
         };
 
+        let hw_acc = HwMeasurementAcc::new();
         let result = SegmentsSearcher::search(
             Arc::new(segment_holder),
             Arc::new(batch_request),
             &Handle::current(),
             true,
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap()
         .into_iter()
         .next()
         .unwrap();
+        hw_acc.discard();
 
         // eprintln!("result = {:?}", &result);
 
@@ -835,13 +838,15 @@ mod tests {
                 &Handle::current(),
                 false,
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-                hw_measurement_acc.clone(),
+                &hw_measurement_acc,
             )
             .await
             .unwrap();
 
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
-            hw_measurement_acc.clear();
+            hw_measurement_acc.discard();
+
+            let hw_measurement_acc = HwMeasurementAcc::new();
 
             assert!(!result_no_sampling.is_empty());
 
@@ -851,14 +856,14 @@ mod tests {
                 &Handle::current(),
                 true,
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-                hw_measurement_acc.clone(),
+                &hw_measurement_acc,
             )
             .await
             .unwrap();
             assert!(!result_sampling.is_empty());
 
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
-            hw_measurement_acc.clear();
+            hw_measurement_acc.discard();
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());

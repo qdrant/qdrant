@@ -43,7 +43,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if request.limit == 0 {
             return Ok(vec![]);
@@ -67,7 +67,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
@@ -81,7 +81,7 @@ impl Collection {
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
-                    hw_measurement_acc.clone(),
+                    hw_measurement_acc,
                 )
                 .and_then(move |mut shard_responses| async move {
                     if shard_key.is_none() {
@@ -106,7 +106,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
@@ -195,7 +195,7 @@ impl Collection {
         collection_by_name: F,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
     where
         F: Fn(String) -> Fut,
@@ -255,7 +255,7 @@ impl Collection {
                     read_consistency,
                     shard_selection,
                     timeout,
-                    hw_measurement_acc.clone(),
+                    hw_measurement_acc,
                 ));
 
                 Ok(())
@@ -280,7 +280,7 @@ impl Collection {
         requests: Vec<ShardQueryRequest>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let requests_arc = Arc::new(requests);
 

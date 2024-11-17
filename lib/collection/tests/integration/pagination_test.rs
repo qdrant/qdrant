@@ -55,16 +55,18 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let reference_result = collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
@@ -82,16 +84,18 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let page_1_result = collection
         .search(
             page_1_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     // Check that the first page is the same as the reference result
     assert_eq!(page_1_result.len(), 10);
@@ -110,16 +114,18 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
+    let hw_acc = HwMeasurementAcc::new();
     let page_9_result = collection
         .search(
             page_9_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            &hw_acc,
         )
         .await
         .unwrap();
+    hw_acc.discard();
 
     // Check that the 9th page is the same as the reference result
     assert_eq!(page_9_result.len(), 10);

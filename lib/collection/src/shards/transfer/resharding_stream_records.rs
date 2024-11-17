@@ -64,6 +64,7 @@ pub(crate) async fn transfer_resharding_stream_records(
             .proxify_local(remote_shard.clone(), Some(hashring.clone()))
             .await?;
 
+        let hw_acc = HwMeasurementAcc::new();
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
@@ -71,7 +72,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: true,
                 }),
                 None,
-                HwMeasurementAcc::new(),
+                &hw_acc,
             )
             .await?
         else {
@@ -80,6 +81,7 @@ pub(crate) async fn transfer_resharding_stream_records(
             )));
         };
         progress.lock().points_total = count_result.count;
+        hw_acc.discard();
 
         replica_set.transfer_indexes().await?;
 

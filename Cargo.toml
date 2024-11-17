@@ -208,6 +208,7 @@ byteorder = "1.5.0"
 thiserror = "1.0.68"
 bitvec = "1.0.1"
 merge = "0.1.0"
+dashmap = "6.1"
 
 [[bin]]
 name = "schema_generator"

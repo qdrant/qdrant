@@ -29,7 +29,6 @@ use super::qdrant::{
     UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::conversions::json;
-use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
@@ -48,6 +47,7 @@ use crate::grpc::qdrant::{
     TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount, VectorsSelector,
     WithPayloadSelector, WithVectorsSelector,
 };
+use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
 
 pub fn convert_shard_key_to_grpc(value: segment::types::ShardKey) -> ShardKey {

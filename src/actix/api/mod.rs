@@ -1,3 +1,7 @@
+use common::validation::validate_collection_name;
+use serde::Deserialize;
+use validator::Validate;
+
 pub mod cluster_api;
 pub mod collections_api;
 pub mod count_api;
@@ -15,10 +19,6 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
-
-use common::validation::validate_collection_name;
-use serde::Deserialize;
-use validator::Validate;
 
 /// A collection path with stricter validation
 ///

@@ -6,8 +6,6 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::TryFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -18,7 +16,9 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::helpers::{
+    get_request_hardware_counter, process_response, process_response_error,
+};
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
@@ -48,7 +48,7 @@ async fn search_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -56,29 +56,33 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        do_core_search_points(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            search_request.into(),
-            params.consistency,
-            shard_selection,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        )
-        .map_ok(|scored_points| {
-            scored_points
-                .into_iter()
-                .map(api::rest::ScoredPoint::from)
-                .collect_vec()
-        }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+
+    let timing = Instant::now();
+
+    let result = do_core_search_points(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        search_request.into(),
+        params.consistency,
+        shard_selection,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
     .await
+    .map(|scored_points| {
+        scored_points
+            .into_iter()
+            .map(api::rest::ScoredPoint::from)
+            .collect_vec()
+    });
+
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/batch")]
@@ -119,36 +123,40 @@ async fn batch_search_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        do_search_batch_points(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            requests,
-            params.consistency,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        )
-        .map_ok(|batch_scored_points| {
-            batch_scored_points
-                .into_iter()
-                .map(|scored_points| {
-                    scored_points
-                        .into_iter()
-                        .map(api::rest::ScoredPoint::from)
-                        .collect_vec()
-                })
-                .collect_vec()
-        }),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+
+    let timing = Instant::now();
+
+    let result = do_search_batch_points(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        requests,
+        params.consistency,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
     .await
+    .map(|batch_scored_points| {
+        batch_scored_points
+            .into_iter()
+            .map(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(api::rest::ScoredPoint::from)
+                    .collect_vec()
+            })
+            .collect_vec()
+    });
+
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/groups")]
@@ -175,7 +183,7 @@ async fn search_point_groups(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -183,23 +191,26 @@ async fn search_point_groups(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
-
-    helpers::time_and_hardware_opt(
-        do_search_point_groups(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            search_group_request,
-            params.consistency,
-            shard_selection,
-            access,
-            params.timeout(),
-            hw_measurement_acc.clone(),
-        ),
-        hw_measurement_acc,
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
         service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let result = do_search_point_groups(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        search_group_request,
+        params.consistency,
+        shard_selection,
+        access,
+        params.timeout(),
+        request_hw_counter.get_counter(),
     )
-    .await
+    .await;
+
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/matrix/pairs")]
@@ -211,8 +222,6 @@ async fn search_points_matrix_pairs(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let SearchMatrixRequest {
         search_request,
         shard_key,
@@ -228,7 +237,7 @@ async fn search_points_matrix_pairs(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -236,7 +245,12 @@ async fn search_points_matrix_pairs(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
@@ -246,16 +260,12 @@ async fn search_points_matrix_pairs(
         shard_selection,
         access,
         params.timeout(),
-        hw_measurement_acc.clone(),
+        request_hw_counter.get_counter(),
     )
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
-
-    process_response(response, timing, hw_measurements)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
@@ -267,8 +277,6 @@ async fn search_points_matrix_offsets(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
     let SearchMatrixRequest {
         search_request,
         shard_key,
@@ -284,7 +292,7 @@ async fn search_points_matrix_offsets(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now()),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -292,7 +300,12 @@ async fn search_points_matrix_offsets(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let hw_measurement_acc = HwMeasurementAcc::new();
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
 
     let response = do_search_points_matrix(
         dispatcher.toc(&access, &pass),
@@ -302,16 +315,12 @@ async fn search_points_matrix_offsets(
         shard_selection,
         access,
         params.timeout(),
-        hw_measurement_acc.clone(),
+        request_hw_counter.get_counter(),
     )
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    let hw_measurements = service_config
-        .hardware_reporting()
-        .then_some(hw_measurement_acc);
-
-    process_response(response, timing, hw_measurements)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 // Configure services
