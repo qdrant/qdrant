@@ -75,6 +75,7 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
 #[derive(Debug)]
 struct HNSWSearchesTelemetry {
     unfiltered_plain: Arc<Mutex<OperationDurationsAggregator>>,
+    filtered_plain: Arc<Mutex<OperationDurationsAggregator>>,
     unfiltered_hnsw: Arc<Mutex<OperationDurationsAggregator>>,
     small_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
     large_cardinality: Arc<Mutex<OperationDurationsAggregator>>,
@@ -181,6 +182,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             searches_telemetry: HNSWSearchesTelemetry {
                 unfiltered_hnsw: OperationDurationsAggregator::new(),
                 unfiltered_plain: OperationDurationsAggregator::new(),
+                filtered_plain: OperationDurationsAggregator::new(),
                 small_cardinality: OperationDurationsAggregator::new(),
                 large_cardinality: OperationDurationsAggregator::new(),
                 exact_filtered: OperationDurationsAggregator::new(),
@@ -600,10 +602,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .collect()
     }
 
-    fn search_plain(
+    fn search_plain_iterator(
         &self,
         vector: &QueryVector,
-        filtered_points: &[PointOffsetType],
+        points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
@@ -628,8 +630,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let search_result =
-            raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
+        let search_result = raw_scorer.peek_top_iter(points, oversampled_top);
 
         vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
 
@@ -644,6 +645,35 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         )?;
         vector_query_context.apply_hardware_counter(hw_counter);
         Ok(res)
+    }
+
+    fn search_plain(
+        &self,
+        vector: &QueryVector,
+        filtered_points: &[PointOffsetType],
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        self.search_plain_iterator(
+            vector,
+            &mut filtered_points.iter().copied(),
+            top,
+            params,
+            vector_query_context,
+        )
+    }
+
+    fn search_plain_unfiltered(
+        &self,
+        vector: &QueryVector,
+        top: usize,
+        params: Option<&SearchParams>,
+        vector_query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let id_tracker = self.id_tracker.borrow();
+        let mut ids_iterator = id_tracker.iter_internal();
+        self.search_plain_iterator(vector, &mut ids_iterator, top, params, vector_query_context)
     }
 
     fn search_vectors_plain(
@@ -822,10 +852,28 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        // If neither `m` nor `payload_m` is set, HNSW doesn't have any links.
+        // And if so, we need to fall back to plain search (optionally, with quantization).
+
+        let is_hnsw_disabled = self.config.m == 0 && self.config.payload_m.unwrap_or(0) == 0;
         let exact = params.map(|params| params.exact).unwrap_or(false);
+
+        let exact_params = if exact {
+            params.map(|params| {
+                let mut params = *params;
+                params.quantization = Some(QuantizationSearchParams {
+                    ignore: true,
+                    rescore: Some(false),
+                    oversampling: None,
+                }); // disable quantization for exact search
+                params
+            })
+        } else {
+            None
+        };
+
         match filter {
             None => {
-                let id_tracker = self.id_tracker.borrow();
                 let vector_storage = self.vector_storage.borrow();
 
                 // Determine whether to do a plain or graph search, and pick search timer aggregator
@@ -833,6 +881,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
                 let plain_search = exact
+                    || is_hnsw_disabled
                     || vector_storage.available_vector_count() < self.config.full_scan_threshold;
 
                 // Do plain or graph search
@@ -842,27 +891,13 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     } else {
                         &self.searches_telemetry.unfiltered_plain
                     });
-                    let deleted_points = query_context
-                        .deleted_points()
-                        .unwrap_or(id_tracker.deleted_point_bitslice());
 
-                    let is_stopped = query_context.is_stopped();
+                    let params_ref = if exact { exact_params.as_ref() } else { params };
 
                     vectors
                         .iter()
                         .map(|&vector| {
-                            new_stoppable_raw_scorer(
-                                vector.to_owned(),
-                                &vector_storage,
-                                deleted_points,
-                                &is_stopped,
-                            )
-                            .map(|scorer| {
-                                let res = scorer.peek_top_all(top);
-                                query_context
-                                    .apply_hardware_counter(scorer.take_hardware_counter());
-                                res
-                            })
+                            self.search_plain_unfiltered(vector, top, params_ref, query_context)
                         })
                         .collect()
                 } else {
@@ -877,23 +912,20 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // - to use HNSW index with filtering condition
 
                 // if exact search is requested, we should not use HNSW index
-                if exact {
-                    let exact_params = params.map(|params| {
-                        let mut params = *params;
-                        params.quantization = Some(QuantizationSearchParams {
-                            ignore: true,
-                            rescore: Some(false),
-                            oversampling: None,
-                        }); // disable quantization for exact search
-                        params
+                if exact || is_hnsw_disabled {
+                    let _timer = ScopeDurationMeasurer::new(if exact {
+                        &self.searches_telemetry.exact_filtered
+                    } else {
+                        &self.searches_telemetry.filtered_plain
                     });
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.exact_filtered);
+
+                    let params_ref = if exact { exact_params.as_ref() } else { params };
+
                     return self.search_vectors_plain(
                         vectors,
                         query_filter,
                         top,
-                        exact_params.as_ref(),
+                        params_ref,
                         query_context,
                     );
                 }
@@ -964,7 +996,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         VectorIndexSearchesTelemetry {
             index_name: None,
             unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(detail),
-            filtered_plain: Default::default(),
+            filtered_plain: tm.filtered_plain.lock().get_statistics(detail),
             unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
