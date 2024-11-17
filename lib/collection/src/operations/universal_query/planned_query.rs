@@ -58,7 +58,7 @@ pub enum Source {
     ScrollsIdx(usize),
 
     /// A nested prefetch
-    Prefetch(MergePlan),
+    Prefetch(Box<MergePlan>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -289,7 +289,7 @@ fn recurse_prefetches(
                 }),
             };
 
-            Source::Prefetch(merge_plan)
+            Source::Prefetch(Box::new(merge_plan))
         } else {
             // This is a leaf prefetch. Fetch this info from the segments
             match query {
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(
             planned_query.root_plans,
             vec![MergePlan {
-                sources: vec![Source::Prefetch(MergePlan {
+                sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: Some(RescoreParams {
                         rescore: ScoringQuery::Vector(QueryEnum::Nearest(
@@ -495,7 +495,7 @@ mod tests {
                         with_payload: WithPayloadInterface::Bool(false),
                         params: None,
                     })
-                })],
+                }))],
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
@@ -971,7 +971,7 @@ mod tests {
                 },
                 MergePlan {
                     sources: vec![
-                        Source::Prefetch(MergePlan {
+                        Source::Prefetch(Box::from(MergePlan {
                             sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
                             rescore_params: Some(RescoreParams {
                                 rescore: ScoringQuery::Fusion(FusionInternal::Rrf),
@@ -981,7 +981,7 @@ mod tests {
                                 with_payload: WithPayloadInterface::Bool(true),
                                 params: None,
                             }),
-                        }),
+                        })),
                         Source::ScrollsIdx(1),
                     ],
                     rescore_params: None,

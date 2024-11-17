@@ -177,7 +177,7 @@ impl LocalShard {
                     Source::Prefetch(prefetch) => {
                         let merged = self
                             .recurse_prefetch(
-                                prefetch,
+                                *prefetch,
                                 prefetch_holder,
                                 search_runtime_handle,
                                 timeout,
