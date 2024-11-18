@@ -53,8 +53,16 @@ impl ShardReplicaSet {
                 {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
+                // In recovery state, log rejected operations without clock tag
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery) => {
-                    log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
+                    if log::log_enabled!(log::Level::Debug) {
+                        let ids = operation.operation.point_ids();
+                        if ids.is_empty() {
+                            log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
+                        } else {
+                            log::debug!("Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state");
+                        }
+                    }
                     Ok(None)
                 }
                 Some(ReplicaState::Dead) | None => Ok(None),
@@ -172,11 +180,19 @@ impl ShardReplicaSet {
 
             // Log a warning, if operation was rejected... but only if operation had a non-0 tick,
             // because operations with tick 0 should *always* be rejected and rejection is *expected*.
-            if is_non_zero_tick {
-                log::warn!(
-                    "Operation {operation:?} was rejected by some node(s), retrying... \
-                     (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
-                );
+            if is_non_zero_tick && log::log_enabled!(log::Level::Warn) {
+                let ids = operation.point_ids();
+                if ids.is_empty() {
+                    log::warn!(
+                        "Operation {operation:?} was rejected by some node(s), retrying... \
+                         (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
+                    );
+                } else {
+                    log::warn!(
+                        "Operation affecting point IDs {ids:?} was rejected by some node(s), retrying... \
+                         (attempt {attempt}/{UPDATE_MAX_CLOCK_REJECTED_RETRIES})"
+                    );
+                }
             }
         }
 
