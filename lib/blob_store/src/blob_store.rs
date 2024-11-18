@@ -443,7 +443,7 @@ mod tests {
     use rand::distributions::Uniform;
     use rand::prelude::Distribution;
     use rand::seq::SliceRandom;
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -536,7 +536,7 @@ mod tests {
     fn test_put_payload() {
         let (_dir, mut storage) = empty_storage();
 
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rngs::SmallRng::from_entropy();
 
         let mut payloads = (0..100000u32)
             .map(|point_offset| (point_offset, random_payload(rng, 2)))
@@ -685,7 +685,7 @@ mod tests {
 
         let (dir, mut storage) = empty_storage_sized(page_size);
 
-        let rng = &mut rand::thread_rng();
+        let rng = &mut rand::rngs::SmallRng::from_entropy();
         let max_point_offset = 100000u32;
 
         let mut model_hashmap = HashMap::new();
@@ -757,7 +757,7 @@ mod tests {
         let huge_payload_size = 1024 * 1024 * 50; // 50MB
 
         let distr = Uniform::new('a', 'z');
-        let rng = rand::thread_rng();
+        let rng = rand::rngs::SmallRng::from_entropy();
 
         let huge_value =
             serde_json::Value::String(distr.sample_iter(rng).take(huge_payload_size).collect());
@@ -942,7 +942,7 @@ mod tests {
 
     #[test]
     fn test_payload_compression() {
-        let payload = random_payload(&mut rand::thread_rng(), 2);
+        let payload = random_payload(&mut rand::rngs::SmallRng::from_entropy(), 2);
         let payload_bytes = payload.to_bytes();
         let compressed = BlobStore::<Payload>::compress(&payload_bytes);
         let decompressed = BlobStore::<Payload>::decompress(&compressed);
