@@ -61,11 +61,11 @@ impl VectorOperations {
         }
     }
 
-    pub fn point_ids(&self) -> Vec<PointIdType> {
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
-            Self::UpdateVectors(op) => op.points.iter().map(|point| point.id).collect(),
-            Self::DeleteVectors(points, _) => points.points.clone(),
-            Self::DeleteVectorsByFilter(_, _) => Vec::new(),
+            Self::UpdateVectors(op) => Some(op.points.iter().map(|point| point.id).collect()),
+            Self::DeleteVectors(points, _) => Some(points.points.clone()),
+            Self::DeleteVectorsByFilter(_, _) => None,
         }
     }
 
