@@ -1080,7 +1080,7 @@ impl RaftMessageBroker {
                 );
             };
 
-            match sender.send(message) {
+            match sender.send(message).map_err(|err| *err) {
                 Ok(()) => (),
 
                 Err(tokio::sync::mpsc::error::TrySendError::Full((_, message))) => {
@@ -1136,14 +1136,15 @@ struct RaftMessageSenderHandle {
 }
 
 impl RaftMessageSenderHandle {
-    #[allow(clippy::result_large_err)]
-    pub fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
+    fn send(&mut self, message: RaftMessage) -> RaftMessageSenderResult<()> {
         if !is_heartbeat(&message) {
-            self.messages.try_send((self.index, message))?;
+            self.messages
+                .try_send((self.index, message))
+                .map_err(Box::new)?;
         } else {
             self.heartbeat.send((self.index, message)).map_err(
-                |tokio::sync::watch::error::SendError(message)| {
-                    tokio::sync::mpsc::error::TrySendError::Closed(message)
+                |watch::error::SendError(message)| {
+                    Box::new(tokio::sync::mpsc::error::TrySendError::Closed(message))
                 },
             )?;
         }
@@ -1155,7 +1156,7 @@ impl RaftMessageSenderHandle {
 }
 
 type RaftMessageSenderResult<T, E = RaftMessageSenderError> = Result<T, E>;
-type RaftMessageSenderError = tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>;
+type RaftMessageSenderError = Box<tokio::sync::mpsc::error::TrySendError<(usize, RaftMessage)>>;
 
 struct RaftMessageSender {
     messages: Receiver<(usize, RaftMessage)>,
