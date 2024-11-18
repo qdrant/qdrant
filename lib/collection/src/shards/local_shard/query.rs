@@ -177,7 +177,7 @@ impl LocalShard {
                     Source::Prefetch(prefetch) => {
                         let merged = self
                             .recurse_prefetch(
-                                prefetch,
+                                *prefetch,
                                 prefetch_holder,
                                 search_runtime_handle,
                                 timeout,
@@ -232,6 +232,7 @@ impl LocalShard {
             limit,
             with_vector,
             with_payload,
+            params,
         } = rescore_params;
 
         match rescore {
@@ -281,14 +282,13 @@ impl LocalShard {
                 let search_request = CoreSearchRequest {
                     query: query_enum,
                     filter: Some(filter),
-                    params: None,
+                    params,
                     limit,
                     offset: 0,
                     with_payload: Some(with_payload),
                     with_vector: Some(with_vector),
                     score_threshold,
                 };
-
                 let rescoring_core_search_request = CoreSearchRequestBatch {
                     searches: vec![search_request],
                 };

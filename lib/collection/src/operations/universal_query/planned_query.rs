@@ -1,7 +1,7 @@
 //! Types used within `LocalShard` to represent a planned `ShardQueryRequest`
 
 use common::types::ScoreType;
-use segment::types::{Filter, WithPayloadInterface, WithVector};
+use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 
 use super::shard_query::{SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::operations::types::{
@@ -44,6 +44,9 @@ pub struct RescoreParams {
 
     /// The payload to return
     pub with_payload: WithPayloadInterface,
+
+    /// Parameters for the rescore search request
+    pub params: Option<SearchParams>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -55,7 +58,7 @@ pub enum Source {
     ScrollsIdx(usize),
 
     /// A nested prefetch
-    Prefetch(MergePlan),
+    Prefetch(Box<MergePlan>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -138,6 +141,7 @@ impl PlannedQuery {
                         score_threshold,
                         with_vector,
                         with_payload,
+                        params,
                     }),
                 }
             }
@@ -281,10 +285,11 @@ fn recurse_prefetches(
                     score_threshold,
                     with_vector: with_vector.clone(),
                     with_payload: with_payload.clone(),
+                    params,
                 }),
             };
 
-            Source::Prefetch(merge_plan)
+            Source::Prefetch(Box::new(merge_plan))
         } else {
             // This is a leaf prefetch. Fetch this info from the segments
             match query {
@@ -441,7 +446,10 @@ mod tests {
             score_threshold: None,
             limit: 10,
             offset: 0,
-            params: None,
+            params: Some(SearchParams {
+                exact: true,
+                ..Default::default()
+            }),
             with_vector: WithVector::Bool(true),
             with_payload: WithPayloadInterface::Bool(true),
         };
@@ -472,7 +480,7 @@ mod tests {
         assert_eq!(
             planned_query.root_plans,
             vec![MergePlan {
-                sources: vec![Source::Prefetch(MergePlan {
+                sources: vec![Source::Prefetch(Box::from(MergePlan {
                     sources: vec![Source::SearchesIdx(0)],
                     rescore_params: Some(RescoreParams {
                         rescore: ScoringQuery::Vector(QueryEnum::Nearest(
@@ -485,8 +493,9 @@ mod tests {
                         score_threshold: None,
                         with_vector: WithVector::Bool(false),
                         with_payload: WithPayloadInterface::Bool(false),
+                        params: None,
                     })
-                })],
+                }))],
                 rescore_params: Some(RescoreParams {
                     rescore: ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
@@ -500,6 +509,10 @@ mod tests {
                     score_threshold: None,
                     with_vector: WithVector::Bool(true),
                     with_payload: WithPayloadInterface::Bool(true),
+                    params: Some(SearchParams {
+                        exact: true,
+                        ..Default::default()
+                    })
                 })
             }]
         );
@@ -958,7 +971,7 @@ mod tests {
                 },
                 MergePlan {
                     sources: vec![
-                        Source::Prefetch(MergePlan {
+                        Source::Prefetch(Box::from(MergePlan {
                             sources: vec![Source::SearchesIdx(1), Source::SearchesIdx(2),],
                             rescore_params: Some(RescoreParams {
                                 rescore: ScoringQuery::Fusion(FusionInternal::Rrf),
@@ -966,8 +979,9 @@ mod tests {
                                 score_threshold: None,
                                 with_vector: WithVector::Bool(true),
                                 with_payload: WithPayloadInterface::Bool(true),
+                                params: None,
                             }),
-                        }),
+                        })),
                         Source::ScrollsIdx(1),
                     ],
                     rescore_params: None,

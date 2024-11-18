@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, VectorInternal,
 };
