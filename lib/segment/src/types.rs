@@ -1100,7 +1100,7 @@ impl PayloadContainer for Payload {
     }
 }
 
-impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
+impl PayloadContainer for OwnedPayloadRef<'_> {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value> {
         path.value_get(self.as_ref())
     }
@@ -1142,7 +1142,7 @@ pub enum OwnedPayloadRef<'a> {
     Owned(Rc<Map<String, Value>>),
 }
 
-impl<'a> Deref for OwnedPayloadRef<'a> {
+impl Deref for OwnedPayloadRef<'_> {
     type Target = Map<String, Value>;
 
     fn deref(&self) -> &Self::Target {
@@ -1153,7 +1153,7 @@ impl<'a> Deref for OwnedPayloadRef<'a> {
     }
 }
 
-impl<'a> AsRef<Map<String, Value>> for OwnedPayloadRef<'a> {
+impl AsRef<Map<String, Value>> for OwnedPayloadRef<'_> {
     fn as_ref(&self) -> &Map<String, Value> {
         match self {
             OwnedPayloadRef::Ref(reference) => reference,
@@ -1162,13 +1162,13 @@ impl<'a> AsRef<Map<String, Value>> for OwnedPayloadRef<'a> {
     }
 }
 
-impl<'a> From<Payload> for OwnedPayloadRef<'a> {
+impl From<Payload> for OwnedPayloadRef<'_> {
     fn from(payload: Payload) -> Self {
         OwnedPayloadRef::Owned(Rc::new(payload.0))
     }
 }
 
-impl<'a> From<Map<String, Value>> for OwnedPayloadRef<'a> {
+impl From<Map<String, Value>> for OwnedPayloadRef<'_> {
     fn from(payload: Map<String, Value>) -> Self {
         OwnedPayloadRef::Owned(Rc::new(payload))
     }

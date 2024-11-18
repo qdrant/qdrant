@@ -61,11 +61,10 @@ impl<
 }
 
 impl<
-        'a,
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement>,
         TVectorStorage: DenseVectorStorage<TElement>,
-    > QueryScorer<[TElement]> for MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
+    > QueryScorer<[TElement]> for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

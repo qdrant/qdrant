@@ -63,13 +63,12 @@ impl<
 }
 
 impl<
-        'a,
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement>,
         TVectorStorage: DenseVectorStorage<TElement>,
         TInputQuery: Query<DenseVector>,
         TStoredQuery: Query<TypedDenseVector<TElement>>,
-    > CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
+    > CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
 {
     fn hardware_counter_finalized(&self) -> HardwareCounterCell {
         let mut counter = self.hardware_counter.take();
@@ -84,14 +83,13 @@ impl<
 }
 
 impl<
-        'a,
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement>,
         TVectorStorage: DenseVectorStorage<TElement>,
         TInputQuery: Query<DenseVector>,
         TStoredQuery: Query<TypedDenseVector<TElement>>,
     > QueryScorer<[TElement]>
-    for CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
+    for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

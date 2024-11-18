@@ -39,7 +39,7 @@ impl VisitedList {
     }
 }
 
-impl<'a> Drop for VisitedListHandle<'a> {
+impl Drop for VisitedListHandle<'_> {
     fn drop(&mut self) {
         self.pool
             .return_back(std::mem::take(&mut self.visited_list));

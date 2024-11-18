@@ -239,7 +239,7 @@ impl TryFrom<VectorStructPersisted> for VectorStructInternal {
     }
 }
 
-impl<'a> From<VectorStructPersisted> for NamedVectors<'a> {
+impl From<VectorStructPersisted> for NamedVectors<'_> {
     fn from(value: VectorStructPersisted) -> Self {
         match value {
             VectorStructPersisted::Single(vector) => {

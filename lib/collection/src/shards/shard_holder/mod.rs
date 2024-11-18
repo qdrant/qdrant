@@ -495,7 +495,7 @@ impl ShardHolder {
     pub fn select_shards<'a>(
         &'a self,
         shard_selector: &'a ShardSelectorInternal,
-    ) -> CollectionResult<Vec<(&ShardReplicaSet, Option<&ShardKey>)>> {
+    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {

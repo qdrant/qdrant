@@ -16,7 +16,7 @@ impl<'a> PooledScoresHandle<'a> {
     }
 }
 
-impl<'a> Drop for PooledScoresHandle<'a> {
+impl Drop for PooledScoresHandle<'_> {
     fn drop(&mut self) {
         self.pool.return_back(std::mem::take(&mut self.scores));
     }

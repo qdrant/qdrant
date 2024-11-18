@@ -1612,7 +1612,7 @@ impl VectorsConfig {
     /// Iterate over the named vector parameters.
     ///
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&str, &VectorParams)> + 'a> {
+    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&'a str, &'a VectorParams)> + 'a> {
         match self {
             VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
             VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),

@@ -139,7 +139,7 @@ pub struct DatabaseColumnScheduledDeleteIterator<'a> {
     deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
 }
 
-impl<'a> Iterator for DatabaseColumnScheduledDeleteIterator<'a> {
+impl Iterator for DatabaseColumnScheduledDeleteIterator<'_> {
     type Item = (Box<[u8]>, Box<[u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {

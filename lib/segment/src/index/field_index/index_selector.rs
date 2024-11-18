@@ -40,7 +40,7 @@ pub struct IndexSelectorOnDisk<'a> {
     pub dir: &'a Path,
 }
 
-impl<'a> IndexSelector<'a> {
+impl IndexSelector<'_> {
     /// Selects index type based on field type.
     pub fn new_index(
         &self,

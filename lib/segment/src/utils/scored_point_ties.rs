@@ -11,7 +11,7 @@ impl<'a> From<&'a ScoredPoint> for ScoredPointTies<'a> {
     }
 }
 
-impl<'a> Ord for ScoredPointTies<'a> {
+impl Ord for ScoredPointTies<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0
             .cmp(other.0)
@@ -20,15 +20,15 @@ impl<'a> Ord for ScoredPointTies<'a> {
     }
 }
 
-impl<'a> PartialOrd for ScoredPointTies<'a> {
+impl PartialOrd for ScoredPointTies<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> Eq for ScoredPointTies<'a> {}
+impl Eq for ScoredPointTies<'_> {}
 
-impl<'a> PartialEq for ScoredPointTies<'a> {
+impl PartialEq for ScoredPointTies<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }

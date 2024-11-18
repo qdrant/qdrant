@@ -845,7 +845,7 @@ fn new_multi_scorer_half_with_metric<
     }
 }
 
-impl<'a, TVector, TQueryScorer> RawScorer for RawScorerImpl<'a, TVector, TQueryScorer>
+impl<TVector, TQueryScorer> RawScorer for RawScorerImpl<'_, TVector, TQueryScorer>
 where
     TVector: ?Sized,
     TQueryScorer: QueryScorer<TVector>,

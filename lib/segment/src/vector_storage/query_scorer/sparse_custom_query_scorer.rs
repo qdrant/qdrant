@@ -38,8 +38,8 @@ impl<
     }
 }
 
-impl<'a, TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScorer<SparseVector>
-    for SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
+impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScorer<SparseVector>
+    for SparseCustomQueryScorer<'_, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
