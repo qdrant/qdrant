@@ -84,17 +84,17 @@ impl DescriptorSetLayoutBuilder {
 
 impl Drop for DescriptorSetLayout {
     fn drop(&mut self) {
-        unsafe {
-            if self.vk_descriptor_set_layout != vk::DescriptorSetLayout::null() {
+        if self.vk_descriptor_set_layout != vk::DescriptorSetLayout::null() {
+            unsafe {
                 self.device.vk_device().destroy_descriptor_set_layout(
                     self.vk_descriptor_set_layout,
                     self.device.cpu_allocation_callbacks(),
                 );
-                self.vk_descriptor_set_layout = vk::DescriptorSetLayout::null();
             }
-            self.storage_buffer_bindings.clear();
-            self.uniform_buffer_bindings.clear();
+            self.vk_descriptor_set_layout = vk::DescriptorSetLayout::null();
         }
+        self.storage_buffer_bindings.clear();
+        self.uniform_buffer_bindings.clear();
     }
 }
 
