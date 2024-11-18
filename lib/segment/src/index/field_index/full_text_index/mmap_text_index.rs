@@ -147,6 +147,6 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             config,
         };
 
-        Ok(FullTextIndex::Mmap(mmap_index))
+        Ok(FullTextIndex::Mmap(Box::new(mmap_index)))
     }
 }

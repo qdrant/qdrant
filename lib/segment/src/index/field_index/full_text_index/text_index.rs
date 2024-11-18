@@ -25,11 +25,10 @@ use crate::index::field_index::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
 
-#[allow(clippy::large_enum_variant)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),
-    Mmap(MmapFullTextIndex),
+    Mmap(Box<MmapFullTextIndex>),
 }
 
 impl FullTextIndex {
@@ -52,7 +51,7 @@ impl FullTextIndex {
     }
 
     pub fn new_mmap(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
-        Ok(Self::Mmap(MmapFullTextIndex::open(path, config)?))
+        Ok(Self::Mmap(Box::new(MmapFullTextIndex::open(path, config)?)))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
