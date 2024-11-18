@@ -153,33 +153,33 @@ impl Task {
         // This allows to check the happy path without waiting for the first call.
         self.check_ready_signal.notify_one();
 
-        // Get *cluster* commit index, or check if this is the only node in the cluster
-        let Some(cluster_commit_index) = self.cluster_commit_index().await else {
+        // Get estimate of current cluster commit so we can wait for it
+        let Some(mut cluster_commit_index) = self.cluster_commit_index(true).await else {
             self.set_ready();
             return;
         };
 
-        // Check if *local* commit index >= *cluster* commit index...
-        while self.commit_index() < cluster_commit_index {
-            // Wait for `/readyz` signal
-            self.check_ready_signal.notified().await;
+        // Wait until local peer has reached cluster commit
+        loop {
+            while self.commit_index() < cluster_commit_index {
+                // Wait for `/readyz` signal
+                self.check_ready_signal.notified().await;
 
-            // If not:
-            //
-            // - Check if this is the only node in the cluster
-            if self.consensus_state.peer_count() <= 1 {
-                self.set_ready();
-                return;
+                // Ensure we're not the only peer left
+                if self.consensus_state.peer_count() <= 1 {
+                    self.set_ready();
+                    return;
+                }
             }
 
-            // TODO: Do we want to update `cluster_commit_index` here?
-            //
-            // I.e.:
-            // - If we *don't* update `cluster_commit_index`, then we will only wait till the node
-            //   catch up with the cluster commit index *at the moment the node has been started*
-            // - If we *do* update `cluster_commit_index`, then we will keep track of cluster
-            //   commit index updates and wait till the node *completely* catch up with the leader,
-            //   which might be hard (if not impossible) in some situations
+            match self.cluster_commit_index(false).await {
+                // If cluster commit is still the same, we caught up and we're done
+                Some(new_index) if cluster_commit_index == new_index => break,
+                // Cluster commit is newer, update it and wait again
+                Some(new_index) => cluster_commit_index = new_index,
+                // Failed to get cluster commit, assume we're done
+                None => break,
+            }
         }
 
         // Collect "unhealthy" shards list
@@ -202,7 +202,11 @@ impl Task {
         self.set_ready();
     }
 
-    async fn cluster_commit_index(&self) -> Option<u64> {
+    /// Get the highest consensus commit across cluster peers
+    ///
+    /// If `one_peer` is true the first fetched commit is returned. It may not necessarily be the
+    /// latest commit.
+    async fn cluster_commit_index(&self, one_peer: bool) -> Option<u64> {
         // Wait for `/readyz` signal
         self.check_ready_signal.notified().await;
 
@@ -256,7 +260,11 @@ impl Task {
         //
         // Total nodes: 5
         // Required: 5 / 2 = 2
-        let sufficient_commit_indices_count = peer_address_by_id.len() / 2;
+        let sufficient_commit_indices_count = if !one_peer {
+            peer_address_by_id.len() / 2
+        } else {
+            1
+        };
 
         // *Wait* for `total nodex / 2` successful responses...
         let mut commit_indices: Vec<_> = (&mut requests)
