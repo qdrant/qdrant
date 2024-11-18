@@ -633,12 +633,12 @@ impl PointOperations {
         }
     }
 
-    pub fn point_ids(&self) -> Vec<PointIdType> {
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
-            Self::UpsertPoints(op) => op.point_ids(),
-            Self::DeletePoints { ids } => ids.clone(),
-            Self::DeletePointsByFilter(_) => Vec::new(),
-            Self::SyncPoints(op) => op.points.iter().map(|point| point.id).collect(),
+            Self::UpsertPoints(op) => Some(op.point_ids()),
+            Self::DeletePoints { ids } => Some(ids.clone()),
+            Self::DeletePointsByFilter(_) => None,
+            Self::SyncPoints(op) => Some(op.points.iter().map(|point| point.id).collect()),
         }
     }
 

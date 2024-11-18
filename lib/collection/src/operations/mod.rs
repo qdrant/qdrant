@@ -160,12 +160,12 @@ impl CollectionUpdateOperations {
         )
     }
 
-    pub fn point_ids(&self) -> Vec<PointIdType> {
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
             Self::PointOperation(op) => op.point_ids(),
             Self::VectorOperation(op) => op.point_ids(),
             Self::PayloadOperation(op) => op.point_ids(),
-            Self::FieldIndexOperation(_) => Vec::new(),
+            Self::FieldIndexOperation(_) => None,
         }
     }
 
