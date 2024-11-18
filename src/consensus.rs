@@ -1140,7 +1140,7 @@ impl RaftMessageSenderHandle {
         if !is_heartbeat(&message) {
             self.messages
                 .try_send((self.index, message))
-                .map_err(|send_error| Box::new(send_error))?;
+                .map_err(Box::new)?;
         } else {
             self.heartbeat.send((self.index, message)).map_err(
                 |watch::error::SendError(message)| {
