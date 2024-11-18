@@ -140,6 +140,7 @@ impl TableOfContent {
             sharding_method,
             on_disk_payload: on_disk_payload.unwrap_or(self.storage_config.on_disk_payload),
             on_disk_payload_uses_mmap: self.storage_config.on_disk_payload_uses_mmap,
+            on_disk_sparse_vectors_uses_mmap: self.storage_config.on_disk_sparse_vectors_uses_mmap,
             replication_factor: NonZeroU32::new(replication_factor).ok_or_else(|| {
                 StorageError::BadInput {
                     description: "`replication_factor` cannot be 0".to_string(),

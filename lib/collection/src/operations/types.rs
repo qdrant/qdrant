@@ -27,9 +27,7 @@ use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
-    PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey, StrictModeConfig,
-    VectorStorageDatatype, WithPayloadInterface, WithVector,
+    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey, SparseVectorStorageType, StrictModeConfig, VectorStorageDatatype, WithPayloadInterface, WithVector
 };
 use semver::Version;
 use serde;
@@ -1495,6 +1493,16 @@ pub struct SparseVectorParams {
     /// Default: none
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modifier: Option<Modifier>,
+}
+
+impl SparseVectorParams {
+    pub fn storage_type(&self, use_new_storage: bool) -> SparseVectorStorageType {
+        if use_new_storage {
+            SparseVectorStorageType::Mmap
+        } else {
+            SparseVectorStorageType::default()
+        }
+    }
 }
 
 impl Anonymize for SparseVectorParams {
