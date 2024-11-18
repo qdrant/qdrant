@@ -25,9 +25,8 @@ mod utils;
 pub use field_index_base::*;
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub enum PrimaryCondition {
-    Condition(FieldCondition),
+    Condition(Box<FieldCondition>),
     IsEmpty(IsEmptyCondition),
     IsNull(IsNullCondition),
     Ids(HashSet<PointOffsetType>),

@@ -683,7 +683,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
 
     match primary_clause {
         PrimaryCondition::Condition(field_condition) => {
-            assert_eq!(field_condition, &expected_primary_clause);
+            assert_eq!(*field_condition, Box::new(expected_primary_clause));
         }
         o => panic!("unexpected primary clause: {o:?}"),
     }
@@ -746,7 +746,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 
     match primary_clause {
         PrimaryCondition::Condition(field_condition) => {
-            assert_eq!(field_condition, &expected_primary_clause);
+            assert_eq!(*field_condition, Box::new(expected_primary_clause));
         }
         o => panic!("unexpected primary clause: {o:?}"),
     }
@@ -1150,7 +1150,7 @@ fn test_any_matcher_cardinality_estimation() {
 
         match clause {
             PrimaryCondition::Condition(field_condition) => {
-                assert_eq!(field_condition, &expected_primary_clause);
+                assert_eq!(*field_condition, Box::new(expected_primary_clause));
             }
             o => panic!("unexpected primary clause: {o:?}"),
         }

@@ -551,7 +551,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                     let mut estimation = self.match_cardinality(keyword.as_str());
                     estimation
                         .primary_clauses
-                        .push(PrimaryCondition::Condition(condition.clone()));
+                        .push(PrimaryCondition::Condition(Box::new(condition.clone())));
                     Some(estimation)
                 }
                 ValueVariants::Integer(_) => None,
@@ -569,38 +569,35 @@ impl PayloadFieldIndex for MapIndex<str> {
                         combine_should_estimations(&estimations, self.get_indexed_points())
                     };
                     Some(
-                        estimation
-                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                        estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(
+                            condition.clone(),
+                        ))),
                     )
                 }
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
-                        Some(
-                            CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ),
-                        )
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
                     } else {
                         None
                     }
                 }
             },
-            Some(Match::Except(MatchExcept { except })) => {
-                match except {
-                    AnyVariants::Strings(keywords) => {
-                        Some(self.except_cardinality(keywords.iter().map(|k| k.as_str())))
-                    }
-                    AnyVariants::Integers(others) => {
-                        if others.is_empty() {
-                            Some(CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ))
-                        } else {
-                            None
-                        }
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(keywords) => {
+                    Some(self.except_cardinality(keywords.iter().map(|k| k.as_str())))
+                }
+                AnyVariants::Integers(others) => {
+                    if others.is_empty() {
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
+                    } else {
+                        None
                     }
                 }
-            }
+            },
             _ => None,
         }
     }
@@ -715,7 +712,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     let mut estimation = self.match_cardinality(&uuid.as_u128());
                     estimation
                         .primary_clauses
-                        .push(PrimaryCondition::Condition(condition.clone()));
+                        .push(PrimaryCondition::Condition(Box::new(condition.clone())));
                     Some(estimation)
                 }
                 ValueVariants::Integer(_) => None,
@@ -740,45 +737,42 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         combine_should_estimations(&estimations, self.get_indexed_points())
                     };
                     Some(
-                        estimation
-                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                        estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(
+                            condition.clone(),
+                        ))),
                     )
                 }
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
-                        Some(
-                            CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ),
-                        )
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
                     } else {
                         None
                     }
                 }
             },
-            Some(Match::Except(MatchExcept { except })) => {
-                match except {
-                    AnyVariants::Strings(uuids_string) => {
-                        let uuids: Result<IndexSet<u128>, _> = uuids_string
-                            .iter()
-                            .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
-                            .collect();
+            Some(Match::Except(MatchExcept { except })) => match except {
+                AnyVariants::Strings(uuids_string) => {
+                    let uuids: Result<IndexSet<u128>, _> = uuids_string
+                        .iter()
+                        .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
+                        .collect();
 
-                        let excluded_uuids = uuids.ok()?;
+                    let excluded_uuids = uuids.ok()?;
 
-                        Some(self.except_cardinality(excluded_uuids.iter()))
-                    }
-                    AnyVariants::Integers(other) => {
-                        if other.is_empty() {
-                            Some(CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ))
-                        } else {
-                            None
-                        }
+                    Some(self.except_cardinality(excluded_uuids.iter()))
+                }
+                AnyVariants::Integers(other) => {
+                    if other.is_empty() {
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
+                    } else {
+                        None
                     }
                 }
-            }
+            },
             _ => None,
         }
     }
@@ -873,7 +867,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     let mut estimation = self.match_cardinality(integer);
                     estimation
                         .primary_clauses
-                        .push(PrimaryCondition::Condition(condition.clone()));
+                        .push(PrimaryCondition::Condition(Box::new(condition.clone())));
                     Some(estimation)
                 }
                 ValueVariants::Bool(_) => None,
@@ -881,11 +875,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             Some(Match::Any(MatchAny { any: any_variants })) => match any_variants {
                 AnyVariants::Strings(keywords) => {
                     if keywords.is_empty() {
-                        Some(
-                            CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ),
-                        )
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
                     } else {
                         None
                     }
@@ -901,19 +893,18 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         combine_should_estimations(&estimations, self.get_indexed_points())
                     };
                     Some(
-                        estimation
-                            .with_primary_clause(PrimaryCondition::Condition(condition.clone())),
+                        estimation.with_primary_clause(PrimaryCondition::Condition(Box::new(
+                            condition.clone(),
+                        ))),
                     )
                 }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
                 AnyVariants::Strings(others) => {
                     if others.is_empty() {
-                        Some(
-                            CardinalityEstimation::exact(0).with_primary_clause(
-                                PrimaryCondition::Condition(condition.clone()),
-                            ),
-                        )
+                        Some(CardinalityEstimation::exact(0).with_primary_clause(
+                            PrimaryCondition::Condition(Box::new(condition.clone())),
+                        ))
                     } else {
                         None
                     }
