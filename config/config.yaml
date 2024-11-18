@@ -122,7 +122,7 @@ storage:
     max_segment_size_kb: null
 
     # Maximum size (in KiloBytes) of vectors to store in-memory per segment.
-    # Segments larger than this threshold will be stored as read-only memmaped file.
+    # Segments larger than this threshold will be stored as read-only memmapped file.
     # To enable memmap storage, lower the threshold
     # Note: 1Kb = 1 vector of size 256
     # To explicitly disable mmap optimization, set to `0`.

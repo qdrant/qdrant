@@ -14,6 +14,9 @@ pub enum Dataset {
     NeurIps2023_1M,
     NeurIps2023Small,
     NeurIps2023Queries,
+
+    // payload csv dataset
+    HMArticles,
 }
 
 impl Dataset {
@@ -33,6 +36,9 @@ impl Dataset {
             Dataset::NeurIps2023_1M => format!("{NEUR_IPS_2023_BASE}/base_1M.csr.gz"),
             Dataset::NeurIps2023Small => format!("{NEUR_IPS_2023_BASE}/base_small.csr.gz"),
             Dataset::NeurIps2023Queries => format!("{NEUR_IPS_2023_BASE}/queries.dev.csr.gz"),
+            Dataset::HMArticles => {
+                "https://storage.googleapis.com/qdrant-tests/h%26m-articles.csv.gz".to_string()
+            }
         }
     }
 }

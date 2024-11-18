@@ -309,7 +309,7 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "4")]
     pub max_segment_size: ::core::option::Option<u64>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
-    /// Segments larger than this threshold will be stored as read-only memmaped file.
+    /// Segments larger than this threshold will be stored as read-only memmapped file.
     ///
     /// Memmap storage is disabled by default, to enable it, set this threshold to a reasonable value.
     ///
