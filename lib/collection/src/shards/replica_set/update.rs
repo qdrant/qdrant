@@ -53,10 +53,11 @@ impl ShardReplicaSet {
                 {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
-                Some(
-                    ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
-                )
-                | None => Ok(None),
+                Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery) => {
+                    log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
+                    Ok(None)
+                }
+                Some(ReplicaState::Dead) | None => Ok(None),
             }
         } else {
             Ok(None)
