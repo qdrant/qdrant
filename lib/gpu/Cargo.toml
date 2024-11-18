@@ -1,0 +1,25 @@
+[package]
+name = "gpu"
+version = "0.0.1"
+authors = [
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+
+[features]
+gpu = [
+    "dep:ash",
+    "dep:gpu-allocator",
+    "dep:shaderc",
+]
+
+[dependencies]
+ash = { version = "0.38.0", optional = true, default-features = false, features = ["loaded", "debug"] }
+gpu-allocator = { version = "0.27.0", optional = true }
+shaderc = { version = "0.8.3", optional = true, features = ["build-from-source"]}
+
+log = "0.4"
+rand = "0.8.5"
+parking_lot = { workspace = true }
+memory = { path = "../common/memory" }
