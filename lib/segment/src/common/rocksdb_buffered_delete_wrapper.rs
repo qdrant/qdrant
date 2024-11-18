@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
@@ -19,7 +19,7 @@ use crate::common::Flusher;
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
-    deleted_pending_persistence: Arc<Mutex<HashSet<Vec<u8>>>>,
+    deleted_pending_persistence: Arc<Mutex<AHashSet<Vec<u8>>>>,
 }
 
 impl Clone for DatabaseColumnScheduledDeleteWrapper {
@@ -35,7 +35,7 @@ impl DatabaseColumnScheduledDeleteWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            deleted_pending_persistence: Arc::new(Mutex::new(HashSet::new())),
+            deleted_pending_persistence: Arc::new(Mutex::new(AHashSet::new())),
         }
     }
 
@@ -118,7 +118,7 @@ impl DatabaseColumnScheduledDeleteWrapper {
 
 pub struct LockedDatabaseColumnScheduledDeleteWrapper<'a> {
     base: LockedDatabaseColumnWrapper<'a>,
-    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
+    deleted_pending_persistence: &'a Mutex<AHashSet<Vec<u8>>>,
 }
 
 impl LockedDatabaseColumnScheduledDeleteWrapper<'_> {
@@ -132,7 +132,7 @@ impl LockedDatabaseColumnScheduledDeleteWrapper<'_> {
 
 pub struct DatabaseColumnScheduledDeleteIterator<'a> {
     base: DatabaseColumnIterator<'a>,
-    deleted_pending_persistence: &'a Mutex<HashSet<Vec<u8>>>,
+    deleted_pending_persistence: &'a Mutex<AHashSet<Vec<u8>>>,
 }
 
 impl<'a> Iterator for DatabaseColumnScheduledDeleteIterator<'a> {

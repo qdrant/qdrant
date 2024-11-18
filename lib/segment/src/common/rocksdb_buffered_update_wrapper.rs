@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::mem;
 
+use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 
 use crate::common::operation_error::OperationResult;
@@ -16,16 +16,16 @@ use crate::common::Flusher;
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledUpdateWrapper {
     db: DatabaseColumnWrapper,
-    deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
-    insert_pending_persistence: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
+    deleted_pending_persistence: Mutex<AHashSet<Vec<u8>>>,
+    insert_pending_persistence: Mutex<AHashMap<Vec<u8>, Vec<u8>>>,
 }
 
 impl DatabaseColumnScheduledUpdateWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            deleted_pending_persistence: Mutex::new(HashSet::new()),
-            insert_pending_persistence: Mutex::new(HashMap::new()),
+            deleted_pending_persistence: Mutex::new(AHashSet::new()),
+            insert_pending_persistence: Mutex::new(AHashMap::new()),
         }
     }
 
