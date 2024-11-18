@@ -8,7 +8,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
-use uuid::Uuid;
+use tempfile::Builder;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
@@ -199,13 +199,21 @@ impl TableOfContent {
             drop(removed);
 
             // Move collection to ".deleted" folder to prevent accidental reuse
-            let uuid = Uuid::new_v4().to_string();
+            // the original collection path will be moved atomically within this
+            // directory.
             let removed_collections_path =
                 Path::new(&self.storage_config.storage_path).join(".deleted");
             tokio::fs::create_dir_all(&removed_collections_path).await?;
-            let deleted_path = removed_collections_path
-                .join(collection_name)
-                .with_extension(uuid);
+
+            let deleted_path = Builder::new()
+                // Limit the file name to be on a lower side to avoid running into too-long
+                // file names.
+                // Even if the chosen randomness factor poses chances of collision, the library
+                // prevents creation of duplicate files within the chosen directory.
+                .rand_bytes(8)
+                .prefix("")
+                .tempdir_in(removed_collections_path)?;
+
             tokio::fs::rename(path, &deleted_path).await?;
 
             // Solve all issues related to this collection
@@ -220,7 +228,7 @@ impl TableOfContent {
                 if let Err(error) = tokio::fs::remove_dir_all(&deleted_path).await {
                     log::error!(
                         "Can't delete collection {} from disk. Error: {}",
-                        deleted_path.display(),
+                        deleted_path.as_ref().display(),
                         error
                     );
                 }
