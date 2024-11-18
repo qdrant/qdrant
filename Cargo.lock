@@ -840,8 +840,6 @@ dependencies = [
 name = "blob_store"
 version = "0.1.0"
 dependencies = [
- "atomicwrites",
- "bincode",
  "bitvec",
  "bustle",
  "criterion",
@@ -849,11 +847,9 @@ dependencies = [
  "dataset",
  "io",
  "itertools 0.13.0",
- "log",
  "lz4_flex",
  "memmap2 0.9.5",
  "memory",
- "nix 0.29.0",
  "parking_lot",
  "proptest",
  "rand 0.8.5",
@@ -862,7 +858,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
 ]
 
 [[package]]
@@ -2019,9 +2014,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.1.1"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8c02a5121d4ea3eb16a80748c74f5549a5665e4c21333c6098f283870fbdea6"
+checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
 
 [[package]]
 name = "filetime"
@@ -7418,7 +7413,7 @@ dependencies = [
  "memmap2 0.9.5",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.40",
  "serde",
 ]
 

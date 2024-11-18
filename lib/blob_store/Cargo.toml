@@ -17,16 +17,11 @@ memmap2 = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 parking_lot = { workspace = true }
-log = { workspace = true }
 tempfile = { workspace = true }
 lz4_flex = { version = "0.11.3", default-features = false }
 rand = { workspace = true }
 bitvec = { workspace = true }
-thiserror = { workspace = true }
 itertools = { workspace = true }
-atomicwrites = { workspace = true }
-nix = { workspace = true }
-bincode = "1.3.3"
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 dataset = { path = "../common/dataset" }
