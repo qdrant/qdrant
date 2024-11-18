@@ -1,7 +1,7 @@
 use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error as _;
-use std::fmt::Write as _;
+use std::fmt::{Debug, Write as _};
 use std::iter;
 use std::num::NonZeroU64;
 use std::time::SystemTimeError;
