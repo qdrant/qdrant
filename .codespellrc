@@ -3,4 +3,5 @@
 skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock
 # hel - Query token
 # generall - the boss
-ignore-words-list = crate,hel,generall
+# mmapped - memory mapped
+ignore-words-list = crate,hel,generall,mmapped
