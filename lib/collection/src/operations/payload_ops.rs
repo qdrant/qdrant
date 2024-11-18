@@ -161,13 +161,13 @@ impl PayloadOps {
         }
     }
 
-    pub fn point_ids(&self) -> Vec<PointIdType> {
+    pub fn point_ids(&self) -> Option<Vec<PointIdType>> {
         match self {
-            Self::SetPayload(op) => op.points.clone().unwrap_or(Vec::new()),
-            Self::DeletePayload(op) => op.points.clone().unwrap_or(Vec::new()),
-            Self::ClearPayload { points } => points.clone(),
-            Self::ClearPayloadByFilter(_) => Vec::new(),
-            Self::OverwritePayload(op) => op.points.clone().unwrap_or(Vec::new()),
+            Self::SetPayload(op) => op.points.clone(),
+            Self::DeletePayload(op) => op.points.clone(),
+            Self::ClearPayload { points } => Some(points.clone()),
+            Self::ClearPayloadByFilter(_) => None,
+            Self::OverwritePayload(op) => op.points.clone(),
         }
     }
 

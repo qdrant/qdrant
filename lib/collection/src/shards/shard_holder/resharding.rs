@@ -490,11 +490,10 @@ impl ShardHolder {
             return OperationsByMode::from(operation);
         };
 
-        let point_ids = operation.point_ids();
-
-        if point_ids.is_empty() {
-            return OperationsByMode::from(operation);
-        }
+        let point_ids = match operation.point_ids() {
+            Some(ids) if !ids.is_empty() => ids,
+            Some(_) | None => return OperationsByMode::from(operation),
+        };
 
         let target_point_ids: HashSet<_> = point_ids
             .iter()
