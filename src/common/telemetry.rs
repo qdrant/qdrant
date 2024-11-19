@@ -37,7 +37,9 @@ pub struct TelemetryData {
     pub(crate) collections: CollectionsTelemetry,
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) memory: Option<MemoryTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hardware: Option<HardwareTelemetry>,
 }
 
@@ -99,7 +101,8 @@ impl TelemetryCollector {
             memory: (detail.level > DetailsLevel::Level0)
                 .then(MemoryTelemetry::collect)
                 .flatten(),
-            hardware: Some(HardwareTelemetry::new(&self.dispatcher)),
+            hardware: (detail.level > DetailsLevel::Level0)
+                .then(|| HardwareTelemetry::new(&self.dispatcher)),
         }
     }
 }
