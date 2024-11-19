@@ -18,7 +18,7 @@ multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing"]
 
 [build-dependencies]
-cc = "1.1"
+cc = "1.2"
 
 [dev-dependencies]
 criterion = { workspace = true }
