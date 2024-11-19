@@ -114,6 +114,13 @@ impl<V: Blob> BlobStore<V> {
     /// Open an existing storage at the given path
     /// Returns None if the storage does not exist
     pub fn open(path: PathBuf) -> Result<Self> {
+        if !path.exists() {
+            return Err(format!("Path '{path:?}' does not exist"));
+        }
+        if !path.is_dir() {
+            return Err(format!("Path '{path:?}' is not a directory"));
+        }
+
         // read config file first
         let config_path = path.join(CONFIG_FILENAME);
         let config_file = std::fs::File::open(&config_path).map_err(|err| err.to_string())?;
