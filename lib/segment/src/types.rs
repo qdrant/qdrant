@@ -704,6 +704,10 @@ pub struct StrictModeConfig {
     /// Max oversampling value allowed in search.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_max_oversampling: Option<f64>,
+
+    /// Max batchsize when upserting
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upsert_max_batchsize: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -720,6 +724,7 @@ impl Hash for StrictModeConfig {
             search_allow_exact,
             // We skip hashing this field because we cannot reliably hash a float
             search_max_oversampling: _,
+            upsert_max_batchsize,
         } = self;
         (
             enabled,
@@ -729,6 +734,7 @@ impl Hash for StrictModeConfig {
             unindexed_filtering_update,
             search_max_hnsw_ef,
             search_allow_exact,
+            upsert_max_batchsize,
         )
             .hash(state);
     }

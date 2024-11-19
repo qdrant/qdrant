@@ -187,7 +187,10 @@ impl StrictModeVerification for UpdateOperation {
             UpdateOperation::DeleteVectors(delete_op) => delete_op
                 .delete_vectors
                 .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::UpdateVectors(_) | UpdateOperation::Upsert(_) => Ok(()),
+            UpdateOperation::Upsert(upsert_op) => upsert_op
+                .upsert
+                .check_strict_mode(collection, strict_mode_config),
+            UpdateOperation::UpdateVectors(_) => Ok(()),
         }
     }
 }

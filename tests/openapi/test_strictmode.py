@@ -370,3 +370,94 @@ def test_strict_mode_search_max_oversampling_validation(collection_name):
 
     assert "oversampling" in search_fail.json()['status']['error']
     assert not search_fail.ok
+
+
+def test_strict_mode_upsert_max_batch_size(collection_name):
+    def search_request():
+        return request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "batch": {
+                    "ids": [1, 2, 3, 4, 5, 6],
+                    "payloads": [{}, {}, {}, {}, {}, {}],
+                    "vectors": [
+                        [1, 2, 3, 5],
+                        [1, 2, 3, 5],
+                        [1, 2, 3, 5],
+                        [1, 2, 3, 5],
+                        [1, 2, 3, 5],
+                        [1, 2, 3, 5]
+                    ]
+                }
+            }
+        )
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 6,
+    })
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 5,
+    })
+
+    search_fail = search_request()
+
+    assert "upsert" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+
+def test_strict_mode_update_many_upsert_max_batch_size(collection_name):
+    def search_request():
+        return request_with_validation(
+            api='/collections/{collection_name}/points/batch',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "operations": [
+                    {
+                        "upsert": {
+                            "batch": {
+                                "ids": [1, 2, 3, 4, 5, 6],
+                                "payloads": [{}, {}, {}, {}, {}, {}],
+                                "vectors": [
+                                    [1, 2, 3, 5],
+                                    [1, 2, 3, 5],
+                                    [1, 2, 3, 5],
+                                    [1, 2, 3, 5],
+                                    [1, 2, 3, 5],
+                                    [1, 2, 3, 5]
+                                ]
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 6,
+    })
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 5,
+    })
+
+    search_fail = search_request()
+
+    assert "upsert" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+

@@ -1430,6 +1430,7 @@ Note: 1kB = 1 vector of size 256. |
 | search_max_hnsw_ef | [uint32](#uint32) | optional |  |
 | search_allow_exact | [bool](#bool) | optional |  |
 | search_max_oversampling | [float](#float) | optional |  |
+| upsert_max_batchsize | [uint64](#uint64) | optional |  |
 
 
 
