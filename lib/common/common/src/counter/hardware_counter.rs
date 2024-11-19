@@ -75,10 +75,12 @@ impl HardwareCounterCell {
 impl Drop for HardwareCounterCell {
     fn drop(&mut self) {
         if self.has_values() {
-            #[cfg(any(debug_assertions, test))] // We want this to fail in both, release and debug tests
-            panic!("Checked HardwareCounterCell dropped without consuming all values!");
+            // We want this to fail in both, release and debug tests
+            #[cfg(any(debug_assertions, test))]
+            if !std::thread::panicking() {
+                panic!("Checked HardwareCounterCell dropped without consuming all values!");
+            }
 
-            #[cfg(not(any(debug_assertions, test)))]
             log::warn!("Hardware measurements not processed!")
         }
     }
