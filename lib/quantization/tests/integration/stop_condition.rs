@@ -1,6 +1,3 @@
-#[allow(unused)]
-mod metrics;
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};

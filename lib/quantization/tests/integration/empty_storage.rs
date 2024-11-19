@@ -1,6 +1,3 @@
-#[allow(unused)]
-mod metrics;
-
 #[cfg(test)]
 mod tests {
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
