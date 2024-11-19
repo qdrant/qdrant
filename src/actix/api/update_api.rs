@@ -44,8 +44,11 @@ async fn upsert_points(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // nothing to verify.
-    let pass = new_unchecked_verification_pass();
+    let pass =
+        match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
