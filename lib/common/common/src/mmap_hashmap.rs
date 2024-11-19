@@ -16,6 +16,8 @@ use rand::rngs::StdRng;
 use rand::Rng as _;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
+use crate::zeros::WriteZerosExt as _;
+
 type ValuesLen = u32;
 
 /// On-disk hash map backed by a memory-mapped file.
@@ -117,7 +119,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         phf.write(&mut bufw)?;
 
         // 3. Padding
-        bufw.write_all(zeroes(padding_len))?;
+        bufw.write_zeros(padding_len)?;
 
         // 4. Buckets
         bufw.write_all(buckets.as_bytes())?;
@@ -127,7 +129,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         for (key, values) in map {
             let next_pos = pos.next_multiple_of(K::ALIGN);
             if next_pos > pos {
-                bufw.write_all(zeroes(next_pos - pos))?;
+                bufw.write_zeros(next_pos - pos)?;
                 pos = next_pos;
             }
 
@@ -135,9 +137,9 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
             pos += entry_size;
 
             key.write(&mut bufw)?;
-            bufw.write_all(zeroes(Self::key_padding_bytes(key)))?;
+            bufw.write_zeros(Self::key_padding_bytes(key))?;
             bufw.write_all((values.len() as ValuesLen).as_bytes())?;
-            bufw.write_all(zeroes(Self::values_len_padding_bytes()))?;
+            bufw.write_zeros(Self::values_len_padding_bytes())?;
             for i in values {
                 bufw.write_all(AsBytes::as_bytes(&i))?;
             }
@@ -437,13 +439,6 @@ impl Key for u128 {
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
         buf.get(..size_of::<u128>()).and_then(FromBytes::ref_from)
     }
-}
-
-/// Returns a reference to a slice of zeroes of length `len`.
-#[inline]
-fn zeroes(len: usize) -> &'static [u8] {
-    const ZEROES: [u8; PADDING_SIZE] = [0u8; PADDING_SIZE];
-    &ZEROES[..len]
 }
 
 #[cfg(any(test, feature = "testing"))]

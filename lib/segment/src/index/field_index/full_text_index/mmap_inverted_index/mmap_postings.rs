@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
+use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::open_read_mmap;
@@ -191,14 +192,9 @@ impl MmapPostings {
             bufw.write_all(data)?;
 
             // Example:
-            // For data size = 5, alignment_len = 3 as (5 + 3 = 8)
-            // alignment_len = 4 - 5 % 4 = 3
-            let alignment_len = ALIGNMENT - data.len() % ALIGNMENT;
-
-            if alignment_len > 0 {
-                let alignment = vec![0; alignment_len];
-                bufw.write_all(alignment.as_slice())?;
-            }
+            // For data size = 5, alignment = 3 as (5 + 3 = 8)
+            // alignment = 4 - 5 % 4 = 3
+            bufw.write_zeros(ALIGNMENT - data.len() % ALIGNMENT)?;
 
             for posting in remainder_postings {
                 bufw.write_all(posting.as_bytes())?;
