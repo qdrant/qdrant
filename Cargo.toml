@@ -224,6 +224,7 @@ name = "wal_inspector"
 path = "src/wal_inspector.rs"
 test = false
 bench = false
+required-features = ["service_debug"]
 
 [workspace]
 members = [
