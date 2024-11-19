@@ -459,19 +459,23 @@ impl TableOfContent {
         result
     }
 
-    /// Cancels all transfers where the source peer is the current peer.
-    pub async fn cancel_outgoing_all_transfers(&self, reason: &str) -> Result<(), StorageError> {
+    /// Cancels all transfers related to the current peer.
+    ///
+    /// Transfers whehre this peer is the source or the target will be cancelled.
+    pub async fn cancel_related_transfers(&self, reason: &str) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             for collection in collections.values() {
-                for transfer in collection.get_outgoing_transfers(self.this_peer_id).await {
+                for transfer in collection.get_related_transfers(self.this_peer_id).await {
                     let cancel_transfer =
                         ConsensusOperations::abort_transfer(collection.name(), transfer, reason);
                     proposal_sender.send(cancel_transfer)?;
                 }
             }
         } else {
-            log::error!("Can't cancel outgoing transfers, this is a single node deployment");
+            log::error!(
+                "Can't cancel transfers related to this node, this is a single node deployment"
+            );
         }
         Ok(())
     }
