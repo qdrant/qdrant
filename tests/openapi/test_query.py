@@ -142,6 +142,37 @@ def test_basic_search(collection_name):
     assert search_result == nearest_query_result
 
 
+# Test basic search with huge limit, it must not panic with allocation failure
+# See: <https://github.com/qdrant/qdrant/issues/5483>
+def test_basic_search_high_limit(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.1, 0.2, 0.3, 0.4],
+            "limit": 18446744073709551615, # u64::MAX
+        },
+    )
+    assert response.ok
+    search_result = response.json()["result"]
+
+    default_query_result = root_and_rescored_query(
+        collection_name,
+        [0.1, 0.2, 0.3, 0.4],
+        limit=18446744073709551615, # u64::MAX
+    )
+
+    nearest_query_result = root_and_rescored_query(
+        collection_name,
+        {"nearest": [0.1, 0.2, 0.3, 0.4]},
+        limit=18446744073709551615, # u64::MAX
+    )
+
+    assert search_result == default_query_result
+    assert search_result == nearest_query_result
+
+
 def test_basic_scroll(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",

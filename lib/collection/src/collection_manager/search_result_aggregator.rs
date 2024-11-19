@@ -5,6 +5,9 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::ScoreType;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 
+/// Avoid excessive memory allocation and allocation failures on huge limits
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
 pub struct SearchResultAggregator {
     queue: FixedLengthPriorityQueue<ScoredPoint>,
     seen: AHashSet<PointIdType>, // Point ids seen
@@ -14,7 +17,7 @@ impl SearchResultAggregator {
     pub fn new(limit: usize) -> Self {
         SearchResultAggregator {
             queue: FixedLengthPriorityQueue::new(limit),
-            seen: AHashSet::with_capacity(limit),
+            seen: AHashSet::with_capacity(limit.min(LARGEST_REASONABLE_ALLOCATION_SIZE)),
         }
     }
 
