@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
+use crate::common::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry_ops::memory_telemetry::MemoryTelemetry;
 use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, RequestsTelemetry, TonicTelemetryCollector,
@@ -37,6 +38,7 @@ pub struct TelemetryData {
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
     pub(crate) memory: Option<MemoryTelemetry>,
+    pub(crate) hardware: Option<HardwareTelemetry>,
 }
 
 impl Anonymize for TelemetryData {
@@ -48,6 +50,7 @@ impl Anonymize for TelemetryData {
             cluster: self.cluster.anonymize(),
             requests: self.requests.anonymize(),
             memory: self.memory.anonymize(),
+            hardware: self.hardware.anonymize(),
         }
     }
 }
@@ -96,6 +99,7 @@ impl TelemetryCollector {
             memory: (detail.level > DetailsLevel::Level0)
                 .then(MemoryTelemetry::collect)
                 .flatten(),
+            hardware: Some(HardwareTelemetry::new(&self.dispatcher)),
         }
     }
 }
