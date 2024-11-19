@@ -33,7 +33,7 @@ sh_with_ytt '
 '
 
 # Generates models from internal service structures
-cargo run --package qdrant --bin schema_generator > ./openapi/schemas/AllDefinitions.json
+cargo run --package qdrant --features="service_debug" --bin schema_generator > ./openapi/schemas/AllDefinitions.json
 
 docker build tools/schema2openapi --tag schema2openapi
 
