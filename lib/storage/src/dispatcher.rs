@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use api::rest::models::HardwareUsage;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -245,6 +247,10 @@ impl Dispatcher {
         } else {
             Ok(())
         }
+    }
+
+    pub fn all_hw_metrics(&self) -> HashMap<String, HardwareUsage> {
+        self.toc.all_hw_metrics()
     }
 
     #[must_use]

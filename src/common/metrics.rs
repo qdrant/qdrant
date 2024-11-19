@@ -1,7 +1,9 @@
+use api::rest::models::HardwareUsage;
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 
+use super::telemetry_ops::hardware::HardwareTelemetry;
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
 use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, ClusterTelemetry};
@@ -110,6 +112,9 @@ impl MetricsProvider for TelemetryData {
         self.collections.add_metrics(metrics);
         self.cluster.add_metrics(metrics);
         self.requests.add_metrics(metrics);
+        if let Some(hardware) = &self.hardware {
+            hardware.add_metrics(metrics);
+        }
         if let Some(mem) = &self.memory {
             mem.add_metrics(metrics);
         }
@@ -312,6 +317,21 @@ impl MetricsProvider for MemoryTelemetry {
             MetricType::GAUGE,
             vec![gauge(self.retained_bytes as f64, &[])],
         ));
+    }
+}
+
+impl MetricsProvider for HardwareTelemetry {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        for (collection, hw_info) in self.collection_data.iter() {
+            let HardwareUsage { cpu } = hw_info;
+
+            metrics.push(metric_family(
+                "collection_hardware_metric_cpu",
+                "CPU measurements of a collection",
+                MetricType::GAUGE,
+                vec![gauge(*cpu as f64, &[("id", collection)])],
+            ));
+        }
     }
 }
 

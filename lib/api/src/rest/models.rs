@@ -48,7 +48,7 @@ pub struct ApiResponse<D> {
 }
 
 /// Usage of the hardware resources, spent to process the request
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct HardwareUsage {
     pub cpu: usize,
