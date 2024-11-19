@@ -14,6 +14,6 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.93"
-flate2 = { version = "1.0.34" }
+flate2 = { version = "1.0.35" }
 indicatif = { workspace = true }
 reqwest = { workspace = true }
