@@ -129,7 +129,7 @@ impl Drop for HwMeasurementAcc {
 
         #[cfg(any(debug_assertions, test))] // Fail in both, release and debug tests.
         {
-            if !self.is_zero() {
+            if !self.is_zero() && !std::thread::panicking() {
                 panic!(
                     "HwMeasurementAcc dropped while still holding values! Drain: {:?}",
                     self.drain.is_some()
