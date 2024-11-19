@@ -13,3 +13,4 @@ pub mod tempfile_ext;
 pub mod top_k;
 pub mod types;
 pub mod validation;
+pub mod zeros;
