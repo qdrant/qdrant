@@ -27,7 +27,7 @@ common = { path = "../common/common" }
 [dev-dependencies]
 criterion = { workspace = true }
 num_threads = "0.1.6"
-tempfile = "3.5.0"
+tempfile = { workspace = true }
 
 [[bench]]
 name = "encode"

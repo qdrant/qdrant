@@ -1,6 +1,3 @@
-#[allow(unused)]
-mod metrics;
-
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;

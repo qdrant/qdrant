@@ -1,6 +1,3 @@
-#[allow(unused)]
-mod metrics;
-
 #[cfg(test)]
 #[cfg(target_arch = "x86_64")]
 mod tests {
