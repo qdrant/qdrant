@@ -168,7 +168,7 @@ futures-util = "0.3.30"
 generic-tests = "0.1.3"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 indexmap = { version = "2", features = ["serde"] }
-indicatif = "0.17.8"
+indicatif = "0.17.9"
 itertools = "0.13.0"
 log = "0.4.22"
 memmap2 = "0.9.5"
