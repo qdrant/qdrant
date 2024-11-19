@@ -13,8 +13,8 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
     default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
-    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -507,7 +507,8 @@ impl CollectionParams {
                                     .map(VectorStorageDatatype::from),
                             },
                             // Not configurable by user (at this point). When we switch the default, it will be switched here too.
-                            storage_type: params.storage_type(self.on_disk_sparse_vectors_uses_mmap),
+                            storage_type: params
+                                .storage_type(self.on_disk_sparse_vectors_uses_mmap),
                         },
                     ))
                 })

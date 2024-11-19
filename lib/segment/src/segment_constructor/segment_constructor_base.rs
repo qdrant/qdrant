@@ -521,11 +521,12 @@ fn create_segment(
     }
 
     for (vector_name, sparse_config) in config.sparse_vector_data.iter() {
-        // Select suitable vector storage type based on configuration
+        let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
 
+        // Select suitable sparse vector storage type based on configuration
         let vector_storage = sp(create_sparse_vector_storage(
             database.clone(),
-            segment_path,
+            &vector_storage_path,
             vector_name,
             &sparse_config.storage_type,
             stopped,

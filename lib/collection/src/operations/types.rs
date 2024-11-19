@@ -27,7 +27,10 @@ use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey, SparseVectorStorageType, StrictModeConfig, VectorStorageDatatype, WithPayloadInterface, WithVector
+    Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
+    PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
+    SparseVectorStorageType, StrictModeConfig, VectorStorageDatatype, WithPayloadInterface,
+    WithVector,
 };
 use semver::Version;
 use serde;

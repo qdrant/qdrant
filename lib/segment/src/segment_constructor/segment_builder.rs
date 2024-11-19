@@ -96,14 +96,12 @@ impl SegmentBuilder {
             vector_storages.insert(vector_name.to_owned(), vector_storage);
         }
 
-        #[allow(clippy::for_kv_map)]
         for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
-            // `_sparse_vector_config` should be used, once we are able to initialize storage with
-            // different datatypes
+            let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
             let vector_storage = create_sparse_vector_storage(
                 database.clone(),
-                segment_path,
+                &vector_storage_path,
                 vector_name,
                 &sparse_vector_config.storage_type,
                 &stopped,
