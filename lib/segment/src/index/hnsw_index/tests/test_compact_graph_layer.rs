@@ -4,6 +4,7 @@ use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rstest::rstest;
 
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_layers::GraphLayersBase;
@@ -38,9 +39,11 @@ fn search_in_builder(
     nearest.into_iter().take(top).collect_vec()
 }
 
-#[test]
 /// Check that HNSW index with raw and compacted links gives the same results
-fn test_compact_graph_layers() {
+#[rstest]
+#[case::uncompressed(false)]
+#[case::compressed(true)]
+fn test_compact_graph_layers(#[case] compressed: bool) {
     let num_vectors = 1000;
     let num_queries = 100;
     let m = 16;
@@ -69,7 +72,7 @@ fn test_compact_graph_layers() {
         .collect_vec();
 
     let graph_layers = graph_layers_builder
-        .into_graph_layers::<GraphLinksRam>(None)
+        .into_graph_layers::<GraphLinksRam>(None, compressed)
         .unwrap();
 
     let results = queries

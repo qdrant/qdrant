@@ -123,7 +123,7 @@ pub struct GraphLinksConverter {
 }
 
 impl GraphLinksConverter {
-    pub fn new(edges: Vec<Vec<Vec<PointOffsetType>>>) -> Self {
+    pub fn new(edges: Vec<Vec<Vec<PointOffsetType>>>, _compressed: bool, _m: usize) -> Self {
         if edges.is_empty() {
             return Self {
                 edges,
@@ -505,9 +505,19 @@ impl<'a> GraphLinksView<'a> {
     }
 }
 
+/// Sort the first `m` values in `links` and return them. Used to compare stored
+/// links where the order of the first `m` links is not preserved.
+#[cfg(test)]
+pub(super) fn normalize_links(m: usize, mut links: Vec<PointOffsetType>) -> Vec<PointOffsetType> {
+    let first = links.len().min(m);
+    links[..first].sort_unstable();
+    links
+}
+
 #[cfg(test)]
 mod tests {
     use rand::Rng;
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -530,6 +540,7 @@ mod tests {
     fn random_links(
         points_count: usize,
         max_levels_count: usize,
+        m: usize,
     ) -> Vec<Vec<Vec<PointOffsetType>>> {
         let mut rng = rand::thread_rng();
         (0..points_count)
@@ -537,7 +548,7 @@ mod tests {
                 let levels_count = rng.gen_range(1..max_levels_count);
                 (0..levels_count)
                     .map(|_| {
-                        let links_count = rng.gen_range(0..max_levels_count);
+                        let links_count = rng.gen_range(0..m * 4);
                         (0..links_count)
                             .map(|_| rng.gen_range(0..points_count) as PointOffsetType)
                             .collect()
@@ -547,44 +558,73 @@ mod tests {
             .collect()
     }
 
+    fn compare_links(
+        mut left: Vec<Vec<Vec<PointOffsetType>>>,
+        mut right: Vec<Vec<Vec<PointOffsetType>>>,
+        m: Option<usize>,
+    ) {
+        let m = m.unwrap_or(0);
+        for links in [&mut left, &mut right].iter_mut() {
+            links.iter_mut().for_each(|levels| {
+                levels
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(level_idx, links)| {
+                        *links = normalize_links(
+                            if level_idx == 0 { m * 2 } else { m },
+                            std::mem::take(links),
+                        );
+                    })
+            });
+        }
+        assert_eq!(left, right);
+    }
+
     /// Test that random links can be saved by `GraphLinksConverter` and loaded correctly by a GraphLinks impl.
-    fn test_save_load<A>(points_count: usize, max_levels_count: usize)
+    fn test_save_load<A>(points_count: usize, max_levels_count: usize, compressed: bool, m: usize)
     where
         A: GraphLinks,
     {
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
-        let links = random_links(points_count, max_levels_count);
+        let links = random_links(points_count, max_levels_count, m);
         {
-            let mut links_converter = GraphLinksConverter::new(links.clone());
+            let mut links_converter = GraphLinksConverter::new(links.clone(), compressed, m);
             links_converter.save_as(&links_file).unwrap();
         }
         let cmp_links = to_vec(&A::load_from_file(&links_file).unwrap());
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
     }
 
-    #[test]
-    fn test_graph_links_construction() {
+    #[rstest]
+    #[case::uncompressed(false)]
+    #[case::compressed(true)]
+    fn test_graph_links_construction(#[case] compressed: bool) {
+        let m = 2;
+
         // no points
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // 2 points without any links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // one link at level 0
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // 3 levels with no links at second level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -593,9 +633,10 @@ mod tests {
             vec![vec![0, 1], vec![], vec![1]],
         ];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // 3 levels with no links at last level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -604,9 +645,10 @@ mod tests {
             vec![vec![0, 1]],
         ];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // 4 levels with random nonexistent links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -617,21 +659,25 @@ mod tests {
             vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
         ];
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, m))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(m));
 
         // fully random links
-        let links = random_links(100, 10);
+        let links = random_links(100, 10, 8);
         let cmp_links = to_vec(
-            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone())).unwrap(),
+            &GraphLinksRam::from_converter(GraphLinksConverter::new(links.clone(), compressed, 8))
+                .unwrap(),
         );
-        assert_eq!(links, cmp_links);
+        compare_links(links, cmp_links, compressed.then_some(8));
     }
 
     #[test]
     fn test_graph_links_mmap_ram_compatibility() {
-        test_save_load::<GraphLinksRam>(1000, 10);
-        test_save_load::<GraphLinksMmap>(1000, 10);
+        test_save_load::<GraphLinksRam>(1000, 10, true, 8);
+        test_save_load::<GraphLinksMmap>(1000, 10, true, 8);
+        test_save_load::<GraphLinksRam>(1000, 10, false, 8);
+        test_save_load::<GraphLinksMmap>(1000, 10, false, 8);
     }
 }
