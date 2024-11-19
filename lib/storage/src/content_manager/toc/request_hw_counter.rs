@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -11,18 +10,6 @@ impl TableOfContent {
             .entry(collection_id)
             .or_default()
             .clone()
-    }
-
-    pub fn all_hw_metrics(&self) -> HashMap<String, api::rest::models::HardwareUsage> {
-        self.collection_hw_metrics
-            .iter()
-            .map(|i| {
-                (
-                    i.key().to_string(),
-                    api::rest::models::HardwareUsage { cpu: i.get_cpu() },
-                )
-            })
-            .collect()
     }
 }
 
