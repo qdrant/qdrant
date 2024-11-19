@@ -218,6 +218,7 @@ name = "schema_generator"
 path = "src/schema_generator.rs"
 test = false
 bench = false
+required-features = ["service_debug"]
 
 [[bin]]
 name = "wal_inspector"
