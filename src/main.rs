@@ -357,14 +357,14 @@ fn main() -> anyhow::Result<()> {
         let _cancel_transfer_handle = runtime_handle.spawn(async move {
             consensus_state_clone.is_leader_established.await_ready();
             match toc_arc_clone
-                .cancel_outgoing_all_transfers("Source peer restarted")
+                .cancel_related_transfers("Source or target peer restarted")
                 .await
             {
                 Ok(_) => {
                     log::debug!("All transfers if any cancelled");
                 }
                 Err(err) => {
-                    log::error!("Can't cancel outgoing transfers: {}", err);
+                    log::error!("Can't cancel related transfers: {err}");
                 }
             }
         });

@@ -19,11 +19,10 @@ use crate::shards::transfer::{
 };
 
 impl Collection {
-    pub async fn get_outgoing_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
-        self.shards_holder
-            .read()
-            .await
-            .get_outgoing_transfers(current_peer_id)
+    pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
+        self.shards_holder.read().await.get_transfers(|transfer| {
+            transfer.from == current_peer_id || transfer.to == current_peer_id
+        })
     }
 
     pub async fn check_transfer_exists(&self, transfer_key: &ShardTransferKey) -> bool {
