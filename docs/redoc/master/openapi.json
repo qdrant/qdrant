@@ -7284,6 +7284,13 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          },
+          "upsert_max_batchsize": {
+            "description": "Max batchsize when upserting",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
