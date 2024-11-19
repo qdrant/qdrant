@@ -10841,6 +10841,16 @@
                 "nullable": true
               }
             ]
+          },
+          "hardware": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HardwareTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12114,6 +12124,34 @@
           },
           "retained_bytes": {
             "description": "Total number of bytes in virtual memory mappings",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "HardwareTelemetry": {
+        "type": "object",
+        "required": [
+          "collection_data"
+        ],
+        "properties": {
+          "collection_data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HardwareUsage"
+            }
+          }
+        }
+      },
+      "HardwareUsage": {
+        "description": "Usage of the hardware resources, spent to process the request",
+        "type": "object",
+        "required": [
+          "cpu"
+        ],
+        "properties": {
+          "cpu": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -14223,20 +14261,6 @@
             "type": "boolean"
           }
         ]
-      },
-      "HardwareUsage": {
-        "description": "Usage of the hardware resources, spent to process the request",
-        "type": "object",
-        "required": [
-          "cpu"
-        ],
-        "properties": {
-          "cpu": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0
-          }
-        }
       }
     }
   }

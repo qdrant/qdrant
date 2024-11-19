@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfigInternal};
 use collection::operations::types::*;
@@ -644,5 +645,14 @@ impl TableOfContent {
 
     pub fn get_channel_service(&self) -> &ChannelService {
         &self.channel_service
+    }
+
+    /// Gets a copy of hardware metrics for all collections that have been collected from operations on this node.
+    /// This copy is intentional to prevent 'uncontrolled' modifications of the DashMap, which doesn't need to be mutable for modifications.
+    pub fn all_hw_metrics(&self) -> HashMap<String, HardwareUsage> {
+        self.collection_hw_metrics
+            .iter()
+            .map(|i| (i.key().to_string(), HardwareUsage { cpu: i.get_cpu() }))
+            .collect()
     }
 }
