@@ -118,3 +118,24 @@ fn test_aggregation_of_batch_search_results() {
     assert_eq!(top_results[1][2].version, 12);
     assert_eq!(top_results[1][2].score, 0.71);
 }
+
+// Ensure we don't panic if we search with a huge limit
+// See: <https://github.com/qdrant/qdrant/issues/5483>
+#[test]
+fn test_batch_search_aggregation_high_limit() {
+    let search_results = vec![
+        vec![search_result_b0_s0(), search_result_b1_s0()],
+        vec![search_result_b0_s1(), search_result_b1_s1()],
+        vec![search_result_b0_s2(), search_result_b1_s2()],
+    ];
+
+    let result_limits = vec![12, usize::MAX];
+
+    let further_results = vec![vec![true, true], vec![true, true], vec![false, true]];
+
+    let (_aggregator, _re_request) = SegmentsSearcher::process_search_result_step1(
+        search_results,
+        result_limits,
+        &further_results,
+    );
+}

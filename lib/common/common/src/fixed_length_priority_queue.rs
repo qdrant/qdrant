@@ -33,7 +33,11 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        let heap = BinaryHeap::with_capacity((length + 1).min(LARGEST_REASONABLE_ALLOCATION_SIZE));
+        let heap = BinaryHeap::with_capacity(
+            length
+                .saturating_add(1)
+                .min(LARGEST_REASONABLE_ALLOCATION_SIZE),
+        );
         let length = NonZeroUsize::new(length).expect("length must be greater than zero");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
