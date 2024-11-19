@@ -1,3 +1,4 @@
+pub mod bitpacking;
 pub mod counter;
 pub mod cpu;
 pub mod defaults;
