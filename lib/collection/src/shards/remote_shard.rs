@@ -630,6 +630,16 @@ impl RemoteShard {
 
         Ok(())
     }
+
+    /// Check if the timeout is zero and return an error if it is.
+    /// Used before making a request to the remote shard to avoid useless traffic.
+    pub fn check_timeout(timeout: Option<Duration>, operation: &str) -> CollectionResult<()> {
+        if timeout.map(|t| t.is_zero()).unwrap_or(false) {
+            Err(CollectionError::timeout(0, operation))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 // New-type to own the type in the crate for conversions via From
@@ -664,6 +674,7 @@ impl ShardOperation for RemoteShard {
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        Self::check_timeout(timeout, "scroll")?;
         let scroll_points = ScrollPoints {
             collection_name: self.collection_id.clone(),
             filter: filter.map(|f| f.clone().into()),
@@ -674,7 +685,7 @@ impl ShardOperation for RemoteShard {
             read_consistency: None,
             shard_key_selector: None,
             order_by: order_by.map(|o| o.clone().into()),
-            timeout: timeout.map(|t| t.as_secs()),
+            timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
         };
         let scroll_request = &ScrollPointsInternal {
             scroll_points: Some(scroll_points),
@@ -729,6 +740,7 @@ impl ShardOperation for RemoteShard {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        Self::check_timeout(timeout, "search")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
@@ -742,7 +754,7 @@ impl ShardOperation for RemoteShard {
             collection_name: self.collection_id.clone(),
             search_points,
             shard_id: Some(self.id),
-            timeout: timeout.map(|t| t.as_secs()),
+            timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
         };
         let search_batch_response = self
             .with_points_client(|mut client| async move {
@@ -790,13 +802,14 @@ impl ShardOperation for RemoteShard {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
+        Self::check_timeout(timeout, "count")?;
         let count_points = CountPoints {
             collection_name: self.collection_id.clone(),
             filter: request.filter.clone().map(|f| f.into()),
             exact: Some(request.exact),
             read_consistency: None,
             shard_key_selector: None,
-            timeout: timeout.map(|t| t.as_secs()),
+            timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
         };
 
         let count_request = &CountPointsInternal {
@@ -834,6 +847,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        Self::check_timeout(timeout, "retrieve")?;
         let get_points = GetPoints {
             collection_name: self.collection_id.clone(),
             ids: request.ids.iter().copied().map(|v| v.into()).collect(),
@@ -841,7 +855,7 @@ impl ShardOperation for RemoteShard {
             with_vectors: Some(with_vector.clone().into()),
             read_consistency: None,
             shard_key_selector: None,
-            timeout: timeout.map(|t| t.as_secs()),
+            timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
         };
         let get_request = &GetPointsInternal {
             get_points: Some(get_points),
@@ -875,6 +889,7 @@ impl ShardOperation for RemoteShard {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        Self::check_timeout(timeout, "query_batch")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
@@ -891,7 +906,7 @@ impl ShardOperation for RemoteShard {
                     collection_name: self.collection_id.clone(),
                     query_points,
                     shard_id: Some(self.id),
-                    timeout: timeout.map(|t| t.as_secs()),
+                    timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
                 };
 
                 let mut request = tonic::Request::new(request.clone());
@@ -939,6 +954,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
+        Self::check_timeout(timeout, "facet")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
         timer.set_success(false);
 
@@ -958,7 +974,7 @@ impl ShardOperation for RemoteShard {
                     limit: *limit as u64,
                     exact: *exact,
                     shard_id: self.id,
-                    timeout: timeout.map(|t| t.as_secs()),
+                    timeout: timeout.map(|t| t.as_secs_f32().ceil() as u64),
                 };
 
                 let mut request = tonic::Request::new(request.clone());
