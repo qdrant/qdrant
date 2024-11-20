@@ -355,6 +355,14 @@ impl ShardReplicaSet {
         };
 
         if !failures.is_empty() {
+            for (peer_id, err) in &failures {
+                log::warn!(
+                    "Failed to update shard {}:{} on peer {peer_id}, error: {err}",
+                    self.collection_id,
+                    self.shard_id,
+                );
+            }
+
             if successes.len() >= minimal_success_count {
                 // If there are enough successes, deactivate failed replicas
                 // Failed replicas will automatically recover from another replica ensuring consistency
@@ -473,12 +481,6 @@ impl ShardReplicaSet {
         let mut wait_for_deactivation = false;
 
         for (peer_id, err) in failures {
-            log::warn!(
-                "Failed to update shard {}:{} on peer {peer_id}, error: {err}",
-                self.collection_id,
-                self.shard_id,
-            );
-
             let Some(peer_state) = state.get_peer_state(*peer_id) else {
                 continue;
             };
