@@ -46,6 +46,8 @@ for lvl > 0:
 links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
 
+const HEADER_SIZE: usize = 64;
+
 #[derive(Clone, Debug, Default)]
 struct GraphLinksFileHeader {
     pub point_count: u64,
@@ -115,7 +117,7 @@ impl GraphLinksFileHeader {
     pub fn get_level_offsets_range(&self) -> Range<usize> {
         // level offsets are stored after header
         // but we might want to have some extra space for future changes
-        let start = max(64, Self::raw_size());
+        let start = max(HEADER_SIZE, Self::raw_size());
         start..start + self.levels_count as usize * size_of::<u64>()
     }
 
