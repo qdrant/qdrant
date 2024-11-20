@@ -219,7 +219,9 @@ impl Collection {
         // update timeout
         let timeout = timeout.map(|timeout| {
             // avoid flooring the timeout to 0
-            (timeout.saturating_sub(start).as_secs_f32().ceil() as usize)
+            Duration::from_secs_f32(
+                timeout.saturating_sub(start.elapsed()).as_secs_f32().ceil() as usize
+            )
         });
 
         // Check we actually fetched all referenced vectors from the resolver requests
