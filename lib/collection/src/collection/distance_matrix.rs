@@ -142,6 +142,7 @@ impl Collection {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
+        let start = std::time::Instant::now();
         let CollectionSearchMatrixRequest {
             sample_size,
             limit_per_sample,
@@ -230,6 +231,9 @@ impl Collection {
                 with_payload: None,
             });
         }
+
+        // update timeout
+        let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
 
         // run batch search request
         let batch_request = CoreSearchRequestBatch { searches };
