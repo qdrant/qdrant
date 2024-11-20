@@ -6,6 +6,8 @@
 #   - If it was killed after initialization, do nothing and restart container
 # - If recovery mode is not allowed, we just restart container
 
+sleep 30
+
 _term () {
   kill -TERM "$QDRANT_PID" 2>/dev/null
 }

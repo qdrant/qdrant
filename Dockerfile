@@ -172,4 +172,4 @@ LABEL org.opencontainers.image.documentation="https://qdrant.com/docs"
 LABEL org.opencontainers.image.source="https://github.com/qdrant/qdrant"
 LABEL org.opencontainers.image.vendor="Qdrant"
 
-CMD ["sleep 30; ./entrypoint.sh"]
+CMD ["./entrypoint.sh"]
