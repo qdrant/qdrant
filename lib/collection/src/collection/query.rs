@@ -217,7 +217,10 @@ impl Collection {
         .await?;
 
         // update timeout
-        let timeout = timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+        let timeout = timeout.map(|timeout| {
+            // avoid flooring the timeout to 0
+            (timeout.saturating_sub(start).as_secs_f32().ceil() as usize)
+        });
 
         // Check we actually fetched all referenced vectors from the resolver requests
         for (resolver_req, _) in &resolver_requests {
