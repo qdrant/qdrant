@@ -394,6 +394,11 @@ impl<V: Blob> BlobStore<V> {
         }
         Ok(())
     }
+
+    /// Return the storage size in bytes
+    pub fn get_storage_size_bytes(&self) -> usize {
+        self.bitmask.read().get_storage_size_bytes()
+    }
 }
 
 impl<V> BlobStore<V> {
@@ -459,6 +464,7 @@ mod tests {
         let (_dir, storage) = empty_storage();
         let payload = storage.get_value(0);
         assert!(payload.is_none());
+        assert_eq!(storage.get_storage_size_bytes(), 0);
     }
 
     #[test]
@@ -474,6 +480,7 @@ mod tests {
         let stored_payload = storage.get_value(0);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), Payload::default());
+        assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
     }
 
     #[test]
@@ -497,6 +504,7 @@ mod tests {
         let stored_payload = storage.get_value(0);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
+        assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
     }
 
     #[test]
@@ -578,6 +586,7 @@ mod tests {
 
         let stored_payload = storage.get_value(0);
         assert_eq!(stored_payload, Some(payload));
+        assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
         // delete payload
         let deleted = storage.delete_value(0);
@@ -587,6 +596,8 @@ mod tests {
         // get payload again
         let stored_payload = storage.get_value(0);
         assert!(stored_payload.is_none());
+        storage.flush().unwrap();
+        assert_eq!(storage.get_storage_size_bytes(), 0);
     }
 
     #[test]
@@ -726,13 +737,18 @@ mod tests {
             assert_eq!(stored_payload.as_ref(), model_payload);
         }
 
+        // flush data
+        storage.flush().unwrap();
+
+        let before_size = storage.get_storage_size_bytes();
         // drop storage
         drop(storage);
 
         // reopen storage
         let storage = BlobStore::<Payload>::open(dir.path().to_path_buf()).unwrap();
-
-        // asset same length
+        // assert same size
+        assert_eq!(storage.get_storage_size_bytes(), before_size);
+        // assert same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
 
         // validate storage and model_hashmap are the same
