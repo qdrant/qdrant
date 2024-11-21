@@ -1,11 +1,10 @@
 use std::ops::{ControlFlow, Range};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bitvec::slice::BitSlice;
 use bitvec::vec::BitVec;
-use blob_store::config::StorageOptions;
 use blob_store::BlobStore;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -38,26 +37,17 @@ pub struct MmapSparseVectorStorage {
 impl MmapSparseVectorStorage {
     pub fn open_or_create(path: &Path, stopped: &AtomicBool) -> OperationResult<Self> {
         let path = path.to_path_buf();
-        if path.exists() {
-            Self::open(path, stopped)
-        } else {
-            // create folder if it does not exist
-            std::fs::create_dir_all(&path).map_err(|_| {
-                OperationError::service_error(
-                    "Failed to create mmap sparse vector storage directory",
-                )
+        let storage: BlobStore<SparseVector> = BlobStore::open_or_create(path, Default::default())
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to open mmap sparse vector storage: {err}"
+                ))
             })?;
-            Ok(Self::new(path)?)
-        }
+
+        Self::load(storage, stopped)
     }
 
-    fn open(path: PathBuf, stopped: &AtomicBool) -> OperationResult<Self> {
-        let storage: BlobStore<SparseVector> = BlobStore::open(path).map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to open mmap sparse vector storage: {err}"
-            ))
-        })?;
-
+    fn load(storage: BlobStore<SparseVector>, stopped: &AtomicBool) -> OperationResult<Self> {
         let mut deleted = BitVec::new();
         let mut deleted_count = 0;
         let mut next_point_offset = 0;
@@ -92,20 +82,6 @@ impl MmapSparseVectorStorage {
             deleted_count,
             next_point_offset,
             total_sparse_size,
-        })
-    }
-
-    fn new(path: PathBuf) -> OperationResult<Self> {
-        let storage = BlobStore::new(path, StorageOptions::default())
-            .map_err(OperationError::service_error)?;
-        let storage = Arc::new(RwLock::new(storage));
-
-        Ok(Self {
-            storage,
-            deleted: BitVec::new(),
-            deleted_count: 0,
-            next_point_offset: 0,
-            total_sparse_size: 0,
         })
     }
 

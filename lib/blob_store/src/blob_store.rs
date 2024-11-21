@@ -76,6 +76,21 @@ impl<V: Blob> BlobStore<V> {
         self.tracker.read().pointer_count()
     }
 
+    /// Opens an existing storage, or initializes a new one.
+    ///
+    /// Depends on the existance of the config file at the `base_path`.
+    pub fn open_or_create(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
+        let config_path = base_path.join(CONFIG_FILENAME);
+        if config_path.exists() {
+            Self::open(base_path)
+        } else {
+            // create folder if it does not exist
+            std::fs::create_dir_all(&base_path)
+                .map_err(|_| "Failed to create mmap sparse vector storage directory")?;
+            Self::new(base_path, options)
+        }
+    }
+
     /// Initializes a new storage with a single empty page.
     ///
     /// `base_path` is the directory where the storage files will be stored.
