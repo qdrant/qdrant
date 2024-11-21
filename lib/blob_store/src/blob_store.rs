@@ -78,7 +78,7 @@ impl<V: Blob> BlobStore<V> {
 
     /// Opens an existing storage, or initializes a new one.
     ///
-    /// Depends on the existance of the config file at the `base_path`.
+    /// Depends on the existence of the config file at the `base_path`.
     pub fn open_or_create(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
         if config_path.exists() {
