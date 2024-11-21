@@ -48,7 +48,6 @@ pub struct ProxySegment {
     deleted_points: LockedRmSet,
     deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
-    last_flushed_version: Arc<RwLock<Option<SeqNumberType>>>,
     wrapped_config: SegmentConfig,
 }
 
@@ -76,7 +75,6 @@ impl ProxySegment {
             deleted_points,
             created_indexes,
             deleted_indexes,
-            last_flushed_version: Arc::new(RwLock::new(None)),
             wrapped_config,
         }
     }
@@ -950,8 +948,6 @@ impl SegmentEntry for ProxySegment {
         } else {
             cmp::min(write_segment_version, wrapped_version)
         };
-
-        let _ = self.last_flushed_version.write().insert(flushed_version);
 
         Ok(flushed_version)
     }
