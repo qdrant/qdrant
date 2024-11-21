@@ -389,7 +389,14 @@ impl<V: Blob> BlobStore<V> {
     where
         F: FnMut(PointOffset, &V) -> std::io::Result<bool>,
     {
-        for (point_offset, pointer) in self.tracker.read().iter_pointers().flatten() {
+        for (point_offset, pointer) in
+            self.tracker
+                .read()
+                .iter_pointers()
+                .filter_map(|(point_offset, opt_pointer)| {
+                    opt_pointer.map(|pointer| (point_offset, pointer))
+                })
+        {
             let ValuePointer {
                 page_id,
                 block_offset,
@@ -409,6 +416,30 @@ impl<V: Blob> BlobStore<V> {
     /// Return the storage size in bytes
     pub fn get_storage_size_bytes(&self) -> usize {
         self.bitmask.read().get_storage_size_bytes()
+    }
+
+    /// Iterate over all the values in the storage, including deleted ones
+    pub fn iter_all<F>(&self, mut callback: F) -> std::io::Result<()>
+    where
+        F: FnMut(PointOffset, Option<&V>) -> std::io::Result<bool>,
+    {
+        for (point_offset, opt_pointer) in self.tracker.read().iter_pointers() {
+            let value = opt_pointer.map(
+                |ValuePointer {
+                     page_id,
+                     block_offset,
+                     length,
+                 }| {
+                    let raw = self.read_from_pages(page_id, block_offset, length);
+                    let decompressed = Self::decompress(&raw);
+                    V::from_bytes(&decompressed)
+                },
+            );
+            if !callback(point_offset, value.as_ref())? {
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 }
 

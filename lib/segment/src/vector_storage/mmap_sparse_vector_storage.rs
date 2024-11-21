@@ -29,7 +29,8 @@ pub struct MmapSparseVectorStorage {
     deleted: BitVec,
     /// Current number of deleted vectors.
     deleted_count: usize,
-    max_point_offset: usize,
+    /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
+    next_point_offset: usize,
     /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
     total_sparse_size: usize,
 }
@@ -59,26 +60,22 @@ impl MmapSparseVectorStorage {
 
         let mut deleted = BitVec::new();
         let mut deleted_count = 0;
-        let mut max_point_offset = 0;
+        let mut next_point_offset = 0;
         let mut total_sparse_size = 0;
-        let mut last_read_id = 0;
         const CHECK_STOP_INTERVAL: usize = 100;
 
-        storage.iter(|point_id, vector| {
-            // Propagate deleted flag
-            if point_id - last_read_id > 1 {
-                // Some vectors are missing in the sequence
-                for deleted_id in last_read_id + 1..point_id {
-                    bitvec_set_deleted(&mut deleted, deleted_id, true);
-                    deleted_count += 1;
-                }
+        storage.iter_all(|point_id, opt_vector| {
+            if let Some(vector) = opt_vector {
+                total_sparse_size += vector.values.len();
+            } else {
+                // Propagate deleted flag
+                bitvec_set_deleted(&mut deleted, point_id, true);
+                deleted_count += 1;
             }
-            last_read_id = point_id;
 
-            max_point_offset = max_point_offset.max(point_id as usize + 1);
-            total_sparse_size += vector.values.len();
+            next_point_offset = next_point_offset.max(point_id as usize + 1);
 
-            if max_point_offset % CHECK_STOP_INTERVAL == 0 && stopped.load(Ordering::Relaxed) {
+            if next_point_offset % CHECK_STOP_INTERVAL == 0 && stopped.load(Ordering::Relaxed) {
                 return Err(std::io::Error::other("Process cancelled"));
             }
 
@@ -91,7 +88,7 @@ impl MmapSparseVectorStorage {
             storage,
             deleted,
             deleted_count,
-            max_point_offset,
+            next_point_offset,
             total_sparse_size,
         })
     }
@@ -105,14 +102,14 @@ impl MmapSparseVectorStorage {
             storage,
             deleted: BitVec::new(),
             deleted_count: 0,
-            max_point_offset: 0,
+            next_point_offset: 0,
             total_sparse_size: 0,
         })
     }
 
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if key as usize >= self.max_point_offset {
+        if !deleted && key as usize >= self.next_point_offset {
             return false;
         }
         let previously_deleted = bitvec_set_deleted(&mut self.deleted, key, deleted);
@@ -153,7 +150,7 @@ impl MmapSparseVectorStorage {
             }
         }
 
-        self.max_point_offset = std::cmp::max(self.max_point_offset, key as usize + 1);
+        self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
 
         Ok(())
     }
@@ -190,15 +187,15 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn total_vector_count(&self) -> usize {
-        self.max_point_offset
+        self.next_point_offset
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.max_point_offset == 0 {
+        if self.next_point_offset == 0 {
             return 0;
         }
         let available_fraction =
-            (self.max_point_offset - self.deleted_count) as f32 / self.max_point_offset as f32;
+            (self.next_point_offset - self.deleted_count) as f32 / self.next_point_offset as f32;
         let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
         available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
     }
@@ -231,20 +228,20 @@ impl VectorStorage for MmapSparseVectorStorage {
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.max_point_offset as PointOffsetType;
+        let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in
             other_vectors.check_stop(|| stopped.load(Ordering::Relaxed))
         {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other_vector.as_vec_ref().try_into()?;
-            let new_id = self.max_point_offset as PointOffsetType;
-            self.max_point_offset += 1;
+            let new_id = self.next_point_offset as PointOffsetType;
+            self.next_point_offset += 1;
             self.set_deleted(new_id, other_deleted);
 
             let vector = (!other_deleted).then_some(other_vector);
             self.update_stored(new_id, vector)?;
         }
-        Ok(start_index..self.max_point_offset as PointOffsetType)
+        Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
     fn flusher(&self) -> crate::common::Flusher {
@@ -267,11 +264,11 @@ impl VectorStorage for MmapSparseVectorStorage {
         &mut self,
         key: common::types::PointOffsetType,
     ) -> crate::common::operation_error::OperationResult<bool> {
-        let is_deleted = !self.set_deleted(key, true);
-        if is_deleted {
-            self.update_stored(key, None)?;
-        }
-        Ok(is_deleted)
+        let was_deleted = !self.set_deleted(key, true);
+
+        self.update_stored(key, None)?;
+
+        Ok(was_deleted)
     }
 
     fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
