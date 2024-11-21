@@ -295,6 +295,7 @@ impl Tracker {
             self.pending_updates
                 .insert(point_offset, PointerUpdate::Unset(pointer));
         }
+        self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
 
         pointer_opt
     }
