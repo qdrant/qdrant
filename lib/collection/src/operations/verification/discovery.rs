@@ -27,14 +27,15 @@ impl StrictModeVerification for DiscoverRequestInternal {
 }
 
 impl StrictModeVerification for DiscoverRequestBatch {
-    fn check_strict_mode(
+    async fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         for i in self.searches.iter() {
             i.discover_request
-                .check_strict_mode(collection, strict_mode_config)?;
+                .check_strict_mode(collection, strict_mode_config)
+                .await?;
         }
 
         Ok(())

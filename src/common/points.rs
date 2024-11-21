@@ -163,34 +163,60 @@ impl StrictModeVerification for UpdateOperation {
         None
     }
 
-    fn check_strict_mode(
+    async fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         match self {
-            UpdateOperation::Delete(delete_op) => delete_op
-                .delete
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::SetPayload(set_payload) => set_payload
-                .set_payload
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::OverwritePayload(overwrite_payload) => overwrite_payload
-                .overwrite_payload
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::DeletePayload(delete_payload) => delete_payload
-                .delete_payload
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::ClearPayload(clear_payload) => clear_payload
-                .clear_payload
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::DeleteVectors(delete_op) => delete_op
-                .delete_vectors
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::Upsert(upsert_op) => upsert_op
-                .upsert
-                .check_strict_mode(collection, strict_mode_config),
-            UpdateOperation::UpdateVectors(_) => Ok(()),
+            UpdateOperation::Delete(delete_op) => {
+                delete_op
+                    .delete
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::SetPayload(set_payload) => {
+                set_payload
+                    .set_payload
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::OverwritePayload(overwrite_payload) => {
+                overwrite_payload
+                    .overwrite_payload
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::DeletePayload(delete_payload) => {
+                delete_payload
+                    .delete_payload
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::ClearPayload(clear_payload) => {
+                clear_payload
+                    .clear_payload
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::DeleteVectors(delete_op) => {
+                delete_op
+                    .delete_vectors
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::Upsert(upsert_op) => {
+                upsert_op
+                    .upsert
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::UpdateVectors(update) => {
+                update
+                    .update_vectors
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
         }
     }
 }

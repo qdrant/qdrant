@@ -1004,6 +1004,26 @@ impl ShardReplicaSet {
         shard.trigger_optimizers();
         true
     }
+
+    pub(crate) async fn local_vector_storage_size_estimation_in_bytes(&self) -> usize {
+        self.local
+            .read()
+            .await
+            .as_ref()
+            .map(|i| match i {
+                Shard::Local(local) => local
+                    .segments()
+                    .read()
+                    .iter()
+                    .map(|i| i.1.get().read().info().vectors_size_bytes)
+                    .sum::<usize>(),
+                Shard::Proxy(_)
+                | Shard::ForwardProxy(_)
+                | Shard::QueueProxy(_)
+                | Shard::Dummy(_) => 0,
+            })
+            .unwrap_or_default()
+    }
 }
 
 /// Represents a replica set state

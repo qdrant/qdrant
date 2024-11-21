@@ -37,7 +37,6 @@ use collection::operations::types::{
     RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -112,7 +111,7 @@ pub(crate) fn convert_shard_selector_for_read(
 }
 
 pub async fn upsert(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -132,9 +131,14 @@ pub async fn upsert(
         points: points?,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     });
+
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_upsert_points(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -245,7 +249,7 @@ pub async fn delete(
 }
 
 pub async fn update_vectors(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     update_point_vectors: UpdatePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
@@ -278,9 +282,13 @@ pub async fn update_vectors(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let timing = Instant::now();
     let result = do_update_vectors(
-        toc,
+        toc.clone(),
         collection_name,
         operation,
         clock_tag,
@@ -555,10 +563,8 @@ pub async fn update_batch(
                 points,
                 shard_key_selector,
             }) => {
-                // We don't need strict mode checks for upsert!
-                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 upsert(
-                    toc.clone(),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     UpsertPoints {
                         collection_name,
                         wait,
@@ -687,10 +693,8 @@ pub async fn update_batch(
                     shard_key_selector,
                 },
             ) => {
-                // We don't need strict mode checks for vector updates!
-                let toc = dispatcher.toc(&access, &new_unchecked_verification_pass());
                 update_vectors(
-                    toc.clone(),
+                    StrictModeCheckedTocProvider::new(dispatcher),
                     UpdatePointVectors {
                         collection_name,
                         wait,

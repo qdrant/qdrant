@@ -187,7 +187,7 @@ impl PointsInternal for PointsInternalService {
             upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
 
         upsert(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             upsert_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -237,7 +237,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
 
         update_vectors(
-            self.toc.clone(),
+            UncheckedTocProvider::new_unchecked(&self.toc),
             update_point_vectors,
             clock_tag.map(Into::into),
             shard_id,

@@ -782,6 +782,20 @@ impl Collection {
     pub async fn trigger_optimizers(&self) {
         self.shards_holder.read().await.trigger_optimizers().await;
     }
+
+    pub async fn estimated_vector_storage_size_in_bytes(&self) -> usize {
+        let shard_holder_lock = self.shards_holder.read().await;
+        let mut size = 0;
+        for shard in shard_holder_lock.all_shards() {
+            size += shard.local_vector_storage_size_estimation_in_bytes().await;
+        }
+        size
+    }
+
+    pub async fn estimated_size_in_bytes(&self) -> usize {
+        // TODO: also account payload index!
+        self.estimated_vector_storage_size_in_bytes().await
+    }
 }
 
 struct CollectionVersion;

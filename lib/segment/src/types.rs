@@ -708,6 +708,10 @@ pub struct StrictModeConfig {
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upsert_max_batchsize: Option<usize>,
+
+    /// Max size of a collection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collection_size: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -725,6 +729,7 @@ impl Hash for StrictModeConfig {
             // We skip hashing this field because we cannot reliably hash a float
             search_max_oversampling: _,
             upsert_max_batchsize,
+            max_collection_size,
         } = self;
         (
             enabled,
@@ -735,6 +740,7 @@ impl Hash for StrictModeConfig {
             search_max_hnsw_ef,
             search_allow_exact,
             upsert_max_batchsize,
+            max_collection_size,
         )
             .hash(state);
     }
