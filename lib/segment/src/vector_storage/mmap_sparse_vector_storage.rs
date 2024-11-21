@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{ControlFlow, Range};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -64,23 +64,25 @@ impl MmapSparseVectorStorage {
         let mut total_sparse_size = 0;
         const CHECK_STOP_INTERVAL: usize = 100;
 
-        storage.iter_all(|point_id, opt_vector| {
-            if let Some(vector) = opt_vector {
-                total_sparse_size += vector.values.len();
-            } else {
-                // Propagate deleted flag
-                bitvec_set_deleted(&mut deleted, point_id, true);
-                deleted_count += 1;
-            }
+        storage
+            .for_each_unfiltered(|point_id, opt_vector| {
+                if let Some(vector) = opt_vector {
+                    total_sparse_size += vector.values.len();
+                } else {
+                    // Propagate deleted flag
+                    bitvec_set_deleted(&mut deleted, point_id, true);
+                    deleted_count += 1;
+                }
 
-            next_point_offset = next_point_offset.max(point_id as usize + 1);
+                next_point_offset = next_point_offset.max(point_id as usize + 1);
 
-            if next_point_offset % CHECK_STOP_INTERVAL == 0 && stopped.load(Ordering::Relaxed) {
-                return Err(std::io::Error::other("Process cancelled"));
-            }
+                if next_point_offset % CHECK_STOP_INTERVAL == 0 && stopped.load(Ordering::Relaxed) {
+                    return ControlFlow::Break("Process cancelled".to_string());
+                }
 
-            Ok(true)
-        })?;
+                ControlFlow::Continue(())
+            })
+            .map_err(OperationError::service_error)?;
 
         let storage = Arc::new(RwLock::new(storage));
 

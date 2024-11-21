@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use io::file_operations::atomic_save_json;
@@ -419,9 +420,9 @@ impl<V: Blob> BlobStore<V> {
     }
 
     /// Iterate over all the values in the storage, including deleted ones
-    pub fn iter_all<F>(&self, mut callback: F) -> std::io::Result<()>
+    pub fn for_each_unfiltered<F>(&self, mut callback: F) -> Result<()>
     where
-        F: FnMut(PointOffset, Option<&V>) -> std::io::Result<bool>,
+        F: FnMut(PointOffset, Option<&V>) -> ControlFlow<String, ()>,
     {
         for (point_offset, opt_pointer) in self.tracker.read().iter_pointers() {
             let value = opt_pointer.map(
@@ -435,8 +436,9 @@ impl<V: Blob> BlobStore<V> {
                     V::from_bytes(&decompressed)
                 },
             );
-            if !callback(point_offset, value.as_ref())? {
-                return Ok(());
+            match callback(point_offset, value.as_ref()) {
+                ControlFlow::Continue(()) => continue,
+                ControlFlow::Break(message) => return Err(message),
             }
         }
         Ok(())

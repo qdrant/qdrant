@@ -244,9 +244,7 @@ impl Tracker {
     }
 
     /// Iterate over the pointers in the tracker
-    pub fn iter_pointers<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + 'a {
+    pub fn iter_pointers(&self) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
         (0..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
     }
 
