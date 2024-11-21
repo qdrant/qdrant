@@ -7291,6 +7291,13 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "max_collection_size": {
+            "description": "Max size of a collection",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
