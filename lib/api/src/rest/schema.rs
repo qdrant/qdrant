@@ -1041,4 +1041,8 @@ impl PointInsertOperations {
             PointInsertOperations::PointsList(list) => list.points.len(),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
