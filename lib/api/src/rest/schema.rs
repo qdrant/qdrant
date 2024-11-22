@@ -1032,3 +1032,13 @@ impl Validate for PointInsertOperations {
         }
     }
 }
+
+impl PointInsertOperations {
+    /// Amonut of vectors in the operation request.
+    pub fn len(&self) -> usize {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => batch.batch.ids.len(),
+            PointInsertOperations::PointsList(list) => list.points.len(),
+        }
+    }
+}

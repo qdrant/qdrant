@@ -463,6 +463,54 @@ def test_strict_mode_update_many_upsert_max_batch_size(collection_name):
     assert not search_fail.ok
 
 
+def test_strict_mode_update_vectors_max_batch_size(collection_name):
+    def search_request():
+        return request_with_validation(
+            api='/collections/{collection_name}/points/vectors',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "points": [
+                    {
+                        "id": 1,
+                        "vector": [1, 2, 3, 5],
+                    },
+                    {
+                        "id": 2,
+                        "vector": [1, 2, 3, 5],
+                    },
+                    {
+                        "id": 3,
+                        "vector": [1, 2, 3, 5],
+                    },
+                    {
+                        "id": 4,
+                        "vector": [1, 2, 3, 5],
+                    },
+                ]
+            }
+        )
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 4,
+    })
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_batchsize": 3,
+    })
+
+    search_fail = search_request()
+
+    assert "update limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+
 def test_strict_mode_max_collection_size_upsert(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
 

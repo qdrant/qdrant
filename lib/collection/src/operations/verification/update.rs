@@ -117,12 +117,8 @@ impl StrictModeVerification for PointInsertOperations {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        let len = match self {
-            PointInsertOperations::PointsBatch(batch) => batch.batch.ids.len(),
-            PointInsertOperations::PointsList(list) => list.points.len(),
-        };
         check_limit_opt(
-            Some(len),
+            Some(self.len()),
             strict_mode_config.upsert_max_batchsize,
             "upsert limit",
         )?;
@@ -159,6 +155,12 @@ impl StrictModeVerification for UpdateVectors {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
+        check_limit_opt(
+            Some(self.points.len()),
+            strict_mode_config.upsert_max_batchsize,
+            "update limit",
+        )?;
+
         check_collection_vector_size_limit(collection, strict_mode_config).await?;
         Ok(())
     }
