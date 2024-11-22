@@ -58,6 +58,18 @@ impl RegionGaps {
             trailing: blocks,
         }
     }
+
+    /// Check if the region is completely empty.
+    /// That is a single large gap
+    pub fn is_empty(&self, region_size_blocks: u16) -> bool {
+        self.max == region_size_blocks
+    }
+
+    /// Check if the region is completely full.
+    /// That is no gaps in the region.
+    pub fn is_full(&self) -> bool {
+        self.max == 0
+    }
 }
 
 /// An overview of contiguous free blocks covered by the bitmask.
