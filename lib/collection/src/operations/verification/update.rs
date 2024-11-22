@@ -186,7 +186,7 @@ async fn check_collection_size_limit(
     strict_mode_config: &StrictModeConfig,
 ) -> Result<(), CollectionError> {
     if let Some(max_collection_size) = strict_mode_config.max_collection_size {
-        let collection_size = collection.estimated_vector_storage_size_in_bytes().await;
+        let collection_size = collection.estimated_local_vector_storage_size().await;
         println!("collection: {collection_size}, max: {max_collection_size}");
         if collection_size >= max_collection_size {
             let size_in_mb = max_collection_size as f32 / (1024.0 * 1024.0);

@@ -785,18 +785,20 @@ impl Collection {
         self.shards_holder.read().await.trigger_optimizers().await;
     }
 
-    pub async fn estimated_vector_storage_size_in_bytes(&self) -> usize {
+    /// Returns the estimated local vectorstorage size of this collection in bytes.
+    pub async fn estimated_local_vector_storage_size(&self) -> usize {
         let shard_holder_lock = self.shards_holder.read().await;
         let mut size = 0;
         for shard in shard_holder_lock.all_shards() {
-            size += shard.local_vector_storage_size_estimation_in_bytes().await;
+            size += shard.estimated_local_vector_storage_size().await;
         }
         size
     }
 
-    pub async fn estimated_size_in_bytes(&self) -> usize {
+    /// Returns the estimated size in bytes of all local data of a collection.
+    pub async fn estimated_local_size(&self) -> usize {
         // TODO: also account payload index!
-        self.estimated_vector_storage_size_in_bytes().await
+        self.estimated_local_vector_storage_size().await
     }
 }
 
