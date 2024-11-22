@@ -7292,7 +7292,7 @@
             "minimum": 0,
             "nullable": true
           },
-          "max_collection_size": {
+          "max_collection_vector_size": {
             "description": "Max size of a collection",
             "type": "integer",
             "format": "uint",

@@ -792,12 +792,6 @@ impl Collection {
         }
         size
     }
-
-    /// Returns the estimated size in bytes of all local data of a collection.
-    pub async fn estimated_local_size(&self) -> usize {
-        // TODO: also account payload index!
-        self.estimated_local_vector_storage_size().await
-    }
 }
 
 struct CollectionVersion;

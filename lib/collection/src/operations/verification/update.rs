@@ -56,14 +56,17 @@ impl StrictModeVerification for DeleteVectors {
 }
 
 impl StrictModeVerification for SetPayload {
+    // TODO: Payload storage size limit
+    /*
     async fn check_custom(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_collection_size_limit(collection, strict_mode_config).await?;
+        check_collection_vector_size_limit(collection, strict_mode_config).await?;
         Ok(())
     }
+    */
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
@@ -124,7 +127,7 @@ impl StrictModeVerification for PointInsertOperations {
             "upsert limit",
         )?;
 
-        check_collection_size_limit(collection, strict_mode_config).await?;
+        check_collection_vector_size_limit(collection, strict_mode_config).await?;
 
         Ok(())
     }
@@ -156,7 +159,7 @@ impl StrictModeVerification for UpdateVectors {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_collection_size_limit(collection, strict_mode_config).await?;
+        check_collection_vector_size_limit(collection, strict_mode_config).await?;
         Ok(())
     }
 
@@ -181,17 +184,16 @@ impl StrictModeVerification for UpdateVectors {
     }
 }
 
-async fn check_collection_size_limit(
+async fn check_collection_vector_size_limit(
     collection: &Collection,
     strict_mode_config: &StrictModeConfig,
 ) -> Result<(), CollectionError> {
-    if let Some(max_collection_size) = strict_mode_config.max_collection_size {
-        let collection_size = collection.estimated_local_vector_storage_size().await;
-        println!("collection: {collection_size}, max: {max_collection_size}");
-        if collection_size >= max_collection_size {
-            let size_in_mb = max_collection_size as f32 / (1024.0 * 1024.0);
+    if let Some(max_vec_storage_size) = strict_mode_config.max_collection_vector_size {
+        let vec_storage_size = collection.estimated_local_vector_storage_size().await;
+        if vec_storage_size >= max_vec_storage_size {
+            let size_in_mb = max_vec_storage_size as f32 / (1024.0 * 1024.0);
             return Err(CollectionError::bad_request(format!(
-                "Max collection size of {size_in_mb}MB reached!",
+                "Max vector size limit of {size_in_mb}MB reached!",
             )));
         }
     }
