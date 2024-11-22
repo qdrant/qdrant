@@ -1,3 +1,5 @@
+//! Unit tests for GPU vector storage, covering f32, f16, u8 dense/multivectors with SQ, BQ, PQ.
+
 use std::path::Path;
 
 use bitvec::vec::BitVec;
