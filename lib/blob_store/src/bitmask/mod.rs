@@ -127,6 +127,32 @@ impl Bitmask {
         Ok(())
     }
 
+    /// Compute the size of the storage in bytes.
+    /// Does not include the metadata information (e.g. the regions gaps, bitmask...).
+    pub fn get_storage_size_bytes(&self) -> usize {
+        let mut size = 0;
+        let region_size_blocks = self.config.region_size_blocks;
+        let block_size_bytes = self.config.block_size_bytes;
+        let region_size_bytes = region_size_blocks * block_size_bytes;
+        for (gap_id, gap) in self.regions_gaps.as_slice().iter().enumerate() {
+            // skip empty regions
+            if gap.is_empty(region_size_blocks as u16) {
+                continue;
+            }
+            // fast path for full regions
+            if gap.is_full() {
+                size += region_size_bytes;
+            } else {
+                // compute the size of the occupied blocks for the region
+                let gap_offset_start = gap_id * region_size_blocks;
+                let gap_offset_end = gap_offset_start + region_size_blocks;
+                let occupied_blocks = self.bitslice[gap_offset_start..gap_offset_end].count_ones();
+                size += occupied_blocks * block_size_bytes
+            }
+        }
+        size
+    }
+
     pub fn infer_num_pages(&self) -> usize {
         let bits = self.bitslice.len();
         let covered_bytes = bits * self.config.block_size_bytes;

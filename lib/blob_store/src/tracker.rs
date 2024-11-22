@@ -177,7 +177,6 @@ impl Tracker {
         self.mmap.len()
     }
 
-    #[cfg(test)]
     pub fn pointer_count(&self) -> u32 {
         self.header.next_pointer_offset
     }
