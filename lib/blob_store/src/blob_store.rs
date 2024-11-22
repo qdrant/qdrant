@@ -77,9 +77,10 @@ impl<V: Blob> BlobStore<V> {
     }
 
     /// Opens an existing storage, or initializes a new one.
-    ///
     /// Depends on the existence of the config file at the `base_path`.
-    pub fn open_or_create(base_path: PathBuf, options: StorageOptions) -> Result<Self> {
+    ///
+    /// In case of opening, it ignores the `create_options` parameter.
+    pub fn open_or_create(base_path: PathBuf, create_options: StorageOptions) -> Result<Self> {
         let config_path = base_path.join(CONFIG_FILENAME);
         if config_path.exists() {
             Self::open(base_path)
@@ -87,7 +88,7 @@ impl<V: Blob> BlobStore<V> {
             // create folder if it does not exist
             std::fs::create_dir_all(&base_path)
                 .map_err(|err| format!("Failed to create blob_store storage directory: {err}"))?;
-            Self::new(base_path, options)
+            Self::new(base_path, create_options)
         }
     }
 
