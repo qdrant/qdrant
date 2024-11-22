@@ -1,4 +1,5 @@
 import pytest
+import random
 
 from .conftest import collection_name
 from .helpers.collection_setup import basic_collection_setup, drop_collection
@@ -461,3 +462,76 @@ def test_strict_mode_update_many_upsert_max_batch_size(collection_name):
     assert "upsert" in search_fail.json()['status']['error']
     assert not search_fail.ok
 
+
+def test_strict_mode_max_collection_size_upsert(collection_name):
+    basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
+
+    def upsert_new_points(length: int = 5):
+        ids = [random.randint(1, 999999999) for _ in range(length)]
+        payloads = [{} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "batch": {
+                    "ids": ids,
+                    "payloads": payloads,
+                    "vectors": vectors
+                }
+            }
+        )
+
+    upsert_new_points().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_collection_size": 300,
+    })
+
+    upsert_new_points().raise_for_status()
+
+    failed_upsert = upsert_new_points()
+    assert "Max collection size" in failed_upsert.json()['status']['error']
+    assert not failed_upsert.ok
+
+
+def test_strict_mode_max_collection_size_upsert_batch(collection_name):
+    basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
+
+    def upsert_new_points(length: int = 5):
+        ids = [random.randint(1, 999999999) for _ in range(length)]
+        payloads = [{} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points/batch',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "operations": [
+                    {
+                        "upsert": {
+                            "batch": {
+                                "ids": ids,
+                                "payloads": payloads,
+                                "vectors": vectors
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+    upsert_new_points().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_collection_size": 300,
+    })
+
+    upsert_new_points().raise_for_status()
+
+    failed_upsert = upsert_new_points()
+    assert "Max collection size" in failed_upsert.json()['status']['error']
+    assert not failed_upsert.ok
