@@ -3,17 +3,14 @@ use std::path::Path;
 
 use blob_store::fixtures::{empty_storage, Payload, HM_FIELDS};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use rand::Rng;
 use serde_json::Value;
 
 /// Insert CSV data into the storage
-fn insert_csv_data(
-    storage: &mut blob_store::BlobStore<Payload>,
-    csv_path: &Path,
-    expected_point_count: u32,
-) {
+fn append_csv_data(storage: &mut blob_store::BlobStore<Payload>, csv_path: &Path) {
     let csv_file = File::open(csv_path).expect("file should open");
     let mut rdr = csv::Reader::from_reader(csv_file);
-    let mut point_offset = 0;
+    let mut point_offset = storage.max_point_id();
     for result in rdr.records() {
         let record = result.unwrap();
         let mut payload = Payload::default();
@@ -26,7 +23,6 @@ fn insert_csv_data(
         storage.put_value(point_offset, &payload).unwrap();
         point_offset += 1;
     }
-    assert_eq!(point_offset, expected_point_count);
 }
 
 /// Recursively compute the size of a directory in megabytes
@@ -60,8 +56,11 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     // the CSV file has 105_542 rows
     let expected_point_count = 105_542;
 
-    // insert data once
-    insert_csv_data(&mut storage, &csv_path, expected_point_count);
+    // insert data once & flush
+    append_csv_data(&mut storage, &csv_path);
+    storage.flush().unwrap();
+
+    assert_eq!(storage.max_point_id(), expected_point_count);
 
     // flush to get a consistent bitmask
     storage.flush().unwrap();
@@ -78,32 +77,49 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         b.iter(|| black_box(storage.get_storage_size_bytes()));
     });
 
-    c.bench_function("read real payload", |b| {
+    c.bench_function("scan storage", |b| {
         b.iter(|| {
-            for i in 0..expected_point_count {
+            for i in 0..storage.max_point_id() {
                 let res = storage.get_value(i).unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
         });
     });
 
-    // disclaimer: updating values creates a lot of pages due to copy-on-write
-    c.bench_function("upsert real payload", |b| {
-        b.iter(|| insert_csv_data(&mut storage, &csv_path, expected_point_count));
-    });
+    // append the same data again to increase storage size
+    for _ in 0..10 {
+        append_csv_data(&mut storage, &csv_path);
+        storage.flush().unwrap();
+    }
 
     let inflated_storage_size = storage.get_storage_size_bytes();
-    assert_eq!(inflated_storage_size, 5_619_540_992); // 5.6GB!
+    assert_eq!(inflated_storage_size, 594_374_528); // 594 MB (close to 10x54MB)
 
-    c.bench_function("compute storage size (large storage)", |b| {
+    c.bench_function("compute storage size (large)", |b| {
         b.iter(|| black_box(storage.get_storage_size_bytes()));
     });
 
-    c.bench_function("read real payload (large storage)", |b| {
+    // delete 30% of the points
+    let mut rng = rand::thread_rng();
+    for i in 0..storage.max_point_id() {
+        if rng.gen_bool(0.3) {
+            storage.delete_value(i).unwrap();
+        }
+    }
+
+    // flush to get a consistent bitmask
+    storage.flush().unwrap();
+
+    c.bench_function("compute storage size (large sparse)", |b| {
+        b.iter(|| black_box(storage.get_storage_size_bytes()));
+    });
+
+    c.bench_function("insert real payload (large)", |b| {
         b.iter(|| {
-            for i in 0..expected_point_count {
-                let res = storage.get_value(i).unwrap();
-                assert!(res.0.contains_key("article_id"));
+            append_csv_data(&mut storage, &csv_path);
+            // do not always flush to build up pending updates
+            if rng.gen_bool(0.3) {
+                storage.flush().unwrap();
             }
         });
     });

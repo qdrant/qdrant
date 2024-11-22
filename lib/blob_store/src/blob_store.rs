@@ -71,6 +71,10 @@ impl<V: Blob> BlobStore<V> {
         self.pages.len() as PageId
     }
 
+    pub fn max_point_id(&self) -> PointOffset {
+        self.tracker.read().pointer_count()
+    }
+
     /// Initializes a new storage with a single empty page.
     ///
     /// `base_path` is the directory where the storage files will be stored.
