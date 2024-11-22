@@ -86,7 +86,7 @@ impl<V: Blob> BlobStore<V> {
         } else {
             // create folder if it does not exist
             std::fs::create_dir_all(&base_path)
-                .map_err(|_| "Failed to create mmap sparse vector storage directory")?;
+                .map_err(|err| format!("Failed to create blob_store storage directory: {err}"))?;
             Self::new(base_path, options)
         }
     }
