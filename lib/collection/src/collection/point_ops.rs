@@ -456,7 +456,8 @@ impl Collection {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let mut covered_point_ids = HashMap::with_capacity(ids_len);
+        // pre-allocate hashmap with capped capacity to protect from malevolent input
+        let mut covered_point_ids = HashMap::with_capacity(ids_len.min(1024));
         while let Some(response) = all_shard_collection_requests.try_next().await? {
             for point in response {
                 // Add each point only once, deduplicate point IDs
