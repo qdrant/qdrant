@@ -487,13 +487,13 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_size": 300,
+        "max_collection_vector_size": 300,
     })
 
     upsert_new_points().raise_for_status()
 
     failed_upsert = upsert_new_points()
-    assert "Max collection size" in failed_upsert.json()['status']['error']
+    assert "Max vector size" in failed_upsert.json()['status']['error']
     assert not failed_upsert.ok
 
 
@@ -527,11 +527,11 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_size": 300,
+        "max_collection_vector_size": 300,
     })
 
     upsert_new_points().raise_for_status()
 
     failed_upsert = upsert_new_points()
-    assert "Max collection size" in failed_upsert.json()['status']['error']
+    assert "Max vector size" in failed_upsert.json()['status']['error']
     assert not failed_upsert.ok
