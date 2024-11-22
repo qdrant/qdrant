@@ -709,7 +709,7 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upsert_max_batchsize: Option<usize>,
 
-    /// Max size of a collection
+    /// Max size of a collections vector storage
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_vector_size: Option<usize>,
 }
