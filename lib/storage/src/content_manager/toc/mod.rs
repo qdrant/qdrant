@@ -656,3 +656,14 @@ impl TableOfContent {
             .collect()
     }
 }
+
+impl Drop for TableOfContent {
+    fn drop(&mut self) {
+        // When dropping `TableOfContent` we also drop the collected hardware measurements which need to be discarded
+        // to prevent panicking in debug mode and tests.
+        #[cfg(any(debug_assertions, test))]
+        for metric in self.collection_hw_metrics.iter_mut() {
+            metric.discard();
+        }
+    }
+}
