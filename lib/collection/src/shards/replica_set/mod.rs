@@ -1005,7 +1005,8 @@ impl ShardReplicaSet {
         true
     }
 
-    pub(crate) async fn local_vector_storage_size_estimation_in_bytes(&self) -> usize {
+    /// Returns the estimated size of all locally stored vectors in bytes.
+    pub(crate) async fn estimated_local_vector_storage_size(&self) -> usize {
         self.local
             .read()
             .await
