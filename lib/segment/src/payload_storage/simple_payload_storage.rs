@@ -56,4 +56,8 @@ impl SimplePayloadStorage {
     pub fn payload_ptr(&self, point_id: PointOffsetType) -> Option<&Payload> {
         self.payload.get(&point_id)
     }
+
+    pub fn get_storage_size_bytes(&self) -> OperationResult<u64> {
+        self.db_wrapper.get_storage_size_bytes()
+    }
 }

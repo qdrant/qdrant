@@ -114,6 +114,10 @@ impl DatabaseColumnScheduledDeleteWrapper {
     pub fn remove_column_family(&self) -> OperationResult<()> {
         self.db.remove_column_family()
     }
+
+    pub fn get_storage_size_bytes(&self) -> OperationResult<u64> {
+        self.db.get_storage_size_bytes()
+    }
 }
 
 pub struct LockedDatabaseColumnScheduledDeleteWrapper<'a> {

@@ -272,6 +272,16 @@ impl DatabaseColumnWrapper {
     pub fn get_column_name(&self) -> &str {
         &self.column_name
     }
+
+    /// Get the size of the storage in bytes
+    ///
+    /// The size of this column family in bytes, which is equal to the sum of the file size of its "levels"
+    pub fn get_storage_size_bytes(&self) -> OperationResult<u64> {
+        let db = self.database.read();
+        let cf_handle = self.get_column_family(&db)?;
+        let size = db.get_column_family_metadata_cf(cf_handle).size;
+        Ok(size)
+    }
 }
 
 impl<'a> LockedDatabaseColumnWrapper<'a> {
