@@ -12,7 +12,11 @@ edition = "2021"
 workspace = true
 
 [features]
-multiling-chinese = ["charabia/chinese-segmentation", "charabia/chinese-normalization", "charabia/chinese-normalization-pinyin"]
+multiling-chinese = [
+    "charabia/chinese-segmentation",
+    "charabia/chinese-normalization",
+    "charabia/chinese-normalization-pinyin",
+]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing"]
@@ -43,7 +47,10 @@ tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
-rocksdb = { version = "0.22.0", default-features = false, features = ["snappy", "lz4"] }
+rocksdb = { version = "0.22.0", default-features = false, features = [
+    "snappy",
+    "lz4",
+] }
 uuid = { workspace = true }
 bincode = "1.3"
 serde = { workspace = true }
@@ -76,7 +83,7 @@ chrono = { workspace = true }
 smol_str = { version = "0.3.2", features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
-ahash = {  workspace = true }
+ahash = { workspace = true }
 http = "1.0.0"
 sha2 = { workspace = true }
 smallvec = "1.13.2"
@@ -86,7 +93,11 @@ byteorder = { workspace = true }
 zerocopy = { workspace = true }
 
 sysinfo = "0.32"
-charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.9.1", default-features = false, features = [
+    "greek",
+    "hebrew",
+    "thai",
+] }
 
 blob_store = { path = "../blob_store" }
 
@@ -174,4 +185,8 @@ harness = false
 
 [[bench]]
 name = "scorer_mmap"
+harness = false
+
+[[bench]]
+name = "segment_info"
 harness = false
