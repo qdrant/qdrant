@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -456,20 +456,20 @@ impl Collection {
             })
             .collect::<FuturesUnordered<_>>();
 
-        let mut covered_point_ids = HashSet::with_capacity(ids_len);
-        let mut points = Vec::with_capacity(ids_len);
-
+        let mut covered_point_ids = HashMap::with_capacity(ids_len);
         while let Some(response) = all_shard_collection_requests.try_next().await? {
             for point in response {
                 // Add each point only once, deduplicate point IDs
-                if covered_point_ids.insert(point.id) {
-                    points.push(point);
-                }
+                covered_point_ids.insert(point.id, point);
             }
         }
 
-        // sort points for deterministic order
-        points.sort_unstable_by_key(|point| point.id);
+        // Collect points in the same order as they were requested
+        let points = request
+            .ids
+            .iter()
+            .filter_map(|id| covered_point_ids.remove(id))
+            .collect();
 
         Ok(points)
     }
