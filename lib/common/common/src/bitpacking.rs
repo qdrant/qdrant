@@ -1,6 +1,8 @@
+type Buf = u64;
+
 pub struct BitPacker<'a> {
     output: &'a mut Vec<u8>,
-    buf: u64,
+    buf: Buf,
     buf_bits: u8,
 }
 
@@ -14,33 +16,33 @@ impl<'a> BitPacker<'a> {
             buf_bits: 0,
         }
     }
-
     #[inline]
     pub fn push(&mut self, value: u32, bits: u8) {
-        if self.buf_bits + bits >= 64 {
-            self.buf |= u64::from(value) << self.buf_bits;
+        if self.buf_bits + bits >= Buf::BITS as u8 {
+            self.buf |= Buf::from(value) << self.buf_bits;
             self.output.extend_from_slice(&self.buf.to_le_bytes());
-            self.buf = u64::from(value) >> (64 - self.buf_bits);
-            self.buf_bits = self.buf_bits + bits - 64;
+            self.buf = Buf::from(value) >> (Buf::BITS as u8 - self.buf_bits);
+            self.buf_bits = self.buf_bits + bits - Buf::BITS as u8;
         } else {
-            self.buf |= u64::from(value) << self.buf_bits;
+            self.buf |= Buf::from(value) << self.buf_bits;
             self.buf_bits += bits;
         }
     }
 
     #[inline]
     pub fn finish(self) {
-        self.output
-            .extend_from_slice(&self.buf.to_le_bytes()[..(self.buf_bits as usize + 7) / 8]);
+        self.output.extend_from_slice(
+            &self.buf.to_le_bytes()[..(self.buf_bits as usize).div_ceil(size_of::<Buf>())],
+        );
     }
 }
 
 pub struct BitUnpacker<'a> {
     input: &'a [u8],
-    buf: u64,
+    buf: Buf,
     buf_bits: u8,
     bits: u8,
-    mask: u64,
+    mask: Buf,
 }
 
 impl<'a> BitUnpacker<'a> {
@@ -65,18 +67,18 @@ impl<'a> BitUnpacker<'a> {
     pub fn read(&mut self) -> u32 {
         if self.buf_bits < self.bits {
             let mut new_bits;
-            if self.input.len() >= 8 {
-                new_bits = u64::from_le_bytes(self.input[0..8].try_into().unwrap());
-                self.input = &self.input[8..];
+            if self.input.len() >= size_of::<Buf>() {
+                new_bits = Buf::from_le_bytes(self.input[0..size_of::<Buf>()].try_into().unwrap());
+                self.input = &self.input[size_of::<Buf>()..];
             } else {
-                new_bits = 0u64;
+                new_bits = 0;
                 for (i, byte) in self.input.iter().copied().enumerate() {
-                    new_bits |= u64::from(byte) << (i * 8);
+                    new_bits |= Buf::from(byte) << (i * size_of::<Buf>());
                 }
             }
             let val = ((self.buf | (new_bits << self.buf_bits)) & self.mask) as u32;
             self.buf = new_bits >> (self.bits - self.buf_bits);
-            self.buf_bits += 64 - self.bits;
+            self.buf_bits += Buf::BITS as u8 - self.bits;
             val
         } else {
             self.buf_bits -= self.bits;
