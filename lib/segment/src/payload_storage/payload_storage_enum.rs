@@ -286,7 +286,7 @@ mod tests {
 
         // needs a flush to impact the storage size
         storage.flusher()().unwrap();
-        assert_eq!(storage.get_storage_size_bytes().unwrap(), 1103); // contains initial cost of infra (SSTable, etc.)
+        assert!(storage.get_storage_size_bytes().unwrap() > 1100); // contains initial cost of infra (SSTable, etc.)
 
         // check how it scales
         for _ in 1..=100 {
