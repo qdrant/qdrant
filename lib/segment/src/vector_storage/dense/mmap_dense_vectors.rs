@@ -169,11 +169,10 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         }
     }
 
+    /// Marks the key as deleted.
+    ///
+    /// Returns true if the key was not deleted before, and it is now deleted.
     pub fn delete(&mut self, key: PointOffsetType) -> bool {
-        if self.num_vectors <= key as usize {
-            return false;
-        }
-
         let is_deleted = !self.deleted.replace(key as usize, true);
         if is_deleted {
             self.deleted_count += 1;

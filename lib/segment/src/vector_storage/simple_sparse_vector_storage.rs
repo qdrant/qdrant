@@ -78,7 +78,7 @@ impl SimpleSparseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if key as usize >= self.total_vector_count {
+        if !deleted && key as usize >= self.total_vector_count {
             return false;
         }
         let was_deleted = bitvec_set_deleted(&mut self.deleted, key, deleted);
