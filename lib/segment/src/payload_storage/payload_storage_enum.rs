@@ -286,7 +286,8 @@ mod tests {
 
         // needs a flush to impact the storage size
         storage.flusher()().unwrap();
-        assert!(storage.get_storage_size_bytes().unwrap() > 1100); // contains initial cost of infra (SSTable, etc.)
+        // large value contains initial cost of infra (SSTable, etc.), not stable across different OS
+        assert!(storage.get_storage_size_bytes().unwrap() > 1100);
 
         // check how it scales
         for _ in 1..=100 {
@@ -294,6 +295,7 @@ mod tests {
         }
 
         storage.flusher()().unwrap();
-        assert_eq!(storage.get_storage_size_bytes().unwrap(), 2206);
+        // loose assertion because value not stable across different OS
+        assert!(storage.get_storage_size_bytes().unwrap() > 2200);
     }
 }
