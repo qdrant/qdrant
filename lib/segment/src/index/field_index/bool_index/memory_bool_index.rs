@@ -6,15 +6,15 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use self::memory::{BooleanItem, BoolMemory};
-use super::map_index::IdIter;
-use super::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PrimaryCondition,
-    ValueIndexer,
-};
+use self::memory::{BoolMemory, BooleanItem};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::index::field_index::map_index::IdIter;
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    PrimaryCondition, ValueIndexer,
+};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
@@ -326,10 +326,10 @@ impl PayloadFieldIndex for BoolIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = super::PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
-                Some(super::PayloadBlockCondition {
+                Some(PayloadBlockCondition {
                     condition: FieldCondition::new_match(
                         key,
                         Match::Value(MatchValue {
