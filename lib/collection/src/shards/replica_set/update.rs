@@ -584,6 +584,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::cpu::CpuBudget;
+    use common::types::MaxOptimizationThreads;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
@@ -623,7 +624,7 @@ mod tests {
         memmap_threshold: None,
         indexing_threshold: Some(50_000),
         flush_interval_sec: 30,
-        max_optimization_threads: Some(2),
+        max_optimization_threads: MaxOptimizationThreads::Threads(2),
     };
 
     async fn new_shard_replica_set(collection_dir: &TempDir) -> ShardReplicaSet {

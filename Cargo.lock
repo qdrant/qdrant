@@ -1311,6 +1311,7 @@ dependencies = [
  "ordered-float 4.5.0",
  "ph",
  "rand 0.8.5",
+ "schemars",
  "semver",
  "serde",
  "tap",
