@@ -1,11 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future;
+use futures::stream::FuturesUnordered;
+use futures::TryStreamExt;
 use itertools::Itertools;
-use segment::data_types::facets::{
-    aggregate_facet_hits, FacetParams, FacetResponse, FacetValueHit,
-};
+use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -29,26 +29,30 @@ impl Collection {
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(&shard_selection)?;
 
-        let shards_reads_f = target_shards.iter().map(|(shard, _shard_key)| {
-            shard.facet(
-                request.clone(),
-                read_consistency,
-                shard_selection.is_shard_id(),
-                timeout,
-            )
-        });
+        let mut shards_reads_f = target_shards
+            .iter()
+            .map(|(shard, _shard_key)| {
+                shard.facet(
+                    request.clone(),
+                    read_consistency,
+                    shard_selection.is_shard_id(),
+                    timeout,
+                )
+            })
+            .collect::<FuturesUnordered<_>>();
 
-        let shards_results = future::try_join_all(shards_reads_f).await?;
+        let mut aggregated_results = HashMap::new();
+        while let Some(response) = shards_reads_f.try_next().await? {
+            for hit in response.hits {
+                *aggregated_results.entry(hit.value).or_insert(0) += hit.count;
+            }
+        }
 
-        let hits = aggregate_facet_hits(
-            shards_results
-                .into_iter()
-                .flat_map(|FacetResponse { hits }| hits),
-        )
-        .into_iter()
-        .map(|(value, count)| FacetValueHit { value, count })
-        .k_largest(request.limit)
-        .collect();
+        let hits = aggregated_results
+            .into_iter()
+            .map(|(value, count)| FacetValueHit { value, count })
+            .k_largest(request.limit)
+            .collect();
 
         Ok(FacetResponse { hits })
     }

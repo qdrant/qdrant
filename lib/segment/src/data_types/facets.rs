@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::collections::HashMap;
 use std::hash::Hash;
 
 use schemars::JsonSchema;
@@ -86,16 +85,6 @@ impl<T: FacetValueTrait> PartialOrd for FacetHit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-pub fn aggregate_facet_hits<T: FacetValueTrait>(
-    hits: impl IntoIterator<Item = FacetHit<T>>,
-) -> HashMap<T, usize> {
-    hits.into_iter()
-        .fold(HashMap::new(), |mut map, FacetHit { value, count }| {
-            *map.entry(value).or_insert(0) += count;
-            map
-        })
 }
 
 impl From<FacetValue> for ValueVariants {
