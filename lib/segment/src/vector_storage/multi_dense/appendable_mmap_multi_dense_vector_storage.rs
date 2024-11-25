@@ -55,7 +55,7 @@ impl<
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
-        if self.vectors.len() <= key as usize {
+        if !deleted && self.vectors.len() <= key as usize {
             return Ok(false);
         }
 
