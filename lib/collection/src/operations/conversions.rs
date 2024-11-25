@@ -14,7 +14,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, Vectors};
 use api::rest::schema::ShardKeySelector;
 use api::rest::BaseGroupRequest;
-use common::types::ScoreType;
+use common::types::{MaxOptimizationThreads, ScoreType};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
@@ -426,10 +426,11 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: config
-                        .optimizer_config
-                        .max_optimization_threads
-                        .map(|n| n as u64),
+                    max_optimization_threads: match config.optimizer_config.max_optimization_threads
+                    {
+                        MaxOptimizationThreads::Auto => None,
+                        MaxOptimizationThreads::Threads(n) => Some(n as u64),
+                    },
                 }),
                 wal_config: config
                     .wal_config
@@ -499,7 +500,9 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
-                .map(|n| n as usize),
+                .map_or(MaxOptimizationThreads::Auto, |n| {
+                    MaxOptimizationThreads::Threads(n as usize)
+                }),
         }
     }
 }

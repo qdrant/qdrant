@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::types::MaxOptimizationThreads;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
@@ -22,7 +23,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: Some(2),
+    max_optimization_threads: MaxOptimizationThreads::Threads(2),
 };
 
 pub fn create_collection_config() -> CollectionConfigInternal {
