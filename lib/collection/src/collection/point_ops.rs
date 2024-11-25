@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -418,13 +418,14 @@ impl Collection {
             .as_ref()
             .unwrap_or(&WithPayloadInterface::Bool(false));
         let with_payload = WithPayload::from(with_payload_interface);
+        let ids_len = request.ids.len();
         let request = Arc::new(request);
 
-        let all_shard_collection_results = {
-            let shard_holder = self.shards_holder.read().await;
-            let target_shards = shard_holder.select_shards(shard_selection)?;
-
-            let retrieve_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+        let shard_holder = self.shards_holder.read().await;
+        let target_shards = shard_holder.select_shards(shard_selection)?;
+        let mut all_shard_collection_requests = target_shards
+            .into_iter()
+            .map(|(shard, shard_key)| {
                 // Explicitly borrow `request` and `with_payload`, so we can use them in `async move`
                 // block below without unnecessarily cloning anything
                 let request = &request;
@@ -452,17 +453,23 @@ impl Collection {
 
                     CollectionResult::Ok(records)
                 }
-            });
+            })
+            .collect::<FuturesUnordered<_>>();
 
-            future::try_join_all(retrieve_futures).await?
-        };
+        // pre-allocate hashmap with capped capacity to protect from malevolent input
+        let mut covered_point_ids = HashMap::with_capacity(ids_len.min(1024));
+        while let Some(response) = all_shard_collection_requests.try_next().await? {
+            for point in response {
+                // Add each point only once, deduplicate point IDs
+                covered_point_ids.insert(point.id, point);
+            }
+        }
 
-        let mut covered_point_ids = HashSet::new();
-        let points = all_shard_collection_results
-            .into_iter()
-            .flatten()
-            // Add each point only once, deduplicate point IDs
-            .filter(|point| covered_point_ids.insert(point.id))
+        // Collect points in the same order as they were requested
+        let points = request
+            .ids
+            .iter()
+            .filter_map(|id| covered_point_ids.remove(id))
             .collect();
 
         Ok(points)
