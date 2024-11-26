@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::bool_index::memory_bool_index::BoolIndexBuilder;
+use super::bool_index::simple_bool_index::BoolIndexBuilder;
 use super::facet_index::FacetIndex;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
@@ -16,7 +16,7 @@ use super::numeric_index::{
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
-use crate::index::field_index::bool_index::memory_bool_index::BoolIndex;
+use crate::index::field_index::bool_index::simple_bool_index::BoolIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};

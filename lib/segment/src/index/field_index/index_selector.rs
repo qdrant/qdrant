@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::bool_index::memory_bool_index::BoolIndex;
+use super::bool_index::simple_bool_index::BoolIndex;
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};

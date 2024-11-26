@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
-use super::bool_index::memory_bool_index::BoolIndex;
+use super::bool_index::simple_bool_index::BoolIndex;
 use super::map_index::MapIndex;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::struct_filter_context::StructFilterContext;
