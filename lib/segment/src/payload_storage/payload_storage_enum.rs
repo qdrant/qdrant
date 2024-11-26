@@ -249,4 +249,61 @@ mod tests {
             eprintln!("res = {res:#?}");
         }
     }
+
+    #[test]
+    fn test_get_storage_size() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        let mut storage = SimplePayloadStorage::open(db.clone()).unwrap();
+
+        assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+
+        let point_id = 0;
+        let payload: Payload = serde_json::from_str(
+            r#"{
+            "name": "John Doe",
+            "age": 52,
+            "location": {
+                "city": "Melbourne",
+                "geo": {
+                    "lon": 144.9631,
+                    "lat": 37.8136
+                }
+            }
+        }"#,
+        )
+        .unwrap();
+
+        let raw_payload_size = serde_cbor::to_vec(&point_id).unwrap().len() as u64
+            + serde_json::to_vec(&payload).unwrap().len() as u64;
+
+        assert_eq!(raw_payload_size, 98);
+
+        // insert payload
+        storage.overwrite(point_id, &payload).unwrap();
+        assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+
+        // needs a flush to impact the storage size
+        storage.flusher()().unwrap();
+        // large value contains initial cost of infra (SSTable, etc.), not stable across different OS
+        let storage_size = storage.get_storage_size_bytes().unwrap();
+        assert!(
+            storage_size > 1000 && storage_size < 1300,
+            "storage_size = {storage_size}"
+        );
+
+        // check how it scales
+        for _ in 1..=100 {
+            storage.overwrite(point_id, &payload).unwrap();
+        }
+
+        storage.flusher()().unwrap();
+        // loose assertion because value not stable across different OS
+        let storage_size = storage.get_storage_size_bytes().unwrap();
+        assert!(
+            storage_size > 2000 && storage_size < 2300,
+            "storage_size = {storage_size}"
+        );
+    }
 }
