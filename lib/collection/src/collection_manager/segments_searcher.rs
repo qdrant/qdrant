@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
-use futures::future::try_join_all;
+use futures::stream::FuturesUnordered;
+use futures::{FutureExt, TryStreamExt};
 use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
@@ -49,19 +50,27 @@ type SegmentSearchExecutedResult = CollectionResult<(SegmentBatchSearchResult, V
 pub struct SegmentsSearcher {}
 
 impl SegmentsSearcher {
+    /// Execute searches in parallel and return results in the same order as the searches were provided
     async fn execute_searches(
         searches: Vec<JoinHandle<SegmentSearchExecutedResult>>,
     ) -> CollectionResult<(BatchSearchResult, Vec<Vec<bool>>)> {
-        let searches = try_join_all(searches);
-        let search_results_per_segment_res = searches.await?;
+        let results_len = searches.len();
 
-        let mut search_results_per_segment = vec![];
-        let mut further_searches_per_segment = vec![];
-        for search_result in search_results_per_segment_res {
+        let mut search_results_per_segment_res = FuturesUnordered::new();
+        for (idx, search) in searches.into_iter().enumerate() {
+            // map the result to include the request index for later reordering
+            let result_with_request_index = search.map(move |res| res.map(|s| (idx, s)));
+            search_results_per_segment_res.push(result_with_request_index);
+        }
+
+        let mut search_results_per_segment = vec![Vec::new(); results_len];
+        let mut further_searches_per_segment = vec![Vec::new(); results_len];
+        // process results as they come in and store them in the correct order
+        while let Some((idx, search_result)) = search_results_per_segment_res.try_next().await? {
             let (search_results, further_searches) = search_result?;
             debug_assert!(search_results.len() == further_searches.len());
-            search_results_per_segment.push(search_results);
-            further_searches_per_segment.push(further_searches);
+            search_results_per_segment[idx] = search_results;
+            further_searches_per_segment[idx] = further_searches;
         }
         Ok((search_results_per_segment, further_searches_per_segment))
     }
