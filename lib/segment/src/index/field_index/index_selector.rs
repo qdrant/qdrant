@@ -70,7 +70,7 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Bool(_) => {
-                vec![FieldIndex::BooleanIndex(BoolIndex::new(
+                vec![FieldIndex::BoolIndex(BoolIndex::new(
                     self.as_rocksdb()?.db.clone(),
                     &field.to_string(),
                 ))]

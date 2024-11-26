@@ -116,7 +116,7 @@ pub enum FieldIndex {
     FloatIndex(NumericIndex<FloatPayloadType, FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
-    BooleanIndex(BoolIndex),
+    BoolIndex(BoolIndex),
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
     UuidMapIndex(MapIndex<UuidIntType>),
 }
@@ -130,7 +130,7 @@ impl std::fmt::Debug for FieldIndex {
             FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
             FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
             FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),
-            FieldIndex::BooleanIndex(_index) => write!(f, "BinaryIndex"),
+            FieldIndex::BoolIndex(_index) => write!(f, "BoolIndex"),
             FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
             FieldIndex::UuidIndex(_index) => write!(f, "UuidIndex"),
             FieldIndex::UuidMapIndex(_index) => write!(f, "UuidMapIndex"),
@@ -158,7 +158,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(_) => None,
             FieldIndex::FloatIndex(_) => None,
             FieldIndex::GeoIndex(_) => None,
-            FieldIndex::BooleanIndex(_) => None,
+            FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
                 Some(Match::Text(MatchText { text })) => {
                     let query = full_text_index.parse_query(text);
@@ -185,7 +185,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index.inner(),
             FieldIndex::GeoIndex(payload_field_index) => payload_field_index,
-            FieldIndex::BooleanIndex(payload_field_index) => payload_field_index,
+            FieldIndex::BoolIndex(payload_field_index) => payload_field_index,
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
             FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
@@ -200,7 +200,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::BooleanIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::BoolIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::UuidIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::UuidMapIndex(ref mut payload_field_index) => payload_field_index.load(),
@@ -215,7 +215,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.clear(),
             FieldIndex::FloatIndex(index) => index.clear(),
             FieldIndex::GeoIndex(index) => index.clear(),
-            FieldIndex::BooleanIndex(index) => index.clear(),
+            FieldIndex::BoolIndex(index) => index.clear(),
             FieldIndex::FullTextIndex(index) => index.clear(),
             FieldIndex::UuidIndex(index) => index.clear(),
             FieldIndex::UuidMapIndex(index) => index.clear(),
@@ -278,7 +278,7 @@ impl FieldIndex {
             FieldIndex::GeoIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::BooleanIndex(ref mut payload_field_index) => {
+            FieldIndex::BoolIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
             FieldIndex::FullTextIndex(ref mut payload_field_index) => {
@@ -301,7 +301,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.mut_inner().remove_point(point_id),
             FieldIndex::GeoIndex(index) => index.remove_point(point_id),
-            FieldIndex::BooleanIndex(index) => index.remove_point(point_id),
+            FieldIndex::BoolIndex(index) => index.remove_point(point_id),
             FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidMapIndex(index) => index.remove_point(point_id),
@@ -316,7 +316,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
             FieldIndex::GeoIndex(index) => index.get_telemetry_data(),
-            FieldIndex::BooleanIndex(index) => index.get_telemetry_data(),
+            FieldIndex::BoolIndex(index) => index.get_telemetry_data(),
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
@@ -331,7 +331,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.values_count(point_id),
             FieldIndex::FloatIndex(index) => index.values_count(point_id),
             FieldIndex::GeoIndex(index) => index.values_count(point_id),
-            FieldIndex::BooleanIndex(index) => index.values_count(point_id),
+            FieldIndex::BoolIndex(index) => index.values_count(point_id),
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
@@ -346,7 +346,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
             FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
-            FieldIndex::BooleanIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::BoolIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
@@ -361,7 +361,7 @@ impl FieldIndex {
             FieldIndex::IntMapIndex(_)
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
-            | FieldIndex::BooleanIndex(_)
+            | FieldIndex::BoolIndex(_)
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_) => None,
@@ -373,7 +373,7 @@ impl FieldIndex {
             FieldIndex::KeywordIndex(index) => Some(FacetIndex::Keyword(index)),
             FieldIndex::IntMapIndex(index) => Some(FacetIndex::Int(index)),
             FieldIndex::UuidMapIndex(index) => Some(FacetIndex::Uuid(index)),
-            FieldIndex::BooleanIndex(index) => Some(FacetIndex::Bool(index)),
+            FieldIndex::BoolIndex(index) => Some(FacetIndex::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
@@ -492,7 +492,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FloatMmapIndex(index) => FieldIndex::FloatIndex(index.finalize()?),
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
-            Self::BoolIndex(index) => FieldIndex::BooleanIndex(index.finalize()?),
+            Self::BoolIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
