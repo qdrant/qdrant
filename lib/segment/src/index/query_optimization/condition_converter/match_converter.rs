@@ -39,7 +39,7 @@ fn get_match_value_checker(
                 index.check_values_any(point_id, |i| *i == value)
             }))
         }
-        (ValueVariants::Bool(is_true), FieldIndex::BinaryIndex(index)) => {
+        (ValueVariants::Bool(is_true), FieldIndex::BoolIndex(index)) => {
             Some(Box::new(move |point_id: PointOffsetType| {
                 if is_true {
                     index.values_has_true(point_id)
@@ -57,7 +57,7 @@ fn get_match_value_checker(
         | (ValueVariants::Bool(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::UuidIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::UuidMapIndex(_))
-        | (ValueVariants::Integer(_), FieldIndex::BinaryIndex(_))
+        | (ValueVariants::Integer(_), FieldIndex::BoolIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::DatetimeIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::FloatIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::FullTextIndex(_))
@@ -66,7 +66,7 @@ fn get_match_value_checker(
         | (ValueVariants::Integer(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidMapIndex(_))
-        | (ValueVariants::String(_), FieldIndex::BinaryIndex(_))
+        | (ValueVariants::String(_), FieldIndex::BoolIndex(_))
         | (ValueVariants::String(_), FieldIndex::DatetimeIndex(_))
         | (ValueVariants::String(_), FieldIndex::FloatIndex(_))
         | (ValueVariants::String(_), FieldIndex::FullTextIndex(_))
@@ -122,7 +122,7 @@ fn get_match_any_checker(
                 }))
             }
         }
-        (AnyVariants::Integers(_), FieldIndex::BinaryIndex(_))
+        (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::FloatIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
@@ -131,7 +131,7 @@ fn get_match_any_checker(
         | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::BinaryIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::DatetimeIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FloatIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FullTextIndex(_))
@@ -190,7 +190,7 @@ fn get_match_except_checker(except: AnyVariants, index: &FieldIndex) -> Option<C
         | (AnyVariants::Strings(_), FieldIndex::FloatIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::GeoIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FullTextIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::BinaryIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::IntIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
@@ -198,7 +198,7 @@ fn get_match_except_checker(except: AnyVariants, index: &FieldIndex) -> Option<C
         | (AnyVariants::Integers(_), FieldIndex::FloatIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::GeoIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::BinaryIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_)) => None,
     };
@@ -221,7 +221,7 @@ fn get_match_text_checker(text: String, index: &FieldIndex) -> Option<ConditionC
                 full_text_index.check_match(&parsed_query, point_id)
             }))
         }
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FloatIndex(_)
         | FieldIndex::GeoIndex(_)

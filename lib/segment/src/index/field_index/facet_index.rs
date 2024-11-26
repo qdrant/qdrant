@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
-use super::binary_index::BinaryIndex;
+use super::bool_index::simple_bool_index::BoolIndex;
 use super::map_index::MapIndex;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::struct_filter_context::StructFilterContext;
@@ -12,7 +12,7 @@ pub enum FacetIndex<'a> {
     Keyword(&'a MapIndex<str>),
     Int(&'a MapIndex<IntPayloadType>),
     Uuid(&'a MapIndex<UuidIntType>),
-    Bool(&'a BinaryIndex),
+    Bool(&'a BoolIndex),
 }
 
 impl<'a> FacetIndex<'a> {

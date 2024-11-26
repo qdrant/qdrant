@@ -212,7 +212,7 @@ impl SegmentBuilder {
                 }
                 FieldIndex::GeoIndex(_) => {}
                 FieldIndex::FullTextIndex(_) => {}
-                FieldIndex::BinaryIndex(_) => {}
+                FieldIndex::BoolIndex(_) => {}
             }
         }
         ordering
