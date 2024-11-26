@@ -603,11 +603,14 @@ impl ShardHolder {
 
         // ToDo: remove after version 0.11.0
         for shard_id in shard_ids_list {
+            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id).cloned();
+
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
                 let replica_set = ShardReplicaSet::load(
                     shard_id,
+                    shard_key.clone(),
                     collection_id.clone(),
                     &path,
                     collection_config.clone(),

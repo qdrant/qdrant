@@ -45,6 +45,7 @@ impl Collection {
                 let replica_set = self
                     .create_replica_set(
                         resharding_key.shard_id,
+                        resharding_key.shard_key.clone(),
                         &[resharding_key.peer_id],
                         Some(ReplicaState::Resharding),
                     )
