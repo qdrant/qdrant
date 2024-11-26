@@ -769,6 +769,7 @@ impl ShardReplicaSet {
 
         ReplicaSetTelemetry {
             id: self.shard_id,
+            key: self.shard_key.clone(),
             local: local_telemetry,
             remote: self
                 .remotes

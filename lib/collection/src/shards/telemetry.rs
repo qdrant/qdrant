@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
+use segment::types::ShardKey;
 use serde::Serialize;
 
 use crate::collection_manager::optimizers::TrackerTelemetry;
@@ -14,6 +15,7 @@ use crate::shards::shard::{PeerId, ShardId};
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ReplicaSetTelemetry {
     pub id: ShardId,
+    pub key: Option<ShardKey>,
     pub local: Option<LocalShardTelemetry>,
     pub remote: Vec<RemoteShardTelemetry>,
     pub replicate_states: HashMap<PeerId, ReplicaState>,
@@ -96,6 +98,7 @@ impl Anonymize for ReplicaSetTelemetry {
     fn anonymize(&self) -> Self {
         ReplicaSetTelemetry {
             id: self.id,
+            key: self.key.clone(),
             local: self.local.anonymize(),
             remote: self.remote.anonymize(),
             replicate_states: Default::default(),
