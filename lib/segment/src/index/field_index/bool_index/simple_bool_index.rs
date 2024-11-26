@@ -120,7 +120,18 @@ mod memory {
                 _ => {}
             }
 
-            self.indexed_count += 1;
+            let was_indexed = had_true || had_false;
+            let is_indexed = has_true || has_false;
+
+            match (was_indexed, is_indexed) {
+                (false, true) => {
+                    self.indexed_count += 1;
+                }
+                (true, false) => {
+                    self.indexed_count = self.indexed_count.saturating_sub(1);
+                }
+                _ => {}
+            }
         }
 
         /// Removes the point from the index and tries to shrink the vectors if possible. If the index is not within bounds, does nothing
@@ -166,6 +177,7 @@ mod memory {
     }
 }
 
+/// Payload index for boolean values, persisted in a RocksDB column family
 pub struct BoolIndex {
     memory: BoolMemory,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
@@ -272,7 +284,7 @@ impl PayloadFieldIndex for BoolIndex {
         Ok(true)
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()
     }
 

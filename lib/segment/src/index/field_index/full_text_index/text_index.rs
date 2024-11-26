@@ -287,7 +287,7 @@ impl PayloadFieldIndex for FullTextIndex {
         }
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.clear(),
             Self::Immutable(index) => index.clear(),
