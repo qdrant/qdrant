@@ -41,5 +41,9 @@ thiserror = { workspace = true }
 thread-priority = "1.2"
 
 [[bench]]
+name = "bitpacking"
+harness = false
+
+[[bench]]
 name = "mmap_hashmap"
 harness = false
