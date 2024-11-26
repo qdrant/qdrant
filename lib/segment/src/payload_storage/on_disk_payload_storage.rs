@@ -148,4 +148,8 @@ impl PayloadStorage for OnDiskPayloadStorage {
     fn files(&self) -> Vec<PathBuf> {
         vec![]
     }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        self.db_wrapper.get_storage_size_bytes()
+    }
 }

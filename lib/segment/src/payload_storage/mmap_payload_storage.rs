@@ -179,4 +179,8 @@ impl PayloadStorage for MmapPayloadStorage {
     fn files(&self) -> Vec<PathBuf> {
         self.storage.read().files()
     }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        Ok(self.storage.read().get_storage_size_bytes())
+    }
 }

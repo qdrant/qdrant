@@ -13,6 +13,8 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     let dir = tempfile::tempdir().unwrap();
     let mut storage = open(dir.path());
 
+    assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
+
     let payload: Payload = json!({
         "a": "some text",
     })
@@ -114,6 +116,8 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     // check if the data is still there
     assert_payloads(&storage);
     eprintln!("storage is correct after drop");
+
+    assert!(storage.get_storage_size_bytes().unwrap() > 0);
 }
 
 #[test]
