@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::binary_index::BinaryIndex;
+use super::bool_index::simple_bool_index::BoolIndex;
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};
@@ -70,7 +70,7 @@ impl<'a> IndexSelector<'a> {
                 )]
             }
             PayloadSchemaParams::Bool(_) => {
-                vec![FieldIndex::BinaryIndex(BinaryIndex::new(
+                vec![FieldIndex::BoolIndex(BoolIndex::new(
                     self.as_rocksdb()?.db.clone(),
                     &field.to_string(),
                 ))]
@@ -133,7 +133,7 @@ impl<'a> IndexSelector<'a> {
                 vec![self.text_builder(field, text_index_params.clone())]
             }
             PayloadSchemaParams::Bool(_) => {
-                vec![FieldIndexBuilder::BinaryIndex(BinaryIndex::builder(
+                vec![FieldIndexBuilder::BoolIndex(BoolIndex::builder(
                     self.as_rocksdb()?.db.clone(),
                     &field.to_string(),
                 ))]

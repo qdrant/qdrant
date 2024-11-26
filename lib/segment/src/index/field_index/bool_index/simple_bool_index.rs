@@ -6,15 +6,15 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
-use self::memory::{BinaryItem, BinaryMemory};
-use super::map_index::IdIter;
-use super::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadFieldIndex, PrimaryCondition,
-    ValueIndexer,
-};
+use self::memory::{BoolMemory, BooleanItem};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::index::field_index::map_index::IdIter;
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    PrimaryCondition, ValueIndexer,
+};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 
@@ -22,11 +22,11 @@ mod memory {
     use bitvec::vec::BitVec;
     use common::types::PointOffsetType;
 
-    pub struct BinaryItem {
+    pub struct BooleanItem {
         value: u8,
     }
 
-    impl BinaryItem {
+    impl BooleanItem {
         const HAS_TRUE: u8 = 0b0000_0001;
         const HAS_FALSE: u8 = 0b0000_0010;
 
@@ -62,13 +62,13 @@ mod memory {
         }
     }
 
-    impl From<u8> for BinaryItem {
+    impl From<u8> for BooleanItem {
         fn from(value: u8) -> Self {
             Self { value }
         }
     }
 
-    pub struct BinaryMemory {
+    pub struct BoolMemory {
         trues: BitVec,
         falses: BitVec,
         trues_count: usize,
@@ -76,7 +76,7 @@ mod memory {
         indexed_count: usize,
     }
 
-    impl BinaryMemory {
+    impl BoolMemory {
         pub fn new() -> Self {
             Self {
                 trues: BitVec::new(),
@@ -87,16 +87,16 @@ mod memory {
             }
         }
 
-        pub fn get(&self, id: PointOffsetType) -> BinaryItem {
+        pub fn get(&self, id: PointOffsetType) -> BooleanItem {
             debug_assert!(self.trues.len() == self.falses.len());
 
             let has_true = self.trues.get(id as usize).map(|v| *v).unwrap_or(false);
             let has_false = self.falses.get(id as usize).map(|v| *v).unwrap_or(false);
 
-            BinaryItem::from_bools(has_true, has_false)
+            BooleanItem::from_bools(has_true, has_false)
         }
 
-        pub fn set_or_insert(&mut self, id: PointOffsetType, item: &BinaryItem) {
+        pub fn set_or_insert(&mut self, id: PointOffsetType, item: &BooleanItem) {
             if (id as usize) >= self.trues.len() {
                 self.trues.resize(id as usize + 1, false);
                 self.falses.resize(id as usize + 1, false);
@@ -166,26 +166,26 @@ mod memory {
     }
 }
 
-pub struct BinaryIndex {
-    memory: BinaryMemory,
+pub struct BoolIndex {
+    memory: BoolMemory,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
-impl BinaryIndex {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> BinaryIndex {
+impl BoolIndex {
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> BoolIndex {
         let store_cf_name = Self::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
         Self {
-            memory: BinaryMemory::new(),
+            memory: BoolMemory::new(),
             db_wrapper,
         }
     }
 
-    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> BinaryIndexBuilder {
-        BinaryIndexBuilder(Self::new(db, field_name))
+    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> BoolIndexBuilder {
+        BoolIndexBuilder(Self::new(db, field_name))
     }
 
     fn storage_cf_name(field: &str) -> String {
@@ -237,10 +237,10 @@ impl BinaryIndex {
     }
 }
 
-pub struct BinaryIndexBuilder(BinaryIndex);
+pub struct BoolIndexBuilder(BoolIndex);
 
-impl FieldIndexBuilderTrait for BinaryIndexBuilder {
-    type FieldIndexType = BinaryIndex;
+impl FieldIndexBuilderTrait for BoolIndexBuilder {
+    type FieldIndexType = BoolIndex;
 
     fn init(&mut self) -> OperationResult<()> {
         self.0.db_wrapper.recreate_column_family()
@@ -255,7 +255,7 @@ impl FieldIndexBuilderTrait for BinaryIndexBuilder {
     }
 }
 
-impl PayloadFieldIndex for BinaryIndex {
+impl PayloadFieldIndex for BoolIndex {
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -266,7 +266,7 @@ impl PayloadFieldIndex for BinaryIndex {
 
             debug_assert_eq!(value.len(), 1);
 
-            let item = BinaryItem::from(value[0]);
+            let item = BooleanItem::from(value[0]);
             self.memory.set_or_insert(idx, &item);
         }
         Ok(true)
@@ -326,10 +326,10 @@ impl PayloadFieldIndex for BinaryIndex {
         &self,
         threshold: usize,
         key: PayloadKeyType,
-    ) -> Box<dyn Iterator<Item = super::PayloadBlockCondition> + '_> {
+    ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         let make_block = |count, value, key: PayloadKeyType| {
             if count > threshold {
-                Some(super::PayloadBlockCondition {
+                Some(PayloadBlockCondition {
                     condition: FieldCondition::new_match(
                         key,
                         Match::Value(MatchValue {
@@ -359,7 +359,7 @@ impl PayloadFieldIndex for BinaryIndex {
     }
 }
 
-impl ValueIndexer for BinaryIndex {
+impl ValueIndexer for BoolIndex {
     type ValueType = bool;
 
     fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {
@@ -370,7 +370,7 @@ impl ValueIndexer for BinaryIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        let item = BinaryItem::from_bools(has_true, has_false);
+        let item = BooleanItem::from_bools(has_true, has_false);
 
         self.memory.set_or_insert(id, &item);
 
@@ -397,7 +397,7 @@ mod tests {
     use serde_json::json;
     use tempfile::{Builder, TempDir};
 
-    use super::BinaryIndex;
+    use super::BoolIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;
@@ -405,10 +405,10 @@ mod tests {
     const FIELD_NAME: &str = "bool_field";
     const DB_NAME: &str = "test_db";
 
-    fn new_binary_index() -> (TempDir, BinaryIndex) {
+    fn new_binary_index() -> (TempDir, BoolIndex) {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
-        let index = BinaryIndex::builder(db, FIELD_NAME).make_empty().unwrap();
+        let index = BoolIndex::builder(db, FIELD_NAME).make_empty().unwrap();
         (tmp_dir, index)
     }
 
@@ -488,7 +488,7 @@ mod tests {
         index.flusher()().unwrap();
         let db = index.db_wrapper.get_database();
 
-        let mut new_index = BinaryIndex::new(db, FIELD_NAME);
+        let mut new_index = BoolIndex::new(db, FIELD_NAME);
         assert!(new_index.load().unwrap());
 
         let point_offsets = new_index.filter(&match_bool(false)).unwrap().collect_vec();

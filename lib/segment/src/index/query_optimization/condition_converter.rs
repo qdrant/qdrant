@@ -203,7 +203,7 @@ pub fn get_geo_polygon_checkers(
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             geo_index.check_values_any(point_id, |value| polygon_wrapper.check_point(value))
         })),
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FloatIndex(_)
         | FieldIndex::FullTextIndex(_)
@@ -223,7 +223,7 @@ pub fn get_geo_radius_checkers(
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             geo_index.check_values_any(point_id, |value| geo_radius.check_point(value))
         })),
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FloatIndex(_)
         | FieldIndex::FullTextIndex(_)
@@ -243,7 +243,7 @@ pub fn get_geo_bounding_box_checkers(
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
             geo_index.check_values_any(point_id, |value| geo_bounding_box.check_point(value))
         })),
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FloatIndex(_)
         | FieldIndex::FullTextIndex(_)
@@ -276,7 +276,7 @@ pub fn get_float_range_checkers(
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index.check_values_any(point_id, |value| range.check_range(*value))
         })),
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
         | FieldIndex::FullTextIndex(_)
         | FieldIndex::GeoIndex(_)
@@ -298,7 +298,7 @@ pub fn get_datetime_range_checkers(
                 num_index.check_values_any(point_id, |value| range.check_range(*value))
             }))
         }
-        FieldIndex::BinaryIndex(_)
+        FieldIndex::BoolIndex(_)
         | FieldIndex::FloatIndex(_)
         | FieldIndex::FullTextIndex(_)
         | FieldIndex::GeoIndex(_)
