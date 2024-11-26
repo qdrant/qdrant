@@ -64,6 +64,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             let _ = segment.info();
         })
     });
+
+    c.bench_function("segment-size-info", |b| {
+        b.iter(|| {
+            let _ = segment.size_info();
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

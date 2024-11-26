@@ -466,8 +466,8 @@ def test_strict_mode_update_many_upsert_max_batch_size(collection_name):
 def test_strict_mode_max_collection_size_upsert(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
 
-    def upsert_new_points(length: int = 5):
-        ids = [random.randint(1, 999999999) for _ in range(length)]
+    def upsert_points(ids: list[int]):
+        length = len(ids)
         payloads = [{} for _ in range(length)]
         vectors = [[1, 2, 3, 5] for _ in range(length)]
         return request_with_validation(
@@ -483,25 +483,35 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
             }
         )
 
-    upsert_new_points().raise_for_status()
+    # Overwriting the same points to trigger cache refreshing
+    for _ in range(33):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_vector_size": 300,
+        "max_collection_vector_size": 240,
     })
 
-    upsert_new_points().raise_for_status()
+    for _ in range(33):
+        upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
-    failed_upsert = upsert_new_points()
-    assert "Max vector size" in failed_upsert.json()['status']['error']
-    assert not failed_upsert.ok
+    # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
+    for _ in range(33):
+        failed_upsert = upsert_points([12, 13, 14, 15, 16])
+        if failed_upsert.ok:
+            continue
+        assert "Max vector size" in failed_upsert.json()['status']['error']
+        assert not failed_upsert.ok
+        return
+
+    assert False, "Upserting should have failed but didn't"
 
 
 def test_strict_mode_max_collection_size_upsert_batch(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
 
-    def upsert_new_points(length: int = 5):
-        ids = [random.randint(1, 999999999) for _ in range(length)]
+    def upsert_points(ids: list[int]):
+        length = len(ids)
         payloads = [{} for _ in range(length)]
         vectors = [[1, 2, 3, 5] for _ in range(length)]
         return request_with_validation(
@@ -523,15 +533,25 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
             }
         )
 
-    upsert_new_points().raise_for_status()
+    for _ in range(33):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_vector_size": 300,
+        "max_collection_vector_size": 240,
     })
 
-    upsert_new_points().raise_for_status()
+    for _ in range(33):
+        upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
-    failed_upsert = upsert_new_points()
-    assert "Max vector size" in failed_upsert.json()['status']['error']
-    assert not failed_upsert.ok
+    # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
+    for _ in range(33):
+        failed_upsert = upsert_points([12, 13, 14, 15, 16])
+        if failed_upsert.ok:
+            continue
+        assert "Max vector size" in failed_upsert.json()['status']['error']
+        assert not failed_upsert.ok
+        return
+
+    assert False, "Upserting should have failed but didn't"
+
