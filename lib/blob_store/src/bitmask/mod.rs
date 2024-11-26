@@ -60,6 +60,16 @@ impl Bitmask {
         bits / u8::BITS as usize
     }
 
+    fn blocks_per_page(config: &StorageConfig) -> usize {
+        assert_eq!(
+            config.page_size_bytes % config.block_size_bytes,
+            0,
+            "Page size must be a multiple of block size"
+        );
+
+        config.page_size_bytes / config.block_size_bytes
+    }
+
     /// Create a bitmask for one page
     pub(crate) fn create(dir: &Path, config: StorageConfig) -> Result<Self, String> {
         debug_assert!(
@@ -161,19 +171,24 @@ impl Bitmask {
 
     /// Extend the bitslice to cover another page
     pub fn cover_new_page(&mut self) -> Result<(), String> {
-        let extra_length = Self::length_for_page(&self.config);
+        let extra_bits = Self::blocks_per_page(&self.config);
 
         // flush outstanding changes
         self.bitslice.flusher()().unwrap();
 
         // reopen the file with a larger size
         let previous_bitslice_len = self.bitslice.len();
-        let new_length = (previous_bitslice_len / u8::BITS as usize) + extra_length;
-        create_and_ensure_length(&self.path, new_length).unwrap();
-        let mmap = open_write_mmap(&self.path, AdviceSetting::from(DEFAULT_ADVICE), false)
-            .map_err(|err| err.to_string())?;
-
-        self.bitslice = MmapBitSlice::try_from(mmap, 0).map_err(|err| err.to_string())?;
+        let total_capacity = previous_bitslice_len + extra_bits;
+        unsafe {
+            self.bitslice
+                .extend(
+                    &self.path,
+                    total_capacity,
+                    AdviceSetting::from(DEFAULT_ADVICE),
+                    false,
+                )
+                .map_err(|err| err.to_string())?;
+        }
 
         // extend the region gaps
         let current_total_regions = self.regions_gaps.len();

@@ -389,6 +389,34 @@ impl MmapBitSlice {
 
         Ok(())
     }
+
+    /// Reopens the mmap file with a larger size.
+    ///
+    /// # Arguments
+    /// - `path`: Path to the mmap file
+    /// - `total_capacity`: New total capacity of the bitslice, in amount of bits it should fit.
+    ///
+    /// # Safety
+    /// Marked unsafe because the path must be the same as the original mmap file.
+    pub unsafe fn extend(
+        &mut self,
+        path: &Path,
+        total_capacity: usize,
+        advice: AdviceSetting,
+        populate: bool,
+    ) -> Result<()> {
+        if total_capacity <= self.len() {
+            return Ok(());
+        }
+
+        let new_length = total_capacity.div_ceil(u8::BITS as usize);
+        mmap_ops::create_and_ensure_length(path, new_length)?;
+        let mmap = mmap_ops::open_write_mmap(path, advice, populate)?;
+
+        *self = MmapBitSlice::try_from(mmap, 0)?;
+
+        Ok(())
+    }
 }
 
 impl Deref for MmapBitSlice {
