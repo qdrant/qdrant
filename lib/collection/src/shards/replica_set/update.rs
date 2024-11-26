@@ -363,12 +363,30 @@ impl ShardReplicaSet {
                 );
             }
 
+            // If there is at least one full-complete operation, we can't ignore non-transient errors (4xx)
+            // And we must deactivate failed replicas to ensure consistency
+            let has_full_completed_updates = successes.iter().any(|(_, res)| match res.status {
+                UpdateStatus::Completed => true,
+                UpdateStatus::Acknowledged => false,
+                UpdateStatus::ClockRejected => false,
+            });
+
             if successes.len() >= minimal_success_count {
                 // If there are enough successes, deactivate failed replicas
                 // Failed replicas will automatically recover from another replica ensuring consistency
 
+                let failures_to_handle: Vec<_> = if !has_full_completed_updates {
+                    // We can only deactivate transient errors
+                    failures
+                        .into_iter()
+                        .filter(|(_, err)| err.is_transient())
+                        .collect()
+                } else {
+                    failures
+                };
+
                 let wait_for_deactivation = self.handle_failed_replicas(
-                    &failures,
+                    &failures_to_handle,
                     &self.replica_state.read(),
                     update_only_existing,
                 );
@@ -379,7 +397,10 @@ impl ShardReplicaSet {
                     let timeout = DEFAULT_SHARD_DEACTIVATION_TIMEOUT;
 
                     let replica_state = self.replica_state.clone();
-                    let peer_ids: Vec<_> = failures.iter().map(|(peer_id, _)| *peer_id).collect();
+                    let peer_ids: Vec<_> = failures_to_handle
+                        .iter()
+                        .map(|(peer_id, _)| *peer_id)
+                        .collect();
 
                     let shards_disabled = tokio::task::spawn_blocking(move || {
                         replica_state.wait_for(
