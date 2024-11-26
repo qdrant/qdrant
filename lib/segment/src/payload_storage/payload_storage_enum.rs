@@ -288,7 +288,10 @@ mod tests {
         storage.flusher()().unwrap();
         // large value contains initial cost of infra (SSTable, etc.), not stable across different OS
         let storage_size = storage.get_storage_size_bytes().unwrap();
-        assert!(storage_size > 1000, "storage_size = {storage_size}");
+        assert!(
+            storage_size > 1000 && storage_size < 1300,
+            "storage_size = {storage_size}"
+        );
 
         // check how it scales
         for _ in 1..=100 {
@@ -298,6 +301,9 @@ mod tests {
         storage.flusher()().unwrap();
         // loose assertion because value not stable across different OS
         let storage_size = storage.get_storage_size_bytes().unwrap();
-        assert!(storage_size > 2000, "storage_size = {storage_size}");
+        assert!(
+            storage_size > 2000 && storage_size < 2300,
+            "storage_size = {storage_size}"
+        );
     }
 }
