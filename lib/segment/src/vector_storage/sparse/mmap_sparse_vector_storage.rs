@@ -12,13 +12,13 @@ use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-use super::bitvec::bitvec_set_deleted;
 use super::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
-use super::{SparseVectorStorage, VectorStorage};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
+use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]

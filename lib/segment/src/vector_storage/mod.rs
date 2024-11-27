@@ -17,11 +17,10 @@ pub mod chunked_vector_storage;
 pub mod common;
 pub mod dense;
 mod in_ram_persisted_vectors;
-pub mod mmap_sparse_vector_storage;
 pub mod multi_dense;
 pub mod query;
 mod query_scorer;
-pub mod simple_sparse_vector_storage;
+pub mod sparse;
 
 pub use raw_scorer::*;
 pub use vector_storage_base::*;

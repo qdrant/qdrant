@@ -20,7 +20,7 @@ use crate::index::sparse_index::sparse_vector_index::{
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
-use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 
 /// Prepares a sparse vector index with a given iterator of sparse vectors

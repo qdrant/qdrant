@@ -9,7 +9,6 @@ use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
-use super::SparseVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -18,7 +17,7 @@ use crate::data_types::vectors::VectorRef;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
