@@ -16,7 +16,6 @@ use bitvec::vec::BitVec;
 use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
-use crate::common::operation_error::OperationResult;
 
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.
@@ -31,7 +30,7 @@ fn create_graph_layers_builder(
     m0: usize,
     ef: usize,
     entry_points_num: usize,
-) -> OperationResult<GraphLayersBuilder> {
+) -> GraphLayersBuilder {
     // create graph layers builder
     let mut graph_layers_builder =
         GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
@@ -61,7 +60,7 @@ fn create_graph_layers_builder(
         }
     }
 
-    Ok(graph_layers_builder)
+    graph_layers_builder
 }
 
 #[cfg(test)]

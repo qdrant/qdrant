@@ -41,10 +41,6 @@ void main() {
     set_target(request.id);
     float entry_score = similarity(request.entry);
     uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
-    if (search_count == UINT_MAX) {
-        // error while searching. propably candidates heap overflow
-        return;
-    }
 
     if (subgroupElect()) {
         if (search_count > 0) {

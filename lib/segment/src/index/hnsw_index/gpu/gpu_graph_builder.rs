@@ -65,7 +65,7 @@ pub fn build_hnsw_on_gpu<'a>(
     )?;
 
     let graph_layers_builder =
-        create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num)?;
+        create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num);
 
     let mut cpu_linked_points_count = 0;
     for batch in batched_points.iter_batches(0) {
