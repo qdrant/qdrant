@@ -1,0 +1,96 @@
+#ifndef SHARED_BUFFER_HEADER
+#define SHARED_BUFFER_HEADER
+
+#include "common.comp"
+
+shared ScoredPoint shared_buffer[SHARED_BUFFER_CAPACITY];
+
+uint _subgroup_bubble_sort(float score) {
+    uint invocation = gl_SubgroupInvocationID;
+    bool is_even = invocation % 2 == 0;
+    uint invocation_forward = is_even ? invocation + 1 : invocation - 1;
+    uint invocation_backward = invocation;
+    if (invocation != SUBGROUP_SIZE - 1 && invocation != 0) {
+        invocation_backward = is_even ? invocation - 1 : invocation + 1;
+    }
+
+    uint index = invocation;
+    for (uint j = 0; j < SUBGROUP_SIZE / 2; j++) {
+        bool is_even = gl_SubgroupInvocationID % 2 == 0;
+        bool was_changed = false;
+
+        // step one: compare with the next element
+        {
+            float next_score = subgroupShuffle(score, invocation_forward);
+            uint next_index = subgroupShuffle(index, invocation_forward);
+            bool need_exchange = is_even ? score < next_score : score > next_score;
+            if (need_exchange) {
+                was_changed = true;
+                score = next_score;
+                index = next_index;
+            }
+        }
+
+        // step two: compare with previous element
+        {
+            float next_score = subgroupShuffle(score, invocation_backward);
+            uint next_index = subgroupShuffle(index, invocation_backward);
+            bool need_exchange = is_even ? score > next_score : score < next_score;
+            if (need_exchange) {
+                was_changed = true;
+                score = next_score;
+                index = next_index;
+            }
+        }
+
+        if (!subgroupAny(was_changed)) {
+            break;
+        }
+    }
+    return index;
+}
+
+void _bitonic_cmp(uint offset, uint count, uint b_i, uint b_j) {
+    if (b_i < b_j && b_j < count && shared_buffer[offset + b_j].score > shared_buffer[offset + b_i].score) {
+        ScoredPoint temp = shared_buffer[offset + b_i];
+        shared_buffer[offset + b_i] = shared_buffer[offset + b_j];
+        shared_buffer[offset + b_j] = temp;
+    }
+}
+
+void sort(uint offset, uint count) {
+    for (uint group_offset = 0; group_offset < count; group_offset += SUBGROUP_SIZE) {
+        ScoredPoint scored_point = ScoredPoint(0, negative_infinity);
+        uint i = group_offset + gl_SubgroupInvocationID;
+        if (i < count) {
+            scored_point = shared_buffer[offset + i];
+        }
+
+        uint permut = _subgroup_bubble_sort(scored_point.score);
+        scored_point = ScoredPoint(
+            subgroupShuffle(scored_point.id, permut),
+            subgroupShuffle(scored_point.score, permut)
+        );
+
+        if (i < count) {
+            shared_buffer[offset + i] = scored_point;
+        }
+    }
+    subgroupMemoryBarrierShared();
+
+    for (uint k = 64; (k >> 1) < count; k <<= 1) {
+        for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
+            _bitonic_cmp(offset, count, i, i ^ (k - 1));
+        }
+        subgroupMemoryBarrierShared();
+
+        for (uint j = k >> 1; 0 < j; j >>= 1) {
+            for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
+                _bitonic_cmp(offset, count, i, i ^ j);
+            }
+            subgroupMemoryBarrierShared();
+        }
+    }
+}
+
+#endif

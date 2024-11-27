@@ -610,7 +610,7 @@ fn test_gpu_vector_storage_impl(
     let shader = ShaderBuilder::new(device.clone())
         .with_shader_code(include_str!("../shaders/tests/test_vector_storage.comp"))
         .with_parameters(&gpu_vector_storage)
-        .build()
+        .build("tests/test_vector_storage.comp")
         .unwrap();
 
     let pipeline = gpu::Pipeline::builder()

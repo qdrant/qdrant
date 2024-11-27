@@ -26,21 +26,21 @@ pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 /// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
     max_level: AtomicUsize,
-    m: usize,
-    m0: usize,
-    ef_construct: usize,
+    pub(crate) m: usize,
+    pub(crate) m0: usize,
+    pub(crate) ef_construct: usize,
     // Factor of level probability
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    links_layers: Vec<LockedLayersContainer>,
-    entry_points: Mutex<EntryPoints>,
+    pub(crate) links_layers: Vec<LockedLayersContainer>,
+    pub(crate) entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    ready_list: RwLock<BitVec>,
+    pub(crate) ready_list: RwLock<BitVec>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -206,7 +206,7 @@ impl GraphLayersBuilder {
         picked_level.round() as usize
     }
 
-    fn get_point_level(&self, point_id: PointOffsetType) -> usize {
+    pub(crate) fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
     }
 

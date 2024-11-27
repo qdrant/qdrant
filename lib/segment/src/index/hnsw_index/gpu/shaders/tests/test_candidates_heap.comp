@@ -1,0 +1,56 @@
+#version 450
+
+#include "extensions.comp"
+
+#include "common.comp"
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+#define SHARED_BUFFER_CAPACITY EF
+#define CANDIDATES_HEAP_OFFSET 0
+
+#include "shared_buffer.comp"
+#include "bheap.comp"
+
+layout(set = 0, binding = 0)
+readonly uniform TestParams {
+    uint input_counts;
+} test_params;
+
+layout(set = 0, binding = 1) buffer ScoredPointsInput {
+    ScoredPoint data[];
+} input_points;
+
+layout(set = 0, binding = 2) buffer ScoresOuput {
+    ScoredPoint data[];
+} scores_output;
+
+uint candidates_count = 0;
+
+void main() {
+    uint subgroup_index = SUBGROUP_ID;
+
+    for (uint i = 0; i < test_params.input_counts; i++) {
+        uint point_index = subgroup_index * test_params.input_counts + i;
+        ScoredPoint point = input_points.data[point_index];
+        bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, point);
+    }
+
+    while (candidates_count > 0) {
+        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
+    }
+
+    for (uint i = 0; i < test_params.input_counts; i++) {
+        uint point_index = subgroup_index * test_params.input_counts + i;
+        ScoredPoint point = input_points.data[point_index];
+        bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, point);
+    }
+
+    uint output_index = subgroup_index * test_params.input_counts;
+    while (candidates_count > 0) {
+        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
+        if (subgroupElect()) {
+            scores_output.data[output_index] = candidate;
+        }
+        output_index++;
+    }
+}

@@ -1,0 +1,34 @@
+#ifndef LINKS_HEADER
+#define LINKS_HEADER
+
+#ifndef LINKS_LAYOUT_SET
+#error "LINKS_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+
+layout(set = LINKS_LAYOUT_SET, binding = 0)
+readonly uniform LinksParams {
+    uint m;
+} links_params;
+
+layout(set = LINKS_LAYOUT_SET, binding = 1)
+buffer Links {
+    POINT_ID data[];
+} links;
+
+#define LEVEL_M links_params.m
+
+#define LINKS_CONTAINER_OFFSET(ID) \
+    ID * (LINKS_CAPACITY + 1)
+
+#define LINKS_COUNT(ID) \
+    links.data[LINKS_CONTAINER_OFFSET(ID)]
+
+#define GET_LINK(ID, I) \
+    links.data[LINKS_CONTAINER_OFFSET(ID) + 1 + I]
+
+#define LINKS_SET_SIZE(ID, SIZE) \
+    links.data[LINKS_CONTAINER_OFFSET(ID)] = SIZE
+
+#endif

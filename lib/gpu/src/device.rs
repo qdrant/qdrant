@@ -39,6 +39,9 @@ pub struct Device {
     /// It's used in bounds checking in Context.
     max_compute_work_group_count: [usize; 3],
 
+    /// Maximum GPU buffer size.
+    max_buffer_size: usize,
+
     /// Selected queue index to use.
     queue_index: usize,
 }
@@ -152,6 +155,7 @@ impl Device {
         let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();
 
         let max_compute_work_group_count;
+        let max_buffer_size;
         let mut is_dynamic_subgroup_size = false;
         let subgroup_size = {
             let props = unsafe {
@@ -164,6 +168,7 @@ impl Device {
                 props.limits.max_compute_work_group_count[1] as usize,
                 props.limits.max_compute_work_group_count[2] as usize,
             ];
+            max_buffer_size = props.limits.max_storage_buffer_range as usize;
             let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
             let mut vulkan_1_3_properties = vk::PhysicalDeviceVulkan13Properties::default();
             let mut props2 = vk::PhysicalDeviceProperties2::default()
@@ -295,6 +300,7 @@ impl Device {
             _transfer_queues: transfer_queues,
             subgroup_size,
             max_compute_work_group_count,
+            max_buffer_size,
             is_dynamic_subgroup_size,
             queue_index,
         }))
@@ -351,6 +357,10 @@ impl Device {
 
     pub fn max_compute_work_group_count(&self) -> [usize; 3] {
         self.max_compute_work_group_count
+    }
+
+    pub fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
     }
 
     pub fn compute_queue(&self) -> &Queue {
