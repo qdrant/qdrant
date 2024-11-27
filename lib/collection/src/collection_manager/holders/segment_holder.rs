@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
@@ -458,7 +459,7 @@ impl<'s> SegmentHolder {
     ///
     /// Points can be in multiple segments having different versions. We must only apply the
     /// operation to the latest point version, otherwise our copy on write mechanism may
-    /// repurpose old point data.
+    /// repurpose old point data. See: <https://github.com/qdrant/qdrant/pull/5528>
     ///
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.
@@ -487,21 +488,20 @@ impl<'s> SegmentHolder {
             let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
             for segment_point in segment_points {
-                let point_version = segment_lock.point_version(segment_point).unwrap();
-
+                let point_version = segment_lock
+                    .point_version(segment_point)
+                    .unwrap_or_default();
                 match points.entry(segment_point) {
                     // First time we see the point, add it to the list
-                    std::collections::hash_map::Entry::Vacant(entry) => {
+                    Entry::Vacant(entry) => {
                         entry.insert((point_version, *idx));
                     }
                     // Point we have seen before is older, replace it
-                    std::collections::hash_map::Entry::Occupied(mut entry)
-                        if entry.get().0 < point_version =>
-                    {
+                    Entry::Occupied(mut entry) if entry.get().0 < point_version => {
                         entry.insert((point_version, *idx));
                     }
                     // Point we have seen before is newer, do nothing
-                    std::collections::hash_map::Entry::Occupied(_) => {}
+                    Entry::Occupied(_) => {}
                 }
             }
         }
@@ -513,7 +513,8 @@ impl<'s> SegmentHolder {
         for (point_id, (_point_version, segment_id)) in points {
             segment_points
                 .entry(segment_id)
-                .or_insert_with(|| Vec::with_capacity(ids.len() / segment_count))
+                // Preallocate point IDs vector with rough estimate of size
+                .or_insert_with(|| Vec::with_capacity(ids.len() / max(segment_count / 2, 1)))
                 .push(point_id);
         }
 
