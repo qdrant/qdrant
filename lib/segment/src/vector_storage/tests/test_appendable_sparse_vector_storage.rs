@@ -270,17 +270,15 @@ fn test_delete_points_in_simple_sparse_vector_storage() {
 #[test]
 fn test_delete_points_in_mmap_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let mut storage = VectorStorageEnum::SparseMmap(
-        MmapSparseVectorStorage::open_or_create(dir.path(), &Default::default()).unwrap(),
-    );
+    let mut storage =
+        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
     do_test_delete_points(&mut storage);
 
     storage.flusher()().unwrap();
 
     drop(storage);
 
-    let _storage =
-        MmapSparseVectorStorage::open_or_create(dir.path(), &Default::default()).unwrap();
+    let _storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
 }
 
 #[test]
@@ -303,26 +301,22 @@ fn test_update_from_delete_points_simple_sparse_vector_storage() {
 fn test_update_from_delete_points_mmap_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    let mut storage = VectorStorageEnum::SparseMmap(
-        MmapSparseVectorStorage::open_or_create(dir.path(), &Default::default()).unwrap(),
-    );
+    let mut storage =
+        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
 
     do_test_update_from_delete_points(&mut storage);
     storage.flusher()().unwrap();
 
     drop(storage);
 
-    let mut _storage = VectorStorageEnum::SparseMmap(
-        MmapSparseVectorStorage::open_or_create(dir.path(), &Default::default()).unwrap(),
-    );
+    let mut _storage =
+        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
 }
 
 #[test]
 fn test_persistance_in_mmap_sparse_vector_storage() {
     do_test_persistance(|path| {
-        VectorStorageEnum::SparseMmap(
-            MmapSparseVectorStorage::open_or_create(path, &Default::default()).unwrap(),
-        )
+        VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(path).unwrap())
     });
 }
 
