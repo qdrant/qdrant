@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use ahash::AHashMap;
 use common::iterator_ext::IteratorExt;
 use common::tar_ext;
 use futures::future::try_join_all;
@@ -479,8 +480,8 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         // Find in which segments latest point versions are located
-        let mut points: HashMap<PointIdType, (SeqNumberType, SegmentId)> =
-            HashMap::with_capacity(ids.len());
+        let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
+            AHashMap::with_capacity(ids.len());
         for (idx, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
@@ -507,8 +508,8 @@ impl<'s> SegmentHolder {
 
         // Map segment ID to points to update
         let segment_count = self.len();
-        let mut segment_points: HashMap<SegmentId, Vec<PointIdType>> =
-            HashMap::with_capacity(self.len());
+        let mut segment_points: AHashMap<SegmentId, Vec<PointIdType>> =
+            AHashMap::with_capacity(self.len());
         for (point_id, (_point_version, segment_id)) in points {
             segment_points
                 .entry(segment_id)
