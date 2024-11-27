@@ -138,7 +138,7 @@ impl MmapValue for str {
     type Referenced<'a> = &'a str;
 
     fn mmapped_size(value: &str) -> usize {
-        value.as_bytes().len() + std::mem::size_of::<u32>()
+        value.len() + std::mem::size_of::<u32>()
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<&str> {

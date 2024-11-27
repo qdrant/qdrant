@@ -262,7 +262,7 @@ impl RecoveryPoint {
             other
                 .clocks
                 .get(key)
-                .map_or(false, |&(other_tick, _token)| tick < other_tick)
+                .is_some_and(|&(other_tick, _token)| tick < other_tick)
         })
     }
 

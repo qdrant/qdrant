@@ -615,7 +615,7 @@ impl UpdateHandler {
             if !optimizer_cpu_budget.has_budget(desired_cpus) {
                 let trigger_active = cpu_available_trigger
                     .as_ref()
-                    .map_or(false, |t| !t.is_finished());
+                    .is_some_and(|t| !t.is_finished());
                 if !trigger_active {
                     cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
                         optimizer_cpu_budget.clone(),

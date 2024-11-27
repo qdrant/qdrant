@@ -30,7 +30,7 @@ impl EtaCalculator {
     }
 
     fn set_progress_raw(&mut self, now: Instant, current_progress: usize) {
-        if self.0.back().map_or(false, |(_, l)| current_progress < *l) {
+        if self.0.back().is_some_and(|(_, l)| current_progress < *l) {
             // Progress went backwards, reset the state.
             *self = Self::new();
         }

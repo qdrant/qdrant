@@ -49,7 +49,7 @@ impl ShardReplicaSet {
                 }
                 // In recovery state, only allow operations with force flag
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
-                    if operation.clock_tag.map_or(false, |tag| tag.force) =>
+                    if operation.clock_tag.is_some_and(|tag| tag.force) =>
                 {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
@@ -406,11 +406,8 @@ impl ShardReplicaSet {
                         replica_state.wait_for(
                             |state| {
                                 peer_ids.iter().all(|peer_id| {
-                                    state
-                                        .peers
-                                        .get(peer_id)
-                                        // Not found means that peer is dead
-                                        .map_or(true, |state| state != &ReplicaState::Active)
+                                    // Not found means that peer is dead
+                                    state.peers.get(peer_id) != Some(&ReplicaState::Active)
                                 })
                             },
                             timeout,

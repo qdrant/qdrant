@@ -59,7 +59,7 @@ impl<'a> VisitedListHandle<'a> {
         self.visited_list
             .visit_counters
             .get(point_id as usize)
-            .map_or(false, |x| *x == self.visited_list.current_iter)
+            .is_some_and(|x| *x == self.visited_list.current_iter)
     }
 
     /// Updates visited list

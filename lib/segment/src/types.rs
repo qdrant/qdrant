@@ -153,10 +153,7 @@ impl<'de> serde::Deserialize<'de> for ExtendedPointId {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = match serde_value::Value::deserialize(deserializer) {
-            Ok(val) => val,
-            Err(err) => return Err(err),
-        };
+        let value = serde_value::Value::deserialize(deserializer)?;
 
         if let Ok(num) = value.clone().deserialize_into() {
             return Ok(ExtendedPointId::NumId(num));

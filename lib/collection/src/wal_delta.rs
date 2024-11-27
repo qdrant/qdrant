@@ -1667,7 +1667,7 @@ mod tests {
                 // If we don't allow gaps, we only remove this exact tick from the beginning
                 // If we do allow gaps, we remove this tick and all lower ones from the beginning
                 while {
-                    must_see_ticks.front().map_or(false, |&tick| {
+                    must_see_ticks.front().is_some_and(|&tick| {
                         if allow_gaps {
                             tick <= newer.clock_tick
                         } else {

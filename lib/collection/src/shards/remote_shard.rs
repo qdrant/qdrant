@@ -789,7 +789,7 @@ impl ShardOperation for RemoteShard {
                 let is_payload_required = request
                     .with_payload
                     .as_ref()
-                    .map_or(false, |with_payload| with_payload.is_required());
+                    .is_some_and(|with_payload| with_payload.is_required());
 
                 batch_result
                     .result

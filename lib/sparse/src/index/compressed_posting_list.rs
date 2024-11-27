@@ -327,7 +327,7 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
     }
 }
 
-impl<'a, W: Weight> PostingListIter for CompressedPostingListIterator<'a, W> {
+impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
         let pos = self.pos;

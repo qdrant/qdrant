@@ -114,7 +114,7 @@ pub fn validate_shard_different_peers(
     }
 
     // If source and target shard is different, we do allow transferring from/to the same peer
-    if to_shard_id.map_or(false, |to_shard_id| to_shard_id != shard_id) {
+    if to_shard_id.is_some_and(|to_shard_id| to_shard_id != shard_id) {
         return Ok(());
     }
 

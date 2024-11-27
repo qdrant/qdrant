@@ -277,7 +277,7 @@ impl Segment {
                 .id_tracker
                 .borrow()
                 .internal_version(point_offset)
-                .map_or(false, |current_version| current_version > op_num)
+                .is_some_and(|current_version| current_version > op_num)
             {
                 return Ok(false);
             }
