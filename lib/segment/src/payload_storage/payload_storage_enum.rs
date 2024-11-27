@@ -156,6 +156,16 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::MmapPayloadStorage(s) => s.files(),
         }
     }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_storage_size_bytes(),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_storage_size_bytes(),
+        }
+    }
 }
 
 #[cfg(test)]

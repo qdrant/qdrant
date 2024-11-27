@@ -91,6 +91,19 @@ impl PayloadStorage for InMemoryPayloadStorage {
     fn files(&self) -> Vec<PathBuf> {
         vec![]
     }
+
+    fn get_storage_size_bytes(&self) -> OperationResult<usize> {
+        let mut estimated_size = 0;
+        for (_p_id, val) in self.payload.iter() {
+            // account for point_id
+            estimated_size += size_of::<PointOffsetType>();
+            for (key, val) in val.0.iter() {
+                // account for key and value
+                estimated_size += key.len() + serde_json::to_string(val).unwrap().len()
+            }
+        }
+        Ok(estimated_size)
+    }
 }
 
 #[cfg(test)]

@@ -115,7 +115,7 @@ impl DatabaseColumnScheduledDeleteWrapper {
         self.db.remove_column_family()
     }
 
-    pub fn get_storage_size_bytes(&self) -> OperationResult<u64> {
+    pub fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         self.db.get_storage_size_bytes()
     }
 }
