@@ -155,35 +155,28 @@ impl ProxySegment {
                 return Ok(false);
             }
 
-            let local_version_opt = wrapped_segment_guard.point_version(point_id);
-
             // Since `deleted_points` are shared between multiple ProxySegments,
             // It is possible that some other Proxy moved its point with different version already
             // If this is the case, there are multiple scenarios:
-            // - Already moved version is less than what we have in current proxy -> overwrite
-            // - Already moved version is higher than the current one -> mark local as removed
             // - Local point doesn't exist or already removed locally -> do nothing
+            // - Already moved version is higher than the current one -> mark local as removed
+            // - Already moved version is less than what we have in current proxy -> overwrite
 
-            let local_version = match (local_version_opt, deleted_points_guard.get(&point_id)) {
-                (Some(local_version), Some(&deleted_version)) => {
-                    if local_version > deleted_version {
-                        // If local version is higher than what we already moved,
-                        // We might want to overwrite it again
-                        local_version
-                    } else {
-                        // Local version is less new than what is already migrated
-                        // We can simply mark local as removed and carry on
-                        drop(deleted_points_guard);
-                        self.set_deleted_offset(point_offset);
-                        return Ok(false);
-                    }
-                }
-                (Some(local_version), None) => {
-                    // No deleted version, move local version to write segment
-                    local_version
-                }
-                (None, _) => return Ok(false), // no local version, nothing to move
+            // Point doesn't exist in wrapped segment - do nothing
+            let Some(local_version) = wrapped_segment_guard.point_version(point_id) else {
+                return Ok(false);
             };
+
+            // Equal or higher point version is already moved into write segment - delete from
+            // wrapped segment and do not move it again
+            if deleted_points_guard
+                .get(&point_id)
+                .is_some_and(|&deleted| deleted >= local_version)
+            {
+                drop(deleted_points_guard);
+                self.set_deleted_offset(point_offset);
+                return Ok(false);
+            }
 
             let (all_vectors, payload) = (
                 wrapped_segment_guard.all_vectors(point_id)?,
