@@ -13,7 +13,7 @@ impl<'a> CompressedPostingIterator<'a> {
     }
 }
 
-impl<'a> Iterator for CompressedPostingIterator<'a> {
+impl Iterator for CompressedPostingIterator<'_> {
     type Item = PointOffsetType;
 
     fn next(&mut self) -> Option<Self::Item> {

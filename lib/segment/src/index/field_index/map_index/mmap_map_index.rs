@@ -158,7 +158,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
-            .map_or(false, |_| {
+            .is_some_and(|_| {
                 self.point_to_values
                     .check_values_any(idx, |v| check_fn(N::from_referenced(&v)))
             })

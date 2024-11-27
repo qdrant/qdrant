@@ -284,7 +284,7 @@ impl DatabaseColumnWrapper {
     }
 }
 
-impl<'a> LockedDatabaseColumnWrapper<'a> {
+impl LockedDatabaseColumnWrapper<'_> {
     pub fn iter(&self) -> OperationResult<DatabaseColumnIterator> {
         DatabaseColumnIterator::new(&self.guard, self.column_name)
     }
@@ -303,7 +303,7 @@ impl<'a> DatabaseColumnIterator<'a> {
     }
 }
 
-impl<'a> Iterator for DatabaseColumnIterator<'a> {
+impl Iterator for DatabaseColumnIterator<'_> {
     type Item = (Box<[u8]>, Box<[u8]>);
 
     fn next(&mut self) -> Option<Self::Item> {

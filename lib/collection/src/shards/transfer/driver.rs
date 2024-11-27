@@ -148,7 +148,7 @@ pub async fn transfer_shard_fallback_default(
 ) -> CollectionResult<bool> {
     // Do not attempt to fall back to the same method
     let old_method = transfer_config.method;
-    if old_method.map_or(false, |method| method == fallback_method) {
+    if old_method.is_some_and(|method| method == fallback_method) {
         log::warn!("Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}");
         return Ok(false);
     }

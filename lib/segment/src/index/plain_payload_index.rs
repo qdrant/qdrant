@@ -404,7 +404,7 @@ pub struct PlainFilterContext<'a> {
     filter: &'a Filter,
 }
 
-impl<'a> FilterContext for PlainFilterContext<'a> {
+impl FilterContext for PlainFilterContext<'_> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         self.condition_checker.check(point_id, self.filter)
     }

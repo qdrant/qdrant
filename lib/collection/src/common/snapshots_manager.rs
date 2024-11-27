@@ -246,7 +246,7 @@ impl SnapshotStorageLocalFS {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
 
-            if !path.is_dir() && path.extension().map_or(false, |ext| ext == "snapshot") {
+            if !path.is_dir() && path.extension().is_some_and(|ext| ext == "snapshot") {
                 snapshots.push(get_snapshot_description(&path).await?);
             }
         }

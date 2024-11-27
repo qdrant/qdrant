@@ -29,7 +29,7 @@ pub enum CowVector<'a> {
     MultiDense(CowMultiVector<'a, VectorElementType>),
 }
 
-impl<'a> Default for CowVector<'a> {
+impl Default for CowVector<'_> {
     fn default() -> Self {
         CowVector::Dense(Cow::Owned(Vec::new()))
     }
@@ -61,7 +61,7 @@ impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {
     }
 }
 
-impl<'a> CowVector<'a> {
+impl CowVector<'_> {
     pub fn default_sparse() -> Self {
         CowVector::Sparse(Cow::Owned(SparseVector::default()))
     }
@@ -92,7 +92,7 @@ impl<'a> From<Cow<'a, [VectorElementType]>> for CowVector<'a> {
     }
 }
 
-impl<'a> From<VectorInternal> for CowVector<'a> {
+impl From<VectorInternal> for CowVector<'_> {
     fn from(v: VectorInternal) -> Self {
         match v {
             VectorInternal::Dense(v) => CowVector::Dense(Cow::Owned(v)),
@@ -102,19 +102,19 @@ impl<'a> From<VectorInternal> for CowVector<'a> {
     }
 }
 
-impl<'a> From<SparseVector> for CowVector<'a> {
+impl From<SparseVector> for CowVector<'_> {
     fn from(v: SparseVector) -> Self {
         CowVector::Sparse(Cow::Owned(v))
     }
 }
 
-impl<'a> From<DenseVector> for CowVector<'a> {
+impl From<DenseVector> for CowVector<'_> {
     fn from(v: DenseVector) -> Self {
         CowVector::Dense(Cow::Owned(v))
     }
 }
 
-impl<'a> From<MultiDenseVectorInternal> for CowVector<'a> {
+impl From<MultiDenseVectorInternal> for CowVector<'_> {
     fn from(v: MultiDenseVectorInternal) -> Self {
         CowVector::MultiDense(CowMultiVector::Owned(v))
     }

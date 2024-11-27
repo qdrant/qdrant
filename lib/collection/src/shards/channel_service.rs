@@ -184,7 +184,7 @@ impl ChannelService {
         self.id_to_metadata
             .read()
             .get(&peer_id)
-            .map_or(false, |metadata| &metadata.version >= version)
+            .is_some_and(|metadata| &metadata.version >= version)
     }
 
     /// Get the REST address for the current peer.

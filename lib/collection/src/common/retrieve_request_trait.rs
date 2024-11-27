@@ -105,7 +105,7 @@ impl RetrieveRequest for DiscoverRequestInternal {
     }
 }
 
-impl<'a> RetrieveRequest for CollectionQueryResolveRequest<'a> {
+impl RetrieveRequest for CollectionQueryResolveRequest<'_> {
     fn get_lookup_collection(&self) -> Option<&String> {
         self.lookup_from.as_ref().map(|x| &x.collection)
     }

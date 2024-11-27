@@ -197,9 +197,7 @@ impl Collection {
             None => shard_holder_guard.insert(self.shards_holder.read().await),
         };
 
-        let is_resharding_transfer = transfer
-            .method
-            .map_or(false, |method| method.is_resharding());
+        let is_resharding_transfer = transfer.method.is_some_and(|method| method.is_resharding());
 
         // Handle *destination* replica
         let mut is_dest_replica_active = false;
@@ -298,9 +296,7 @@ impl Collection {
             return Ok(());
         };
 
-        let is_resharding_transfer = transfer
-            .method
-            .map_or(false, |method| method.is_resharding());
+        let is_resharding_transfer = transfer.method.is_some_and(|method| method.is_resharding());
 
         let shard_id = transfer_key.to_shard_id.unwrap_or(transfer_key.shard_id);
 
@@ -411,7 +407,7 @@ impl Collection {
                         |state| {
                             state
                                 .get_peer_state(this_peer_id)
-                                .map_or(false, |peer_state| peer_state.is_partial_or_recovery())
+                                .is_some_and(|peer_state| peer_state.is_partial_or_recovery())
                         },
                         defaults::CONSENSUS_META_OP_WAIT,
                     )
@@ -445,12 +441,12 @@ impl Collection {
         let incoming_shard_transfer_limit_reached = self
             .shared_storage_config
             .incoming_shard_transfers_limit
-            .map_or(false, |limit| incoming >= limit);
+            .is_some_and(|limit| incoming >= limit);
 
         let outgoing_shard_transfer_limit_reached = self
             .shared_storage_config
             .outgoing_shard_transfers_limit
-            .map_or(false, |limit| outgoing >= limit);
+            .is_some_and(|limit| outgoing >= limit);
 
         incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
     }

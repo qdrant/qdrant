@@ -105,7 +105,7 @@ pub struct CsrIter<'a> {
     row: usize,
 }
 
-impl<'a> Iterator for CsrIter<'a> {
+impl Iterator for CsrIter<'_> {
     type Item = Result<SparseVector, ValidationErrors>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -117,7 +117,7 @@ impl<'a> Iterator for CsrIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for CsrIter<'a> {
+impl ExactSizeIterator for CsrIter<'_> {
     fn len(&self) -> usize {
         self.csr.nrow - self.row
     }

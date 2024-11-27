@@ -42,7 +42,7 @@ impl<'a> UncheckedTocProvider<'a> {
     }
 }
 
-impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
+impl CheckedTocProvider for UncheckedTocProvider<'_> {
     async fn check_strict_mode<'b>(
         &'b self,
         _request: &impl StrictModeVerification,
@@ -81,7 +81,7 @@ impl<'a> StrictModeCheckedTocProvider<'a> {
     }
 }
 
-impl<'a> CheckedTocProvider for StrictModeCheckedTocProvider<'a> {
+impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
     async fn check_strict_mode(
         &self,
         request: &impl StrictModeVerification,

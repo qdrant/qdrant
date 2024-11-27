@@ -33,7 +33,7 @@ pub enum FacetValueRef<'a> {
     Bool(bool),
 }
 
-impl<'a> FacetValueRef<'a> {
+impl FacetValueRef<'_> {
     pub fn to_owned(&self) -> FacetValue {
         match self {
             FacetValueRef::Keyword(s) => FacetValue::Keyword((*s).to_string()),

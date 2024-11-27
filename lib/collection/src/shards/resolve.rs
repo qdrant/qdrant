@@ -366,7 +366,7 @@ struct ResolverRecord<'a, T> {
     count: usize,
 }
 
-impl<'a, T> Default for ResolverRecord<'a, T> {
+impl<T> Default for ResolverRecord<'_, T> {
     fn default() -> Self {
         Self {
             item: None,
