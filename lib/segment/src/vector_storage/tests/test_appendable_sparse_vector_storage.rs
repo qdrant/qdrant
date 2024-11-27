@@ -11,9 +11,9 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
-use crate::vector_storage::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::query::RecoQuery;
-use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
