@@ -1,0 +1,61 @@
+#ifndef VECTOR_STORAGE_PQ_HEADER
+#define VECTOR_STORAGE_PQ_HEADER
+
+struct PQRange {
+    uint start;
+    uint end;
+};
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = VECTOR_STORAGE_PQ_CENTROIDS_BINDING) \
+readonly buffer Centroids { \
+    float data[]; \
+} centroids;
+
+layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = VECTOR_STORAGE_PQ_DIVISIONS_BINDING) \
+readonly buffer VectorDivisions { \
+    PQRange data[]; \
+} vector_divisions;
+
+#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
+#define VECTOR_STORAGE_SCORE_TYPE float
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) subgroupAdd(RESULT)
+
+float score_pq(u8vec4 a, u8vec4 b, uint i) {
+    float score = 0.0;
+    uint index = i * 4;
+    uint max_index = min(index + 4, PQ_DIVISIONS_COUNT);
+    for (; index < max_index; index++) {
+        uint c_a = a[index % 4] * PQ_CENTROIDS_DIM;
+        uint c_b = b[index % 4] * PQ_CENTROIDS_DIM;
+        PQRange range = vector_divisions.data[index];
+        for (uint j = range.start; j < range.end; j++) {
+            float data_a = centroids.data[c_a + j];
+            float data_b = centroids.data[c_b + j];
+
+#ifdef COSINE_DISTANCE
+            score += data_a * data_b;
+#endif
+
+#ifdef DOT_DISTANCE
+            score += data_a * data_b;
+#endif
+
+#ifdef EUCLID_DISTANCE
+            score -= (data_a - data_b) * (data_a - data_b);
+#endif
+
+#ifdef MANHATTAN_DISTANCE
+            score -= abs(data_a - data_b);
+#endif
+        }
+    }
+    return score;
+}
+
+#ifdef SINGLE_SUBGROUP_PER_VECTOR
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, gl_SubgroupInvocationID)
+#else
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, i * SUBGROUP_SIZE + gl_SubgroupInvocationID) 
+#endif
+
+#endif

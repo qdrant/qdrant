@@ -26,6 +26,12 @@ pub trait MultivectorOffsetsStorage: Sized {
     fn save(&self, path: &Path) -> OperationResult<()>;
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset;
+
+    fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
@@ -47,6 +53,10 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self[idx as usize]
+    }
+
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -82,6 +92,10 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
         self.offsets[idx as usize]
+    }
+
+    fn len(&self) -> usize {
+        self.offsets.len()
     }
 }
 
@@ -200,6 +214,18 @@ where
             sum += max_sim;
         }
         sum
+    }
+
+    pub fn inner_storage(&self) -> &QuantizedStorage {
+        &self.quantized_storage
+    }
+
+    pub fn inner_vector_offset(&self, id: PointOffsetType) -> MultivectorOffset {
+        self.offsets.get_offset(id)
+    }
+
+    pub fn vectors_count(&self) -> usize {
+        self.offsets.len()
     }
 }
 

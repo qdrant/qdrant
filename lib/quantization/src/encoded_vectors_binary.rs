@@ -254,6 +254,19 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             (DistanceType::L1 | DistanceType::L2, false) => xor_product - zeros_count,
         }
     }
+
+    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+        self.encoded_vectors
+            .get_vector_data(i as _, self.get_quantized_vector_size())
+    }
+
+    pub fn get_vector_parameters(&self) -> &VectorParameters {
+        &self.metadata.vector_parameters
+    }
+
+    pub fn vectors_count(&self) -> usize {
+        self.metadata.vector_parameters.count
+    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>

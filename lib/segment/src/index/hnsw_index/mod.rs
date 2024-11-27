@@ -11,6 +11,9 @@ pub mod hnsw;
 pub mod point_scorer;
 mod search_context;
 
+#[cfg(feature = "gpu")]
+pub mod gpu;
+
 #[cfg(test)]
 mod tests;
 

@@ -1,0 +1,76 @@
+#ifndef VECTOR_STORAGE_U8_HEADER
+#define VECTOR_STORAGE_U8_HEADER
+
+#define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
+#define VECTOR_STORAGE_SCORE_TYPE uint
+
+#ifdef COSINE_DISTANCE
+
+uint dot_u8vec4(u8vec4 a, u8vec4 b, in out uint vector1Len, in out uint vector2Len) {
+    uvec4 square1 = uvec4(a) * uvec4(a);
+    vector1Len += square1.x + square1.y + square1.z + square1.w;
+
+    uvec4 square2 = uvec4(b) * uvec4(b);
+    vector2Len += square2.x + square2.y + square2.z + square2.w;
+
+    uvec4 mul = uvec4(a) * uvec4(b);
+    return mul.x + mul.y + mul.z + mul.w;
+}
+
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b, vector1Len, vector2Len)
+
+float u8_postprocess_cosine_score(float result, uint vector1Len, uint vector2Len) {
+    float len1 = float(subgroupAdd(vector1Len));
+    float len2 = float(subgroupAdd(vector2Len));
+    if (len1 > 0 && len2 > 0) {
+        return float(subgroupAdd(result)) / sqrt(len1 * len2);
+    } else {
+        return 0;
+    }
+}
+
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
+    u8_postprocess_cosine_score(RESULT, vector1Len, vector2Len)
+
+#define VECTOR_STORAGE_PREPROCESS() \
+    uint vector1Len = 0; \
+    uint vector2Len = 0;
+
+#endif
+
+#ifdef DOT_DISTANCE
+
+uint dot_u8vec4(u8vec4 a, u8vec4 b) {
+    uvec4 mul = uvec4(a) * uvec4(b);
+    return mul.x + mul.y + mul.z + mul.w;
+}
+
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
+
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) float(subgroupAdd(RESULT))
+
+#endif
+
+#ifdef EUCLID_DISTANCE
+
+uint euclid_u8vec4(u8vec4 v1, u8vec4 v2) {
+    ivec4 v = ivec4(v1) - ivec4(v2);
+    return uint(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+}
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_u8vec4(a, b)
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(subgroupAdd(RESULT))
+
+#endif
+
+#ifdef MANHATTAN_DISTANCE
+uint manhattan_u8vec4(u8vec4 v1, u8vec4 v2) {
+    ivec4 v = abs(ivec4(v1) - ivec4(v2));
+    return uint(v.x + v.y + v.z + v.w);
+}
+
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_u8vec4(a, b)
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(subgroupAdd(RESULT))
+
+#endif
+
+#endif
