@@ -1,13 +1,15 @@
-use std::cmp::max;
-use std::fs::OpenOptions;
-use std::io::Read as _;
+use std::cmp::Reverse;
+use std::fs::{File, OpenOptions};
+use std::io::{Read as _, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
-use memmap2::{Mmap, MmapMut};
+use common::zeros::WriteZerosExt as _;
+use memmap2::Mmap;
 use memory::{madvise, mmap_ops};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
@@ -46,92 +48,66 @@ for lvl > 0:
 links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
 
+const HEADER_SIZE: usize = 64;
+
 #[derive(Clone, Debug, Default)]
+struct GraphLinksFileInfo {
+    point_count: usize,
+    reindex_start: usize,
+    links_start: usize,
+    offsets_start: usize,
+    offsets_end: usize,
+}
+
+#[derive(AsBytes, FromBytes, FromZeroes)]
+#[repr(C)]
 struct GraphLinksFileHeader {
-    pub point_count: u64,
-    pub levels_count: u64,
-    pub total_links_len: u64,
-    pub total_offsets_len: u64,
-    pub offsets_padding: u64,
+    point_count: u64,
+    levels_count: u64,
+    total_links_len: u64,
+    total_offsets_len: u64,
+    offsets_padding: u64, // 0 or 4
 }
 
-fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
-    let level_offsets_range = header.get_level_offsets_range();
-    let level_offsets_byte_slice = &data[level_offsets_range];
-    mmap_ops::transmute_from_u8_to_slice(level_offsets_byte_slice)
-}
+impl GraphLinksFileInfo {
+    pub fn load(data: &[u8]) -> Option<GraphLinksFileInfo> {
+        let header = GraphLinksFileHeader::ref_from_prefix(data)?;
 
-impl GraphLinksFileHeader {
-    pub fn new(
-        point_count: usize,
-        levels_count: usize,
-        total_links_len: usize,
-        total_offsets_len: usize,
-    ) -> GraphLinksFileHeader {
-        let offsets_padding = if (point_count + total_links_len) % 2 == 0 {
-            0
-        } else {
-            4
-        };
-        GraphLinksFileHeader {
-            point_count: point_count as u64,
-            levels_count: levels_count as u64,
-            total_links_len: total_links_len as u64,
-            total_offsets_len: total_offsets_len as u64,
-            offsets_padding,
-        }
+        let reindex_start = HEADER_SIZE + header.levels_count as usize * size_of::<u64>();
+        let links_start =
+            reindex_start + header.point_count as usize * size_of::<PointOffsetType>();
+        let offsets_start = links_start
+            + header.total_links_len as usize * size_of::<PointOffsetType>()
+            + header.offsets_padding as usize;
+        let offsets_end = offsets_start + header.total_offsets_len as usize * size_of::<u64>();
+
+        Some(GraphLinksFileInfo {
+            point_count: header.point_count as usize,
+            reindex_start,
+            links_start,
+            offsets_start,
+            offsets_end,
+        })
     }
 
-    pub fn raw_size() -> usize {
-        size_of::<u64>() * 5
+    pub fn level_offsets(&self) -> Range<usize> {
+        HEADER_SIZE..self.reindex_start
     }
 
-    pub fn serialize_bytes_to(&self, raw_data: &mut [u8]) {
-        let byte_slice = &mut raw_data[0..Self::raw_size()];
-        let arr: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(byte_slice);
-        arr[0] = self.point_count;
-        arr[1] = self.levels_count;
-        arr[2] = self.total_links_len;
-        arr[3] = self.total_offsets_len;
-        arr[4] = self.offsets_padding;
+    pub fn get_level_offsets<'a>(&self, data: &'a [u8]) -> &'a [u64] {
+        u64::slice_from(&data[self.level_offsets()]).unwrap()
     }
 
-    pub fn deserialize_bytes_from(raw_data: &[u8]) -> GraphLinksFileHeader {
-        let byte_slice = &raw_data[0..Self::raw_size()];
-        let arr: &[u64] = mmap_ops::transmute_from_u8_to_slice(byte_slice);
-        GraphLinksFileHeader {
-            point_count: arr[0],
-            levels_count: arr[1],
-            total_links_len: arr[2],
-            total_offsets_len: arr[3],
-            offsets_padding: arr[4],
-        }
+    pub fn reindex_range(&self) -> Range<usize> {
+        self.reindex_start..self.links_start
     }
 
-    pub fn get_data_size(&self) -> u64 {
-        self.get_offsets_range().end as u64
+    pub fn links_range(&self) -> Range<usize> {
+        self.links_start..self.offsets_start
     }
 
-    pub fn get_level_offsets_range(&self) -> Range<usize> {
-        // level offsets are stored after header
-        // but we might want to have some extra space for future changes
-        let start = max(64, Self::raw_size());
-        start..start + self.levels_count as usize * size_of::<u64>()
-    }
-
-    pub fn get_reindex_range(&self) -> Range<usize> {
-        let start = self.get_level_offsets_range().end;
-        start..start + self.point_count as usize * size_of::<PointOffsetType>()
-    }
-
-    pub fn get_links_range(&self) -> Range<usize> {
-        let start = self.get_reindex_range().end;
-        start..start + self.total_links_len as usize * size_of::<PointOffsetType>()
-    }
-
-    pub fn get_offsets_range(&self) -> Range<usize> {
-        let start = self.get_links_range().end + self.offsets_padding as usize;
-        start..start + self.total_offsets_len as usize * size_of::<u64>()
+    pub fn offsets_range(&self) -> Range<usize> {
+        self.offsets_start..self.offsets_end
     }
 }
 
@@ -142,6 +118,8 @@ pub struct GraphLinksConverter {
     total_links_len: usize,
     total_offsets_len: usize,
     path: Option<PathBuf>,
+    level_offsets: Vec<u64>,
+    point_count_by_level: Vec<u64>,
 }
 
 impl GraphLinksConverter {
@@ -154,14 +132,15 @@ impl GraphLinksConverter {
                 total_links_len: 0,
                 total_offsets_len: 1,
                 path: None,
+                level_offsets: Vec::new(),
+                point_count_by_level: Vec::new(),
             };
         }
 
         // create map from index in `offsets` to point_id
         let mut back_index: Vec<usize> = (0..edges.len()).collect();
         // sort by max layer and use this map to build `Self.reindex`
-        back_index.sort_unstable_by_key(|&i| edges[i].len());
-        back_index.reverse();
+        back_index.sort_unstable_by_key(|&i| Reverse(edges[i].len()));
 
         // `reindex` is map from point id to index in `Self.offsets`
         let mut reindex = vec![0; back_index.len()];
@@ -169,140 +148,124 @@ impl GraphLinksConverter {
             reindex[back_index[i]] = i as PointOffsetType;
         }
 
+        let levels_count = back_index
+            .first()
+            .map_or(0, |&point_id| edges[point_id].len());
+        let mut point_count_by_level = vec![0; levels_count];
+
         // estimate size of `links` and `offsets`
         let mut total_links_len = 0;
-        let mut total_offsets_len = 1;
         for point in edges.iter() {
-            for layer in point.iter() {
-                total_links_len += layer.len();
-                total_offsets_len += 1;
-            }
+            point_count_by_level[point.len() - 1] += 1;
+            total_links_len += point.iter().map(Vec::len).sum::<usize>();
         }
+
+        let mut total_offsets_len = 0;
+        let mut suffix_sum = point_count_by_level.iter().sum::<u64>();
+        let mut level_offsets = Vec::with_capacity(levels_count);
+        for &value in point_count_by_level.iter() {
+            level_offsets.push(total_offsets_len);
+            total_offsets_len += suffix_sum;
+            suffix_sum -= value;
+        }
+        total_offsets_len += 1;
 
         Self {
             edges,
             reindex,
             back_index,
             total_links_len,
-            total_offsets_len,
+            total_offsets_len: total_offsets_len as usize,
             path: None,
+            level_offsets,
+            point_count_by_level,
         }
-    }
-
-    fn get_header(&self) -> GraphLinksFileHeader {
-        GraphLinksFileHeader::new(
-            self.reindex.len(),
-            self.get_levels_count(),
-            self.total_links_len,
-            self.total_offsets_len,
-        )
     }
 
     /// Size of compacted graph in bytes.
-    pub fn data_size(&self) -> u64 {
-        self.get_header().get_data_size()
+    pub fn data_size(&self) -> usize {
+        HEADER_SIZE
+            + self.point_count_by_level.len() * size_of::<u64>()
+            + self.reindex.len() * size_of::<PointOffsetType>()
+            + self.total_links_len * size_of::<PointOffsetType>()
+            + self.offsets_padding()
+            + self.total_offsets_len * size_of::<u64>()
     }
 
-    pub fn serialize_to(&self, bytes_data: &mut [u8]) {
-        let header = self.get_header();
+    fn offsets_padding(&self) -> usize {
+        (self.total_links_len + self.reindex.len()) % 2 * size_of::<u32>()
+    }
 
-        header.serialize_bytes_to(bytes_data);
+    fn serialize_to_vec(&self) -> Vec<u8> {
+        let size = self.data_size();
+        let mut data = Vec::with_capacity(size);
+        // Unwrap should be the safe as `impl Write` for `Vec` never fails.
+        self.serialize_to_writer(&mut data).unwrap();
+        debug_assert_eq!(data.len(), size);
+        data
+    }
 
-        {
-            let reindex_range = header.get_reindex_range();
-            let reindex_byte_slice = &mut bytes_data[reindex_range];
-            let reindex_slice: &mut [PointOffsetType] =
-                mmap_ops::transmute_from_u8_to_mut_slice(reindex_byte_slice);
-            reindex_slice.copy_from_slice(&self.reindex);
+    fn serialize_to_writer(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        let header = GraphLinksFileHeader {
+            point_count: self.reindex.len() as u64,
+            levels_count: self.point_count_by_level.len() as u64,
+            total_links_len: self.total_links_len as u64,
+            total_offsets_len: self.total_offsets_len as u64,
+            offsets_padding: self.offsets_padding() as u64,
+        };
+
+        // 1. header
+        writer.write_all(header.as_bytes())?;
+
+        // 2. header padding
+        writer.write_zeros(HEADER_SIZE - size_of::<GraphLinksFileHeader>())?;
+
+        // 3. level_offsets
+        writer.write_all(self.level_offsets.as_bytes())?;
+
+        // 4. reindex
+        writer.write_all(self.reindex.as_bytes())?;
+
+        let mut offsets = Vec::with_capacity(header.total_offsets_len as usize);
+        offsets.push(0);
+
+        // 5. links
+        let mut links_pos = 0;
+        let mut write_links = |links: &[PointOffsetType]| {
+            writer.write_all(links.as_bytes())?;
+            links_pos += links.len();
+            offsets.push(links_pos as u64);
+            std::io::Result::Ok(())
+        };
+        for point in &self.edges {
+            write_links(&point[0])?;
         }
-
-        let header_levels_count = header.levels_count as usize;
-        let mut level_offsets = Vec::with_capacity(header_levels_count);
-        {
-            let links_range = header.get_links_range();
-            let offsets_range = header.get_offsets_range();
-            let union_range = links_range.start..offsets_range.end;
-            let (links_mmap, offsets_with_padding_mmap) = bytes_data[union_range]
-                .as_mut()
-                .split_at_mut(links_range.len());
-            let offsets_mmap = &mut offsets_with_padding_mmap[header.offsets_padding as _..];
-            let links_mmap: &mut [PointOffsetType] =
-                mmap_ops::transmute_from_u8_to_mut_slice(links_mmap);
-            let offsets_mmap: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(offsets_mmap);
-            offsets_mmap[0] = 0;
-
-            let mut links_pos = 0;
-            let mut offsets_pos = 1;
-            for level in 0..header_levels_count {
-                level_offsets.push(offsets_pos as u64 - 1);
-                self.iterate_level_points(level, |_, links| {
-                    links_mmap[links_pos..links_pos + links.len()].copy_from_slice(links);
-                    links_pos += links.len();
-
-                    offsets_mmap[offsets_pos] = links_pos as u64;
-                    offsets_pos += 1;
-                });
+        for level in 1..header.levels_count as usize {
+            let count = self.point_count_by_level.iter().skip(level).sum::<u64>() as usize;
+            for i in 0..count {
+                write_links(&self.edges[self.back_index[i]][level])?;
             }
         }
 
-        {
-            let level_offsets_range = header.get_level_offsets_range();
-            let level_offsets_byte_slice = &mut bytes_data[level_offsets_range];
-            let level_offsets_slice: &mut [u64] =
-                mmap_ops::transmute_from_u8_to_mut_slice(level_offsets_byte_slice);
-            level_offsets_slice.copy_from_slice(&level_offsets);
-        }
+        debug_assert_eq!(links_pos, self.total_links_len);
+
+        // 6. padding for offsets
+        writer.write_zeros(self.offsets_padding())?;
+
+        // 7. offsets
+        writer.write_all(offsets.as_bytes())?;
+
+        Ok(())
     }
 
     pub fn save_as(&mut self, path: &Path) -> OperationResult<()> {
         self.path = Some(path.to_path_buf());
         let temp_path = path.with_extension("tmp");
-        {
-            let file = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                // Don't truncate because we explicitly set the length later
-                .truncate(false)
-                .open(temp_path.as_path())?;
-            file.set_len(self.data_size())?;
-
-            let m = unsafe { MmapMut::map_mut(&file) };
-            let mut mmap = m?;
-
-            self.serialize_to(&mut mmap);
-
-            mmap.flush()?;
-        }
+        let file = File::create(temp_path.as_path())?;
+        let mut buf = std::io::BufWriter::new(file);
+        self.serialize_to_writer(&mut buf)?;
         std::fs::rename(temp_path, path)?;
-
         Ok(())
-    }
-
-    pub fn get_levels_count(&self) -> usize {
-        if self.back_index.is_empty() {
-            return 0;
-        }
-        // because back_index is sorted by point`s max layer, we can retrieve max level from `point_id = back_index[0]`
-        self.edges[self.back_index[0]].len()
-    }
-
-    pub fn iterate_level_points<F>(&self, level: usize, mut f: F)
-    where
-        F: FnMut(usize, &Vec<PointOffsetType>),
-    {
-        let edges_len = self.edges.len();
-        if level == 0 {
-            (0..edges_len).for_each(|point_id| f(point_id, &self.edges[point_id][0]));
-        } else {
-            for i in 0..edges_len {
-                let point_id = self.back_index[i];
-                if level >= self.edges[point_id].len() {
-                    break;
-                }
-                f(point_id, &self.edges[point_id][level]);
-            }
-        }
     }
 }
 
@@ -333,17 +296,17 @@ pub trait GraphLinks: Sized {
 #[derive(Debug)]
 pub struct GraphLinksRam {
     data: Vec<u8>,
-    header: GraphLinksFileHeader,
+    info: GraphLinksFileInfo,
     level_offsets: Vec<u64>,
 }
 
 impl GraphLinksRam {
     fn from_bytes(data: Vec<u8>) -> Self {
-        let header = GraphLinksFileHeader::deserialize_bytes_from(&data);
-        let level_offsets = get_level_offsets(&data, &header).to_vec();
+        let info = GraphLinksFileInfo::load(&data).unwrap();
+        let level_offsets = info.get_level_offsets(&data).to_vec();
         Self {
             data,
-            header,
+            info,
             level_offsets,
         }
     }
@@ -351,7 +314,7 @@ impl GraphLinksRam {
     fn view(&self) -> GraphLinksView {
         GraphLinksView {
             data: &self.data,
-            header: &self.header,
+            info: &self.info,
             level_offsets: &self.level_offsets,
         }
     }
@@ -374,15 +337,11 @@ impl GraphLinks for GraphLinksRam {
     }
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
-        let mut data = vec![0; converter.data_size() as usize];
-        converter.serialize_to(&mut data);
-        drop(converter);
-
-        Ok(Self::from_bytes(data))
+        Ok(Self::from_bytes(converter.serialize_to_vec()))
     }
 
     fn num_points(&self) -> usize {
-        self.header.point_count as usize
+        self.info.point_count
     }
 
     fn for_each_link(
@@ -402,7 +361,7 @@ impl GraphLinks for GraphLinksRam {
 #[derive(Debug)]
 pub struct GraphLinksMmap {
     mmap: Arc<Mmap>,
-    header: GraphLinksFileHeader,
+    info: GraphLinksFileInfo,
     level_offsets: Vec<u64>,
 }
 
@@ -414,7 +373,7 @@ impl GraphLinksMmap {
     fn view(&self) -> GraphLinksView {
         GraphLinksView {
             data: &self.mmap,
-            header: &self.header,
+            info: &self.info,
             level_offsets: &self.level_offsets,
         }
     }
@@ -431,12 +390,12 @@ impl GraphLinks for GraphLinksMmap {
         let mmap = unsafe { Mmap::map(&file)? };
         madvise::madvise(&mmap, madvise::get_global())?;
 
-        let header = GraphLinksFileHeader::deserialize_bytes_from(&mmap);
-        let level_offsets = get_level_offsets(&mmap, &header).to_vec();
+        let info = GraphLinksFileInfo::load(&mmap).unwrap();
+        let level_offsets = info.get_level_offsets(&mmap).to_vec();
 
         Ok(Self {
             mmap: Arc::new(mmap),
-            header,
+            info,
             level_offsets,
         })
     }
@@ -452,7 +411,7 @@ impl GraphLinks for GraphLinksMmap {
     }
 
     fn num_points(&self) -> usize {
-        self.header.point_count as usize
+        self.info.point_count
     }
 
     fn for_each_link(
@@ -472,7 +431,7 @@ impl GraphLinks for GraphLinksMmap {
 #[derive(Debug)]
 struct GraphLinksView<'a> {
     data: &'a [u8],
-    header: &'a GraphLinksFileHeader,
+    info: &'a GraphLinksFileInfo,
     level_offsets: &'a [u64],
 }
 
@@ -519,7 +478,7 @@ impl<'a> GraphLinksView<'a> {
                 self.level_offsets[level + 1] as usize
             } else {
                 // `level` is last, next `offsets.len()` is end of range
-                self.header.get_offsets_range().len() / size_of::<u64>() - 1
+                self.info.offsets_range().len() / size_of::<u64>() - 1
             };
             Some(layer_offsets_start..layer_offsets_end)
         } else {
@@ -527,31 +486,22 @@ impl<'a> GraphLinksView<'a> {
         }
     }
 
-    fn get_links_offset(offsets_data: &[u8], idx: usize) -> usize {
-        let begin = size_of::<u64>() * idx;
-        let end = begin + size_of::<u64>();
-        let bytes = &offsets_data[begin..end];
-        // unwrap is safe because we know that bytes slice is always 8 bytes
-        let bytes: [u8; 8] = bytes.try_into().unwrap();
-        u64::from_ne_bytes(bytes) as usize
-    }
-
     fn get_links_range(&self, idx: usize) -> Range<usize> {
-        let offsets_range = self.header.get_offsets_range();
-        let data: &[u8] = &self.data[offsets_range];
-        Self::get_links_offset(data, idx)..Self::get_links_offset(data, idx + 1)
+        let offsets = u64::slice_from(&self.data[self.info.offsets_range()]).unwrap();
+        offsets[idx] as usize..offsets[idx + 1] as usize
     }
 
     fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType {
-        let reindex_range = self.header.get_reindex_range();
-        let reindex_byte_slice = &self.data[reindex_range];
-        mmap_ops::transmute_from_u8_to_slice(reindex_byte_slice)[point_id as usize]
+        let idx = &self.data[self.info.reindex_range()];
+        PointOffsetType::slice_from(idx).unwrap()[point_id as usize]
     }
 
     fn get_links(&self, range: Range<usize>) -> &'a [PointOffsetType] {
-        let links_range = self.header.get_links_range();
-        let links_byte_slice = &self.data[links_range];
-        &mmap_ops::transmute_from_u8_to_slice(links_byte_slice)[range]
+        let idx = &self.data[self.info.links_range()];
+        PointOffsetType::slice_from(idx)
+            .unwrap()
+            .get(range)
+            .unwrap()
     }
 }
 
