@@ -11126,6 +11126,16 @@
             "format": "uint32",
             "minimum": 0
           },
+          "key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "local": {
             "anyOf": [
               {

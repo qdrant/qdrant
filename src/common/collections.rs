@@ -467,8 +467,8 @@ pub async fn do_update_collection_cluster(
             if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Sharding key {} does not exists for collection {}",
-                        drop_sharding_key.shard_key, collection_name
+                        "Sharding key {} does not exist for collection {collection_name}",
+                        drop_sharding_key.shard_key,
                     ),
                 });
             }
@@ -540,7 +540,7 @@ pub async fn do_update_collection_cluster(
             if let Some(shard_key) = &shard_key {
                 if !collection_state.shards_key_mapping.contains_key(shard_key) {
                     return Err(StorageError::bad_request(format!(
-                        "sharding key {shard_key} does not exists for collection {collection_name}"
+                        "sharding key {shard_key} does not exist for collection {collection_name}",
                     )));
                 }
             }
