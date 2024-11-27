@@ -2060,6 +2060,14 @@ impl From<HashSet<PointIdType>> for HasIdCondition {
     }
 }
 
+impl FromIterator<PointIdType> for HasIdCondition {
+    fn from_iter<T: IntoIterator<Item = PointIdType>>(iter: T) -> Self {
+        HasIdCondition {
+            has_id: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// Select points with payload for a specified nested field
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Validate)]
 pub struct Nested {
