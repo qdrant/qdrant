@@ -1036,3 +1036,17 @@ impl Validate for PointInsertOperations {
         }
     }
 }
+
+impl PointInsertOperations {
+    /// Amount of vectors in the operation request.
+    pub fn len(&self) -> usize {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => batch.batch.ids.len(),
+            PointInsertOperations::PointsList(list) => list.points.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
