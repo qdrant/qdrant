@@ -25,7 +25,8 @@ pub struct GpuRequest {
     pub entry: PointOffsetType,
 }
 
-pub struct GpuSearchContext {
+/// Structure to perform insert and update entries operations on GPU.
+pub struct GpuInsertContext {
     context: gpu::Context,
     groups_count: usize,
     gpu_vector_storage: GpuVectorStorage,
@@ -50,12 +51,12 @@ pub struct GpuSearchContext {
     patches_count: usize,
 }
 
-struct GpuSearchContextParams {
+struct GpuInsertContextParams {
     exact: bool,
     ef: usize,
 }
 
-impl ShaderBuilderParameters for GpuSearchContextParams {
+impl ShaderBuilderParameters for GpuInsertContextParams {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([
             (
@@ -86,7 +87,7 @@ impl ShaderBuilderParameters for GpuSearchContextParams {
     }
 }
 
-impl GpuSearchContext {
+impl GpuInsertContext {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: Arc<gpu::Device>,
@@ -103,7 +104,7 @@ impl GpuSearchContext {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let points_count = vector_storage.total_vector_count();
-        let search_context_params = GpuSearchContextParams { exact, ef };
+        let search_context_params = GpuInsertContextParams { exact, ef };
 
         let gpu_vector_storage = GpuVectorStorage::new(
             device.clone(),
@@ -450,8 +451,8 @@ mod tests {
 
     struct TestData {
         device: Arc<gpu::Device>,
-        gpu_search_context: GpuSearchContext,
-        gpu_search_context_params: GpuSearchContextParams,
+        gpu_search_context: GpuInsertContext,
+        gpu_search_context_params: GpuInsertContextParams,
         vector_holder: TestRawScorerProducer<DotProductMetric>,
         graph_layers_builder: GraphLayersBuilder,
     }
@@ -505,7 +506,7 @@ mod tests {
         let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let mut gpu_search_context = GpuSearchContext::new(
+        let mut gpu_search_context = GpuInsertContext::new(
             device.clone(),
             groups_count,
             &storage,
@@ -530,7 +531,7 @@ mod tests {
             gpu_search_context,
             vector_holder,
             graph_layers_builder,
-            gpu_search_context_params: GpuSearchContextParams { exact: true, ef },
+            gpu_search_context_params: GpuInsertContextParams { exact: true, ef },
         }
     }
 

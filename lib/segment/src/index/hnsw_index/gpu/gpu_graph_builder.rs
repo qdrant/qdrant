@@ -7,8 +7,8 @@ use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::gpu::batched_points::BatchedPoints;
 use crate::index::hnsw_index::gpu::create_graph_layers_builder;
+use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_level_builder::build_level_on_gpu;
-use crate::index::hnsw_index::gpu::gpu_search_context::GpuSearchContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::payload_storage::FilterContext;
@@ -18,18 +18,32 @@ use crate::vector_storage::{RawScorer, VectorStorageEnum};
 /// Maximum count of point IDs per visited flag.
 static MAX_VISITED_FLAGS_FACTOR: usize = 32;
 
+/// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
 pub fn build_hnsw_on_gpu<'a>(
+    // GPU device to use.
     device: Arc<gpu::Device>,
+    // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
+    // Parallel inserts count.
     groups_count: usize,
+    // Vector storage to use.
     vector_storage: &VectorStorageEnum,
+    // Quantized storage to use.
     quantized_storage: Option<&QuantizedVectors>,
+    // Number of entry points of hnsw graph.
     entry_points_num: usize,
+    // If true, use half precision instead of `f32`.
     force_half_precision: bool,
+    // Amount of first points to link on CPU.
     cpu_linked_points: usize,
+    // If true, guarantee equality of result with CPU version for both single-threaded case.
+    // Required for tests.
     exact: bool,
+    // Point IDs to insert.
+    // In payload blocks we need to use subset of all points.
     ids: Vec<PointOffsetType>,
+    // Scorer builder for CPU build.
     points_scorer_builder: impl Fn(
             PointOffsetType,
         )
@@ -43,13 +57,16 @@ pub fn build_hnsw_on_gpu<'a>(
     let m0 = reference_graph.m0();
     let ef = std::cmp::max(reference_graph.ef_construct(), m0);
 
+    // Divide points into batches.
+    // One batch is one shader invocation.
     let batched_points = BatchedPoints::new(
         |point_id| reference_graph.get_point_level(point_id),
         ids,
         groups_count,
     )?;
 
-    let mut gpu_search_context = GpuSearchContext::new(
+    // Create all GPU resoures.
+    let mut gpu_search_context = GpuInsertContext::new(
         device,
         groups_count,
         vector_storage,
@@ -67,6 +84,7 @@ pub fn build_hnsw_on_gpu<'a>(
     let graph_layers_builder =
         create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num);
 
+    // Link first points on CPU.
     let mut cpu_linked_points_count = 0;
     for batch in batched_points.iter_batches(0) {
         for point in batch.points {
@@ -85,6 +103,7 @@ pub fn build_hnsw_on_gpu<'a>(
         }
     }
 
+    // Build all levels on GPU level by level.
     for level in (0..batched_points.levels_count()).rev() {
         log::debug!("Starting GPU level {}", level,);
 

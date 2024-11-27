@@ -5,6 +5,7 @@ use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 
+/// Pending point params (entry and level).
 #[derive(Debug)]
 pub struct PointLinkingData {
     pub point_id: PointOffsetType,
@@ -12,12 +13,17 @@ pub struct PointLinkingData {
     pub entry: AtomicU32,
 }
 
+/// Batch of points to insert in one shader invocation.
 #[derive(Debug)]
 pub struct Batch<'a> {
     pub points: &'a [PointLinkingData],
     pub level: usize,
 }
 
+/// Batched points for GPU processing.
+/// Each batch is one shader invocation.
+/// All points in one batch have the same level.
+/// Size of batch is limited by subgroups count.
 pub struct BatchedPoints {
     points: Vec<PointLinkingData>,
     batches: Vec<Range<usize>>,

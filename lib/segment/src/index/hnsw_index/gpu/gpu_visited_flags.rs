@@ -12,6 +12,7 @@ struct GpuVisitedFlagsParamsBuffer {
     generation: u32,
 }
 
+/// GPU resources for visited flags.
 pub struct GpuVisitedFlags {
     params: GpuVisitedFlagsParamsBuffer,
     params_buffer: Arc<gpu::Buffer>,

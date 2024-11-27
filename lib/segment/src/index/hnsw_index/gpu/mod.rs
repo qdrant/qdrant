@@ -1,9 +1,9 @@
 pub mod batched_points;
 pub mod gpu_devices_manager;
 pub mod gpu_graph_builder;
+pub mod gpu_insert_context;
 pub mod gpu_level_builder;
 pub mod gpu_links;
-pub mod gpu_search_context;
 pub mod gpu_vector_storage;
 pub mod gpu_visited_flags;
 pub mod shader_builder;

@@ -20,6 +20,7 @@ struct GpuLinksParamsBuffer {
     links_capacity: u32,
 }
 
+/// GPU resources for links.
 pub struct GpuLinks {
     m: usize,
     links_capacity: usize,

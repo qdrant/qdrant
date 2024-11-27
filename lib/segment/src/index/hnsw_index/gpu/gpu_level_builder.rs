@@ -3,14 +3,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use common::types::PointOffsetType;
 
 use super::batched_points::{Batch, BatchedPoints};
-use super::gpu_search_context::GpuSearchContext;
+use super::gpu_insert_context::GpuInsertContext;
 use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
-use crate::index::hnsw_index::gpu::gpu_search_context::GpuRequest;
+use crate::index::hnsw_index::gpu::gpu_insert_context::GpuRequest;
 
 // Build level on GPU
 pub fn build_level_on_gpu(
-    gpu_search_context: &mut GpuSearchContext,
+    gpu_search_context: &mut GpuInsertContext,
     batched_points: &BatchedPoints,
     skip_count: usize,
     level: usize,
@@ -39,7 +39,7 @@ pub fn build_level_on_gpu(
 }
 
 fn gpu_batched_update_entries(
-    gpu_search_context: &mut GpuSearchContext,
+    gpu_search_context: &mut GpuInsertContext,
     batch: &Batch,
     prev_batch: Option<&Batch>,
 ) -> OperationResult<()> {
@@ -64,7 +64,7 @@ fn gpu_batched_update_entries(
 }
 
 fn gpu_batched_insert(
-    gpu_search_context: &mut GpuSearchContext,
+    gpu_search_context: &mut GpuInsertContext,
     batch: &Batch,
     prev_batch: Option<&Batch>,
 ) -> OperationResult<()> {
@@ -136,7 +136,7 @@ mod tests {
         let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let mut gpu_search_context = GpuSearchContext::new(
+        let mut gpu_search_context = GpuInsertContext::new(
             device,
             groups_count,
             test.vector_storage.borrow(),

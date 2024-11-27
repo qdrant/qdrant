@@ -6,6 +6,7 @@ use parking_lot::{Mutex, MutexGuard};
 use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 
+/// Simple non-invasive permits to use GPU devices.
 pub struct GpuDevicesMaganer {
     devices: Vec<Mutex<Arc<gpu::Device>>>,
     wait_free: bool,
