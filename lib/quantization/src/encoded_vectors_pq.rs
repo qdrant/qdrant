@@ -33,10 +33,10 @@ pub struct EncodedQueryPQ {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Metadata {
-    centroids: Vec<Vec<f32>>,
-    vector_division: Vec<Range<usize>>,
-    vector_parameters: VectorParameters,
+pub struct Metadata {
+    pub centroids: Vec<Vec<f32>>,
+    pub vector_division: Vec<Range<usize>>,
+    pub vector_parameters: VectorParameters,
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
@@ -422,6 +422,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
                 value
             })
             .sum()
+    }
+
+    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+        self.encoded_vectors
+            .get_vector_data(i as _, self.metadata.vector_division.len())
+    }
+
+    pub fn get_metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    pub fn vectors_count(&self) -> usize {
+        self.metadata.vector_parameters.count
     }
 }
 

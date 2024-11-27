@@ -932,4 +932,8 @@ impl QuantizedVectors {
             CompressionRatio::X64 => 16,
         }
     }
+
+    pub fn get_storage(&self) -> &QuantizedVectorStorage {
+        &self.storage_impl
+    }
 }

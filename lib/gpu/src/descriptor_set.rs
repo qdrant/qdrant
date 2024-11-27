@@ -247,14 +247,14 @@ impl DescriptorSet {
 
 impl Drop for DescriptorSet {
     fn drop(&mut self) {
-        unsafe {
-            if self.vk_descriptor_pool != vk::DescriptorPool::null() {
+        if self.vk_descriptor_pool != vk::DescriptorPool::null() {
+            unsafe {
                 self.device.vk_device().destroy_descriptor_pool(
                     self.vk_descriptor_pool,
                     self.device.cpu_allocation_callbacks(),
                 );
-                self.vk_descriptor_pool = vk::DescriptorPool::null()
             }
+            self.vk_descriptor_pool = vk::DescriptorPool::null()
         }
         self.uniform_buffers.clear();
         self.storage_buffers.clear();
