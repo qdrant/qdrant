@@ -134,7 +134,7 @@ mod tests {
 
         let mut ids: Vec<_> = (0..num_vectors as PointOffsetType).collect();
         BatchedPoints::sort_points_by_level(
-            &|point_id| graph_layers_builder.get_point_level(point_id),
+            |point_id| graph_layers_builder.get_point_level(point_id),
             &mut ids,
         );
 
@@ -229,17 +229,10 @@ mod tests {
 
             total_sames += gpu_set.intersection(&cpu_set).count();
         }
-        log::debug!(
-            "total_sames: {}, total_top: {}, div {}",
-            total_sames,
-            total_top,
-            total_sames as f32 / total_top as f32
-        );
         assert!(
             total_sames as f32 >= total_top as f32 * accuracy,
-            "sames: {}, total_top: {}",
-            total_sames,
-            total_top
+            "sames: {total_sames}, total_top: {total_top}, div {}",
+            total_sames as f32 / total_top as f32,
         );
     }
 }

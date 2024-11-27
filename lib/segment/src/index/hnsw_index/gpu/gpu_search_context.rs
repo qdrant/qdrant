@@ -750,7 +750,7 @@ mod tests {
             .unwrap();
 
         // Check response
-        for i in 0..groups_count {
+        for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
             let raw_scorer = test
@@ -761,7 +761,7 @@ mod tests {
             let search_result = test
                 .graph_layers_builder
                 .search_entry_on_level(0, 0, &mut scorer);
-            assert_eq!(search_result.idx, gpu_responses[i]);
+            assert_eq!(search_result.idx, gpu_search_result);
             raw_scorer.take_hardware_counter().discard_results();
         }
     }
@@ -930,7 +930,7 @@ mod tests {
             .collect_vec();
 
         // Check response
-        for i in 0..groups_count {
+        for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
             let raw_scorer = test
@@ -951,7 +951,7 @@ mod tests {
             let heuristic =
                 GraphLayersBuilder::select_candidates_with_heuristic(search_result, m, scorer_fn);
 
-            for (&cpu, gpu) in heuristic.iter().zip(gpu_responses[i].iter()) {
+            for (&cpu, gpu) in heuristic.iter().zip(gpu_group_result.iter()) {
                 assert_eq!(cpu, gpu.idx);
             }
             raw_scorer.take_hardware_counter().discard_results();

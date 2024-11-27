@@ -151,7 +151,7 @@ mod tests {
             device,
             &test.graph_layers_builder,
             groups_count,
-            &test.vector_storage.borrow(),
+            test.vector_storage.borrow(),
             None,
             1,
             false,

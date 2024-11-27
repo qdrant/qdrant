@@ -139,7 +139,7 @@ mod tests {
         let mut gpu_search_context = GpuSearchContext::new(
             device,
             groups_count,
-            &test.vector_storage.borrow(),
+            test.vector_storage.borrow(),
             None,
             batched_points.remap(),
             m,
