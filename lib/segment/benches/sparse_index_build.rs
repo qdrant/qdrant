@@ -21,7 +21,7 @@ use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::VectorIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::VectorStorageDatatype;
-use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use segment::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use segment::vector_storage::VectorStorage;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
