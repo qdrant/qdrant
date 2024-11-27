@@ -43,7 +43,7 @@ pub struct MmapBoolIndex {
 impl MmapBoolIndex {
     /// Returns the directory name for the given field name, where the files should live.
     fn dirname(field_name: &str) -> String {
-        format!("{}{}", DIR_PREFIX, field_name)
+        format!("{DIR_PREFIX}{field_name}")
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
@@ -62,8 +62,10 @@ impl MmapBoolIndex {
         if header_path.exists() {
             Self::open(&path, populate_mmap)
         } else {
-            std::fs::create_dir_all(&path).map_err(|_| {
-                OperationError::service_error("Failed to create mmap bool index directory")
+            std::fs::create_dir_all(&path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to create mmap bool index directory: {err}"
+                ))
             })?;
             Self::create(&path, populate_mmap, capacity)
         }
@@ -87,6 +89,7 @@ impl MmapBoolIndex {
 
         // Falses bitslice
         let falses_path = path.join(FALSES_FILE);
+        mmap_ops::create_and_ensure_length(&falses_path, bitslice_bytes)?;
         let falses_mmap =
             mmap_ops::open_write_mmap(&falses_path, AdviceSetting::Global, populate_mmap)
                 .describe("Open falses bitslice mmap for writing")?;
@@ -94,7 +97,7 @@ impl MmapBoolIndex {
 
         // Metadata
         let meta_path = path.join(METADATA_FILE);
-        mmap_ops::create_and_ensure_length(path, size_of::<BoolIndexMetadata>())?;
+        mmap_ops::create_and_ensure_length(&meta_path, size_of::<BoolIndexMetadata>())?;
         let meta_mmap =
             mmap_ops::open_write_mmap(&meta_path, AdviceSetting::Global, populate_mmap)?;
         let mut metadata: MmapType<BoolIndexMetadata> = unsafe { MmapType::try_from(meta_mmap)? };
@@ -168,8 +171,17 @@ impl MmapBoolIndex {
             }
         }
 
-        let prev_true = self.trues_slice.replace(id as usize, has_true);
-        let prev_false = self.falses_slice.replace(id as usize, has_false);
+        let prev_true = if !has_true && id as usize >= self.trues_slice.len() {
+            false
+        } else {
+            self.trues_slice.replace(id as usize, has_true)
+        };
+
+        let prev_false = if !has_false && id as usize >= self.falses_slice.len() {
+            false
+        } else {
+            self.falses_slice.replace(id as usize, has_false)
+        };
 
         let was_indexed = prev_true || prev_false;
 

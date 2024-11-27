@@ -409,16 +409,21 @@ impl MmapBitSlice {
             return Ok(());
         }
 
-        let new_length = total_capacity.div_ceil(u8::BITS as usize);
+        let new_length = total_capacity
+            .div_ceil(u8::BITS as usize)
+            .next_multiple_of(u8::BITS as usize);
         mmap_ops::create_and_ensure_length(path, new_length)?;
         let mmap = mmap_ops::open_write_mmap(path, advice, populate)?;
 
         *self = MmapBitSlice::try_from(mmap, 0)?;
 
+        debug_assert!(self.len() >= total_capacity);
+
         Ok(())
     }
 }
 
+// 1111 1111 1111 1111
 impl Deref for MmapBitSlice {
     type Target = BitSlice;
 
