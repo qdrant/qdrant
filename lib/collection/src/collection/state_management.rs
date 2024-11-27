@@ -170,9 +170,13 @@ impl Collection {
             match self.shards_holder.read().await.get_shard(shard_id) {
                 Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
                 None => {
+                    let shard_key = shards_key_mapping
+                        .iter()
+                        .find(|(_, ids)| ids.contains(&shard_id))
+                        .map(|(key, _)| key.clone());
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
                     let replica_set = self
-                        .create_replica_set(shard_id, &shard_replicas, None)
+                        .create_replica_set(shard_id, shard_key, &shard_replicas, None)
                         .await?;
                     replica_set.apply_state(shard_info.replicas).await?;
                     extra_shards.insert(shard_id, replica_set);

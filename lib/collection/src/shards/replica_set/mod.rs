@@ -15,7 +15,7 @@ use std::time::Duration;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
-use segment::types::{ExtendedPointId, Filter};
+use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
@@ -94,6 +94,7 @@ pub struct ShardReplicaSet {
     locally_disabled_peers: parking_lot::RwLock<locally_disabled_peers::Registry>,
     pub(crate) shard_path: PathBuf,
     pub(crate) shard_id: ShardId,
+    shard_key: Option<ShardKey>,
     notify_peer_failure_cb: ChangePeerFromState,
     abort_shard_transfer_cb: AbortShardTransfer,
     channel_service: ChannelService,
@@ -122,6 +123,7 @@ impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
     pub async fn build(
         shard_id: ShardId,
+        shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         this_peer_id: PeerId,
         local: bool,
@@ -187,6 +189,7 @@ impl ShardReplicaSet {
 
         Ok(Self {
             shard_id,
+            shard_key,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -216,6 +219,7 @@ impl ShardReplicaSet {
     #[allow(clippy::too_many_arguments)]
     pub async fn load(
         shard_id: ShardId,
+        shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<RwLock<CollectionConfigInternal>>,
@@ -304,6 +308,7 @@ impl ShardReplicaSet {
 
         let replica_set = Self {
             shard_id,
+            shard_key,
             local: RwLock::new(local),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
@@ -764,6 +769,7 @@ impl ShardReplicaSet {
 
         ReplicaSetTelemetry {
             id: self.shard_id,
+            key: self.shard_key.clone(),
             local: local_telemetry,
             remote: self
                 .remotes

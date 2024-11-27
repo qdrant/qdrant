@@ -662,6 +662,7 @@ mod tests {
         let remotes = HashSet::from([2, 3, 4, 5]);
         ShardReplicaSet::build(
             1,
+            None,
             "test_collection".to_string(),
             1,
             false,

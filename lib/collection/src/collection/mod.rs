@@ -122,8 +122,10 @@ impl Collection {
                     optimizers_overwrite.update(&effective_optimizers_config)?;
             }
 
+            let shard_key = None;
             let replica_set = ShardReplicaSet::build(
                 shard_id,
+                shard_key.clone(),
                 name.clone(),
                 this_peer_id,
                 is_local,
@@ -143,7 +145,7 @@ impl Collection {
             )
             .await?;
 
-            shard_holder.add_shard(shard_id, replica_set, None)?;
+            shard_holder.add_shard(shard_id, replica_set, shard_key)?;
         }
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
