@@ -54,13 +54,13 @@ pub struct SegmentBuilder {
     temp_dir: TempDir,
     indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 
-    // Payload key to deframent data to
+    // Payload key to defragment data to
     defragment_keys: Vec<PayloadKeyType>,
 }
 
 impl SegmentBuilder {
     pub fn new(
-        segment_path: &Path,
+        segments_path: &Path,
         temp_dir: &Path,
         segment_config: &SegmentConfig,
     ) -> OperationResult<Self> {
@@ -79,7 +79,7 @@ impl SegmentBuilder {
         };
 
         let payload_storage =
-            create_payload_storage(database.clone(), segment_config, segment_path)?;
+            create_payload_storage(database.clone(), segment_config, temp_dir.path())?;
 
         let mut vector_storages = HashMap::new();
 
@@ -106,7 +106,7 @@ impl SegmentBuilder {
             vector_storages.insert(vector_name.to_owned(), vector_storage);
         }
 
-        let destination_path = new_segment_path(segment_path);
+        let destination_path = new_segment_path(segments_path);
 
         Ok(SegmentBuilder {
             version: Default::default(), // default version is 0
