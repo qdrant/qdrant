@@ -8,7 +8,8 @@ use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, WithPayload, WithVector,
+    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SeqNumberType, WithPayload,
+    WithVector,
 };
 use serde_json::json;
 use tempfile::Builder;
@@ -31,7 +32,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+    let proxy_deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let proxy_created_indexes = Arc::new(RwLock::new(
         HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
@@ -288,7 +289,7 @@ fn test_proxy_shared_updates() {
         .unwrap();
     segment2.set_payload(10, idx2, &old_payload, &None).unwrap();
 
-    let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+    let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
     let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let created_indexes = Arc::new(RwLock::new(
