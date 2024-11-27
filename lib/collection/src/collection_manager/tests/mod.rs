@@ -260,8 +260,8 @@ fn test_proxy_shared_updates() {
     let old_vec = vec![1.0, 0.0, 0.0, 1.0];
     let new_vec = vec![1.0, 0.0, 1.0, 0.0];
 
-    let old_payload: Payload = json!({ "size": vec!["small".to_owned()] }).into();
-    let new_payload: Payload = json!({ "size": vec!["big".to_owned()] }).into();
+    let old_payload: Payload = json!({ "size": vec!["small"] }).into();
+    let new_payload: Payload = json!({ "size": vec!["big"] }).into();
     // let newest_vec = vec![1.0, 1.0, 0.0, 0.0];
 
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
@@ -273,7 +273,6 @@ fn test_proxy_shared_updates() {
         .upsert_point(10, idx1, only_default_vector(&old_vec))
         .unwrap();
     segment1.set_payload(10, idx1, &old_payload, &None).unwrap();
-
     segment1
         .upsert_point(20, idx2, only_default_vector(&new_vec))
         .unwrap();
@@ -319,7 +318,7 @@ fn test_proxy_shared_updates() {
     holder.add_new(proxy_segment_1);
     holder.add_new(proxy_segment_2);
 
-    let payload: Payload = json!({ "color": vec!["yellow".to_owned()] }).into();
+    let payload: Payload = json!({ "color": vec!["yellow"] }).into();
 
     let ids = vec![idx1, idx2];
 
@@ -341,8 +340,7 @@ fn test_proxy_shared_updates() {
     )
     .unwrap();
 
-    let expected_payload: Payload =
-        json!({ "size": vec!["big".to_owned()], "color": vec!["yellow".to_owned()] }).into();
+    let expected_payload: Payload = json!({ "size": vec!["big"], "color": vec!["yellow"] }).into();
 
     for (point_id, record) in result {
         if let Some(payload) = record.payload {
