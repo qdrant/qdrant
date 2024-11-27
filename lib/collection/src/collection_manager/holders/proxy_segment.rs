@@ -19,14 +19,14 @@ use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::{
-    Condition, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    SnapshotFormat, WithPayload, WithVector,
+    Condition, Filter, HasIdCondition, Payload, PayloadFieldSchema, PayloadKeyType,
+    PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentType, SeqNumberType, SnapshotFormat, WithPayload, WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
-type LockedRmSet = Arc<RwLock<HashSet<PointIdType>>>;
+type LockedRmSet = Arc<RwLock<HashMap<PointIdType, SeqNumberType>>>;
 type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
 type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 
@@ -135,12 +135,8 @@ impl ProxySegment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         let deleted_points_guard = self.deleted_points.upgradable_read();
-        if deleted_points_guard.contains(&point_id) {
-            // Point is already removed from wrapped segment
-            return Ok(false);
-        }
 
-        let point_offset = {
+        let (point_offset, local_version) = {
             let (wrapped_segment, point_offset): (
                 Arc<RwLock<dyn SegmentEntry>>,
                 Option<PointOffsetType>,
@@ -153,8 +149,32 @@ impl ProxySegment {
             };
 
             let wrapped_segment_guard = wrapped_segment.read();
+
             if !wrapped_segment_guard.has_point(point_id) {
                 // Point is not in wrapped segment
+                return Ok(false);
+            }
+
+            // Since `deleted_points` are shared between multiple ProxySegments,
+            // It is possible that some other Proxy moved its point with different version already
+            // If this is the case, there are multiple scenarios:
+            // - Local point doesn't exist or already removed locally -> do nothing
+            // - Already moved version is higher than the current one -> mark local as removed
+            // - Already moved version is less than what we have in current proxy -> overwrite
+
+            // Point doesn't exist in wrapped segment - do nothing
+            let Some(local_version) = wrapped_segment_guard.point_version(point_id) else {
+                return Ok(false);
+            };
+
+            // Equal or higher point version is already moved into write segment - delete from
+            // wrapped segment and do not move it again
+            if deleted_points_guard
+                .get(&point_id)
+                .is_some_and(|&deleted| deleted >= local_version)
+            {
+                drop(deleted_points_guard);
+                self.set_deleted_offset(point_offset);
                 return Ok(false);
             }
 
@@ -173,12 +193,12 @@ impl ProxySegment {
                 }
             };
 
-            point_offset
+            (point_offset, local_version)
         };
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
-            deleted_points_write.insert(point_id);
+            deleted_points_write.insert(point_id, local_version);
         }
 
         self.set_deleted_offset(point_offset);
@@ -188,9 +208,11 @@ impl ProxySegment {
 
     fn add_deleted_points_condition_to_filter(
         filter: Option<&Filter>,
-        deleted_points: &HashSet<PointIdType>,
+        deleted_points: &HashMap<PointIdType, SeqNumberType>,
     ) -> Filter {
-        let wrapper_condition = Condition::HasId(deleted_points.clone().into());
+        #[allow(clippy::from_iter_instead_of_collect)]
+        let wrapper_condition =
+            Condition::HasId(HasIdCondition::from_iter(deleted_points.keys().copied()));
         match filter {
             None => Filter::new_must_not(wrapper_condition),
             Some(f) => {
@@ -237,7 +259,7 @@ impl ProxySegment {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for point_id in deleted_points.iter() {
+                    for (point_id, _on_num) in deleted_points.iter() {
                         wrapped_segment.delete_point(op_num, *point_id)?;
                     }
                     OperationResult::Ok(())
@@ -443,13 +465,21 @@ impl SegmentEntry for ProxySegment {
             LockedSegment::Original(raw_segment) => {
                 let point_offset = raw_segment.read().get_internal_id(point_id);
                 if point_offset.is_some() {
-                    was_deleted = self.deleted_points.write().insert(point_id);
+                    was_deleted = self
+                        .deleted_points
+                        .write()
+                        .insert(point_id, op_num)
+                        .is_none();
                 }
                 point_offset
             }
             LockedSegment::Proxy(proxy) => {
                 if proxy.read().has_point(point_id) {
-                    was_deleted = self.deleted_points.write().insert(point_id);
+                    was_deleted = self
+                        .deleted_points
+                        .write()
+                        .insert(point_id, op_num)
+                        .is_none();
                 }
                 None
             }
@@ -549,7 +579,7 @@ impl SegmentEntry for ProxySegment {
         vector_name: &str,
         point_id: PointIdType,
     ) -> OperationResult<Option<VectorInternal>> {
-        return if self.deleted_points.read().contains(&point_id) {
+        return if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment
                 .get()
                 .read()
@@ -599,7 +629,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
-        return if self.deleted_points.read().contains(&point_id) {
+        return if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment.get().read().payload(point_id)
         } else {
             {
@@ -721,7 +751,7 @@ impl SegmentEntry for ProxySegment {
         let deleted_points = self.deleted_points.read();
         let mut read_points = self.wrapped_segment.get().read().read_range(from, to);
         if !deleted_points.is_empty() {
-            read_points.retain(|idx| !deleted_points.contains(idx))
+            read_points.retain(|idx| !deleted_points.contains_key(idx))
         }
         let mut write_segment_points = self.write_segment.get().read().read_range(from, to);
         read_points.append(&mut write_segment_points);
@@ -789,7 +819,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        return if self.deleted_points.read().contains(&point_id) {
+        return if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment.get().read().has_point(point_id)
         } else {
             self.write_segment.get().read().has_point(point_id)
@@ -1062,7 +1092,8 @@ impl SegmentEntry for ProxySegment {
         if !points_to_delete.is_empty() {
             deleted_points += points_to_delete.len();
             let mut deleted_points_guard = self.deleted_points.write();
-            deleted_points_guard.extend(points_to_delete);
+            deleted_points_guard
+                .extend(points_to_delete.iter().map(|&point_id| (point_id, op_num)));
         }
 
         for point_offset in points_offsets_to_delete {
@@ -1143,7 +1174,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1210,7 +1241,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1280,7 +1311,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1341,7 +1372,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(random_segment(dir.path(), 100, 200, 4));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1408,7 +1439,7 @@ mod tests {
 
     fn wrap_proxy(dir: &TempDir, original_segment: LockedSegment) -> ProxySegment {
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1493,7 +1524,7 @@ mod tests {
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
             HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
@@ -1561,7 +1592,7 @@ mod tests {
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let original_segment_2 = LockedSegment::new(build_segment_2(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1643,7 +1674,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
@@ -1742,7 +1773,7 @@ mod tests {
 
         let original_segment = LockedSegment::new(original_segment);
         let write_segment = LockedSegment::new(write_segment);
-        let deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
 
         let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let created_indexes = Arc::new(RwLock::new(
