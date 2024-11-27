@@ -45,7 +45,7 @@ pub(super) struct NumericIndexPairsIterator<'a, T: Encodable + Numericable> {
     end_index: usize,
 }
 
-impl<'a, T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'a, T> {
+impl<T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'_, T> {
     type Item = Point<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -62,7 +62,7 @@ impl<'a, T: Encodable + Numericable> Iterator for NumericIndexPairsIterator<'a, 
     }
 }
 
-impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIterator<'a, T> {
+impl<T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIterator<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.pairs[self.end_index - 1].clone();

@@ -173,7 +173,7 @@ pub struct PostingListIterator<'a> {
     pub current_index: usize,
 }
 
-impl<'a> PostingListIter for PostingListIterator<'a> {
+impl PostingListIter for PostingListIterator<'_> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
         self.elements.get(self.current_index).cloned()

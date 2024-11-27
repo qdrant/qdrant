@@ -13,7 +13,7 @@ impl<'a> StructFilterContext<'a> {
     }
 }
 
-impl<'a> FilterContext for StructFilterContext<'a> {
+impl FilterContext for StructFilterContext<'_> {
     fn check(&self, point_id: PointOffsetType) -> bool {
         check_optimized_filter(&self.optimized_filter, point_id)
     }

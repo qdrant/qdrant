@@ -379,7 +379,7 @@ impl TryFrom<Vec<DenseVector>> for VectorInternal {
     }
 }
 
-impl<'a> VectorRef<'a> {
+impl VectorRef<'_> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
     pub fn to_owned(self) -> VectorInternal {
         match self {
@@ -470,7 +470,7 @@ impl From<&[VectorElementType]> for VectorStructInternal {
     }
 }
 
-impl<'a> From<NamedVectors<'a>> for VectorStructInternal {
+impl From<NamedVectors<'_>> for VectorStructInternal {
     fn from(v: NamedVectors) -> Self {
         if v.len() == 1 && v.contains_key(DEFAULT_VECTOR_NAME) {
             let vector_ref = v.get(DEFAULT_VECTOR_NAME).unwrap();

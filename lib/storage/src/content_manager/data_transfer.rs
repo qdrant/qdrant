@@ -1,3 +1,5 @@
+//! Handlers for transferring data from one collection into another within single cluster
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,8 +20,6 @@ use crate::content_manager::collections_ops::Collections;
 
 const MIGRATION_BATCH_SIZE: usize = 1000;
 const COLLECTION_INITIATION_TIMEOUT: Duration = Duration::from_secs(60);
-
-/// Handlers for transferring data from one collection into another within single cluster
 
 /// Get a list of local shards, which can be used for migration
 ///

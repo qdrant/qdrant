@@ -79,7 +79,7 @@ pub trait IdTracker: fmt::Debug {
     fn iter_ids_excluding<'a>(
         &'a self,
         exclude_bitslice: &'a BitSlice,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         Box::new(self.iter_ids().filter(|point| {
             !exclude_bitslice
                 .get(*point as usize)
@@ -128,7 +128,7 @@ pub trait IdTracker: fmt::Debug {
     fn sample_ids<'a>(
         &'a self,
         deleted_vector_bitslice: Option<&'a BitSlice>,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         // Use seeded randomness, prevents 'inconsistencies' in search results with sampling
         let mut rng = StdRng::seed_from_u64(SEED);
 

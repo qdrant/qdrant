@@ -108,7 +108,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
     }
 }
 
-impl<'a, T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'a, T> {
+impl<T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'_, T> {
     type Item = Point<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -131,7 +131,7 @@ impl<'a, T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'a
     }
 }
 
-impl<'a, T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIterator<'a, T> {
+impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIterator<'_, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.set.data[self.end_index - 1].clone();

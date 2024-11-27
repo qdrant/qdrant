@@ -144,7 +144,7 @@ impl Shard {
 
     pub fn is_update_in_progress(&self) -> bool {
         self.update_tracker()
-            .map_or(false, UpdateTracker::is_update_in_progress)
+            .is_some_and(UpdateTracker::is_update_in_progress)
     }
 
     pub fn watch_for_update(&self) -> impl Future<Output = ()> {

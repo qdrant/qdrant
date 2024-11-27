@@ -112,7 +112,7 @@ impl CollectionAccessList {
     }
 }
 
-impl<'a> CollectionAccessView<'a> {
+impl CollectionAccessView<'_> {
     fn apply_filter(&self, filter: &mut Option<Filter>) {
         if let Some(payload) = &self.payload {
             let f = filter.get_or_insert_with(Default::default);

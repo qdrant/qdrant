@@ -185,7 +185,6 @@ impl ImmutableIdTracker {
     /// +-----------------+-----------------------+------------------+
     /// A single entry is thus either 1+8+4=13 or 1+16+4=21 bytes in size depending
     /// on the PointIdType.
-
     fn store_mapping<W: Write>(mappings: &PointMappings, mut writer: W) -> OperationResult<()> {
         let number_of_entries = mappings.total_point_count();
 

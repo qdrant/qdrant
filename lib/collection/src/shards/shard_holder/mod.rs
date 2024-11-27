@@ -495,7 +495,7 @@ impl ShardHolder {
     pub fn select_shards<'a>(
         &'a self,
         shard_selector: &'a ShardSelectorInternal,
-    ) -> CollectionResult<Vec<(&ShardReplicaSet, Option<&ShardKey>)>> {
+    ) -> CollectionResult<Vec<(&'a ShardReplicaSet, Option<&'a ShardKey>)>> {
         let mut res = Vec::new();
 
         match shard_selector {
@@ -507,7 +507,7 @@ impl ShardHolder {
                     // Ignore a new resharding shard until it completed point migration
                     // The shard will be marked as active at the end of the migration stage
                     let resharding_migrating_up =
-                        self.resharding_state.read().clone().map_or(false, |state| {
+                        self.resharding_state.read().clone().is_some_and(|state| {
                             state.direction == ReshardingDirection::Up
                                 && state.shard_id == shard_id
                                 && state.stage < ReshardStage::ReadHashRingCommitted

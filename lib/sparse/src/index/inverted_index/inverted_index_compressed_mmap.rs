@@ -176,9 +176,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         if remainders_end
             .checked_sub(remainders_start)
-            .map_or(false, |len| {
-                len % size_of::<GenericPostingElement<W>>() as u64 != 0
-            })
+            .is_some_and(|len| len % size_of::<GenericPostingElement<W>>() as u64 != 0)
         {
             return None;
         }

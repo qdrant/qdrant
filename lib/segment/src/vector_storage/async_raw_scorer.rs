@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<'a, TQueryScorer> RawScorer for AsyncRawScorerImpl<'a, TQueryScorer>
+impl<TQueryScorer> RawScorer for AsyncRawScorerImpl<'_, TQueryScorer>
 where
     TQueryScorer: QueryScorer<[VectorElementType]>,
 {

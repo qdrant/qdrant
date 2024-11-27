@@ -258,9 +258,9 @@ impl TableOfContent {
         }))
     }
 
-    pub async fn get_collection<'a>(
+    pub async fn get_collection(
         &self,
-        collection: &CollectionPass<'a>,
+        collection: &CollectionPass<'_>,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
         self.get_collection_unchecked(collection.name()).await
     }

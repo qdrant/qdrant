@@ -166,7 +166,7 @@ pub enum SimpleCow<'a, T> {
     Owned(T),
 }
 
-impl<'a, T> Deref for SimpleCow<'a, T> {
+impl<T> Deref for SimpleCow<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

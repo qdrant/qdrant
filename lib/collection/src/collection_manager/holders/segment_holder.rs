@@ -156,7 +156,7 @@ impl<'s> SegmentHolder {
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
-    pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
+    pub fn iter(&'s self) -> impl Iterator<Item = (&'s SegmentId, &'s LockedSegment)> + 's {
         self.appendable_segments
             .iter()
             .chain(self.non_appendable_segments.iter())

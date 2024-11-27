@@ -218,7 +218,7 @@ impl LocalShard {
     }
 
     /// Rescore list of scored points
-    async fn rescore<'a>(
+    async fn rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
@@ -340,7 +340,7 @@ impl LocalShard {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn fusion_rescore<'a>(
+    async fn fusion_rescore(
         &self,
         sources: impl Iterator<Item = Vec<ScoredPoint>>,
         fusion: FusionInternal,
