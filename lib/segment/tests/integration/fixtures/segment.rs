@@ -9,7 +9,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Distance, Indexes, SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageType,
+    Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorDataConfig, VectorStorageType,
 };
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
@@ -253,6 +254,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
                 "sparse".to_owned(),
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+                    storage_type: SparseVectorStorageType::default(),
                 },
             )]),
             payload_storage_type: Default::default(),
@@ -337,6 +339,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
                 "sparse".to_owned(),
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
+                    storage_type: SparseVectorStorageType::default(),
                 },
             )]),
             payload_storage_type: Default::default(),

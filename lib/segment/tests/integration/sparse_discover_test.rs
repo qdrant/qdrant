@@ -16,8 +16,8 @@ use segment::index::VectorIndex;
 use segment::segment_constructor::{build_segment, create_sparse_vector_index_test};
 use segment::types::{
     Condition, Distance, ExtendedPointId, Filter, HasIdCondition, Indexes, PointIdType,
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
-    VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType,
+    VectorDataConfig, VectorStorageDatatype, VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
@@ -123,6 +123,7 @@ fn sparse_index_discover_test() {
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
                 },
+                storage_type: SparseVectorStorageType::default(),
             },
         )]),
         payload_storage_type: Default::default(),
@@ -269,6 +270,7 @@ fn sparse_index_hardware_measurement_test() {
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
                 },
+                storage_type: SparseVectorStorageType::default(),
             },
         )]),
         payload_storage_type: Default::default(),

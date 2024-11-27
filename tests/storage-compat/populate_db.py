@@ -3,7 +3,7 @@
 import os
 import random
 import uuid
-from typing import List
+from typing import List, Optional
 
 import requests
 
@@ -18,7 +18,7 @@ def drop_collection(name: str):
     requests.delete(f"http://{QDRANT_HOST}/collections/{name}")
 
 
-def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quantization_config: dict = None):
+def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quantization_config: Optional[dict] = None):
     # create collection with a lower `indexing_threshold_kb` to generate the HNSW index
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}",
@@ -260,7 +260,7 @@ def basic_retrieve(name: str):
 # There are two ways to configure the usage of memmap storage:
 # - `memmap_threshold_kb` - the threshold for the indexer to use memmap storage
 # - `on_disk` - to store vectors immediately on disk
-def populate_collection(name: str, on_disk: bool, quantization_config: dict = None, memmap_threshold: bool = False, on_disk_payload_index: bool = False):
+def populate_collection(name: str, on_disk: bool, quantization_config: Optional[dict] = None, memmap_threshold: bool = False, on_disk_payload_index: bool = False):
     drop_collection(name)
     memmap_threshold_kb = 0
     if memmap_threshold:
@@ -276,10 +276,10 @@ if __name__ == "__main__":
     populate_collection("test_collection_vector_memory", on_disk=False)
     populate_collection("test_collection_vector_on_disk", on_disk=True)
     populate_collection("test_collection_vector_on_disk_threshold", on_disk=False, memmap_threshold=True)
-    populate_collection("test_collection_scalar_int8", False, {"scalar": {"type": "int8"}})
-    populate_collection("test_collection_product_x64", False, {"product": {"compression": "x64"}})
-    populate_collection("test_collection_product_x32", False, {"product": {"compression": "x32"}})
-    populate_collection("test_collection_product_x16", False, {"product": {"compression": "x16"}})
-    populate_collection("test_collection_product_x8", False, {"product": {"compression": "x8"}})
-    populate_collection("test_collection_binary", False, {"binary": {"always_ram": True}})
+    populate_collection("test_collection_scalar_int8", on_disk=False, quantization_config={"scalar": {"type": "int8"}})
+    populate_collection("test_collection_product_x64", on_disk=False, quantization_config={"product": {"compression": "x64"}})
+    populate_collection("test_collection_product_x32", on_disk=False, quantization_config={"product": {"compression": "x32"}})
+    populate_collection("test_collection_product_x16", on_disk=False, quantization_config={"product": {"compression": "x16"}})
+    populate_collection("test_collection_product_x8", on_disk=False, quantization_config={"product": {"compression": "x8"}})
+    populate_collection("test_collection_binary", on_disk=False, quantization_config={"binary": {"always_ram": True}})
     populate_collection("test_collection_mmap_field_index", on_disk=True, on_disk_payload_index=True)

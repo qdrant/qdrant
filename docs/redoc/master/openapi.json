@@ -11527,6 +11527,9 @@
         "properties": {
           "index": {
             "$ref": "#/components/schemas/SparseIndexConfig"
+          },
+          "storage_type": {
+            "$ref": "#/components/schemas/SparseVectorStorageType"
           }
         }
       },
@@ -11582,6 +11585,24 @@
             "type": "string",
             "enum": [
               "Mmap"
+            ]
+          }
+        ]
+      },
+      "SparseVectorStorageType": {
+        "oneOf": [
+          {
+            "description": "Storage on disk",
+            "type": "string",
+            "enum": [
+              "on_disk"
+            ]
+          },
+          {
+            "description": "Storage in memory maps",
+            "type": "string",
+            "enum": [
+              "mmap"
             ]
           }
         ]

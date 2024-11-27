@@ -109,6 +109,9 @@ pub struct CollectionParams {
     // TODO: remove this setting after integration is finished
     #[serde(skip)]
     pub on_disk_payload_uses_mmap: bool,
+    // TODO: remove this setting after integration is finished
+    #[serde(skip)]
+    pub on_disk_sparse_vectors_uses_mmap: bool,
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
@@ -137,6 +140,7 @@ impl CollectionParams {
             read_fan_out_factor: _, // May be changed
             on_disk_payload: _, // May be changed
             on_disk_payload_uses_mmap: _, // Temporary
+            on_disk_sparse_vectors_uses_mmap: _, // Temporary
             sparse_vectors,  // Parameters may be changes, but not the structure
         } = other;
 
@@ -188,6 +192,7 @@ impl Anonymize for CollectionParams {
             read_fan_out_factor: self.read_fan_out_factor,
             on_disk_payload: self.on_disk_payload,
             on_disk_payload_uses_mmap: self.on_disk_payload_uses_mmap,
+            on_disk_sparse_vectors_uses_mmap: self.on_disk_sparse_vectors_uses_mmap,
             sparse_vectors: self.sparse_vectors.anonymize(),
         }
     }
@@ -274,6 +279,7 @@ impl CollectionParams {
             read_fan_out_factor: None,
             on_disk_payload: default_on_disk_payload(),
             on_disk_payload_uses_mmap: false,
+            on_disk_sparse_vectors_uses_mmap: false,
             sparse_vectors: None,
         }
     }
@@ -500,6 +506,9 @@ impl CollectionParams {
                                     .and_then(|index| index.datatype)
                                     .map(VectorStorageDatatype::from),
                             },
+                            // Not configurable by user (at this point). When we switch the default, it will be switched here too.
+                            storage_type: params
+                                .storage_type(self.on_disk_sparse_vectors_uses_mmap),
                         },
                     ))
                 })

@@ -244,8 +244,8 @@ impl Tracker {
     }
 
     /// Iterate over the pointers in the tracker
-    pub fn iter_pointers(&self) -> impl Iterator<Item = Option<(PointOffset, ValuePointer)>> + '_ {
-        (0..self.next_pointer_offset).map(move |i| self.get(i as PointOffset).map(|p| (i, p)))
+    pub fn iter_pointers(&self) -> impl Iterator<Item = (PointOffset, Option<ValuePointer>)> + '_ {
+        (0..self.next_pointer_offset).map(move |i| (i, self.get(i as PointOffset)))
     }
 
     /// Get the raw value at the given point offset
@@ -293,6 +293,7 @@ impl Tracker {
             self.pending_updates
                 .insert(point_offset, PointerUpdate::Unset(pointer));
         }
+        self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
 
         pointer_opt
     }
