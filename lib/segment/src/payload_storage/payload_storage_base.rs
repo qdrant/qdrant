@@ -50,6 +50,9 @@ pub trait PayloadStorage {
     /// Return all files that are used by storage to include in snapshots.
     /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
+
+    /// Return storage size in bytes
+    fn get_storage_size_bytes(&self) -> OperationResult<usize>;
 }
 
 pub trait ConditionChecker {
