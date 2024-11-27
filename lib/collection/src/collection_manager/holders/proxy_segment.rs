@@ -469,7 +469,7 @@ impl SegmentEntry for ProxySegment {
                         .deleted_points
                         .write()
                         .insert(point_id, op_num)
-                        .is_some();
+                        .is_none();
                 }
                 point_offset
             }
@@ -479,7 +479,7 @@ impl SegmentEntry for ProxySegment {
                         .deleted_points
                         .write()
                         .insert(point_id, op_num)
-                        .is_some();
+                        .is_none();
                 }
                 None
             }
