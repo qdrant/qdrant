@@ -20,7 +20,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PointIdType, QuantizationConfig,
-    SegmentConfig, VectorStorageType,
+    SegmentConfig, SeqNumberType, VectorStorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -250,7 +250,7 @@ pub trait SegmentOptimizer {
 
                 match config_on_disk {
                     Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
-                    Some(false) => {}, // on_disk=false wins, do nothing
+                    Some(false) => {} // on_disk=false wins, do nothing
                     None => config.storage_type = VectorStorageType::Mmap, // Mmap threshold wins
                 }
 
@@ -399,7 +399,7 @@ pub trait SegmentOptimizer {
     fn build_new_segment(
         &self,
         optimizing_segments: &[LockedSegment],
-        proxy_deleted_points: Arc<RwLock<HashSet<PointIdType>>>,
+        proxy_deleted_points: Arc<RwLock<HashMap<PointIdType, SeqNumberType>>>,
         proxy_deleted_indexes: Arc<RwLock<HashSet<PayloadKeyType>>>,
         proxy_created_indexes: Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>,
         permit: CpuPermit,
@@ -460,7 +460,7 @@ pub trait SegmentOptimizer {
         //
         // Use collection copy to prevent long time lock of `proxy_deleted_points`
         let deleted_points_snapshot: Vec<PointIdType> =
-            proxy_deleted_points.read().iter().cloned().collect();
+            proxy_deleted_points.read().keys().copied().collect();
 
         for &point_id in &deleted_points_snapshot {
             optimized_segment
@@ -548,7 +548,8 @@ pub trait SegmentOptimizer {
 
         let tmp_segment = self.temp_segment(false)?;
 
-        let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let proxy_deleted_points =
+            Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
         let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
             PayloadKeyType,
@@ -626,7 +627,7 @@ pub trait SegmentOptimizer {
         // - exclude already removed points from post-optimization removing
         let already_remove_points = {
             let mut all_removed_points: HashSet<_> =
-                proxy_deleted_points.read().iter().cloned().collect();
+                proxy_deleted_points.read().keys().copied().collect();
             for existing_point in optimized_segment.iter_points() {
                 all_removed_points.remove(&existing_point);
             }
@@ -644,7 +645,9 @@ pub trait SegmentOptimizer {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
-            let points_diff = deleted_points.difference(&already_remove_points);
+            let points_diff = deleted_points
+                .keys()
+                .filter(|&point_id| !already_remove_points.contains(point_id));
             for &point_id in points_diff {
                 optimized_segment
                     .delete_point(optimized_segment.version(), point_id)

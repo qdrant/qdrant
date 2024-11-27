@@ -7,7 +7,11 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{PayloadFieldSchema, PayloadKeyType, PointIdType};
+use segment::types::{
+    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SeqNumberType, WithPayload,
+    WithVector,
+};
+use serde_json::json;
 use tempfile::Builder;
 
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
@@ -15,7 +19,8 @@ use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentHolder, SegmentId,
 };
-use crate::collection_manager::segments_updater::upsert_points;
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::collection_manager::segments_updater::{set_payload, upsert_points};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 
 mod test_search_aggregation;
@@ -27,7 +32,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+    let proxy_deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
     let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
     let proxy_created_indexes = Arc::new(RwLock::new(
         HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
@@ -239,6 +244,110 @@ fn test_upsert_points_in_smallest_segment() {
         }
         for point_id in 0..10 {
             assert!(!segment3_read.has_point(point_id.into()));
+        }
+    }
+}
+
+#[test]
+fn test_proxy_shared_updates() {
+    // Testing that multiple proxies that share point with the same id but different versions
+    // are able to successfully apply and resolve update operation.
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut segment1 = empty_segment(dir.path());
+    let mut segment2 = empty_segment(dir.path());
+
+    let old_vec = vec![1.0, 0.0, 0.0, 1.0];
+    let new_vec = vec![1.0, 0.0, 1.0, 0.0];
+
+    let old_payload: Payload = json!({ "size": vec!["small"] }).into();
+    let new_payload: Payload = json!({ "size": vec!["big"] }).into();
+    // let newest_vec = vec![1.0, 1.0, 0.0, 0.0];
+
+    let write_segment = LockedSegment::new(empty_segment(dir.path()));
+
+    let idx1 = PointIdType::from(1);
+    let idx2 = PointIdType::from(2);
+
+    segment1
+        .upsert_point(10, idx1, only_default_vector(&old_vec))
+        .unwrap();
+    segment1.set_payload(10, idx1, &old_payload, &None).unwrap();
+    segment1
+        .upsert_point(20, idx2, only_default_vector(&new_vec))
+        .unwrap();
+    segment1.set_payload(20, idx2, &new_payload, &None).unwrap();
+
+    segment2
+        .upsert_point(20, idx1, only_default_vector(&new_vec))
+        .unwrap();
+    segment2.set_payload(20, idx1, &new_payload, &None).unwrap();
+    segment2
+        .upsert_point(10, idx2, only_default_vector(&old_vec))
+        .unwrap();
+    segment2.set_payload(10, idx2, &old_payload, &None).unwrap();
+
+    let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
+
+    let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+    let created_indexes = Arc::new(RwLock::new(
+        HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
+    ));
+
+    let locked_segment_1 = LockedSegment::new(segment1);
+    let locked_segment_2 = LockedSegment::new(segment2);
+
+    let proxy_segment_1 = ProxySegment::new(
+        locked_segment_1,
+        write_segment.clone(),
+        deleted_points.clone(),
+        created_indexes.clone(),
+        deleted_indexes.clone(),
+    );
+
+    let proxy_segment_2 = ProxySegment::new(
+        locked_segment_2,
+        write_segment,
+        deleted_points,
+        created_indexes,
+        deleted_indexes,
+    );
+
+    let mut holder = SegmentHolder::default();
+
+    holder.add_new(proxy_segment_1);
+    holder.add_new(proxy_segment_2);
+
+    let payload: Payload = json!({ "color": vec!["yellow"] }).into();
+
+    let ids = vec![idx1, idx2];
+
+    set_payload(&holder, 30, &payload, &ids, &None).unwrap();
+
+    let locked_holder = Arc::new(RwLock::new(holder));
+
+    let is_stopped = AtomicBool::new(false);
+
+    let with_payload = WithPayload::from(true);
+    let with_vector = WithVector::from(true);
+
+    let result = SegmentsSearcher::retrieve_blocking(
+        locked_holder.clone(),
+        &ids,
+        &with_payload,
+        &with_vector,
+        &is_stopped,
+    )
+    .unwrap();
+
+    let expected_payload: Payload = json!({ "size": vec!["big"], "color": vec!["yellow"] }).into();
+
+    for (point_id, record) in result {
+        if let Some(payload) = record.payload {
+            assert_eq!(payload, expected_payload);
+        } else {
+            panic!("No payload for point_id = {point_id}");
         }
     }
 }
