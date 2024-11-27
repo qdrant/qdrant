@@ -38,10 +38,10 @@ pub fn build_hnsw_on_gpu<'a>(
         + Sync,
     stopped: &AtomicBool,
 ) -> OperationResult<GraphLayersBuilder> {
-    let num_vectors = reference_graph.links_layers.len();
-    let m = reference_graph.m;
-    let m0 = reference_graph.m0;
-    let ef = std::cmp::max(reference_graph.ef_construct, m0);
+    let num_vectors = reference_graph.links_layers().len();
+    let m = reference_graph.m();
+    let m0 = reference_graph.m0();
+    let ef = std::cmp::max(reference_graph.ef_construct(), m0);
 
     let batched_points = BatchedPoints::new(
         |point_id| reference_graph.get_point_level(point_id),
@@ -99,26 +99,7 @@ pub fn build_hnsw_on_gpu<'a>(
         gpu_search_context.download_links(level, &graph_layers_builder, stopped)?;
     }
 
-    {
-        log::debug!(
-            "Gpu graph patches time: {:?}, count {:?}, avg {:?}",
-            &gpu_search_context.patches_timer,
-            gpu_search_context.patches_count,
-            gpu_search_context
-                .patches_timer
-                .checked_div(gpu_search_context.patches_count as u32)
-                .unwrap_or_default(),
-        );
-        log::debug!(
-            "Gpu graph update entries time: {:?}, count {:?}, avg {:?}",
-            &gpu_search_context.updates_timer,
-            gpu_search_context.updates_count,
-            gpu_search_context
-                .updates_timer
-                .checked_div(gpu_search_context.updates_count as u32)
-                .unwrap_or_default(),
-        );
-    }
+    gpu_search_context.log_measurements();
 
     Ok(graph_layers_builder)
 }
@@ -141,7 +122,7 @@ mod tests {
         min_cpu_linked_points_count: usize,
         exact: bool,
     ) -> GraphLayersBuilder {
-        let num_vectors = test.graph_layers_builder.links_layers.len();
+        let num_vectors = test.graph_layers_builder.links_layers().len();
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();

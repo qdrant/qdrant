@@ -26,33 +26,28 @@ pub struct GpuRequest {
 }
 
 pub struct GpuSearchContext {
-    pub device: Arc<gpu::Device>,
-    pub context: gpu::Context,
-    pub groups_count: usize,
-    pub gpu_vector_storage: GpuVectorStorage,
-    pub gpu_links: GpuLinks,
-    pub gpu_visited_flags: GpuVisitedFlags,
+    context: gpu::Context,
+    groups_count: usize,
+    gpu_vector_storage: GpuVectorStorage,
+    gpu_links: GpuLinks,
+    gpu_visited_flags: GpuVisitedFlags,
 
-    pub requests_buffer: Arc<gpu::Buffer>,
-    pub requests_staging_buffer: Arc<gpu::Buffer>,
+    requests_buffer: Arc<gpu::Buffer>,
+    requests_staging_buffer: Arc<gpu::Buffer>,
 
-    pub responses_buffer: Arc<gpu::Buffer>,
-    pub responses_staging_buffer: Arc<gpu::Buffer>,
+    responses_buffer: Arc<gpu::Buffer>,
+    responses_staging_buffer: Arc<gpu::Buffer>,
 
-    pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
-    pub greedy_pipeline: Arc<gpu::Pipeline>,
+    greedy_descriptor_set: Arc<gpu::DescriptorSet>,
+    greedy_pipeline: Arc<gpu::Pipeline>,
 
-    pub insert_atomics_buffer: Arc<gpu::Buffer>,
-    pub insert_descriptor_set: Arc<gpu::DescriptorSet>,
-    pub insert_pipeline: Arc<gpu::Pipeline>,
+    insert_descriptor_set: Arc<gpu::DescriptorSet>,
+    insert_pipeline: Arc<gpu::Pipeline>,
 
-    pub updates_timer: std::time::Duration,
-    pub updates_count: usize,
-    pub patches_timer: std::time::Duration,
-    pub patches_count: usize,
-
-    pub exact: bool,
-    pub ef: usize,
+    updates_timer: std::time::Duration,
+    updates_count: usize,
+    patches_timer: std::time::Duration,
+    patches_count: usize,
 }
 
 struct GpuSearchContextParams {
@@ -215,8 +210,8 @@ impl GpuSearchContext {
             .add_shader(insert_shader.clone())
             .build(device.clone())?;
 
-        let mut context = gpu::Context::new(device.clone())?;
-        context.clear_buffer(insert_atomics_buffer.clone())?;
+        let mut context = gpu::Context::new(device)?;
+        context.clear_buffer(insert_atomics_buffer)?;
         context.run()?;
         context.wait_finish(GPU_TIMEOUT)?;
 
@@ -224,7 +219,6 @@ impl GpuSearchContext {
             gpu_vector_storage,
             gpu_links,
             gpu_visited_flags,
-            device,
             context,
             groups_count,
             requests_staging_buffer,
@@ -233,15 +227,12 @@ impl GpuSearchContext {
             responses_buffer,
             greedy_descriptor_set,
             greedy_pipeline,
-            insert_atomics_buffer,
             insert_descriptor_set,
             insert_pipeline,
             updates_timer: Default::default(),
             updates_count: 0,
             patches_timer: Default::default(),
             patches_count: 0,
-            exact,
-            ef,
         })
     }
 
@@ -412,6 +403,25 @@ impl GpuSearchContext {
         self.gpu_links.clear(&mut self.context)?;
         Ok(())
     }
+
+    pub fn log_measurements(&self) {
+        log::debug!(
+            "Gpu graph patches time: {:?}, count {:?}, avg {:?}",
+            &self.patches_timer,
+            self.patches_count,
+            self.patches_timer
+                .checked_div(self.patches_count as u32)
+                .unwrap_or_default(),
+        );
+        log::debug!(
+            "Gpu graph update entries time: {:?}, count {:?}, avg {:?}",
+            &self.updates_timer,
+            self.updates_count,
+            self.updates_timer
+                .checked_div(self.updates_count as u32)
+                .unwrap_or_default(),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -439,6 +449,7 @@ mod tests {
     }
 
     struct TestData {
+        device: Arc<gpu::Device>,
         gpu_search_context: GpuSearchContext,
         gpu_search_context_params: GpuSearchContextParams,
         vector_holder: TestRawScorerProducer<DotProductMetric>,
@@ -495,7 +506,7 @@ mod tests {
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
         let mut gpu_search_context = GpuSearchContext::new(
-            device,
+            device.clone(),
             groups_count,
             &storage,
             None,
@@ -515,6 +526,7 @@ mod tests {
             .unwrap();
 
         TestData {
+            device,
             gpu_search_context,
             vector_holder,
             graph_layers_builder,
@@ -538,7 +550,7 @@ mod tests {
         let mut test = create_test_data(num_vectors, groups_count, dim, m, ef);
 
         let search_responses_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search responses buffer",
             gpu::BufferType::Storage,
             groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
@@ -546,14 +558,14 @@ mod tests {
         .unwrap();
 
         let download_staging_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search context download staging buffer",
             gpu::BufferType::GpuToCpu,
             search_responses_buffer.size(),
         )
         .unwrap();
 
-        let search_shader = ShaderBuilder::new(test.gpu_search_context.device.clone())
+        let search_shader = ShaderBuilder::new(test.device.clone())
             .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
             .with_parameters(&test.gpu_search_context.gpu_vector_storage)
             .with_parameters(&test.gpu_search_context.gpu_links)
@@ -565,7 +577,7 @@ mod tests {
         let search_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
-            .build(test.gpu_search_context.device.clone())
+            .build(test.device.clone())
             .unwrap();
 
         let search_descriptor_set =
@@ -591,7 +603,7 @@ mod tests {
                     .descriptor_set_layout(),
             )
             .add_shader(search_shader.clone())
-            .build(test.gpu_search_context.device.clone())
+            .build(test.device.clone())
             .unwrap();
 
         // create request data
@@ -792,14 +804,14 @@ mod tests {
 
         // upload search requests to GPU
         let search_requests_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search requests buffer",
             gpu::BufferType::Storage,
             search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
         )
         .unwrap();
         let upload_staging_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search context upload staging buffer",
             gpu::BufferType::CpuToGpu,
             search_requests.len() * std::mem::size_of::<TestSearchRequest>(),
@@ -826,14 +838,14 @@ mod tests {
 
         // create response and response staging buffers
         let responses_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search responses buffer",
             gpu::BufferType::Storage,
             groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
         )
         .unwrap();
         let responses_staging_buffer = gpu::Buffer::new(
-            test.gpu_search_context.device.clone(),
+            test.device.clone(),
             "Search responses staging buffer",
             gpu::BufferType::GpuToCpu,
             responses_buffer.size(),
@@ -841,7 +853,7 @@ mod tests {
         .unwrap();
 
         // Create test pipeline
-        let shader = ShaderBuilder::new(test.gpu_search_context.device.clone())
+        let shader = ShaderBuilder::new(test.device.clone())
             .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
             .with_parameters(&test.gpu_search_context.gpu_vector_storage)
             .with_parameters(&test.gpu_search_context.gpu_links)
@@ -853,7 +865,7 @@ mod tests {
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
-            .build(test.gpu_search_context.device.clone())
+            .build(test.device.clone())
             .unwrap();
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
@@ -878,7 +890,7 @@ mod tests {
                     .descriptor_set_layout(),
             )
             .add_shader(shader.clone())
-            .build(test.gpu_search_context.device.clone())
+            .build(test.device.clone())
             .unwrap();
 
         test.gpu_search_context

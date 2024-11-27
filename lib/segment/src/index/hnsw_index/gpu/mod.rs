@@ -12,8 +12,6 @@ pub mod shader_builder;
 mod gpu_heap_tests;
 
 use batched_points::BatchedPoints;
-use bitvec::vec::BitVec;
-use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
 
@@ -36,14 +34,14 @@ fn create_graph_layers_builder(
         GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
 
     // mark all vectors as ready
-    graph_layers_builder.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
+    graph_layers_builder.clear_ready_list();
 
     // set first entry point
     graph_layers_builder.set_levels(
         batched_points.first_point_id(),
         batched_points.levels_count() - 1,
     );
-    graph_layers_builder.entry_points.lock().new_point(
+    graph_layers_builder.get_entry_points().new_point(
         batched_points.first_point_id(),
         batched_points.levels_count() - 1,
         |_| true,
@@ -164,18 +162,18 @@ mod tests {
         graph_a: &GraphLayersBuilder,
         graph_b: &GraphLayersBuilder,
     ) {
-        assert_eq!(graph_a.links_layers.len(), graph_b.links_layers.len());
-        let num_vectors = graph_a.links_layers.len();
+        assert_eq!(graph_a.links_layers().len(), graph_b.links_layers().len());
+        let num_vectors = graph_a.links_layers().len();
         for point_id in 0..num_vectors as PointOffsetType {
             let levels_a = graph_a.get_point_level(point_id);
             let levels_b = graph_b.get_point_level(point_id);
             assert_eq!(levels_a, levels_b);
 
             for level in (0..levels_a + 1).rev() {
-                let links_a = graph_a.links_layers[point_id as usize][level]
+                let links_a = graph_a.links_layers()[point_id as usize][level]
                     .read()
                     .clone();
-                let links_b = graph_b.links_layers[point_id as usize][level]
+                let links_b = graph_b.links_layers()[point_id as usize][level]
                     .read()
                     .clone();
                 if links_a != links_b {

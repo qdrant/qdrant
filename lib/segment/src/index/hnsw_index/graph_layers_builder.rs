@@ -26,21 +26,21 @@ pub type LockedLayersContainer = Vec<LockedLinkContainer>;
 /// Convertible to `GraphLayers`
 pub struct GraphLayersBuilder {
     max_level: AtomicUsize,
-    pub(crate) m: usize,
-    pub(crate) m0: usize,
-    pub(crate) ef_construct: usize,
+    m: usize,
+    m0: usize,
+    ef_construct: usize,
     // Factor of level probability
     level_factor: f64,
     // Exclude points according to "not closer than base" heuristic?
     use_heuristic: bool,
-    pub(crate) links_layers: Vec<LockedLayersContainer>,
-    pub(crate) entry_points: Mutex<EntryPoints>,
+    links_layers: Vec<LockedLayersContainer>,
+    entry_points: Mutex<EntryPoints>,
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
 
     // List of bool flags, which defines if the point is already indexed or not
-    pub(crate) ready_list: RwLock<BitVec>,
+    ready_list: RwLock<BitVec>,
 }
 
 impl GraphLayersBase for GraphLayersBuilder {
@@ -99,6 +99,32 @@ impl GraphLayersBuilder {
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         })
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn m(&self) -> usize {
+        self.m
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn m0(&self) -> usize {
+        self.m0
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn ef_construct(&self) -> usize {
+        self.ef_construct
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn links_layers(&self) -> &[LockedLayersContainer] {
+        &self.links_layers
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn clear_ready_list(&mut self) {
+        let num_vectors = self.num_points();
+        self.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
     }
 
     pub fn new_with_params(

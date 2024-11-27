@@ -117,10 +117,10 @@ mod tests {
         groups_count: usize,
         visited_flags_factor: usize,
     ) -> GraphLayersBuilder {
-        let num_vectors = test.graph_layers_builder.links_layers.len();
-        let m = test.graph_layers_builder.m;
-        let m0 = test.graph_layers_builder.m0;
-        let ef = test.graph_layers_builder.ef_construct;
+        let num_vectors = test.graph_layers_builder.links_layers().len();
+        let m = test.graph_layers_builder.m();
+        let m0 = test.graph_layers_builder.m0();
+        let ef = test.graph_layers_builder.ef_construct();
 
         let batched_points = BatchedPoints::new(
             |point_id| test.graph_layers_builder.get_point_level(point_id),

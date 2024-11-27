@@ -173,12 +173,12 @@ impl GpuLinks {
         self.clear(gpu_context)?;
 
         let timer = std::time::Instant::now();
-        let points: Vec<_> = (0..graph_layers_builder.links_layers.len())
+        let points: Vec<_> = (0..graph_layers_builder.links_layers().len())
             .filter(|&point_id| {
                 graph_layers_builder.get_point_level(point_id as PointOffsetType) >= level
             })
             .filter(|&point_id| {
-                !graph_layers_builder.links_layers[point_id][level]
+                !graph_layers_builder.links_layers()[point_id][level]
                     .read()
                     .is_empty()
             })
@@ -188,7 +188,7 @@ impl GpuLinks {
             check_stopped(stopped)?;
 
             for &point_id in points_slice {
-                let links = graph_layers_builder.links_layers[point_id][level].read();
+                let links = graph_layers_builder.links_layers()[point_id][level].read();
                 self.set_links(point_id as PointOffsetType, &links)?;
             }
             self.apply_gpu_patches(gpu_context)?;
@@ -219,7 +219,7 @@ impl GpuLinks {
             links_patch_capacity,
         )?;
 
-        let points = (0..graph_layers_builder.links_layers.len() as PointOffsetType)
+        let points = (0..graph_layers_builder.links_layers().len() as PointOffsetType)
             .filter(|&point_id| graph_layers_builder.get_point_level(point_id) >= level)
             .collect::<Vec<_>>();
 
@@ -250,7 +250,7 @@ impl GpuLinks {
                 let point_id = points[start + index] as usize;
                 let links_count = chunk[0] as usize;
                 let links = &chunk[1..=links_count];
-                let mut dst = graph_layers_builder.links_layers[point_id][level].write();
+                let mut dst = graph_layers_builder.links_layers()[point_id][level].write();
                 dst.clear();
                 dst.extend_from_slice(links);
             }
