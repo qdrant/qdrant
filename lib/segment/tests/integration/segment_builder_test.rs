@@ -410,7 +410,7 @@ fn test_building_new_segment_with_mmap_payload() {
 
     // add one point
     segment1
-        .upsert_point(1, 1.into(), only_default_vector(&vec![1.0, 0.0, 1.0, 1.0]))
+        .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 1.0, 1.0]))
         .unwrap();
 
     let builder = SegmentBuilder::new(
