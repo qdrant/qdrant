@@ -5,7 +5,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
-use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
+use crate::types::{
+    Distance, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
+};
 
 /// Build new segment with plain index in given directory
 ///
@@ -35,6 +37,34 @@ pub fn build_simple_segment(
             )]),
             sparse_vector_data: Default::default(),
             payload_storage_type: Default::default(),
+        },
+        true,
+    )
+}
+
+pub fn build_simple_segment_with_payload_storage(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    payload_storage_type: PayloadStorageType,
+) -> OperationResult<Segment> {
+    build_segment(
+        path,
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type,
         },
         true,
     )
