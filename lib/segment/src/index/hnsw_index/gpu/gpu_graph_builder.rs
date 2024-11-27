@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use common::types::PointOffsetType;
 
+use super::gpu_vector_storage::GpuVectorStorage;
 use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::gpu::batched_points::BatchedPoints;
@@ -12,8 +12,7 @@ use crate::index::hnsw_index::gpu::gpu_level_builder::build_level_on_gpu;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::payload_storage::FilterContext;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{RawScorer, VectorStorageEnum};
+use crate::vector_storage::RawScorer;
 
 /// Maximum count of point IDs per visited flag.
 static MAX_VISITED_FLAGS_FACTOR: usize = 32;
@@ -21,20 +20,13 @@ static MAX_VISITED_FLAGS_FACTOR: usize = 32;
 /// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
 pub fn build_hnsw_on_gpu<'a>(
-    // GPU device to use.
-    device: Arc<gpu::Device>,
+    gpu_vector_storage: &GpuVectorStorage,
     // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
     // Parallel inserts count.
     groups_count: usize,
-    // Vector storage to use.
-    vector_storage: &VectorStorageEnum,
-    // Quantized storage to use.
-    quantized_storage: Option<&QuantizedVectors>,
     // Number of entry points of hnsw graph.
     entry_points_num: usize,
-    // If true, use half precision instead of `f32`.
-    force_half_precision: bool,
     // Amount of first points to link on CPU.
     cpu_linked_points: usize,
     // If true, guarantee equality of result with CPU version for both single-threaded case.
@@ -67,18 +59,14 @@ pub fn build_hnsw_on_gpu<'a>(
 
     // Create all GPU resoures.
     let mut gpu_search_context = GpuInsertContext::new(
-        device,
+        gpu_vector_storage,
         groups_count,
-        vector_storage,
-        quantized_storage,
         batched_points.remap(),
         m,
         m0,
         ef,
-        force_half_precision,
         exact,
         1..MAX_VISITED_FLAGS_FACTOR,
-        stopped,
     )?;
 
     let graph_layers_builder =
@@ -138,7 +126,7 @@ mod tests {
     fn build_gpu_graph(
         test: &GpuGraphTestData,
         groups_count: usize,
-        min_cpu_linked_points_count: usize,
+        cpu_linked_points_count: usize,
         exact: bool,
     ) -> GraphLayersBuilder {
         let num_vectors = test.graph_layers_builder.links_layers().len();
@@ -146,16 +134,22 @@ mod tests {
         let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let ids = (0..num_vectors as PointOffsetType).collect();
-        build_hnsw_on_gpu(
-            device,
-            &test.graph_layers_builder,
-            groups_count,
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
             test.vector_storage.borrow(),
             None,
-            1,
             false,
-            min_cpu_linked_points_count,
+            &false.into(),
+        )
+        .unwrap();
+
+        let ids = (0..num_vectors as PointOffsetType).collect();
+        build_hnsw_on_gpu(
+            &gpu_vector_storage,
+            &test.graph_layers_builder,
+            groups_count,
+            1,
+            cpu_linked_points_count,
             exact,
             ids,
             |point_id| {

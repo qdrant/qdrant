@@ -105,6 +105,7 @@ mod tests {
     use super::*;
     use crate::index::hnsw_index::gpu::batched_points::BatchedPoints;
     use crate::index::hnsw_index::gpu::create_graph_layers_builder;
+    use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
     use crate::index::hnsw_index::gpu::tests::{
         check_graph_layers_builders_quality, compare_graph_layers_builders,
         create_gpu_graph_test_data, GpuGraphTestData,
@@ -136,19 +137,24 @@ mod tests {
         let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let mut gpu_search_context = GpuInsertContext::new(
-            device,
-            groups_count,
+        let gpu_vector_storage = GpuVectorStorage::new(
+            device.clone(),
             test.vector_storage.borrow(),
             None,
+            false,
+            &false.into(),
+        )
+        .unwrap();
+
+        let mut gpu_search_context = GpuInsertContext::new(
+            &gpu_vector_storage,
+            groups_count,
             batched_points.remap(),
             m,
             m0,
             ef,
-            false,
             true,
             visited_flags_factor..32,
-            &false.into(),
         )
         .unwrap();
 

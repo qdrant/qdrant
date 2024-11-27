@@ -570,6 +570,7 @@ fn test_gpu_vector_storage_impl(
     )
     .unwrap();
 
+    assert_eq!(gpu_vector_storage.num_vectors(), num_vectors);
     assert_eq!(
         gpu_vector_storage.element_type,
         if let Some(_quantization_config) = quantization_config.as_ref() {
