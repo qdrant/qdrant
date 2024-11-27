@@ -91,4 +91,4 @@ tar -cvf "./compatibility-${QDRANT_VERSION}.tar" "storage.tar.bz2" "full-snapsho
 cd -
 
 echo "Compatibility data saved to ${SCRIPT_DIR}/compatibility-${QDRANT_VERSION}.tar"
-echo "Upload it to "qdrant-backward-compatibility" gcs bucket (requires access rights)"
+echo "Upload it to 'qdrant-backward-compatibility' gcs bucket (requires access rights)"

@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use io::file_operations::atomic_save_json;
@@ -75,6 +76,22 @@ impl<V: Blob> BlobStore<V> {
         self.tracker.read().pointer_count()
     }
 
+    /// Opens an existing storage, or initializes a new one.
+    /// Depends on the existence of the config file at the `base_path`.
+    ///
+    /// In case of opening, it ignores the `create_options` parameter.
+    pub fn open_or_create(base_path: PathBuf, create_options: StorageOptions) -> Result<Self> {
+        let config_path = base_path.join(CONFIG_FILENAME);
+        if config_path.exists() {
+            Self::open(base_path)
+        } else {
+            // create folder if it does not exist
+            std::fs::create_dir_all(&base_path)
+                .map_err(|err| format!("Failed to create blob_store storage directory: {err}"))?;
+            Self::new(base_path, create_options)
+        }
+    }
+
     /// Initializes a new storage with a single empty page.
     ///
     /// `base_path` is the directory where the storage files will be stored.
@@ -114,6 +131,13 @@ impl<V: Blob> BlobStore<V> {
     /// Open an existing storage at the given path
     /// Returns None if the storage does not exist
     pub fn open(path: PathBuf) -> Result<Self> {
+        if !path.exists() {
+            return Err(format!("Path '{path:?}' does not exist"));
+        }
+        if !path.is_dir() {
+            return Err(format!("Path '{path:?}' is not a directory"));
+        }
+
         // read config file first
         let config_path = path.join(CONFIG_FILENAME);
         let config_file = std::fs::File::open(&config_path).map_err(|err| err.to_string())?;
@@ -382,7 +406,14 @@ impl<V: Blob> BlobStore<V> {
     where
         F: FnMut(PointOffset, &V) -> std::io::Result<bool>,
     {
-        for (point_offset, pointer) in self.tracker.read().iter_pointers().flatten() {
+        for (point_offset, pointer) in
+            self.tracker
+                .read()
+                .iter_pointers()
+                .filter_map(|(point_offset, opt_pointer)| {
+                    opt_pointer.map(|pointer| (point_offset, pointer))
+                })
+        {
             let ValuePointer {
                 page_id,
                 block_offset,
@@ -402,6 +433,31 @@ impl<V: Blob> BlobStore<V> {
     /// Return the storage size in bytes
     pub fn get_storage_size_bytes(&self) -> usize {
         self.bitmask.read().get_storage_size_bytes()
+    }
+
+    /// Iterate over all the values in the storage, including deleted ones
+    pub fn for_each_unfiltered<F>(&self, mut callback: F) -> Result<()>
+    where
+        F: FnMut(PointOffset, Option<&V>) -> ControlFlow<String, ()>,
+    {
+        for (point_offset, opt_pointer) in self.tracker.read().iter_pointers() {
+            let value = opt_pointer.map(
+                |ValuePointer {
+                     page_id,
+                     block_offset,
+                     length,
+                 }| {
+                    let raw = self.read_from_pages(page_id, block_offset, length);
+                    let decompressed = Self::decompress(&raw);
+                    V::from_bytes(&decompressed)
+                },
+            );
+            match callback(point_offset, value.as_ref()) {
+                ControlFlow::Continue(()) => continue,
+                ControlFlow::Break(message) => return Err(message),
+            }
+        }
+        Ok(())
     }
 }
 

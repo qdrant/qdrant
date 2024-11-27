@@ -950,12 +950,33 @@ impl VectorDataConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SparseVectorStorageType {
+    /// Storage on disk
+    // (rocksdb storage)
+    #[default]
+    OnDisk,
+    /// Storage in memory maps
+    // (blob_store storage)
+    Mmap,
+}
+
 /// Config of single sparse vector data storage
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
     /// Sparse inverted index config
     pub index: SparseIndexConfig,
+
+    /// Type of storage this sparse vector uses
+    #[serde(default = "default_sparse_vector_storage_type_when_not_in_config")]
+    pub storage_type: SparseVectorStorageType,
+}
+
+/// If the storage type is not in config, it means it is the OnDisk variant
+const fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
+    SparseVectorStorageType::OnDisk
 }
 
 impl SparseVectorDataConfig {

@@ -27,7 +27,8 @@ use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     Condition, FieldCondition, Filter, Payload, ScoredPoint, SegmentConfig, SeqNumberType,
-    SparseVectorDataConfig, VectorStorageDatatype, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    SparseVectorDataConfig, SparseVectorStorageType, VectorStorageDatatype,
+    DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
@@ -579,6 +580,7 @@ fn sparse_vector_index_persistence_test() {
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
                 },
+                storage_type: SparseVectorStorageType::default(),
             },
         )]),
         payload_storage_type: Default::default(),
@@ -747,6 +749,7 @@ fn sparse_vector_test_large_index() {
                     index_type: SparseIndexType::MutableRam,
                     datatype: Some(VectorStorageDatatype::Float32),
                 },
+                storage_type: SparseVectorStorageType::OnDisk,
             },
         )]),
         payload_storage_type: Default::default(),

@@ -69,6 +69,9 @@ pub struct StorageConfig {
     // TODO: remove this field after integration is finished
     #[serde(default)]
     pub on_disk_payload_uses_mmap: bool,
+    // TODO: remove this field after integration is finished
+    #[serde(default)]
+    pub on_disk_sparse_vectors_uses_mmap: bool,
     #[validate(nested)]
     pub optimizers: OptimizersConfig,
     #[validate(nested)]
