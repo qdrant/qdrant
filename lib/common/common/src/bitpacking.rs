@@ -14,9 +14,9 @@ pub struct BitWriter<'a> {
 }
 
 impl<'a> BitWriter<'a> {
+    /// Create a new writer that appends bits to the `output`.
     #[inline]
     pub fn new(output: &'a mut Vec<u8>) -> Self {
-        output.clear();
         Self {
             output,
             buf: 0,
@@ -222,6 +222,7 @@ mod tests {
                     total_bits += u64::from(bits);
                 }
 
+                packed.clear();
                 let mut w = BitWriter::new(&mut packed);
                 for (&x, &bits) in zip(&values, &bits_per_value) {
                     w.write(x, bits);
