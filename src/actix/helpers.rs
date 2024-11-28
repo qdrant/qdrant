@@ -156,6 +156,7 @@ impl ResponseError for HttpError {
             StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
             StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
             StorageError::InferenceError { .. } => http::StatusCode::BAD_REQUEST,
+            StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
         }
     }
 }
