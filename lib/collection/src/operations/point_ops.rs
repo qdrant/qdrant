@@ -692,6 +692,20 @@ pub enum PointOperations {
 }
 
 impl PointOperations {
+    pub fn delete_points_from_selector(selector: PointsSelector) -> Self {
+        match selector {
+            PointsSelector::PointIdsSelector(PointIdsList {
+                points,
+                shard_key: _,
+            }) => PointOperations::DeletePoints { ids: points },
+
+            PointsSelector::FilterSelector(FilterSelector {
+                filter,
+                shard_key: _,
+            }) => PointOperations::DeletePointsByFilter(filter),
+        }
+    }
+
     pub fn is_write_operation(&self) -> bool {
         match self {
             PointOperations::UpsertPoints(_) => true,
@@ -720,6 +734,18 @@ impl PointOperations {
             Self::DeletePointsByFilter(_) => (),
             Self::SyncPoints(op) => op.points.retain(|point| filter(&point.id)),
         }
+    }
+}
+
+impl From<PointInsertOperationsInternal> for PointOperations {
+    fn from(op: PointInsertOperationsInternal) -> Self {
+        Self::UpsertPoints(op)
+    }
+}
+
+impl From<PointSyncOperation> for PointOperations {
+    fn from(op: PointSyncOperation) -> Self {
+        Self::SyncPoints(op)
     }
 }
 

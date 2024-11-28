@@ -81,6 +81,12 @@ impl VectorOperations {
     }
 }
 
+impl From<UpdateVectorsOp> for VectorOperations {
+    fn from(op: UpdateVectorsOp) -> Self {
+        Self::UpdateVectors(op)
+    }
+}
+
 impl SplitByShard for Vec<PointVectors> {
     fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         split_iter_by_shard(self, |point| point.id, ring)

@@ -194,6 +194,12 @@ where
     }
 }
 
+impl From<DeletePayloadOp> for PayloadOps {
+    fn from(op: DeletePayloadOp) -> Self {
+        Self::DeletePayload(op)
+    }
+}
+
 impl SplitByShard for PayloadOps {
     fn split_by_shard(self, ring: &HashRingRouter) -> OperationToShard<Self> {
         match self {

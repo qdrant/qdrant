@@ -23,7 +23,7 @@ use super::qdrant::{
     DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
     FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
     HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, PointVectors, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, VectorsOutput, WithLookup,
 };
@@ -624,6 +624,24 @@ impl TryFrom<PointStruct> for rest::PointStruct {
             vector: vector_struct,
             payload: converted_payload,
         })
+    }
+}
+
+impl TryFrom<PointVectors> for rest::PointVectors {
+    type Error = Status;
+
+    fn try_from(value: PointVectors) -> Result<Self, Self::Error> {
+        let PointVectors { id, vectors } = value;
+
+        let id = id
+            .ok_or_else(|| Status::invalid_argument("id is expected"))?
+            .try_into()?;
+
+        let vector = vectors
+            .ok_or_else(|| Status::invalid_argument("vectors is expected"))?
+            .try_into()?;
+
+        Ok(Self { id, vector })
     }
 }
 

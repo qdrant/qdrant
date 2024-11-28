@@ -28,14 +28,10 @@ use tonic::{Request, Response, Status};
 
 use super::points_common::{core_search_list, scroll};
 use super::validate_and_log;
-use crate::common::inference::InferenceToken;
 use crate::settings::ServiceConfig;
-use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
-    delete_payload, delete_vectors, get, overwrite_payload, recommend, set_payload, sync,
-    update_vectors, upsert,
-};
-use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
+use crate::tonic::api::points_common::{count, get, recommend};
+use crate::tonic::update::update_internal;
+use crate::tonic::verification::UncheckedTocProvider;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -177,268 +173,72 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<UpsertPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
-
-        let UpsertPointsInternal {
-            upsert_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let upsert_points =
-            upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
-
-        upsert(
-            StrictModeCheckedInternalTocProvider::new(&self.toc),
-            upsert_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-            inference_token,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn delete(
         &self,
         request: Request<DeletePointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
-
-        let DeletePointsInternal {
-            delete_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let delete_points =
-            delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
-
-        delete(
-            UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-            inference_token,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn update_vectors(
         &self,
         request: Request<UpdateVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
-        let request = request.into_inner();
-
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
-
-        let update_point_vectors = request
-            .update_vectors
-            .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
-
-        update_vectors(
-            StrictModeCheckedInternalTocProvider::new(&self.toc),
-            update_point_vectors,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-            inference_token,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn delete_vectors(
         &self,
         request: Request<DeleteVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let request = request.into_inner();
-
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
-
-        let delete_point_vectors = request
-            .delete_vectors
-            .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
-
-        delete_vectors(
-            UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_point_vectors,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn set_payload(
         &self,
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let SetPayloadPointsInternal {
-            set_payload_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
-        set_payload(
-            StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        // update_internal(self.toc.clone(), request).await
+        todo!()
     }
 
     async fn overwrite_payload(
         &self,
         request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let SetPayloadPointsInternal {
-            set_payload_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
-        overwrite_payload(
-            StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        // update_internal(self.toc.clone(), request).await
+        todo!()
     }
 
     async fn delete_payload(
         &self,
         request: Request<DeletePayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let DeletePayloadPointsInternal {
-            delete_payload_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let delete_payload_points = delete_payload_points
-            .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
-
-        delete_payload(
-            UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_payload_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn clear_payload(
         &self,
         request: Request<ClearPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let ClearPayloadPointsInternal {
-            clear_payload_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let clear_payload_points = clear_payload_points
-            .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
-
-        clear_payload(
-            UncheckedTocProvider::new_unchecked(&self.toc),
-            clear_payload_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn create_field_index(
         &self,
         request: Request<CreateFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let CreateFieldIndexCollectionInternal {
-            create_field_index_collection,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let create_field_index_collection = create_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
-
-        create_field_index_internal(
-            self.toc.clone(),
-            create_field_index_collection,
-            clock_tag.map(Into::into),
-            shard_id,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn delete_field_index(
         &self,
         request: Request<DeleteFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-
-        let DeleteFieldIndexCollectionInternal {
-            delete_field_index_collection,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let delete_field_index_collection = delete_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
-
-        delete_field_index_internal(
-            self.toc.clone(),
-            delete_field_index_collection,
-            clock_tag.map(Into::into),
-            shard_id,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn core_search_batch(
@@ -591,30 +391,7 @@ impl PointsInternal for PointsInternalService {
         &self,
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
-        validate_and_log(request.get_ref());
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
-
-        let SyncPointsInternal {
-            sync_points,
-            shard_id,
-            clock_tag,
-        } = request.into_inner();
-
-        let sync_points =
-            sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
-        sync(
-            self.toc.clone(),
-            sync_points,
-            clock_tag.map(Into::into),
-            shard_id,
-            FULL_ACCESS.clone(),
-            inference_token,
-        )
-        .await
+        update_internal(self.toc.clone(), request).await
     }
 
     async fn query_batch(

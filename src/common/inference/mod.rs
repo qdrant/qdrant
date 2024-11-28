@@ -13,34 +13,32 @@ pub mod query_requests_rest;
 pub mod service;
 pub mod update_requests;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct InferenceToken(pub Option<String>);
+
+impl fmt::Display for InferenceToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 impl InferenceToken {
     pub fn new(key: String) -> Self {
         InferenceToken(Option::from(key))
     }
+
     pub fn as_str(&self) -> &Option<String> {
         &self.0
     }
 }
 
 impl FromRequest for InferenceToken {
-    type Error = Infallible;
     type Future = Ready<Result<Self, Self::Error>>;
+    type Error = Infallible;
 
-    fn from_request(
-        req: &actix_web::HttpRequest,
-        _payload: &mut actix_web::dev::Payload,
-    ) -> Self::Future {
+    fn from_request(req: &actix_web::HttpRequest, _: &mut actix_web::dev::Payload) -> Self::Future {
         let api_key = req.extensions().get::<InferenceToken>().cloned();
         ready(Ok(api_key.unwrap_or(InferenceToken(None))))
-    }
-}
-
-impl fmt::Display for InferenceToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
     }
 }
 

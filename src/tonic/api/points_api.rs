@@ -22,18 +22,18 @@ use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
 use super::points_common::{
-    delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
+    discover, discover_batch, facet, query, query_batch, query_groups, recommend_groups, scroll,
+    search_groups, search_points_matrix,
 };
 use super::validate;
 use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
-    clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
-    delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
-    search, set_payload, upsert,
+    convert_shard_selector_for_read, core_search_batch, count, get, recommend, recommend_batch,
+    search,
 };
 use crate::tonic::auth::extract_access;
+use crate::tonic::update::{update, update_batch};
 use crate::tonic::verification::StrictModeCheckedTocProvider;
 
 pub struct PointsService {
@@ -62,44 +62,16 @@ impl PointsService {
 impl Points for PointsService {
     async fn upsert(
         &self,
-        mut request: Request<UpsertPoints>,
+        request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-        let inference_token = extract_token(&request);
-
-        upsert(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-            inference_token,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn delete(
         &self,
-        mut request: Request<DeletePoints>,
+        request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-        let inference_token = extract_token(&request);
-
-        delete(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-            inference_token,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
@@ -118,178 +90,67 @@ impl Points for PointsService {
 
     async fn update_vectors(
         &self,
-        mut request: Request<UpdatePointVectors>,
+        request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        // Nothing to verify here.
-
-        let access = extract_access(&mut request);
-        let inference_token = extract_token(&request);
-
-        update_vectors(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-            inference_token,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn delete_vectors(
         &self,
-        mut request: Request<DeletePointVectors>,
+        request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        delete_vectors(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn set_payload(
         &self,
-        mut request: Request<SetPayloadPoints>,
+        request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        set_payload(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        // update(self.dispatcher.clone(), request).await
+        todo!()
     }
 
     async fn overwrite_payload(
         &self,
-        mut request: Request<SetPayloadPoints>,
+        request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        overwrite_payload(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        // update(self.dispatcher.clone(), request).await
+        todo!()
     }
 
     async fn delete_payload(
         &self,
-        mut request: Request<DeletePayloadPoints>,
+        request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        delete_payload(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn clear_payload(
         &self,
-        mut request: Request<ClearPayloadPoints>,
+        request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        clear_payload(
-            StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn update_batch(
         &self,
-        mut request: Request<UpdateBatchPoints>,
+        request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-        let inference_token = extract_token(&request);
-
-        update_batch(
-            &self.dispatcher,
-            request.into_inner(),
-            None,
-            None,
-            access,
-            inference_token,
-        )
-        .await
+        update_batch(self.dispatcher.clone(), request).await
     }
 
     async fn create_field_index(
         &self,
-        mut request: Request<CreateFieldIndexCollection>,
+        request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        create_field_index(
-            self.dispatcher.clone(),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn delete_field_index(
         &self,
-        mut request: Request<DeleteFieldIndexCollection>,
+        request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate(request.get_ref())?;
-
-        let access = extract_access(&mut request);
-
-        delete_field_index(
-            self.dispatcher.clone(),
-            request.into_inner(),
-            None,
-            None,
-            access,
-        )
-        .await
-        .map(|resp| resp.map(Into::into))
+        update(self.dispatcher.clone(), request).await
     }
 
     async fn search(

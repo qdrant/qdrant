@@ -47,6 +47,12 @@ pub enum FieldIndexOperations {
     DeleteIndex(JsonPath),
 }
 
+impl From<CreateIndex> for FieldIndexOperations {
+    fn from(op: CreateIndex) -> Self {
+        Self::CreateIndex(op)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct OperationWithClockTag {
     #[serde(flatten)]
@@ -68,8 +74,8 @@ impl OperationWithClockTag {
     }
 }
 
-impl From<CollectionUpdateOperations> for OperationWithClockTag {
-    fn from(operation: CollectionUpdateOperations) -> Self {
+impl<T: Into<CollectionUpdateOperations>> From<T> for OperationWithClockTag {
+    fn from(operation: T) -> Self {
         Self::new(operation, None)
     }
 }
@@ -179,6 +185,60 @@ impl CollectionUpdateOperations {
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
         }
+    }
+}
+
+impl From<point_ops::PointOperations> for CollectionUpdateOperations {
+    fn from(op: point_ops::PointOperations) -> Self {
+        Self::PointOperation(op)
+    }
+}
+
+impl From<point_ops::PointInsertOperationsInternal> for CollectionUpdateOperations {
+    fn from(op: point_ops::PointInsertOperationsInternal) -> Self {
+        Self::PointOperation(op.into())
+    }
+}
+
+impl From<point_ops::PointSyncOperation> for CollectionUpdateOperations {
+    fn from(op: point_ops::PointSyncOperation) -> Self {
+        Self::PointOperation(op.into())
+    }
+}
+
+impl From<vector_ops::VectorOperations> for CollectionUpdateOperations {
+    fn from(op: vector_ops::VectorOperations) -> Self {
+        Self::VectorOperation(op)
+    }
+}
+
+impl From<vector_ops::UpdateVectorsOp> for CollectionUpdateOperations {
+    fn from(op: vector_ops::UpdateVectorsOp) -> Self {
+        Self::VectorOperation(op.into())
+    }
+}
+
+impl From<payload_ops::PayloadOps> for CollectionUpdateOperations {
+    fn from(op: payload_ops::PayloadOps) -> Self {
+        Self::PayloadOperation(op)
+    }
+}
+
+impl From<payload_ops::DeletePayloadOp> for CollectionUpdateOperations {
+    fn from(op: payload_ops::DeletePayloadOp) -> Self {
+        Self::PayloadOperation(op.into())
+    }
+}
+
+impl From<FieldIndexOperations> for CollectionUpdateOperations {
+    fn from(op: FieldIndexOperations) -> Self {
+        Self::FieldIndexOperation(op)
+    }
+}
+
+impl From<CreateIndex> for CollectionUpdateOperations {
+    fn from(op: CreateIndex) -> Self {
+        Self::FieldIndexOperation(op.into())
     }
 }
 

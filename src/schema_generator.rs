@@ -35,6 +35,7 @@ use crate::common::telemetry::TelemetryData;
 mod actix;
 mod common;
 mod settings;
+mod tonic;
 mod tracing;
 
 #[derive(Serialize, JsonSchema)]

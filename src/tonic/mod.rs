@@ -1,7 +1,8 @@
-mod api;
-mod auth;
+pub mod api;
+pub mod auth;
 mod logging;
 mod tonic_telemetry;
+mod update;
 pub(super) mod verification;
 
 use std::io;

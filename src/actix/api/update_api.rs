@@ -1,40 +1,20 @@
-use actix_web::rt::time::Instant;
 use actix_web::{delete, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::schema::PointInsertOperations;
 use api::rest::UpdateVectors;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointsSelector, WriteOrdering};
-use collection::operations::types::UpdateResult;
+use collection::operations::point_ops::PointsSelector;
 use collection::operations::vector_ops::DeleteVectors;
-use schemars::JsonSchema;
 use segment::json_path::JsonPath;
-use serde::{Deserialize, Serialize};
-use storage::content_manager::collection_verification::check_strict_mode;
+use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::update::*;
 use crate::common::inference::InferenceToken;
-use crate::common::points::{
-    do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
-    do_upsert_points, CreateFieldIndex, UpdateOperations,
-};
-
-#[derive(Deserialize, Validate)]
-struct FieldPath {
-    #[serde(rename = "field_name")]
-    name: JsonPath,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct UpdateParam {
-    pub wait: Option<bool>,
-    pub ordering: Option<WriteOrdering>,
-}
+use crate::common::points::{CreateFieldIndex, UpdateOperations};
 
 #[put("/collections/{name}/points")]
 async fn upsert_points(
@@ -45,27 +25,14 @@ async fn upsert_points(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let pass =
-        match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
-    let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_upsert_points(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
         inference_token,
-    ))
+        collection.into_inner(),
+        operation.into_inner(),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -78,27 +45,14 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_delete_points(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
         inference_token,
-    ))
+        collection.into_inner(),
+        DeletePointsHelper(operation.into_inner()),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -111,27 +65,14 @@ async fn update_vectors(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
-    helpers::time(do_update_vectors(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
         inference_token,
-    ))
+        collection.into_inner(),
+        operation.into_inner(),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -143,30 +84,15 @@ async fn delete_vectors(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-
-    let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, timing, None),
-        };
-
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    let response = do_delete_vectors(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
+        InferenceToken::default(),
+        collection.into_inner(),
+        operation.into_inner(),
+        params.into_inner(),
     )
-    .await;
-    process_response(response, timing, None)
+    .await
 }
 
 #[post("/collections/{name}/points/payload")]
@@ -177,27 +103,14 @@ async fn set_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_set_payload(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
-    ))
+        InferenceToken::default(),
+        collection.into_inner(),
+        SetPayloadHelper(operation.into_inner()),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -209,25 +122,14 @@ async fn overwrite_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_overwrite_payload(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
-    ))
+        InferenceToken::default(),
+        collection.into_inner(),
+        OverwritePayloadHelper(operation.into_inner()),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -239,25 +141,14 @@ async fn delete_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_delete_payload(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
-    ))
+        InferenceToken::default(),
+        collection.into_inner(),
+        operation.into_inner(),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -269,26 +160,14 @@ async fn clear_payload(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation = operation.into_inner();
-    let pass =
-        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    helpers::time(do_clear_payload(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
+    update(
+        dispatcher.into_inner(),
         access,
-    ))
+        InferenceToken::default(),
+        collection.into_inner(),
+        ClearPayloadHelper(operation.into_inner()),
+        params.into_inner(),
+    )
     .await
 }
 
@@ -301,42 +180,17 @@ async fn update_batch(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let operations = operations.into_inner();
-
-    let mut vpass = None;
-    for operation in operations.operations.iter() {
-        let pass = match check_strict_mode(operation, None, &collection.name, &dispatcher, &access)
-            .await
-        {
-            Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None),
-        };
-        vpass = Some(pass);
-    }
-
-    // vpass == None => No update operation available
-    let Some(pass) = vpass else {
-        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
-    };
-
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    let response = do_batch_update_points(
-        dispatcher.toc(&access, &pass).clone(),
-        collection.into_inner().name,
-        operations.operations,
-        None,
-        None,
-        wait,
-        ordering,
+    crate::actix::update::update_batch(
+        dispatcher.into_inner(),
         access,
         inference_token,
+        collection.into_inner(),
+        operations.into_inner(),
+        params.into_inner(),
     )
-    .await;
-    process_response(response, timing, None)
+    .await
 }
+
 #[put("/collections/{name}/index")]
 async fn create_field_index(
     dispatcher: web::Data<Dispatcher>,
@@ -345,23 +199,15 @@ async fn create_field_index(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    let response = do_create_index(
+    update(
         dispatcher.into_inner(),
-        collection.into_inner().name,
-        operation,
-        None,
-        None,
-        wait,
-        ordering,
         access,
+        InferenceToken::default(),
+        collection.into_inner(),
+        operation.into_inner(),
+        params.into_inner(),
     )
-    .await;
-    process_response(response, timing, None)
+    .await
 }
 
 #[delete("/collections/{name}/index/{field_name}")]
@@ -372,22 +218,21 @@ async fn delete_field_index(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
-
-    let response = do_delete_index(
+    update(
         dispatcher.into_inner(),
-        collection.into_inner().name,
-        field.name.clone(),
-        None,
-        None,
-        wait,
-        ordering,
         access,
+        InferenceToken::default(),
+        collection.into_inner(),
+        DeleteFieldIndexHelper(field.into_inner().name),
+        params.into_inner(),
     )
-    .await;
-    process_response(response, timing, None)
+    .await
+}
+
+#[derive(Deserialize, Validate)]
+struct FieldPath {
+    #[serde(rename = "field_name")]
+    name: JsonPath,
 }
 
 // Configure services
