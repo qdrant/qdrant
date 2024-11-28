@@ -241,23 +241,22 @@ impl SegmentBuilder {
         for (segment_index, segment) in segments.iter().enumerate() {
             for external_id in segment.iter_points() {
                 let version = segment.point_version(external_id).unwrap_or(0);
+                let internal_id = segment.get_internal_id(external_id).unwrap();
                 merged_points
                     .entry(external_id)
                     .and_modify(|entry| {
                         if entry.version < version {
                             entry.segment_index = segment_index;
                             entry.version = version;
+                            entry.internal_id = internal_id;
                         }
                     })
-                    .or_insert_with(|| {
-                        let internal_id = segment.get_internal_id(external_id).unwrap();
-                        PositionedPointMetadata {
-                            segment_index,
-                            internal_id,
-                            external_id,
-                            version,
-                            ordering: 0,
-                        }
+                    .or_insert_with(|| PositionedPointMetadata {
+                        segment_index,
+                        internal_id,
+                        external_id,
+                        version,
+                        ordering: 0,
                     });
             }
         }
