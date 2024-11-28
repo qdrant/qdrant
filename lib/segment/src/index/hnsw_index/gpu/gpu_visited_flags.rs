@@ -197,6 +197,11 @@ impl GpuVisitedFlags {
             }
 
             let flags_size = groups_count * capacity * std::mem::size_of::<u8>();
+            if flags_size > device.max_buffer_size() {
+                factor *= 2;
+                continue;
+            }
+
             let visited_flags_buffer_result = gpu::Buffer::new(
                 device.clone(),
                 "Visited flags buffer",

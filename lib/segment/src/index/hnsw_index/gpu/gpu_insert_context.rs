@@ -24,24 +24,18 @@ pub struct GpuRequest {
 }
 
 /// Structure to perform insert and update entries operations on GPU.
+/// It handles all GPU resources and shaders instead of gpu vector storage,
+/// which may be shared between multiple hnsw constructions.
 pub struct GpuInsertContext<'a> {
-    gpu_vector_storage: &'a GpuVectorStorage,
-
     context: gpu::Context,
     groups_count: usize,
+
+    gpu_vector_storage: &'a GpuVectorStorage,
     gpu_links: GpuLinks,
     gpu_visited_flags: GpuVisitedFlags,
+    insert_resources: GpuInsertResources,
 
-    requests_buffer: Arc<gpu::Buffer>,
-    requests_staging_buffer: Arc<gpu::Buffer>,
-
-    responses_buffer: Arc<gpu::Buffer>,
-    responses_staging_buffer: Arc<gpu::Buffer>,
-
-    greedy_descriptor_set: Arc<gpu::DescriptorSet>,
     greedy_pipeline: Arc<gpu::Pipeline>,
-
-    insert_descriptor_set: Arc<gpu::DescriptorSet>,
     insert_pipeline: Arc<gpu::Pipeline>,
 
     updates_timer: std::time::Duration,
@@ -50,12 +44,25 @@ pub struct GpuInsertContext<'a> {
     patches_count: usize,
 }
 
-struct GpuInsertContextParams {
+struct GpuInsertResources {
+    requests_buffer: Arc<gpu::Buffer>,
+    requests_staging_buffer: Arc<gpu::Buffer>,
+
+    responses_buffer: Arc<gpu::Buffer>,
+    responses_staging_buffer: Arc<gpu::Buffer>,
+    insert_atomics_buffer: Arc<gpu::Buffer>,
+
+    greedy_descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
+    greedy_descriptor_set: Arc<gpu::DescriptorSet>,
+
+    insert_descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
+    insert_descriptor_set: Arc<gpu::DescriptorSet>,
+
     exact: bool,
     ef: usize,
 }
 
-impl ShaderBuilderParameters for GpuInsertContextParams {
+impl ShaderBuilderParameters for GpuInsertResources {
     fn shader_includes(&self) -> HashMap<String, String> {
         HashMap::from([
             (
@@ -86,23 +93,16 @@ impl ShaderBuilderParameters for GpuInsertContextParams {
     }
 }
 
-impl<'a> GpuInsertContext<'a> {
+impl GpuInsertResources {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        gpu_vector_storage: &'a GpuVectorStorage,
+        gpu_vector_storage: &GpuVectorStorage,
         groups_count: usize,
         points_remap: &[PointOffsetType],
-        m: usize,
-        m0: usize,
         ef: usize,
         exact: bool,
-        visited_flags_factor_range: std::ops::Range<usize>,
     ) -> OperationResult<Self> {
         let device = gpu_vector_storage.device();
-        let points_count = gpu_vector_storage.num_vectors();
-        let search_context_params = GpuInsertContextParams { exact, ef };
-
-        let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
 
         let requests_buffer = gpu::Buffer::new(
             device.clone(),
@@ -137,29 +137,6 @@ impl<'a> GpuInsertContext<'a> {
             std::mem::size_of_val(points_remap),
         )?;
 
-        let gpu_visited_flags = GpuVisitedFlags::new(
-            device.clone(),
-            groups_count,
-            points_remap,
-            visited_flags_factor_range,
-        )?;
-
-        let greedy_search_shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
-            .with_parameters(gpu_vector_storage)
-            .with_parameters(&gpu_links)
-            .with_parameters(&gpu_visited_flags)
-            .with_parameters(&search_context_params)
-            .build("run_greedy_search.comp")?;
-
-        let insert_shader = ShaderBuilder::new(device.clone())
-            .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
-            .with_parameters(gpu_vector_storage)
-            .with_parameters(&gpu_links)
-            .with_parameters(&gpu_visited_flags)
-            .with_parameters(&search_context_params)
-            .build("run_insert_vector.comp")?;
-
         let greedy_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
             .add_storage_buffer(1)
@@ -170,14 +147,6 @@ impl<'a> GpuInsertContext<'a> {
                 .add_storage_buffer(0, requests_buffer.clone())
                 .add_storage_buffer(1, responses_buffer.clone())
                 .build()?;
-
-        let greedy_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, greedy_descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout())
-            .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout())
-            .add_descriptor_set_layout(3, gpu_visited_flags.descriptor_set_layout())
-            .add_shader(greedy_search_shader.clone())
-            .build(device.clone())?;
 
         let insert_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_storage_buffer(0)
@@ -192,8 +161,74 @@ impl<'a> GpuInsertContext<'a> {
                 .add_storage_buffer(2, insert_atomics_buffer.clone())
                 .build()?;
 
+        Ok(Self {
+            requests_buffer,
+            requests_staging_buffer,
+            responses_buffer,
+            responses_staging_buffer,
+            insert_atomics_buffer,
+            greedy_descriptor_set_layout,
+            greedy_descriptor_set,
+            insert_descriptor_set_layout,
+            insert_descriptor_set,
+            exact,
+            ef,
+        })
+    }
+}
+
+impl<'a> GpuInsertContext<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        gpu_vector_storage: &'a GpuVectorStorage,
+        groups_count: usize,
+        points_remap: &[PointOffsetType],
+        m: usize,
+        m0: usize,
+        ef: usize,
+        exact: bool,
+        visited_flags_factor_range: std::ops::Range<usize>,
+    ) -> OperationResult<Self> {
+        let device = gpu_vector_storage.device();
+        let points_count = gpu_vector_storage.num_vectors();
+        let insert_resources =
+            GpuInsertResources::new(gpu_vector_storage, groups_count, points_remap, ef, exact)?;
+
+        let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
+
+        let gpu_visited_flags = GpuVisitedFlags::new(
+            device.clone(),
+            groups_count,
+            points_remap,
+            visited_flags_factor_range,
+        )?;
+
+        let greedy_search_shader = ShaderBuilder::new(device.clone())
+            .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
+            .with_parameters(gpu_vector_storage)
+            .with_parameters(&gpu_links)
+            .with_parameters(&gpu_visited_flags)
+            .with_parameters(&insert_resources)
+            .build("run_greedy_search.comp")?;
+
+        let insert_shader = ShaderBuilder::new(device.clone())
+            .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
+            .with_parameters(gpu_vector_storage)
+            .with_parameters(&gpu_links)
+            .with_parameters(&gpu_visited_flags)
+            .with_parameters(&insert_resources)
+            .build("run_insert_vector.comp")?;
+
+        let greedy_pipeline = gpu::Pipeline::builder()
+            .add_descriptor_set_layout(0, insert_resources.greedy_descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout())
+            .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout())
+            .add_descriptor_set_layout(3, gpu_visited_flags.descriptor_set_layout())
+            .add_shader(greedy_search_shader.clone())
+            .build(device.clone())?;
+
         let insert_pipeline = gpu::Pipeline::builder()
-            .add_descriptor_set_layout(0, insert_descriptor_set_layout.clone())
+            .add_descriptor_set_layout(0, insert_resources.insert_descriptor_set_layout.clone())
             .add_descriptor_set_layout(1, gpu_vector_storage.descriptor_set_layout())
             .add_descriptor_set_layout(2, gpu_links.descriptor_set_layout())
             .add_descriptor_set_layout(3, gpu_visited_flags.descriptor_set_layout())
@@ -201,23 +236,18 @@ impl<'a> GpuInsertContext<'a> {
             .build(device.clone())?;
 
         let mut context = gpu::Context::new(device)?;
-        context.clear_buffer(insert_atomics_buffer)?;
+        context.clear_buffer(insert_resources.insert_atomics_buffer.clone())?;
         context.run()?;
         context.wait_finish(GPU_TIMEOUT)?;
 
         Ok(Self {
+            insert_resources,
             gpu_vector_storage,
             gpu_links,
             gpu_visited_flags,
             context,
             groups_count,
-            requests_staging_buffer,
-            responses_staging_buffer,
-            requests_buffer,
-            responses_buffer,
-            greedy_descriptor_set,
             greedy_pipeline,
-            insert_descriptor_set,
             insert_pipeline,
             updates_timer: Default::default(),
             updates_count: 0,
@@ -228,8 +258,8 @@ impl<'a> GpuInsertContext<'a> {
 
     pub fn download_responses(&mut self, count: usize) -> OperationResult<Vec<PointOffsetType>> {
         self.context.copy_gpu_buffer(
-            self.responses_buffer.clone(),
-            self.responses_staging_buffer.clone(),
+            self.insert_resources.responses_buffer.clone(),
+            self.insert_resources.responses_staging_buffer.clone(),
             0,
             0,
             count * std::mem::size_of::<PointOffsetType>(),
@@ -238,7 +268,8 @@ impl<'a> GpuInsertContext<'a> {
         self.context.wait_finish(GPU_TIMEOUT)?;
 
         let mut gpu_responses = vec![PointOffsetType::default(); count];
-        self.responses_staging_buffer
+        self.insert_resources
+            .responses_staging_buffer
             .download_slice(&mut gpu_responses, 0)?;
 
         Ok(gpu_responses)
@@ -258,10 +289,12 @@ impl<'a> GpuInsertContext<'a> {
         let timer = std::time::Instant::now();
 
         // upload requests
-        self.requests_staging_buffer.upload_slice(requests, 0)?;
+        self.insert_resources
+            .requests_staging_buffer
+            .upload_slice(requests, 0)?;
         self.context.copy_gpu_buffer(
-            self.requests_staging_buffer.clone(),
-            self.requests_buffer.clone(),
+            self.insert_resources.requests_staging_buffer.clone(),
+            self.insert_resources.requests_buffer.clone(),
             0,
             0,
             std::mem::size_of_val(requests),
@@ -270,8 +303,8 @@ impl<'a> GpuInsertContext<'a> {
         // download previous results
         if prev_results_count > 0 {
             self.context.copy_gpu_buffer(
-                self.responses_buffer.clone(),
-                self.responses_staging_buffer.clone(),
+                self.insert_resources.responses_buffer.clone(),
+                self.insert_resources.responses_staging_buffer.clone(),
                 0,
                 0,
                 prev_results_count * std::mem::size_of::<PointOffsetType>(),
@@ -283,7 +316,7 @@ impl<'a> GpuInsertContext<'a> {
         self.context.bind_pipeline(
             self.greedy_pipeline.clone(),
             &[
-                self.greedy_descriptor_set.clone(),
+                self.insert_resources.greedy_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set(),
                 self.gpu_links.descriptor_set(),
                 self.gpu_visited_flags.descriptor_set(),
@@ -298,7 +331,8 @@ impl<'a> GpuInsertContext<'a> {
 
         if prev_results_count > 0 {
             let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
-            self.responses_staging_buffer
+            self.insert_resources
+                .responses_staging_buffer
                 .download_slice(&mut gpu_responses, 0)?;
             Ok(gpu_responses)
         } else {
@@ -320,10 +354,12 @@ impl<'a> GpuInsertContext<'a> {
         self.gpu_visited_flags.clear(&mut self.context)?;
 
         // upload requests
-        self.requests_staging_buffer.upload_slice(requests, 0)?;
+        self.insert_resources
+            .requests_staging_buffer
+            .upload_slice(requests, 0)?;
         self.context.copy_gpu_buffer(
-            self.requests_staging_buffer.clone(),
-            self.requests_buffer.clone(),
+            self.insert_resources.requests_staging_buffer.clone(),
+            self.insert_resources.requests_buffer.clone(),
             0,
             0,
             std::mem::size_of_val(requests),
@@ -332,8 +368,8 @@ impl<'a> GpuInsertContext<'a> {
         // download previous results
         if prev_results_count > 0 {
             self.context.copy_gpu_buffer(
-                self.responses_buffer.clone(),
-                self.responses_staging_buffer.clone(),
+                self.insert_resources.responses_buffer.clone(),
+                self.insert_resources.responses_staging_buffer.clone(),
                 0,
                 0,
                 prev_results_count * std::mem::size_of::<PointOffsetType>(),
@@ -345,7 +381,7 @@ impl<'a> GpuInsertContext<'a> {
         self.context.bind_pipeline(
             self.insert_pipeline.clone(),
             &[
-                self.insert_descriptor_set.clone(),
+                self.insert_resources.insert_descriptor_set.clone(),
                 self.gpu_vector_storage.descriptor_set(),
                 self.gpu_links.descriptor_set(),
                 self.gpu_visited_flags.descriptor_set(),
@@ -360,7 +396,8 @@ impl<'a> GpuInsertContext<'a> {
 
         if prev_results_count > 0 {
             let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
-            self.responses_staging_buffer
+            self.insert_resources
+                .responses_staging_buffer
                 .download_slice(&mut gpu_responses, 0)?;
             Ok(gpu_responses)
         } else {
@@ -444,7 +481,6 @@ mod tests {
         m: usize,
         ef: usize,
         gpu_vector_storage: GpuVectorStorage,
-        gpu_insert_context_params: GpuInsertContextParams,
         vector_holder: TestRawScorerProducer<DotProductMetric>,
         graph_layers_builder: GraphLayersBuilder,
     }
@@ -507,7 +543,6 @@ mod tests {
             gpu_vector_storage,
             vector_holder,
             graph_layers_builder,
-            gpu_insert_context_params: GpuInsertContextParams { exact: true, ef },
         }
     }
 
@@ -571,7 +606,7 @@ mod tests {
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
-            .with_parameters(&test.gpu_insert_context_params)
+            .with_parameters(&gpu_insert_context.insert_resources)
             .build("tests/test_hnsw_search.comp")
             .unwrap();
 
@@ -583,7 +618,10 @@ mod tests {
 
         let search_descriptor_set =
             gpu::DescriptorSet::builder(search_descriptor_set_layout.clone())
-                .add_storage_buffer(0, gpu_insert_context.requests_buffer.clone())
+                .add_storage_buffer(
+                    0,
+                    gpu_insert_context.insert_resources.requests_buffer.clone(),
+                )
                 .add_storage_buffer(1, search_responses_buffer.clone())
                 .build()
                 .unwrap();
@@ -620,14 +658,18 @@ mod tests {
                 .clear(&mut gpu_insert_context.context)
                 .unwrap();
             gpu_insert_context
+                .insert_resources
                 .requests_staging_buffer
                 .upload_slice(requests, 0)
                 .unwrap();
             gpu_insert_context
                 .context
                 .copy_gpu_buffer(
-                    gpu_insert_context.requests_staging_buffer.clone(),
-                    gpu_insert_context.requests_buffer.clone(),
+                    gpu_insert_context
+                        .insert_resources
+                        .requests_staging_buffer
+                        .clone(),
+                    gpu_insert_context.insert_resources.requests_buffer.clone(),
                     0,
                     0,
                     std::mem::size_of_val(requests),
@@ -845,7 +887,7 @@ mod tests {
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
-            .with_parameters(&test.gpu_insert_context_params)
+            .with_parameters(&gpu_insert_context.insert_resources)
             .build("tests/test_heuristic.comp")
             .unwrap();
 
